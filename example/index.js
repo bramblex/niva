@@ -2,33 +2,31 @@ console.log('hello world');
 
 const log = (ok, title, result) => {
 	const content = JSON.stringify(result, null, 2);
-	document.getElementById('console-panel').innerHTML = ok ?
-		`<code>${title}\nResult: \n${content}</code>` :
-		`<code style="color: red;">${title}\nError: \n${content}<code>`;
+	document.getElementById('console-panel').innerText = ok ?
+		`TauriLite.api.${title}\nResult: \n${content}` :
+		`TauriLite.api.${title}\nError: \n${content}`;
+	document.getElementById('console-panel').style.color = ok ? '' : 'red';
 }
 
 const testCases = {
 	fs: {
-		stat: [null, {}, { path: 'index.js' }, { path: '/' }, { path: 'not-exists' }],
-		exists: [null, {}, { path: 'index.js' }, { path: '/' }, { path: 'not-exists' }],
+		stat: [{ path: 'index.js' }, { path: '/' }],
+		exists: [{ path: 'index.js' }, { path: '/' }, { path: 'not-exists' }],
 
-		read: [null, {}, { path: 'index.js' }, { path: 'not-exists' }, { path: '/tmp/test.txt' }],
-		write: [null, {}, { path: '/tmp/test.txt', content: new Date().toLocaleString() }, { path: 'not-exists', content: '' }],
+		read: [{ path: 'index.js' }, { path: '/tmp/text2.txt' }, { path: '/tmp/test.txt' }],
+		write: [{ path: '/tmp/test.txt', content: new Date().toLocaleString() }],
 
-		mv: [null, {}, { from: 'index.js', to: 'index.js.bak' }, { from: 'not-exists', to: 'index.js.bak' }, { from: 'index.js', to: 'not-exists' }],
-		cp: [null, {}, { from: 'index.js', to: 'index.js.bak' }, { from: 'not-exists', to: 'index.js.bak' }, { from: 'index.js', to: 'not-exists' }],
-		rm: [null, {}, { path: 'index.js.bak' }, { path: 'not-exists' }],
+		mv: [{ from: '/tmp/test.txt', to: '/tmp/test2.txt' }, { from: '/tmp/test2.txt', to: '/tmp/test3.txt' }],
+		cp: [{ from: '/tmp/test.txt', to: '/tmp/test2.txt' }, { from: '/tmp/test2.txt', to: '/tmp/test3.txt' }],
+		rm: [{ path: '/tmp/test.txt' }, { path: '/tmp/test2.txt' }, { path: '/tmp/test3.txt' }],
 
-		ls: [null, {}, { path: '/' }, { path: '../' }, { path: 'not-exists' }],
-		mkDir: [null, {}, { path: '/tmp/test' }, { path: 'not-exists' }],
-		rmDir: [null, {}, { path: '/tmp/test' }, { path: 'not-exists' }],
+		ls: [null, { path: './' }, { path: '/tmp/' }],
+		mkDir: [{ path: '/tmp/test-dir/test2-dir/test3-dir' },],
+		rmDir: [{ path: '/tmp/test-dir' }],
 	},
 	http: {
 		request: [
-			null,
-			{},
-			{ method: 'GET', url: 'https://tauri.studio' },
-			{ method: 'GET', url: 'https://tauri.studio/not-exists' },
+			{ method: 'GET', url: 'http://httpbin.org/ip' },
 			{
 				method: 'POST', url: location.href + 'api', body: JSON.stringify({
 					namespace: 'fs',
@@ -45,9 +43,13 @@ const testCases = {
 	process: {
 		pid: [null],
 		cwd: [null],
-		chDir: [null, {}, { path: '/' }, { path: 'not-exists' }],
+		chDir: [{ path: '/tmp' }],
 		env: [null],
-		exec: [null, {}, { command: 'echo', args: ['hello world'] }, { command: 'not-exists', args: [] }, { command: 'ls', args: ['/afwef/awefaaawef/'] }],
+		exec: [
+			{ command: 'echo', args: ['hello world'] },
+			{ command: 'open', args: ['https://tauri.studio'] },
+			{ command: 'ls', args: ['/afwef/awefaaawef/'] }
+		],
 		exit: [null],
 	}
 };
