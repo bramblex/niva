@@ -24,7 +24,19 @@ const testCases = {
 		rmDir: [null, {}, { path: '/tmp/test' }, { path: 'not-exists' }],
 	},
 	http: {
-		request: [null, {}, { method: 'GET', url: 'https://tauri.studio' }, { method: 'GET', url: 'https://tauri.studio/not-exists' }],
+		request: [
+			null,
+			{},
+			{ method: 'GET', url: 'https://tauri.studio' },
+			{ method: 'GET', url: 'https://tauri.studio/not-exists' },
+			{
+				method: 'POST', url: location.href + 'api', body: JSON.stringify({
+					namespace: 'fs',
+					method: 'ls',
+					data: {},
+				})
+			}
+		],
 	},
 	os: {
 		info: [null],
