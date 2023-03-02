@@ -1,11 +1,11 @@
-use super::{event::UserEventContent, menu};
+use super::{event::EventContent, menu};
 use crate::env::Config;
 use wry::application::{
     event_loop::EventLoop,
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 
-pub fn create(config: &Config, event_loop: &EventLoop<UserEventContent>) -> Window {
+pub fn create(config: &Config, event_loop: &EventLoop<EventContent>) -> Window {
     // window config
     let mut window_builder = WindowBuilder::new();
 

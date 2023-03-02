@@ -3,7 +3,7 @@
   "icon": "logo.png",
   "title": "Tauri Lite Example",
   "entry": "index.html",
-  "size": [800, 600],
+  "size": [1200, 1200],
   "devtools": true,
   "always_on_top": true
 }

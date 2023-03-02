@@ -1,14 +1,21 @@
 use crate::env::Config;
 use wry::{
     application::window::Window,
-    webview::{WebView, WebViewBuilder},
+    webview::{WebView, WebViewBuilder, FileDropEvent},
 };
 
 static PRELOAD_JS: &str = include_str!("./preload.js");
 
-pub fn create<F>(entry_url: String, config: &Config, window: Window, ipc_handler: F) -> WebView
+pub fn create<IpcHandler, FileDropHandler>(
+    entry_url: String, 
+    config: &Config, 
+    window: Window, 
+    ipc_handler: IpcHandler,
+    file_drop_handler: FileDropHandler
+) -> WebView
 where
-    F: Fn(&Window, String) + 'static,
+    IpcHandler: Fn(&Window, String) + 'static,
+    FileDropHandler : Fn(&Window, FileDropEvent) -> bool + 'static
 {
     let mut webview_builder = WebViewBuilder::new(window).unwrap();
 
@@ -30,6 +37,7 @@ where
 
     let webview = webview_builder
         .with_ipc_handler(ipc_handler)
+        .with_file_drop_handler(file_drop_handler)
         .with_url(&entry_url)
         .unwrap()
         .build()
