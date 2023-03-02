@@ -75,8 +75,9 @@ pub fn open_main_window(
     file_menu.add_native_item(MenuItem::Cut);
     file_menu.add_native_item(MenuItem::Copy);
     file_menu.add_native_item(MenuItem::Paste);
+    file_menu.add_native_item(MenuItem::Redo);
     file_menu.add_native_item(MenuItem::Quit);
-    menu.add_submenu("File", true, file_menu);
+    menu.add_submenu(&config.name, true, file_menu);
     window_builder = window_builder.with_menu(menu);
 
     let window = window_builder.build(&event_loop).unwrap();
