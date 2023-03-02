@@ -2,6 +2,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
+#[derive(Debug)]
 struct Worker {
     id: usize,
     thread: thread::JoinHandle<()>,
@@ -10,8 +11,12 @@ struct Worker {
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<Receiver<Task>>>) -> Worker {
         let thread = std::thread::spawn(move || {
-            while let Ok(job) = receiver.lock().unwrap().recv() {
-                job();
+            loop {
+                let job = receiver.lock().unwrap().recv();
+                // unlock receiver before job
+                if let Ok(job) = job {
+                    job();
+                }
             }
         });
         Worker { id, thread }
@@ -20,6 +25,7 @@ impl Worker {
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
 
+#[derive(Debug)]
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Task>,

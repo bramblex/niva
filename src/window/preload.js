@@ -3,42 +3,51 @@
 	// Disable drag and open file
 	window.addEventListener("dragover", function (ev) { ev.preventDefault(); }, false);
 
-	window.addEventListener("message", function (ev) {
-		var data = ev.data
-	}, false);
-
 	var TauriLite = {};
 
-	function parseJsonResponse(jsonStr) {
-		try {
-			return JSON.parse(jsonStr);
-		} catch (err) {
-			// ignore
+	var getNextCallbackId = (function () {
+		var callbackId = 0;
+		return function () {
+			if (callbackId >= Number.MAX_SAFE_INTEGER) {
+				callbackId = 0;
+			}
+			return ++callbackId;
 		}
-		return {
-			code: -1,
-			message: "Invalid JSON response",
-		};
-	}
+	})();
+
+	var callbacks = {};
 
 	function call(namespace, method, data) {
-		var xhr = new XMLHttpRequest();
-		xhr.open("POST", '/api');
-		xhr.setRequestHeader("Content-Type", "application/json");
-		xhr.send(JSON.stringify({
+		var callbackId = getNextCallbackId();
+		window.ipc.postMessage(JSON.stringify({
 			namespace: namespace,
 			method: method,
-			data: data
+			data: data,
+			callback_id: callbackId
 		}));
-		return new Promise((resolve, reject) => {
-			xhr.onload = () => {
-				var response = parseJsonResponse(xhr.responseText);
-				if (xhr.status >= 200 && xhr.status < 300 && response.code === 0) {
-					return resolve(response.data);
-				}
-				return reject(response)
+
+		var _resolve, _reject;
+		var promise = new Promise((resolve, reject) => {
+			_resolve = resolve;
+			_reject = reject;
+		})
+		promise.resolve = _resolve;
+		promise.reject = _reject;
+
+		callbacks[callbackId] = promise;
+		return promise;
+	}
+
+	function resolve(response) {
+		var promise = callbacks[response.callback_id];
+		if (promise) {
+			if (response.code === 0) {
+				promise.resolve(response.data);
+			} else {
+				promise.reject(response);
 			}
-		});
+			delete callbacks[response.callback_id];
+		}
 	}
 
 	if (typeof Proxy !== 'undefined') {
@@ -61,6 +70,7 @@
 		var r = _method.split('.');
 		return call(r[0], r[1], data);
 	};
+	TauriLite.__resolve__ = resolve;
 
 	window.TauriLite = TauriLite;
 	console.log('TauriLite loaded');
@@ -73,7 +83,6 @@
 			document.addEventListener("DOMContentLoaded", func);
 		}
 	})(function () {
-		// window.ipc.postMessage();
 	});
 
 }());

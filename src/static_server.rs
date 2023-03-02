@@ -1,21 +1,61 @@
-use super::thread_pool::ThreadPool;
+use crate::{env::Config, thread_pool::ThreadPool};
 use std::{
-    io::{BufRead, Write},
+    io::{BufRead, Error, ErrorKind, Result, Write},
     net::{TcpListener, TcpStream},
     path::Path,
     sync::{Arc, Mutex},
 };
 
-fn listen_available_port() -> Option<(TcpListener, u16)> {
+fn get_tcp_listener() -> Result<(TcpListener, u16)> {
     for port in 1025..65535 {
-        match std::net::TcpListener::bind(("127.0.0.1", port)) {
+        match TcpListener::bind(("127.0.0.1", port)) {
             Ok(l) => {
-                return Some((l, port));
+                return Ok((l, port));
             }
             _ => {}
         }
     }
-    return None;
+    return Err(Error::new(ErrorKind::Other, "No available port to listen"));
+}
+
+pub fn start(work_dir: &Path, config: &Config, thread_pool: &Arc<Mutex<ThreadPool>>) -> String {
+    let entry = config.entry.clone().unwrap_or("index.html".to_string());
+    let root_dir = work_dir.to_path_buf().clone();
+
+    let (listener, port) = get_tcp_listener().unwrap();
+    let thread_pool = thread_pool.clone();
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let entry = entry.clone();
+            let root_dir = root_dir.clone();
+            match stream {
+                Ok(mut stream) => {
+                    thread_pool.lock().unwrap().run(move || {
+                        let request_path = get_request_path(&mut stream);
+                        let file_path = if request_path == "/" {
+                            root_dir.join(entry)
+                        } else {
+                            root_dir.join(request_path.strip_prefix("/").unwrap())
+                        };
+                        let file_result = std::fs::read(&file_path);
+                        if file_result.is_err() {
+                            write_404_response(&mut stream);
+                            return;
+                        }
+                        write_response(&mut stream, &file_path, file_result.unwrap());
+                    });
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
+        }
+    });
+
+    let entry_url = format!("http://127.0.0.1:{port}");
+    println!("Server started at {}", entry_url);
+    return entry_url;
 }
 
 fn get_request_path(mut stream: &mut TcpStream) -> String {
@@ -53,49 +93,4 @@ fn write_response(stream: &mut TcpStream, file_path: &Path, content: Vec<u8>) {
     buf.extend_from_slice(b"\r\n");
     buf.extend_from_slice(&content);
     stream.write_all(&buf).unwrap();
-}
-
-pub fn start(
-    thread_pool: Arc<Mutex<ThreadPool>>,
-    entry_path: std::path::PathBuf,
-    work_dir: std::path::PathBuf,
-) -> String {
-    let entry_path = entry_path.clone();
-    let work_dir = work_dir.clone();
-    let thread_pool = thread_pool.clone();
-
-    let (listener, port) = listen_available_port().unwrap();
-
-    let webview_url = "http://127.0.0.1:".to_string() + port.to_string().as_str();
-    println!("Webview URL: {}", webview_url);
-
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let entry_path = entry_path.clone();
-            let work_dir = work_dir.clone();
-            match stream {
-                Ok(mut stream) => {
-                    thread_pool.lock().unwrap().run(move || {
-                        let request_path = get_request_path(&mut stream);
-                        let file_path = if request_path == "/" {
-                            entry_path.clone()
-                        } else {
-                            work_dir.join(request_path.strip_prefix("/").unwrap())
-                        };
-                        let file_result = std::fs::read(&file_path);
-                        if file_result.is_err() {
-                            write_404_response(&mut stream);
-                            return;
-                        }
-                        write_response(&mut stream, &file_path, file_result.unwrap());
-                    });
-                }
-                Err(e) => {
-                    println!("Error: {}", e);
-                }
-            }
-        }
-    });
-
-    return webview_url;
 }

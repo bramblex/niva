@@ -6,19 +6,22 @@ mod process;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ApiRequest {
-    namespace: String,
-    method: String,
-    data: serde_json::Value,
+    pub namespace: String,
+    pub method: String,
+    pub data: serde_json::Value,
+    pub callback_id: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct ApiResponse {
     pub code: i16,
     pub message: String,
     pub data: serde_json::Value,
+    pub callback_id: u32,
 }
+
 unsafe impl Send for ApiResponse {}
 unsafe impl Sync for ApiResponse {}
 
@@ -28,6 +31,7 @@ impl ApiResponse {
             code: 0,
             message: String::new(),
             data,
+            callback_id: 0,
         };
     }
 
@@ -36,6 +40,7 @@ impl ApiResponse {
             code: -1,
             message,
             data: serde_json::Value::Null,
+            callback_id: 0,
         };
     }
 
@@ -44,14 +49,15 @@ impl ApiResponse {
     }
 }
 
-pub  fn call(request_str: String) -> String {
+pub fn call(request_str: String) -> String {
     let request_result = serde_json::from_str::<ApiRequest>(request_str.as_str());
     if request_result.is_err() {
         return ApiResponse::err("Invalid request".to_string()).to_string();
     }
 
     let request = request_result.unwrap();
-    let response: ApiResponse = match request.namespace.as_str() {
+    let callback_id = request.callback_id;
+    let mut response: ApiResponse = match request.namespace.as_str() {
         "fs" => fs::call(request),
         "http" => http::call(request),
         "os" => os::call(request),
@@ -59,5 +65,6 @@ pub  fn call(request_str: String) -> String {
         _ => ApiResponse::err("Namespace not found".to_string()),
     };
 
-		return response.to_string();
+    response.callback_id = callback_id;
+    return response.to_string();
 }

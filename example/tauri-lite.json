@@ -2,10 +2,10 @@
 	"name": "tauri-lite-example",
 	"title": "Tauri Lite Example",
 	"entry": "index.html",
-	"size": {
-		"width": 1200,
-		"height": 1200
-	},
+	"size": [
+		1200,
+		1200
+	],
 	"always_on_top": true,
 	"devtools": true
 }
