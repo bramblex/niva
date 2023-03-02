@@ -7,7 +7,6 @@
 	* MainWindow 封装并且传递多线程
 		* Window 
 		* Webview 
-			* eval 代理 webview 的 js 代码执行，避免
 			* ipc handler 
 		* EventLoop 主循环，传递事件
 	* Api 实现 Api
@@ -16,6 +15,9 @@
 		* OS
 		* Process
 		* Window
+	* bundle
+		* windows - https://github.com/SerGreen/Appacker
+		* macos - https://github.com/burtonageo/cargo-bundle
 
 ## API
 ### File System

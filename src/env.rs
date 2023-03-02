@@ -38,22 +38,28 @@ pub struct MenuConfig(Vec<MenuItem>);
 pub struct Config {
     // project config
     pub name: String,
-    pub version: Option<String>,
     pub icon: Option<String>,
-    pub entry: Option<String>,
-    pub title: Option<String>,
+    pub version: Option<String>,
+    pub author: Option<String>,
     pub description: Option<String>,
+    pub copyright: Option<String>,
+    pub license: Option<String>,
+    pub website: Option<String>,
+    pub website_label: Option<String>,
 
     // webview config
+    pub entry: Option<String>,
+    pub background_color: Option<(u8, u8, u8, u8)>,
     pub devtools: Option<bool>,
 
     // window config
+    pub title: Option<String>,
     pub theme: Option<String>,
     pub size: Option<Size>,
     pub min_size: Option<Size>,
     pub max_size: Option<Size>,
 
-    pub position: Option<Size>,
+    pub position: Option<Position>,
 
     pub resizable: Option<bool>,
     pub minimizable: Option<bool>,
@@ -64,7 +70,6 @@ pub struct Config {
     pub maximized: Option<bool>,
     pub visible: Option<bool>,
     pub transparent: Option<bool>,
-    pub background_color: Option<(u8, u8, u8, u8)>,
     pub decorations: Option<bool>,
 
     pub always_on_top: Option<bool>,

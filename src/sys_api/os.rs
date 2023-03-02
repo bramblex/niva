@@ -1,7 +1,5 @@
-use std::path;
-
 use super::{ApiRequest, ApiResponse};
-use directories::{BaseDirs, ProjectDirs, UserDirs};
+use directories::UserDirs;
 use serde_json::{json, Value};
 
 pub fn call(request: ApiRequest) -> ApiResponse {

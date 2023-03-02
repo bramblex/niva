@@ -1,6 +1,6 @@
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {

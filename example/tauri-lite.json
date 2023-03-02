@@ -1,11 +1,11 @@
 {
 	"name": "tauri-lite-example",
+	"icon": "logo.png",
 	"title": "Tauri Lite Example",
 	"entry": "index.html",
 	"size": [
-		1200,
-		1200
+		800,
+		600
 	],
-	"always_on_top": true,
 	"devtools": true
 }

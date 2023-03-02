@@ -5,6 +5,7 @@
 
 	var TauriLite = {};
 
+	// === API Call ===
 	var getNextCallbackId = (function () {
 		var callbackId = 0;
 		return function () {
@@ -72,9 +73,46 @@
 	};
 	TauriLite.__resolve__ = resolve;
 
+	// === Event ===
+	var eventListeners = {};
+
+	function addEventListener(event, listener) {
+		if (!eventListeners[event]) {
+			eventListeners[event] = [];
+		}
+		eventListeners[event].push(listener);
+	}
+
+	function removeEventListener(event, listener) {
+		if (!eventListeners[event]) {
+			return;
+		}
+		var listeners = eventListeners[event];
+		eventListeners = [];
+		for (var i = 0; i < listeners.length; i++) {
+			if (listeners[i] !== listener) {
+				eventListeners.push(listeners[i]);
+			}
+		}
+	}
+
+	function emit(event, data) {
+		if (!eventListeners[event]) {
+			return;
+		}
+		var listeners = eventListeners[event];
+		for (var i = 0; i < listeners.length; i++) {
+			listeners[i](data);
+		}
+	}
+
+	TauriLite.addEventListener = addEventListener;
+	TauriLite.removeEventListener = removeEventListener;
+	TauriLite.__emit__ = emit;
+
+	// === Tauri API ===
 	window.TauriLite = TauriLite;
 	console.log('TauriLite loaded');
-
 
 	(function docReady(func) {
 		if (document.readyState === "complete" || document.readyState === "interactive") {

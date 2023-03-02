@@ -1,8 +1,11 @@
-mod api;
+// remove console window in windows system
+// #![windows_subsystem = "windows"]
+
+mod sys_api;
 mod env;
 mod static_server;
 mod thread_pool;
-mod window;
+mod main_window;
 
 use std::sync::{Arc, Mutex};
 use thread_pool::ThreadPool;
@@ -26,5 +29,5 @@ fn main() {
     println!("Static server started at {:?}", entry_url);
 
     println!("Open main window");
-    window::open_main_window(&entry_url, &config, &thread_pool, api::call);
+    main_window::open(&entry_url, &config, thread_pool, sys_api::call);
 }

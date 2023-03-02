@@ -4,8 +4,8 @@ use std::thread;
 
 #[derive(Debug)]
 struct Worker {
-    id: usize,
-    thread: thread::JoinHandle<()>,
+    pub id: usize,
+    pub thread: thread::JoinHandle<()>,
 }
 
 impl Worker {

@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
@@ -51,10 +51,7 @@ pub fn request_method(request: ApiRequest) -> ApiResponse {
         let mut response_headers = HashMap::new();
         for name in header_names {
             let value = response.header(&name).unwrap();
-            response_headers.insert(
-                name,
-                value.to_string(),
-            );
+            response_headers.insert(name, value.to_string());
         }
 
         let body = response.into_string().unwrap();
