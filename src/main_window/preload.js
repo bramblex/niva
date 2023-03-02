@@ -107,8 +107,8 @@
 
         if (eventListeners[key]) {
           var listeners = eventListeners[key];
-          for (var i = 0; i < listeners.length; i++) {
-            listeners[i](event, data);
+          for (var j = 0; j < listeners.length; j++) {
+            listeners[j](event, data);
           }
         }
       }

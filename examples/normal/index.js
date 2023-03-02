@@ -80,3 +80,7 @@ TauriLite.addEventListener('*', (event, data) => {
   console.log(event, data);
   document.getElementById('event-panel').innerText = `Event: ${event}\nData: ${JSON.stringify(data, null, 2)}`;
 })
+
+document.getElementById('title').addEventListener('drop', (e) => {
+  alert('drop');
+})

@@ -2,6 +2,7 @@ use serde_json::json;
 use wry::application::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
+    window::Theme,
 };
 
 use super::WebviewWarper;
@@ -33,6 +34,38 @@ pub fn handle_window_event(
     control_flow: &mut ControlFlow,
 ) {
     match event {
+        // WindowEvent::Resized(size) => send_event(
+        //     main_webview_warper,
+        //     "window.resize",
+        //     json!({ "width": size.width, "height": size.height }),
+        // ),
+        // WindowEvent::Moved(position) => send_event(
+        //     main_webview_warper,
+        //     "window.move",
+        //     json!({ "x": position.x, "y": position.y }),
+        // ),
+        WindowEvent::ReceivedImeText(text) => send_event(
+            main_webview_warper,
+            "window.receivedImeText",
+            json!({ "text": text }),
+        ),
+        WindowEvent::Focused(focused) => send_event(
+            main_webview_warper,
+            "window.focused",
+            json!({ "focused": focused }),
+        ),
+        WindowEvent::ThemeChanged(theme) => send_event(
+            main_webview_warper,
+            "window.themeChanged",
+            json!({ "theme": match theme {
+                Theme::Dark => "dark",
+                Theme::Light => "light",
+                _ => "",
+            }}),
+        ),
+        WindowEvent::DecorationsClick => {
+            send_event(main_webview_warper, "window.decorationsClick", json!({}))
+        }
         WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
         _ => (),
     }
