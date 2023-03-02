@@ -7,7 +7,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable 'tauri-lite'",
+      "name": "Debug executable normal example 'tauri-lite'",
       "cargo": {
         "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
         "filter": {
@@ -18,7 +18,24 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["example"],
+      "args": ["examples/normal"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable no-config-json 'tauri-lite'",
+      "cargo": {
+        "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
+        "filter": {
+          "name": "tauri-lite",
+          "kind": "bin"
+        },
+        "env": {
+          "RUST_BACKTRACE": "-l framework=WebKit"
+        }
+      },
+      "args": ["examples/no-config-json"],
       "cwd": "${workspaceFolder}"
     }
   ]

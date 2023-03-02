@@ -1,9 +1,9 @@
 use serde::Deserialize;
-use wry::application::dpi::{
-    LogicalSize, LogicalPosition, Size as DpiSize, Position as DpiPosition,
-};
 use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
+use wry::application::dpi::{
+    LogicalPosition, LogicalSize, Position as DpiPosition, Size as DpiSize,
+};
 
 #[derive(Deserialize, Debug)]
 pub struct Size(pub f64, pub f64);
@@ -117,7 +117,11 @@ fn get_work_dir() -> Result<PathBuf> {
 
 fn get_config(work_dir: &Path) -> Result<Config> {
     let config_path = work_dir.join("tauri-lite.json");
-    let content = std::fs::read_to_string(config_path)?;
+    let content = std::fs::read_to_string(config_path).unwrap_or(format!(
+        "{{ \"name\": {:?} }}",
+        work_dir.file_stem().unwrap()
+    ));
+
     let config = serde_json::from_str::<Config>(&content)?;
     return Ok(config);
 }
