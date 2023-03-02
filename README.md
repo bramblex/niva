@@ -1,8 +1,19 @@
 # Tauri Lite
-## 设计草稿
+一个基于 Tauri WRY 跨端 Webview 库的轻量级的跨端应用开发框架。
 
-* windows - https://github.com/SerGreen/Appacker
-* macos - https://github.com/burtonageo/cargo-bundle
+## 目标
+* 跨平台 - 支持 Macos, Windows。
+* 轻量级 
+	- 不依赖 Node.js，Chromium，Electron 等其他三方以来，将可执行文件拖进项目即可使用。
+	- 可执行文件 < 3M (Tauri 6M+, Electron 100M+)
+* 开发效率 - 与 Web 开发一致，不需要额外学习 NodeJS，Electron 或者 Rust。
+
+## Usage
+1. 下载或者编译 Tauri Lite.
+2. 将 target/{release, debug}/tauri-lite 拖进 web 前端项目的目标目录，比如本项目的 example 目录。
+3. 在上面目录中新建 tauri-lite.config 配置文件, name 字段为项目名称必填，如 example/tauri-lite.config。
+4. 在 tauri-lite.config 用 entry 指定入口 html 文件，如果不填默认是 index.html。
+5. 双击 tauri-lite 即可打开应用程序。
 
 ## API
 ### File System
@@ -38,3 +49,7 @@
 - [x] chDir() -> void
 - [x] env() -> Env
 - [x] exit() -> !
+
+## Bundle
+* windows - https://github.com/SerGreen/Appacker
+* macos - https://github.com/burtonageo/cargo-bundle

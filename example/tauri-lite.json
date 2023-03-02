@@ -7,5 +7,6 @@
 		800,
 		600
 	],
-	"devtools": true
+	"devtools": true,
+	"always_on_top": true
 }
