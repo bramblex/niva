@@ -1,23 +1,8 @@
 # Tauri Lite
 ## 设计草稿
 
-* TauriLite
-	* Environment 初始化并且管理当前的运行环境
-	* StaticServer 静态服务，加载静态 web 文件
-	* MainWindow 封装并且传递多线程
-		* Window 
-		* Webview 
-			* ipc handler 
-		* EventLoop 主循环，传递事件
-	* Api 实现 Api
-		* File System
-		* Http
-		* OS
-		* Process
-		* Window
-	* bundle
-		* windows - https://github.com/SerGreen/Appacker
-		* macos - https://github.com/burtonageo/cargo-bundle
+* windows - https://github.com/SerGreen/Appacker
+* macos - https://github.com/burtonageo/cargo-bundle
 
 ## API
 ### File System

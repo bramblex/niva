@@ -1,11 +1,14 @@
 // remove console window in windows system
-// #![windows_subsystem = "windows"]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
-mod sys_api;
 mod env;
-mod static_server;
-mod thread_pool;
 mod main_window;
+mod static_server;
+mod sys_api;
+mod thread_pool;
 
 use std::sync::{Arc, Mutex};
 use thread_pool::ThreadPool;
