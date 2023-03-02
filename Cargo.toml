@@ -8,8 +8,9 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0.93" }
-tokio = { version = "1.25.0", features = ["full"] }
-wry = { version = "0.27.0", features = ["file-drop", "objc-exception", "protocol", "devtools"] }
-hyper = { version = "1.0.0-rc.2", features = ["full"] }
+tokio = { version = "1.25.0", features = ["fs", "net", "macros", "rt-multi-thread"] }
+wry = { version = "0.27.0", features = ["file-drop", "devtools"] }
+hyper = { version = "1.0.0-rc.2", features = ["server", "http-body-util", "http1"] }
 http-body-util = "0.1.0-rc.2"
 bytes = "1.4.0"
+mime_guess = "2.0.4"

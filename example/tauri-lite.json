@@ -3,7 +3,8 @@
 	"entry": "index.html",
 	"size": {
 		"width": 600,
-		"height": 600
+		"height":600 
 	},
-	"always_on_top": true
+	"always_on_top": true,
+	"devtools": true
 }
