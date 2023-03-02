@@ -1,35 +1,35 @@
 # Tauri Lite
 ## API
 ### File System
-[*] stat(path) -> Stat
-[*] exists(path) -> boolean
+- [x] stat(path) -> Stat
+- [x] exists(path) -> boolean
 
-[*] read(path) -> string
-[*] write(path, data: string) -> void
-[ ] append(path, data: string) -> void
+- [x] read(path) -> string
+- [x] write(path, data: string) -> void
+- [ ] append(path, data: string) -> void
 
-[*] mv(path, newPath) -> void
-[*] cp(path, newPath) -> void
-[*] rm(path) -> void
+- [x] mv(path, newPath) -> void
+- [x] cp(path, newPath) -> void
+- [x] rm(path) -> void
 
-[*] ls(path) -> string[]
-[*] mkDir(path) -> void
-[*] rmDir(path) -> void
+- [x] ls(path) -> string[]
+- [x] mkDir(path) -> void
+- [x] rmDir(path) -> void
 
-[ ] link(path, newPath) -> void
+- [ ] link(path, newPath) -> void
 
 ### Http
-[*] request(url, options?) -> string
-[ ] download(url, path, options?) -> void
+- [x] request(url, options?) -> string
+- [ ] download(url, path, options?) -> void
 
 ### OS
-[*] info() -> string
-[*] dirs() -> string
+- [x] info() -> string
+- [x] dirs() -> string
 
 ### Process
-[*] exec(command | file, args?, options?) -> string
-[*] pid() -> number
-[*] cwd() -> string
-[*] chDir() -> void
-[*] env() -> Env
-[*] exit() -> !
+- [x] exec(command | file, args?, options?) -> string
+- [x] pid() -> number
+- [x] cwd() -> string
+- [x] chDir() -> void
+- [x] env() -> Env
+- [x] exit() -> !

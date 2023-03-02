@@ -1,5 +1,12 @@
 
 (function () {
+	// Disable drag and open file
+	window.addEventListener("dragover", function (ev) { ev.preventDefault(); }, false);
+
+	window.addEventListener("message", function (ev) {
+		var data = ev.data
+	}, false);
+
 	var TauriLite = {};
 
 	function parseJsonResponse(jsonStr) {
@@ -57,4 +64,16 @@
 
 	window.TauriLite = TauriLite;
 	console.log('TauriLite loaded');
+
+
+	(function docReady(func) {
+		if (document.readyState === "complete" || document.readyState === "interactive") {
+			setTimeout(func, 1);
+		} else {
+			document.addEventListener("DOMContentLoaded", func);
+		}
+	})(function () {
+		// window.ipc.postMessage();
+	});
+
 }());

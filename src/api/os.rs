@@ -4,15 +4,15 @@ use super::{ApiRequest, ApiResponse};
 use directories::{BaseDirs, ProjectDirs, UserDirs};
 use serde_json::{json, Value};
 
-pub async fn call(request: ApiRequest) -> ApiResponse {
+pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
-        "info" => platform().await,
-        "dirs" => dirs().await,
+        "info" => platform(),
+        "dirs" => dirs(),
         _ => ApiResponse::err("Method not found".to_string()),
     };
 }
 
-async fn platform() -> ApiResponse {
+fn platform() -> ApiResponse {
     let info = os_info::get();
 
     return ApiResponse::ok(json!({
@@ -32,7 +32,7 @@ fn unwrap_path_opt(path_result: Option<&std::path::Path>) -> Value {
     return Value::String(path_result.unwrap().to_str().unwrap_or("").to_string());
 }
 
-async fn dirs() -> ApiResponse {
+fn dirs() -> ApiResponse {
     let user_dirs = UserDirs::new().unwrap();
 
     return ApiResponse::ok(json!({

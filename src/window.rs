@@ -1,6 +1,6 @@
 use super::config::Config;
 
-include!(concat!(env!("OUT_DIR"), "/preload.rs"));
+static PRELOAD_JS: &'static str = include_str!("./preload.js");
 
 pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
     use wry::{
@@ -22,10 +22,6 @@ pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
     if config.title.is_some() {
         window_builder = window_builder.with_title(config.title.as_ref().unwrap());
     }
-
-    // if config.icon.is_some() {
-    //     window_builder.with_window_icon(Some(config.icon.as_ref().unwrap()));
-    // }
 
     if config.size.is_some() {
         let size = config.size.as_ref().unwrap();
@@ -65,7 +61,6 @@ pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
 
     let window = window_builder.build(&event_loop).unwrap();
 
-    // webview config
     let mut webview_builder = WebViewBuilder::new(window).unwrap();
 
     if config.background_color.is_some() {

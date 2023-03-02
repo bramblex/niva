@@ -72,3 +72,6 @@ for (const [namespace, methods] of Object.entries(testCases)) {
 		document.getElementById('button-panel').appendChild(group);
 	}
 }
+
+document.addEventListener('contextmenu', (e) => {
+})

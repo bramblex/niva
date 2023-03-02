@@ -2,23 +2,23 @@ use std::time::UNIX_EPOCH;
 
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
-use serde_json::{json};
+use serde_json::json;
 
-pub async fn call(request: ApiRequest) -> ApiResponse {
+pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
-        "stat" => stat(request).await,
-        "exists" => exists(request).await,
+        "stat" => stat(request),
+        "exists" => exists(request),
 
-        "read" => read(request).await,
-        "write" => write(request).await,
+        "read" => read(request),
+        "write" => write(request),
 
-        "mv" => mv(request).await,
-        "cp" => cp(request).await,
-        "rm" => rm(request).await,
+        "mv" => mv(request),
+        "cp" => cp(request),
+        "rm" => rm(request),
 
-        "ls" => ls(request).await,
-        "mkDir" => mk_dir(request).await,
-        "rmDir" => rm_dir(request).await,
+        "ls" => ls(request),
+        "mkDir" => mk_dir(request),
+        "rmDir" => rm_dir(request),
 
         _ => ApiResponse::err("Method not found".to_string()),
     };
@@ -29,7 +29,7 @@ struct LsOptions {
     pub path: Option<String>,
 }
 
-async fn ls(request: ApiRequest) -> ApiResponse {
+fn ls(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<LsOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -60,7 +60,7 @@ struct ReadOptions {
     pub path: String,
 }
 
-async fn read(request: ApiRequest) -> ApiResponse {
+fn read(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -83,7 +83,7 @@ struct WriteOptions {
     pub content: String,
 }
 
-async fn write(request: ApiRequest) -> ApiResponse {
+fn write(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<WriteOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -99,7 +99,7 @@ async fn write(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({}));
 }
 
-async fn exists(request: ApiRequest) -> ApiResponse {
+fn exists(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -110,7 +110,7 @@ async fn exists(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({ "exists": exists }));
 }
 
-async fn stat(request: ApiRequest) -> ApiResponse {
+fn stat(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -142,7 +142,7 @@ struct MvOptions {
     pub to: String,
 }
 
-async fn mv(request: ApiRequest) -> ApiResponse {
+fn mv(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<MvOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -158,7 +158,7 @@ async fn mv(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({}));
 }
 
-async fn cp(request: ApiRequest) -> ApiResponse {
+fn cp(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<MvOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -174,7 +174,7 @@ async fn cp(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({}));
 }
 
-async fn rm(request: ApiRequest) -> ApiResponse {
+fn rm(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -189,7 +189,7 @@ async fn rm(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({}));
 }
 
-async fn mk_dir(request: ApiRequest) -> ApiResponse {
+fn mk_dir(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());
@@ -204,7 +204,7 @@ async fn mk_dir(request: ApiRequest) -> ApiResponse {
     return ApiResponse::ok(json!({}));
 }
 
-async fn rm_dir(request: ApiRequest) -> ApiResponse {
+fn rm_dir(request: ApiRequest) -> ApiResponse {
     let data_result = serde_json::from_value::<ReadOptions>(request.data);
     if data_result.is_err() {
         return ApiResponse::err("Invalid options".to_string());

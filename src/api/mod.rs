@@ -44,7 +44,7 @@ impl ApiResponse {
     }
 }
 
-pub async fn call(request_str: String) -> String {
+pub  fn call(request_str: String) -> String {
     let request_result = serde_json::from_str::<ApiRequest>(request_str.as_str());
     if request_result.is_err() {
         return ApiResponse::err("Invalid request".to_string()).to_string();
@@ -52,10 +52,10 @@ pub async fn call(request_str: String) -> String {
 
     let request = request_result.unwrap();
     let response: ApiResponse = match request.namespace.as_str() {
-        "fs" => fs::call(request).await,
-        "http" => http::call(request).await,
-        "os" => os::call(request).await,
-        "process" => process::call(request).await,
+        "fs" => fs::call(request),
+        "http" => http::call(request),
+        "os" => os::call(request),
+        "process" => process::call(request),
         _ => ApiResponse::err("Namespace not found".to_string()),
     };
 
