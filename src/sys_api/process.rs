@@ -63,6 +63,7 @@ struct ExecOptions {
     pub cwd: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<std::collections::HashMap<String, String>>,
+    pub detached: Option<bool>,
 }
 
 pub fn exec(request: ApiRequest) -> ApiResponse {
@@ -87,6 +88,15 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     // 设置环境变量
     if options.env.is_some() {
         command.envs(options.env.unwrap());
+    }
+
+    // detach child process
+    if options.detached.unwrap_or(false) {
+        let result = command.spawn();
+        match result {
+            Ok(_) => return ApiResponse::ok(json!({})),
+            Err(_) => return ApiResponse::err("Failed to exec command".to_string()),
+        }
     }
 
     let output_result = command.output();

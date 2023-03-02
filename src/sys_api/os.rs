@@ -14,7 +14,8 @@ fn platform() -> ApiResponse {
     let info = os_info::get();
 
     return ApiResponse::ok(json!({
-        "type": info.os_type().to_string(),
+        "os": info.os_type().to_string(),
+        "arch": std::env::consts::ARCH.to_string(),
         "version": info.version().to_string(),
     }));
 }
