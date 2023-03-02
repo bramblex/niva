@@ -1,0 +1,9 @@
+{
+	"title": "The Last of Us",
+	"entry": "index.html",
+	"size": {
+		"width": 600,
+		"height": 600
+	},
+	"always_on_top": true
+}

@@ -1,0 +1,15 @@
+[package]
+name = "tauri-lite"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = { version = "1.0.93" }
+tokio = { version = "1.25.0", features = ["full"] }
+wry = { version = "0.27.0", features = ["file-drop", "objc-exception", "protocol", "devtools"] }
+hyper = { version = "1.0.0-rc.2", features = ["full"] }
+http-body-util = "0.1.0-rc.2"
+bytes = "1.4.0"
