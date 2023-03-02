@@ -2,7 +2,7 @@ use super::{event::UserEventContent, menu};
 use crate::env::Config;
 use wry::application::{
     event_loop::EventLoop,
-    window::{Fullscreen, Icon, Theme, Window, WindowBuilder},
+    window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 
 pub fn create(config: &Config, event_loop: &EventLoop<UserEventContent>) -> Window {
@@ -12,7 +12,7 @@ pub fn create(config: &Config, event_loop: &EventLoop<UserEventContent>) -> Wind
     let title = config.title.clone().unwrap_or(config.name.clone());
     window_builder = window_builder.with_title(title);
 
-    if let Some(icon_path) = &config.icon {
+    if let Some(_icon_path) = &config.icon {
 			// TODO: implement icon
     }
 
@@ -60,7 +60,7 @@ pub fn create(config: &Config, event_loop: &EventLoop<UserEventContent>) -> Wind
         window_builder = window_builder.with_closable(*closable);
     }
 
-    if let Some(_) = &config.fullscreen {
+    if config.fullscreen.is_some() {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
 
@@ -100,8 +100,8 @@ pub fn create(config: &Config, event_loop: &EventLoop<UserEventContent>) -> Wind
         window_builder = window_builder.with_content_protection(*content_protection);
     }
 
-    let menu = menu::create(&config);
+    let menu = menu::create(config);
     window_builder = window_builder.with_menu(menu);
 
-    return window_builder.build(&event_loop).unwrap();
+    window_builder.build(event_loop).unwrap()
 }

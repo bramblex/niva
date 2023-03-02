@@ -32,5 +32,5 @@ fn main() {
     println!("Static server started at {:?}", entry_url);
 
     println!("Open main window");
-    main_window::open(&entry_url, &config, thread_pool, sys_api::call);
+    main_window::open(entry_url, &config, thread_pool, sys_api::call);
 }

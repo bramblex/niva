@@ -4,11 +4,11 @@ use wry::application::menu::{MenuBar, MenuItem};
 pub fn create(config: &Config) -> MenuBar {
     let mut menu = MenuBar::new();
 
-    let (native_menu_name, native_menu) = create_native_menu(&config);
+    let (native_menu_name, native_menu) = create_native_menu(config);
     menu.add_submenu(&native_menu_name, true, native_menu);
 
 		// TODO: implement custom menu, shortcuts and event by user config
-    return menu;
+    menu
 }
 
 fn create_native_menu(config: &Config) -> (String, MenuBar) {
@@ -26,5 +26,5 @@ fn create_native_menu(config: &Config) -> (String, MenuBar) {
 
     native_menu.add_native_item(MenuItem::Quit);
 
-    return (native_menu_name, native_menu);
+    (native_menu_name, native_menu)
 }

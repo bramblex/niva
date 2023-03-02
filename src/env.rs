@@ -10,7 +10,7 @@ pub struct Size(pub f64, pub f64);
 
 impl Size {
     pub fn to_dpi_size(&self) -> DpiSize {
-        return DpiSize::Logical(LogicalSize::new(self.0, self.1));
+        DpiSize::Logical(LogicalSize::new(self.0, self.1))
     }
 }
 
@@ -19,7 +19,7 @@ pub struct Position(pub f64, pub f64);
 
 impl Position {
     pub fn to_dpi_position(&self) -> DpiPosition {
-        return DpiPosition::Logical(LogicalPosition::new(self.0, self.1));
+        DpiPosition::Logical(LogicalPosition::new(self.0, self.1))
     }
 }
 
@@ -112,19 +112,19 @@ fn get_work_dir() -> Result<PathBuf> {
     let executable_path = std::env::current_exe()?;
     // executable parent always exists
     let default_work_dir = executable_path.parent().unwrap().to_path_buf();
-    return Ok(default_work_dir);
+    Ok(default_work_dir)
 }
 
 fn get_config(work_dir: &Path) -> Result<Config> {
     let config_path = work_dir.join("tauri-lite.json");
     let content = std::fs::read_to_string(config_path)?;
     let config = serde_json::from_str::<Config>(&content)?;
-    return Ok(config);
+    Ok(config)
 }
 
 pub fn init() -> Result<(PathBuf, Config)> {
     let work_dir = get_work_dir()?;
     let config = get_config(&work_dir)?;
     std::env::set_current_dir(&work_dir)?;
-    return Ok((work_dir, config));
+    Ok((work_dir, config))
 }

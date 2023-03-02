@@ -21,7 +21,7 @@ unsafe impl Sync for WebviewWarper {}
 
 
 pub fn open(
-    entry_url: &String,
+    entry_url: String,
     config: &Config,
     thread_pool: Arc<Mutex<ThreadPool>>,
     api_call: fn(String) -> String,
@@ -29,7 +29,7 @@ pub fn open(
     let event_loop = EventLoop::<UserEventContent>::with_user_event();
     let event_loop_proxy = event_loop.create_proxy();
 
-    let main_window = window::create(&config, &event_loop);
+    let main_window = window::create(config, &event_loop);
 
     let main_webview = webview::create(
         entry_url,

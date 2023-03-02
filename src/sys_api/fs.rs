@@ -52,7 +52,7 @@ fn ls(request: ApiRequest) -> ApiResponse {
         }));
     }
 
-    return ApiResponse::ok(json!({ "entries": entries }));
+    ApiResponse::ok(json!({ "entries": entries }))
 }
 
 #[derive(Deserialize)]
@@ -72,9 +72,9 @@ fn read(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot read file".to_string());
     }
 
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
         "content": content_result.unwrap()
-    }));
+    }))
 }
 
 #[derive(Deserialize)]
@@ -96,7 +96,7 @@ fn write(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot write file".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 fn exists(request: ApiRequest) -> ApiResponse {
@@ -107,7 +107,7 @@ fn exists(request: ApiRequest) -> ApiResponse {
     let path = data_result.unwrap().path;
     let exists = std::path::Path::new(&path).exists();
 
-    return ApiResponse::ok(json!({ "exists": exists }));
+    ApiResponse::ok(json!({ "exists": exists }))
 }
 
 fn stat(request: ApiRequest) -> ApiResponse {
@@ -123,7 +123,7 @@ fn stat(request: ApiRequest) -> ApiResponse {
 
     let meta = meta_result.unwrap();
 
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
         "metadata": {
             "isDir": meta.is_dir(),
             "isFile": meta.is_file(),
@@ -133,7 +133,7 @@ fn stat(request: ApiRequest) -> ApiResponse {
             "accessed": meta.accessed().unwrap().duration_since(UNIX_EPOCH).unwrap().as_millis(),
             "created": meta.created().unwrap().duration_since(UNIX_EPOCH).unwrap().as_millis(),
         }
-    }));
+    }))
 }
 
 #[derive(Deserialize)]
@@ -155,7 +155,7 @@ fn mv(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot move file".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 fn cp(request: ApiRequest) -> ApiResponse {
@@ -171,7 +171,7 @@ fn cp(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot copy file".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 fn rm(request: ApiRequest) -> ApiResponse {
@@ -186,7 +186,7 @@ fn rm(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot remove file".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 fn mk_dir(request: ApiRequest) -> ApiResponse {
@@ -201,7 +201,7 @@ fn mk_dir(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot create directory".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 fn rm_dir(request: ApiRequest) -> ApiResponse {
@@ -216,5 +216,5 @@ fn rm_dir(request: ApiRequest) -> ApiResponse {
         return ApiResponse::err("Cannot remove directory".to_string());
     }
 
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }

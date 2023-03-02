@@ -16,23 +16,23 @@ pub fn call(request: ApiRequest) -> ApiResponse {
 
 pub fn pid() -> ApiResponse {
     let pid = std::process::id();
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
             "pid": pid,
-    }));
+    }))
 }
 
 pub fn cwd() -> ApiResponse {
     let cwd = std::env::current_dir().unwrap();
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
             "cwd": cwd,
-    }));
+    }))
 }
 
 pub fn env() -> ApiResponse {
     let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
             "env": env,
-    }));
+    }))
 }
 
 #[derive(Deserialize)]
@@ -50,7 +50,7 @@ pub fn ch_dir(request: ApiRequest) -> ApiResponse {
     if result.is_err() {
         return ApiResponse::err("Failed to change directory".to_string());
     }
-    return ApiResponse::ok(json!({}));
+    ApiResponse::ok(json!({}))
 }
 
 pub fn exit() -> ! {
@@ -95,9 +95,9 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     }
     let output = output_result.unwrap();
 
-    return ApiResponse::ok(json!({
+    ApiResponse::ok(json!({
         "status": output.status.code(),
         "stdout": String::from_utf8(output.stdout).unwrap(),
         "stderr": String::from_utf8(output.stderr).unwrap(),
-    }));
+    }))
 }

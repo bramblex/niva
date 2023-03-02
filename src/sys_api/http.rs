@@ -62,5 +62,5 @@ pub fn request_method(request: ApiRequest) -> ApiResponse {
         }));
     }
 
-    return ApiResponse::err("request error".to_string());
+    ApiResponse::err("request error".to_string())
 }

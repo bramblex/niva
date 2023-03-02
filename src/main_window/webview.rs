@@ -4,9 +4,9 @@ use wry::{
     webview::{WebView, WebViewBuilder},
 };
 
-static PRELOAD_JS: &'static str = include_str!("./preload.js");
+static PRELOAD_JS: &str = include_str!("./preload.js");
 
-pub fn create<F>(entry_url: &String, config: &Config, window: Window, ipc_handler: F) -> WebView
+pub fn create<F>(entry_url: String, config: &Config, window: Window, ipc_handler: F) -> WebView
 where
     F: Fn(&Window, String) + 'static,
 {
@@ -25,15 +25,15 @@ where
 
     let prefix = entry_url.clone();
     webview_builder = webview_builder.with_navigation_handler(move |url| {
-        return url.starts_with(&prefix);
+        url.starts_with(&prefix)
     });
 
     let webview = webview_builder
         .with_ipc_handler(ipc_handler)
-        .with_url(entry_url)
+        .with_url(&entry_url)
         .unwrap()
         .build()
         .unwrap();
 
-    return webview;
+    webview
 }

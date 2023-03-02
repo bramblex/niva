@@ -32,7 +32,7 @@ pub fn handle(
 		// TODO: Send other events to webview
     match event {
         Event::UserEvent(response) => {
-            send_callback(&main_webview_warper, response)
+            send_callback(main_webview_warper, response)
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,

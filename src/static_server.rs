@@ -8,19 +8,16 @@ use std::{
 
 fn get_tcp_listener() -> Result<(TcpListener, u16)> {
     for port in 1025..65535 {
-        match TcpListener::bind(("127.0.0.1", port)) {
-            Ok(l) => {
-                return Ok((l, port));
-            }
-            _ => {}
+        if let Ok(l) = TcpListener::bind(("127.0.0.1", port)) {
+            return Ok((l, port));
         }
     }
-    return Err(Error::new(ErrorKind::Other, "No available port to listen"));
+    Err(Error::new(ErrorKind::Other, "No available port to listen"))
 }
 
 pub fn start(work_dir: &Path, config: &Config, thread_pool: &Arc<Mutex<ThreadPool>>) -> String {
     let entry = config.entry.clone().unwrap_or("index.html".to_string());
-    let root_dir = work_dir.to_path_buf().clone();
+    let root_dir = work_dir.to_path_buf();
 
     let (listener, port) = get_tcp_listener().unwrap();
     let thread_pool = thread_pool.clone();
@@ -36,7 +33,7 @@ pub fn start(work_dir: &Path, config: &Config, thread_pool: &Arc<Mutex<ThreadPoo
                         let file_path = if request_path == "/" {
                             root_dir.join(entry)
                         } else {
-                            root_dir.join(request_path.strip_prefix("/").unwrap())
+                            root_dir.join(request_path.strip_prefix('/').unwrap())
                         };
                         let file_result = std::fs::read(&file_path);
                         if file_result.is_err() {
@@ -55,14 +52,14 @@ pub fn start(work_dir: &Path, config: &Config, thread_pool: &Arc<Mutex<ThreadPoo
 
     let entry_url = format!("http://127.0.0.1:{port}");
     println!("Server started at {}", entry_url);
-    return entry_url;
+    entry_url
 }
 
 fn get_request_path(mut stream: &mut TcpStream) -> String {
     let buf_reader = std::io::BufReader::new(&mut stream);
     let request_line = buf_reader.lines().next().unwrap().unwrap();
-    let request_path = request_line.split(" ").collect::<Vec<&str>>()[1];
-    return request_path.to_string();
+    let request_path = request_line.split(' ').collect::<Vec<&str>>()[1];
+    request_path.to_string()
 }
 
 fn write_404_response(stream: &mut TcpStream) {
@@ -84,7 +81,7 @@ fn write_response(stream: &mut TcpStream, file_path: &Path, content: Vec<u8>) {
     buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
     buf.extend_from_slice(format!("Content-Length: {len}\r\n").as_bytes());
 
-    let mime_type = mime_guess::from_path(&file_path)
+    let mime_type = mime_guess::from_path(file_path)
         .first()
         .unwrap_or(mime_guess::mime::TEXT_PLAIN)
         .to_string();
