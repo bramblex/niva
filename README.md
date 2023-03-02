@@ -1,7 +1,4 @@
 # Tauri Lite
-一个基于 Tauri 跨端 Webview wry 项目的快速开发框架。
-支持 Mac 、Linux 和 Windows。
-
 ## API
 ### File System
 [*] stat(path) -> Stat
