@@ -14,3 +14,7 @@ hyper = { version = "1.0.0-rc.2", features = ["server", "http-body-util", "http1
 http-body-util = "0.1.0-rc.2"
 bytes = "1.4.0"
 mime_guess = "2.0.4"
+once_cell = "1.17.1"
+reqwest = { version = "0.11.14", features = ["serde_json"] }
+os_info = "3.6.0"
+directories = "4.0.1"

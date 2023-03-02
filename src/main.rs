@@ -1,6 +1,7 @@
 mod config;
 mod server;
 mod window;
+pub mod api;
 
 fn get_work_dir() -> std::path::PathBuf {
     let cwd = std::env::current_dir().unwrap();
@@ -32,6 +33,8 @@ fn listen_available_port() -> Option<(std::net::TcpListener, String)> {
 fn main() {
     // 获取工作目录
     let work_dir = get_work_dir();
+    std::env::set_current_dir(&work_dir).unwrap();
+
     println!("work_dir: {:?}", work_dir);
 
     // 获取配置文件路径

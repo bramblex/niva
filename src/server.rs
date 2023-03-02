@@ -3,17 +3,14 @@ use http_body_util::{BodyExt, Full};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
-use serde::{Serialize, Deserialize};
 use std::convert::Infallible;
 use tokio::fs;
 use tokio::net::TcpListener;
 
+pub use super::api;
+
 fn str_response(body: &str) -> Response<Full<Bytes>> {
     return Response::new(Full::new(Bytes::from(body.to_string())));
-}
-
-fn string_response(body: String) -> Response<Full<Bytes>> {
-    return Response::new(Full::new(Bytes::from(body)));
 }
 
 fn error_response(status_code: u16, message: String) -> Response<Full<Bytes>> {
@@ -55,41 +52,17 @@ async fn handle_static_file(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ApiRequest {
-    method: String,
-    data: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ApiResponse {
-    code: u16,
-    message: Option<String>,
-    data: serde_json::Value,
-}
-
 async fn handle_api_call(
     req: Request<hyper::body::Incoming>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let body_data = req.into_body().collect().await;
     let buffer = body_data.unwrap().to_bytes().to_vec();
     let json_str = String::from_utf8(buffer).unwrap();
-    let api_request: ApiRequest = serde_json::from_str(json_str.as_str()).unwrap();
 
-    if api_request.method == "ls" {
-        let dir = std::fs::read_dir("./").unwrap();
-        let mut result = String::new();
-        dir.for_each(|entry| {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            let file_name = path.file_name().unwrap().to_str().unwrap();
-            result.push_str(file_name);
-            result.push_str("\n");
-        });
-        return Ok(string_response(result));
-    }
-
-    return Ok(string_response(api_request.method + "is called"));
+    return Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(api::call(json_str).await)))
+        .unwrap());
 }
 
 async fn handle_request(

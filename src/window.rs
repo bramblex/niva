@@ -1,10 +1,14 @@
 use super::config::Config;
 
+include!(concat!(env!("OUT_DIR"), "/preload.rs"));
+
 pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
     use wry::{
         application::{
             event::{Event, StartCause, WindowEvent},
             event_loop::{ControlFlow, EventLoop},
+            menu::MenuBar,
+            menu::MenuItem,
             window::WindowBuilder,
         },
         webview::WebViewBuilder,
@@ -50,6 +54,15 @@ pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
         window_builder = window_builder.with_always_on_bottom(config.always_on_bottom.unwrap());
     }
 
+    let mut menu = MenuBar::new();
+    let mut file_menu = MenuBar::new();
+    file_menu.add_native_item(MenuItem::Cut);
+    file_menu.add_native_item(MenuItem::Copy);
+    file_menu.add_native_item(MenuItem::Paste);
+    file_menu.add_native_item(MenuItem::Quit);
+    menu.add_submenu("File", true, file_menu);
+    window_builder = window_builder.with_menu(menu);
+
     let window = window_builder.build(&event_loop).unwrap();
 
     // webview config
@@ -64,6 +77,7 @@ pub fn open_main_window(entry_url: &String, config: &Config) -> ! {
         webview_builder = webview_builder.with_devtools(config.devtools.unwrap());
     }
 
+    webview_builder = webview_builder.with_initialization_script(PRELOAD_JS);
     webview_builder = webview_builder.with_clipboard(true);
 
     let _webview = webview_builder
