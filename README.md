@@ -1,6 +1,8 @@
 # Tauri Lite
 一个基于 Tauri WRY 跨端 Webview 库的轻量级的跨端应用开发框架。
 
+![screenshot](https://github.com/bramblex/tauri-lite/raw/main/example/screenshot.png)
+
 ## 目标
 * 跨平台 - 支持 Macos, Windows。
 * 轻量级 
