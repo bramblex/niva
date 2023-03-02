@@ -12,6 +12,16 @@
   - 可执行文件 < 3M (Tauri 6M+, Electron 100M+)
 - 开发效率 - 与 Web 开发一致，不需要额外学习 NodeJS，Electron 或者 Rust。
 
+## TODO
+- [ ] 用户自定义菜单栏 & 快捷键支持
+- [ ] 窗口功能支持
+  - [ ] 窗口事件支持
+  - [ ] 窗口操作 API 支持
+  - [ ] 窗口 icon 支持
+- [ ] 项目打包脚本支持
+  - [ ] MacOS
+  - [ ] Windows
+
 ## Usage
 
 1. 下载或者编译 Tauri Lite.
@@ -204,6 +214,9 @@ interface ExecOptions {
 }
 
 interface ExecResult {
+  pid: number, // 进程 id(仅在 detached 为 true 时有效)
+
+  // 以下字段仅在 detached 为 false 时有效
   status: number, // 进程退出状态
   stdout: string, // 标准输出
   stderr: string, // 错误输出

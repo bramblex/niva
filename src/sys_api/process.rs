@@ -94,7 +94,11 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     if options.detached.unwrap_or(false) {
         let result = command.spawn();
         match result {
-            Ok(_) => return ApiResponse::ok(json!({})),
+            Ok(child) => {
+                return ApiResponse::ok(json!({
+                    "pid": child.id(),
+                }))
+            }
             Err(_) => return ApiResponse::err("Failed to exec command".to_string()),
         }
     }
