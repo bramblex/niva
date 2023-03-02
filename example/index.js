@@ -15,7 +15,13 @@ const testCases = {
 		read: [null, {}, { path: 'index.js' }, { path: 'not-exists' }, { path: '/tmp/test.txt' }],
 		write: [null, {}, { path: '/tmp/test.txt', content: new Date().toLocaleString() }, { path: 'not-exists', content: '' }],
 
+		mv: [null, {}, { from: 'index.js', to: 'index.js.bak' }, { from: 'not-exists', to: 'index.js.bak' }, { from: 'index.js', to: 'not-exists' }],
+		cp: [null, {}, { from: 'index.js', to: 'index.js.bak' }, { from: 'not-exists', to: 'index.js.bak' }, { from: 'index.js', to: 'not-exists' }],
+		rm: [null, {}, { path: 'index.js.bak' }, { path: 'not-exists' }],
+
 		ls: [null, {}, { path: '/' }, { path: '../' }, { path: 'not-exists' }],
+		mkDir: [null, {}, { path: '/tmp/test' }, { path: 'not-exists' }],
+		rmDir: [null, {}, { path: '/tmp/test' }, { path: 'not-exists' }],
 	},
 	http: {
 		request: [null, {}, { method: 'GET', url: 'https://tauri.studio' }, { method: 'GET', url: 'https://tauri.studio/not-exists' }],

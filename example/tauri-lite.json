@@ -3,8 +3,8 @@
 	"title": "The Last of Us",
 	"entry": "index.html",
 	"size": {
-		"width": 600,
-		"height":600 
+		"width": 1200,
+		"height": 1200
 	},
 	"always_on_top": true,
 	"devtools": true

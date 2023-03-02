@@ -138,8 +138,8 @@ async fn stat(request: ApiRequest) -> ApiResponse {
 
 #[derive(Deserialize)]
 struct MvOptions {
-    pub path: String,
-    pub newPath: String,
+    pub from: String,
+    pub to: String,
 }
 
 async fn mv(request: ApiRequest) -> ApiResponse {
@@ -149,7 +149,7 @@ async fn mv(request: ApiRequest) -> ApiResponse {
     }
     let options = data_result.unwrap();
 
-    let mv_result = std::fs::rename(options.path, options.newPath);
+    let mv_result = std::fs::rename(options.from, options.to);
 
     if mv_result.is_err() {
         return ApiResponse::err("Cannot move file".to_string());
@@ -165,7 +165,7 @@ async fn cp(request: ApiRequest) -> ApiResponse {
     }
     let options = data_result.unwrap();
 
-    let cp_result = std::fs::copy(options.path, options.newPath);
+    let cp_result = std::fs::copy(options.from, options.to);
 
     if cp_result.is_err() {
         return ApiResponse::err("Cannot copy file".to_string());
