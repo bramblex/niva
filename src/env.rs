@@ -117,10 +117,8 @@ fn get_work_dir() -> Result<PathBuf> {
 
 fn get_config(work_dir: &Path) -> Result<Config> {
     let config_path = work_dir.join("tauri-lite.json");
-    let content = std::fs::read_to_string(config_path).unwrap_or(format!(
-        "{{ \"name\": {:?} }}",
-        work_dir.file_stem().unwrap()
-    ));
+    let content =
+        std::fs::read_to_string(config_path).unwrap_or("{ \"name\": \"tauri-lite\" }".to_owned());
 
     let config = serde_json::from_str::<Config>(&content)?;
     Ok(config)
