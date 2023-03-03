@@ -2,8 +2,10 @@ use super::{event::EventContent, menu};
 use crate::env::Config;
 use wry::application::{
     event_loop::EventLoop,
-    window::{Fullscreen, Theme, Window, WindowBuilder},
+    window::{Fullscreen, Icon, Theme, Window, WindowBuilder},
 };
+
+static DEFAULT_ICON: &[u8] = include_bytes!("../assets/icon.bitmap");
 
 pub fn create(config: &Config, event_loop: &EventLoop<EventContent>) -> Window {
     // window config
@@ -12,9 +14,23 @@ pub fn create(config: &Config, event_loop: &EventLoop<EventContent>) -> Window {
     let title = config.title.clone().unwrap_or(config.name.clone());
     window_builder = window_builder.with_title(title);
 
-    if let Some(_icon_path) = &config.icon {
-			// TODO: implement icon
-    }
+    let icon = (|| {
+        if let Some(window_icon) = &config.window_icon {
+            let result = std::fs::read(window_icon);
+            if let Ok(data) = result {
+                let icon = Icon::from_rgba(data, 32, 32);
+                if let Ok(icon) = icon {
+                    return Some(icon);
+                }
+            }
+        }
+        let icon = Icon::from_rgba(DEFAULT_ICON.to_vec(), 32, 32);
+        if let Ok(icon) = icon {
+            return Some(icon);
+        }
+        return None;
+    })();
+    window_builder = window_builder.with_window_icon(icon);
 
     if let Some(theme_str) = &config.theme {
         match theme_str.as_str() {

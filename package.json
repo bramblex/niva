@@ -1,0 +1,10 @@
+{
+  "name": "tauri-lite",
+  "private": true,
+  "version": "1.0.0",
+  "repository": "https://github.com/bramblex/tauri-lite.git",
+  "author": "brambles <qjnight@gmail.com>",
+  "dependencies": {
+    "sharp": "^0.31.3"
+  }
+}

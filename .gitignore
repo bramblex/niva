@@ -1,2 +1,3 @@
 /target
 /example/tauri-lite.exe*
+/node_modules

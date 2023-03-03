@@ -4,7 +4,7 @@ use wry::{
     webview::{WebView, WebViewBuilder, FileDropEvent},
 };
 
-static PRELOAD_JS: &str = include_str!("./preload.js");
+static PRELOAD_JS: &str = include_str!("../assets/preload.js");
 
 pub fn create<IpcHandler, FileDropHandler>(
     entry_url: String, 
