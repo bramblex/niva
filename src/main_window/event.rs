@@ -34,21 +34,6 @@ pub fn handle_window_event(
     control_flow: &mut ControlFlow,
 ) {
     match event {
-        // WindowEvent::Resized(size) => send_event(
-        //     main_webview_warper,
-        //     "window.resize",
-        //     json!({ "width": size.width, "height": size.height }),
-        // ),
-        // WindowEvent::Moved(position) => send_event(
-        //     main_webview_warper,
-        //     "window.move",
-        //     json!({ "x": position.x, "y": position.y }),
-        // ),
-        WindowEvent::ReceivedImeText(text) => send_event(
-            main_webview_warper,
-            "window.receivedImeText",
-            json!({ "text": text }),
-        ),
         WindowEvent::Focused(focused) => send_event(
             main_webview_warper,
             "window.focused",
@@ -63,9 +48,6 @@ pub fn handle_window_event(
                 _ => "",
             }}),
         ),
-        WindowEvent::DecorationsClick => {
-            send_event(main_webview_warper, "window.decorationsClick", json!({}))
-        }
         WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
         _ => (),
     }

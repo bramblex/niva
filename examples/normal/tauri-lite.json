@@ -5,5 +5,9 @@
   "entry": "index.html",
   "size": [1200, 1200],
   "devtools": true,
-  "always_on_top": true
+  "always_on_top": true,
+  "menu": [
+    ["hello", [["world", 123], "---", ["hello", 456]]],
+    ["world", []]
+  ]
 }

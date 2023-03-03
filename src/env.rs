@@ -24,15 +24,15 @@ impl Position {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct MenuItem {
-    pub id: u32,
-    pub label: String,
-    pub accelerator: Option<(String, String)>,
-    pub submenu: Option<Vec<MenuItem>>,
+#[serde(untagged)]
+pub enum MenuItemConfig {
+    NativeItem(String),
+    MenuItem(String, u16),
+    SubMenu(String, Vec<MenuItemConfig>),
 }
 
 #[derive(Deserialize, Debug)]
-pub struct MenuConfig(Vec<MenuItem>);
+pub struct MenuConfig(pub Vec<MenuItemConfig>);
 
 #[derive(Deserialize, Debug)]
 pub struct Config {

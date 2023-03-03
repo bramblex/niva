@@ -9,10 +9,7 @@ use wry::{
     webview::{FileDropEvent, WebView},
 };
 
-use crate::{
-    env::Config,
-    thread_pool::{self, ThreadPool},
-};
+use crate::{env::Config, thread_pool::ThreadPool};
 use std::sync::{Arc, Mutex};
 
 use self::event::EventContent;
@@ -59,7 +56,7 @@ pub fn open(
                         ))
                         .unwrap();
                 }
-                FileDropEvent::Hovered { paths, ..} => {
+                FileDropEvent::Hovered { paths, .. } => {
                     event_loop_proxy2
                         .send_event(EventContent::Event(
                             "fileDrop.hover".to_string(),
