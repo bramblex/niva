@@ -4,16 +4,16 @@ use serde_json::{json, Value};
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
-        "info" => platform(),
-        "dirs" => dirs(),
-        _ => ApiResponse::err("Method not found".to_string()),
+        "info" => platform(request),
+        "dirs" => dirs(request),
+        _ => ApiResponse::err(request.callback_id,"Method not found"),
     };
 }
 
-fn platform() -> ApiResponse {
+fn platform(request: ApiRequest) -> ApiResponse {
     let info = os_info::get();
 
-    return ApiResponse::ok(json!({
+    return ApiResponse::ok(request.callback_id,json!({
         "os": info.os_type().to_string(),
         "arch": std::env::consts::ARCH.to_string(),
         "version": info.version().to_string(),
@@ -31,10 +31,10 @@ fn unwrap_path_opt(path_result: Option<&std::path::Path>) -> Value {
     return Value::String(path_result.unwrap().to_str().unwrap_or("").to_string());
 }
 
-fn dirs() -> ApiResponse {
+fn dirs(request: ApiRequest) -> ApiResponse {
     let user_dirs = UserDirs::new().unwrap();
 
-    return ApiResponse::ok(json!({
+    return ApiResponse::ok(request.callback_id,json!({
         "home": unwrap_path(user_dirs.home_dir()),
                 "temp": unwrap_path(&std::env::temp_dir()),
         "audio": unwrap_path_opt(user_dirs.audio_dir()),

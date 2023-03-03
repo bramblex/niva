@@ -2,14 +2,20 @@ mod event;
 mod menu;
 mod webview;
 mod window;
+mod window_api;
 
 use serde_json::json;
 use wry::{
     application::event_loop::EventLoop,
+    http::{request, response},
     webview::{FileDropEvent, WebView},
 };
 
-use crate::{env::Config, thread_pool::ThreadPool};
+use crate::{
+    env::Config,
+    sys_api::{ApiRequest, ApiResponse},
+    thread_pool::ThreadPool,
+};
 use std::sync::{Arc, Mutex};
 
 use self::event::EventContent;
@@ -22,7 +28,7 @@ pub fn open(
     entry_url: String,
     config: &Config,
     thread_pool: Arc<Mutex<ThreadPool>>,
-    api_call: fn(String) -> String,
+    api_call: fn(ApiRequest) -> ApiResponse,
 ) -> ! {
     let event_loop = EventLoop::<EventContent>::with_user_event();
 
@@ -35,13 +41,37 @@ pub fn open(
         entry_url,
         config,
         main_window,
-        move |_, request_str| {
-            // TODO: need to inject window apis
+        move |window, request_str| {
+            let request_result = serde_json::from_str::<ApiRequest>(request_str.as_str());
+            if request_result.is_err() {
+                event_loop_proxy
+                    .send_event(EventContent::new(
+                        "ipc.error",
+                        json!({
+                            "type": "ApiRequest parse error",
+                            "reason": request_result.err().unwrap().to_string(),
+                        }),
+                    ))
+                    .unwrap();
+                return;
+            }
+            let request = request_result.unwrap();
+
+            if request.namespace == "window" {
+                event_loop_proxy
+                    .send_event(EventContent::new(
+                        "ipc.callback",
+                        window_api::call(window, request),
+                    ))
+                    .unwrap();
+                return;
+            }
+
             let event_loop_proxy = event_loop_proxy.clone();
             thread_pool.lock().unwrap().run(move || {
-                let response_str = api_call(request_str.to_string());
+                let response = api_call(request);
                 event_loop_proxy
-                    .send_event(EventContent::Callback(response_str))
+                    .send_event(EventContent::new("ipc.callback", response))
                     .unwrap();
             });
         },
@@ -50,26 +80,23 @@ pub fn open(
             match event {
                 FileDropEvent::Dropped { paths, .. } => {
                     event_loop_proxy2
-                        .send_event(EventContent::Event(
-                            "fileDrop.drop".to_string(),
+                        .send_event(EventContent::new(
+                            "fileDrop.drop",
                             json!({ "paths": paths }),
                         ))
                         .unwrap();
                 }
                 FileDropEvent::Hovered { paths, .. } => {
                     event_loop_proxy2
-                        .send_event(EventContent::Event(
-                            "fileDrop.hover".to_string(),
+                        .send_event(EventContent::new(
+                            "fileDrop.hover",
                             json!({ "paths": paths }),
                         ))
                         .unwrap();
                 }
                 FileDropEvent::Cancelled => {
                     event_loop_proxy2
-                        .send_event(EventContent::Event(
-                            "fileDrop.cancel".to_string(),
-                            json!({}),
-                        ))
+                        .send_event(EventContent::new("fileDrop.cancel", json!({})))
                         .unwrap();
                 }
                 _ => (),

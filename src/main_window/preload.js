@@ -5,6 +5,51 @@
 
   var TauriLite = {};
 
+  // === Event ===
+  var eventListeners = {};
+
+  function addEventListener(event, listener) {
+    if (!eventListeners[event]) {
+      eventListeners[event] = [];
+    }
+    eventListeners[event].push(listener);
+  }
+
+  function removeEventListener(event, listener) {
+    if (!eventListeners[event]) {
+      return;
+    }
+    var listeners = eventListeners[event];
+    eventListeners = [];
+    for (var i = 0; i < listeners.length; i++) {
+      if (listeners[i] !== listener) {
+        eventListeners.push(listeners[i]);
+      }
+    }
+  }
+
+  function emit(event, data) {
+    setTimeout(function () {
+      var keys = [event, event.split('.')[0] + '.*', '*'];
+
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+
+        if (eventListeners[key]) {
+          var listeners = eventListeners[key];
+          for (var j = 0; j < listeners.length; j++) {
+            listeners[j](event, data);
+          }
+        }
+      }
+
+    }, 0);
+  }
+
+  TauriLite.addEventListener = addEventListener;
+  TauriLite.removeEventListener = removeEventListener;
+  TauriLite.__emit__ = emit;
+
   // === API Call ===
   var getNextCallbackId = (function () {
     var callbackId = 0;
@@ -75,50 +120,9 @@
   };
   TauriLite.__resolve__ = resolve;
 
-  // === Event ===
-  var eventListeners = {};
-
-  function addEventListener(event, listener) {
-    if (!eventListeners[event]) {
-      eventListeners[event] = [];
-    }
-    eventListeners[event].push(listener);
-  }
-
-  function removeEventListener(event, listener) {
-    if (!eventListeners[event]) {
-      return;
-    }
-    var listeners = eventListeners[event];
-    eventListeners = [];
-    for (var i = 0; i < listeners.length; i++) {
-      if (listeners[i] !== listener) {
-        eventListeners.push(listeners[i]);
-      }
-    }
-  }
-
-  function emit(event, data) {
-    setTimeout(function () {
-      var keys = [event, event.split('.')[0] + '.*', '*'];
-
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-
-        if (eventListeners[key]) {
-          var listeners = eventListeners[key];
-          for (var j = 0; j < listeners.length; j++) {
-            listeners[j](event, data);
-          }
-        }
-      }
-
-    }, 0);
-  }
-
-  TauriLite.addEventListener = addEventListener;
-  TauriLite.removeEventListener = removeEventListener;
-  TauriLite.__emit__ = emit;
+  TauriLite.addEventListener('ipc.callback', function (event, response) {
+    TauriLite.__resolve__(response);
+  });
 
   // === Tauri API ===
   window.TauriLite = TauriLite;

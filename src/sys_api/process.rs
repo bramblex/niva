@@ -4,35 +4,44 @@ use serde_json::json;
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
-        "pid" => pid(),
-        "cwd" => cwd(),
+        "pid" => pid(request),
+        "cwd" => cwd(request),
         "chDir" => ch_dir(request),
-        "env" => env(),
-        "exit" => exit(),
+        "env" => env(request),
+        "exit" => exit(request),
         "exec" => exec(request),
-        _ => ApiResponse::err("Method not found".to_string()),
+        _ => ApiResponse::err(request.callback_id,"Method not found".to_string()),
     };
 }
 
-pub fn pid() -> ApiResponse {
+pub fn pid(request: ApiRequest) -> ApiResponse {
     let pid = std::process::id();
-    ApiResponse::ok(json!({
-            "pid": pid,
-    }))
+    ApiResponse::ok(
+        request.callback_id,
+        json!({
+                "pid": pid,
+        }),
+    )
 }
 
-pub fn cwd() -> ApiResponse {
+pub fn cwd(request: ApiRequest) -> ApiResponse {
     let cwd = std::env::current_dir().unwrap();
-    ApiResponse::ok(json!({
-            "cwd": cwd,
-    }))
+    ApiResponse::ok(
+        request.callback_id,
+        json!({
+                "cwd": cwd,
+        }),
+    )
 }
 
-pub fn env() -> ApiResponse {
+pub fn env(request: ApiRequest) -> ApiResponse {
     let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
-    ApiResponse::ok(json!({
-            "env": env,
-    }))
+    ApiResponse::ok(
+        request.callback_id,
+        json!({
+                "env": env,
+        }),
+    )
 }
 
 #[derive(Deserialize)]
@@ -43,17 +52,17 @@ struct ChDirOptions {
 pub fn ch_dir(request: ApiRequest) -> ApiResponse {
     let options_result = serde_json::from_value::<ChDirOptions>(request.data);
     if options_result.is_err() {
-        return ApiResponse::err("Invalid options".to_string());
+        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
     }
     let path = options_result.unwrap().path;
     let result = std::env::set_current_dir(path);
     if result.is_err() {
-        return ApiResponse::err("Failed to change directory".to_string());
+        return ApiResponse::err(request.callback_id,"Failed to change directory".to_string());
     }
-    ApiResponse::ok(json!({}))
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
-pub fn exit() -> ! {
+pub fn exit(request: ApiRequest) -> ! {
     std::process::exit(0);
 }
 
@@ -70,7 +79,7 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     // 执行命令
     let options_result = serde_json::from_value::<ExecOptions>(request.data);
     if options_result.is_err() {
-        return ApiResponse::err("Invalid options".to_string());
+        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
     }
     let options = options_result.unwrap();
     let mut command = std::process::Command::new(options.command);
@@ -95,23 +104,29 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
         let result = command.spawn();
         match result {
             Ok(child) => {
-                return ApiResponse::ok(json!({
-                    "pid": child.id(),
-                }))
+                return ApiResponse::ok(
+                    request.callback_id,
+                    json!({
+                        "pid": child.id(),
+                    }),
+                )
             }
-            Err(_) => return ApiResponse::err("Failed to exec command".to_string()),
+            Err(_) => return ApiResponse::err(request.callback_id,"Failed to exec command".to_string()),
         }
     }
 
     let output_result = command.output();
     if output_result.is_err() {
-        return ApiResponse::err("Failed to exec command".to_string());
+        return ApiResponse::err(request.callback_id,"Failed to exec command".to_string());
     }
     let output = output_result.unwrap();
 
-    ApiResponse::ok(json!({
-        "status": output.status.code(),
-        "stdout": String::from_utf8(output.stdout).unwrap(),
-        "stderr": String::from_utf8(output.stderr).unwrap(),
-    }))
+    ApiResponse::ok(
+        request.callback_id,
+        json!({
+            "status": output.status.code(),
+            "stdout": String::from_utf8(output.stdout).unwrap(),
+            "stderr": String::from_utf8(output.stderr).unwrap(),
+        }),
+    )
 }

@@ -84,3 +84,7 @@ TauriLite.addEventListener('*', (event, data) => {
 document.getElementById('title').addEventListener('drop', (e) => {
   alert('drop');
 })
+
+document.getElementById('red-block').addEventListener('mousedown', (e) => {
+  TauriLite.api.window.dragWindow();
+})

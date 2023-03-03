@@ -8,19 +8,19 @@ use wry::application::{
 use super::WebviewWarper;
 
 #[derive(Debug)]
-pub enum EventContent {
-    Event(String, serde_json::Value),
-    Callback(String),
+pub struct EventContent(pub String, pub serde_json::Value);
+
+impl EventContent  {
+    pub fn new<E, D>(event: E, data: D) -> Self where E: Into<String>, D: Into<serde_json::Value>{
+        Self(event.into(), data.into())
+    }
 }
 
-fn send_callback(main_webview_warper: &WebviewWarper, response: String) {
-    main_webview_warper
-        .0
-        .evaluate_script(&format!("TauriLite.__resolve__({response})"))
-        .unwrap();
-}
-
-fn send_event(main_webview_warper: &WebviewWarper, event: &str, data: serde_json::Value) {
+fn send_event<S>(main_webview_warper: &WebviewWarper, event: S, data: serde_json::Value)
+where
+    S: Into<String>,
+{
+    let event = event.into();
     let data_str = serde_json::to_string::<serde_json::Value>(&data).unwrap();
     main_webview_warper
         .0
@@ -38,6 +38,11 @@ pub fn handle_window_event(
             main_webview_warper,
             "window.focused",
             json!({ "focused": focused }),
+        ),
+        WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => send_event(
+            main_webview_warper,
+            "window.scaleFactorChanged",
+            json!({ "scaleFactor": scale_factor, "newInnerSize": new_inner_size }),
         ),
         WindowEvent::ThemeChanged(theme) => send_event(
             main_webview_warper,
@@ -74,10 +79,7 @@ pub fn handle(
             json!({ "menu_id": menu_id.0 }),
         ),
 
-        Event::UserEvent(content) => match content {
-            EventContent::Callback(response) => send_callback(main_webview_warper, response),
-            EventContent::Event(event, data) => send_event(main_webview_warper, &event, data),
-        },
+        Event::UserEvent(EventContent(event, data)) => send_event(main_webview_warper, event, data),
 
         _ => (),
     }
