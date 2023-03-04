@@ -57,23 +57,25 @@ pub fn open(
             }
             let request = request_result.unwrap();
 
-            if request.namespace == "window" {
-                event_loop_proxy
-                    .send_event(EventContent::new(
-                        "ipc.callback",
-                        window_api::call(window, request),
-                    ))
-                    .unwrap();
-                return;
+            match request.namespace.as_str() {
+                "window" => {
+                    event_loop_proxy
+                        .send_event(EventContent::new(
+                            "ipc.callback",
+                            window_api::call(window, request),
+                        ))
+                        .unwrap();
+                }
+                _ => {
+                    let event_loop_proxy = event_loop_proxy.clone();
+                    thread_pool.lock().unwrap().run(move || {
+                        let response = api_call(request);
+                        event_loop_proxy
+                            .send_event(EventContent::new("ipc.callback", response))
+                            .unwrap();
+                    });
+                }
             }
-
-            let event_loop_proxy = event_loop_proxy.clone();
-            thread_pool.lock().unwrap().run(move || {
-                let response = api_call(request);
-                event_loop_proxy
-                    .send_event(EventContent::new("ipc.callback", response))
-                    .unwrap();
-            });
         },
         move |_, event| {
             let event_loop_proxy2 = event_loop_proxy2.clone();

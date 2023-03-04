@@ -13,7 +13,10 @@ const testCases = {
     stat: [{ path: 'index.js' }, { path: '/' }],
     exists: [{ path: 'index.js' }, { path: '/' }, { path: 'not-exists' }],
 
-    read: [{ path: 'index.js' }, { path: '/tmp/text2.txt' }, { path: '/tmp/test.txt' }],
+    read: [{ path: 'index.js' }, { path: '/tmp/text2.txt' }, { path: '/tmp/test.txt' }, {
+      path: 'logo.png',
+      encode: 'base64',
+    }],
     write: [{ path: '/tmp/test.txt', content: new Date().toLocaleString() }],
 
     mv: [{ from: '/tmp/test.txt', to: '/tmp/test2.txt' }, { from: '/tmp/test2.txt', to: '/tmp/test3.txt' }],
@@ -87,4 +90,11 @@ document.getElementById('title').addEventListener('drop', (e) => {
 
 document.getElementById('red-block').addEventListener('mousedown', (e) => {
   TauriLite.api.window.dragWindow();
+})
+
+document.getElementById('load-image').addEventListener('click', async (e) => {
+  const { content } = await TauriLite.api.fs.read({ path: 'logo.png', encode: 'base64' })
+  const image = document.getElementById('image');
+  image.src = `data:image/png;base64,${content}`;
+  TauriLite.api.fs.write({ path: '/tmp/logo.png', content: content, encode: 'base64' });
 })

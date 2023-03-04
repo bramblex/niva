@@ -1,4 +1,4 @@
-use std::time::UNIX_EPOCH;
+use std::{io::Write, time::UNIX_EPOCH};
 
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
@@ -58,6 +58,7 @@ fn ls(request: ApiRequest) -> ApiResponse {
 #[derive(Deserialize)]
 struct ReadOptions {
     pub path: String,
+    pub encode: Option<String>, // utf8, base64
 }
 
 fn read(request: ApiRequest) -> ApiResponse {
@@ -65,8 +66,16 @@ fn read(request: ApiRequest) -> ApiResponse {
     if data_result.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
-    let path = data_result.unwrap().path;
-    let content_result = std::fs::read_to_string(path);
+    let ReadOptions { path, encode } = data_result.unwrap();
+    let encode = encode.unwrap_or("utf8".to_string());
+    let content_result = match encode.as_str() {
+        "utf8" => std::fs::read_to_string(path),
+        "base64" => {
+            let content = std::fs::read(path).unwrap();
+            Ok(base64::encode(content))
+        }
+        _ => return ApiResponse::err(request.callback_id, "Invalid encode"),
+    };
 
     if content_result.is_err() {
         return ApiResponse::err(request.callback_id, "Cannot read file");
@@ -84,6 +93,7 @@ fn read(request: ApiRequest) -> ApiResponse {
 struct WriteOptions {
     pub path: String,
     pub content: String,
+    pub encode: Option<String>, // utf8, base64
 }
 
 fn write(request: ApiRequest) -> ApiResponse {
@@ -91,9 +101,23 @@ fn write(request: ApiRequest) -> ApiResponse {
     if data_result.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
-    let options = data_result.unwrap();
+    let WriteOptions {
+        path,
+        content,
+        encode,
+    } = data_result.unwrap();
 
-    let write_result = std::fs::write(options.path, options.content);
+    let write_result = match encode.unwrap_or("utf8".to_string()).as_str() {
+        "base64" => {
+            let engine = base64::engine::general_purpose::STANDARD;
+            let content = base64::decode(content).unwrap();
+            std::fs::write(path, content)
+        }
+        "utf8" =>{
+            std::fs::write(path, content)
+        },
+        _ => return ApiResponse::err(request.callback_id, "Invalid encode"),
+    };
 
     if write_result.is_err() {
         return ApiResponse::err(request.callback_id, "Cannot write file");

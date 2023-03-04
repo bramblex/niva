@@ -10,8 +10,12 @@ use super::WebviewWarper;
 #[derive(Debug)]
 pub struct EventContent(pub String, pub serde_json::Value);
 
-impl EventContent  {
-    pub fn new<E, D>(event: E, data: D) -> Self where E: Into<String>, D: Into<serde_json::Value>{
+impl EventContent {
+    pub fn new<E, D>(event: E, data: D) -> Self
+    where
+        E: Into<String>,
+        D: Into<serde_json::Value>,
+    {
         Self(event.into(), data.into())
     }
 }
@@ -39,7 +43,10 @@ pub fn handle_window_event(
             "window.focused",
             json!({ "focused": focused }),
         ),
-        WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => send_event(
+        WindowEvent::ScaleFactorChanged {
+            scale_factor,
+            new_inner_size,
+        } => send_event(
             main_webview_warper,
             "window.scaleFactorChanged",
             json!({ "scaleFactor": scale_factor, "newInnerSize": new_inner_size }),
@@ -79,7 +86,9 @@ pub fn handle(
             json!({ "menu_id": menu_id.0 }),
         ),
 
-        Event::UserEvent(EventContent(event, data)) => send_event(main_webview_warper, event, data),
+        Event::UserEvent(EventContent(event, data)) => {
+            send_event(main_webview_warper, event, data);
+        }
 
         _ => (),
     }

@@ -6,7 +6,7 @@ fn create_worker(receiver: Arc<Mutex<Receiver<Task>>>) -> thread::JoinHandle<()>
     std::thread::spawn(move || {
         loop {
             let job = receiver.lock().unwrap().recv();
-            // unlock receiver before job
+            // unlock receiver before job start
             if let Ok(job) = job {
                 job();
             }

@@ -5,15 +5,25 @@ version = "0.1.0"
 edition = "2021"
 
 [package.metadata.bundle]
-name="Tauri Lite"
-identifier="com.github.tauri-lite"
-version="0.1.0"
+name = "Tauri Lite"
+identifier = "com.github.tauri-lite"
+version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wry = { version = "0.27.0", default-features = false, features = ["devtools", "transparent", "fullscreen", "file-drop"] }
-ureq = { version = "2.6.2", default-features = false, features = ["native-tls", "gzip", "json"] }
+wry = { version = "0.27.0", default-features = false, features = [
+	"devtools",
+	"transparent",
+	"fullscreen",
+	"file-drop",
+] }
+ureq = { version = "2.6.2", default-features = false, features = [
+	"native-tls",
+	"gzip",
+	"json",
+] }
+base64 = { version = "0.21.0", features = ["alloc"] }
 native-tls = "0.2.11"
 
 serde = { version = "1.0.152", features = ["derive"] }
