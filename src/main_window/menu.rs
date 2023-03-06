@@ -24,7 +24,7 @@ pub fn create(config: &Config) -> Option<MenuBar> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        return None;
+        None
     }
 }
 
@@ -46,8 +46,8 @@ fn append_custom_menu(menu: &mut MenuBar, menu_item_config_list: &Vec<MenuItemCo
     }
 }
 
-fn append_native_item(menu: &mut MenuBar, label: &String) {
-    match label.as_str() {
+fn append_native_item(menu: &mut MenuBar, label: &str) {
+    match label {
         "---" => {
             menu.add_native_item(MenuItem::Separator);
         }
@@ -58,6 +58,7 @@ fn append_native_item(menu: &mut MenuBar, label: &String) {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn create_default_menu(config: &Config) -> (String, MenuBar) {
     let native_menu_name = config.title.clone().unwrap_or(config.name.clone());
     let mut native_menu = MenuBar::new();

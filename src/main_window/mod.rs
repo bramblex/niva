@@ -8,15 +8,15 @@ mod window_api;
 use serde_json::json;
 use wry::{
     application::event_loop::EventLoop,
-    webview::{FileDropEvent, WebView},
+    webview::{FileDropEvent, WebContext, WebView},
 };
 
 use crate::{
-    environment::{EnvironmentRef},
+    environment::EnvironmentRef,
     sys_api::{ApiRequest, ApiResponse},
-    thread_pool::ThreadPool,
+    thread_pool::{ThreadPoolRef},
 };
-use std::sync::{Arc, Mutex};
+
 
 use self::event::Content;
 
@@ -27,7 +27,7 @@ unsafe impl Sync for WebviewWarper {}
 pub fn open(
     env: EnvironmentRef,
     entry_url: String,
-    thread_pool: Arc<Mutex<ThreadPool>>,
+    thread_pool: ThreadPoolRef,
     api_call: fn(ApiRequest) -> ApiResponse,
 ) -> ! {
     let event_loop = EventLoop::<Content>::with_user_event();
@@ -37,8 +37,11 @@ pub fn open(
     let event_loop_proxy = event_loop.create_proxy();
     let event_loop_proxy2 = event_loop.create_proxy();
 
+    let mut web_context = WebContext::new(Some(env.data_dir.clone()));
+
     let main_webview = webview::create(
         env,
+        &mut web_context,
         entry_url,
         main_window,
         move |window, request_str| {

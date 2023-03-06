@@ -48,7 +48,7 @@ pub fn create(env: EnvironmentRef, event_loop: &EventLoop<Content>) -> Window {
             if let Ok(icon) = icon {
                 return Some(icon);
             }
-            return None;
+            None
         })();
         window_builder = window_builder.with_window_icon(icon);
     }

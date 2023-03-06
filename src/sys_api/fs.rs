@@ -255,5 +255,19 @@ fn rm_dir(request: ApiRequest) -> ApiResponse {
 
 #[cfg(target_os = "windows")]
 fn get_drives(request: ApiRequest) -> ApiResponse {
-    windows::Win32::Storage::FileSystem::GetLogicalDrives()
+    static LETTER: &[&str] = &[
+        "A:\\", "B:\\", "C:\\", "D:\\", "E:\\", "F:\\", "G:\\", "H:\\", "I:\\", "J:\\", "K:\\",
+        "L:\\", "M:\\", "N:\\", "O:\\", "P:\\", "Q:\\", "R:\\", "S:\\", "T:\\", "U:\\", "V:\\",
+        "W:\\", "X:\\", "Y:\\", "Z:\\",
+    ];
+
+    let mut exit_letter_vec = vec![];
+    for x in LETTER {
+        let path = std::path::Path::new(x);
+        if path.exists() {
+            exit_letter_vec.push(path);
+        }
+    }
+
+    ApiResponse::ok(request.callback_id, json!({ "drives": exit_letter_vec }))
 }

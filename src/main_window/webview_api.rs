@@ -42,7 +42,7 @@ fn set_background_color(webview: &WebView, request: ApiRequest) -> ApiResponse {
         );
     }
     let result = webview.set_background_color(options.unwrap().color);
-    if let Err(_) =  result {
+    if result.is_err() {
         return ApiResponse::err(
             request.callback_id,
             "Cannot set background color.",
