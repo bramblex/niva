@@ -1,4 +1,4 @@
-use crate::{env::Config, thread_pool::ThreadPool};
+use crate::{environment::EnvironmentRef, thread_pool::ThreadPool};
 use std::{
     io::{BufRead, Error, ErrorKind, Result, Write},
     net::{TcpListener, TcpStream},
@@ -15,12 +15,12 @@ fn get_tcp_listener() -> Result<(TcpListener, u16)> {
     Err(Error::new(ErrorKind::Other, "No available port to listen"))
 }
 
-pub fn start(work_dir: &Path, config: &Config, thread_pool: &Arc<Mutex<ThreadPool>>) -> String {
-    let entry = config.entry.clone().unwrap_or("index.html".to_string());
-    let root_dir = work_dir.to_path_buf();
+pub fn start(env: EnvironmentRef, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
+    let entry = env.config.entry.clone().unwrap_or("index.html".to_string());
+    let root_dir = env.work_dir.clone();
 
     let (listener, port) = get_tcp_listener().unwrap();
-    let thread_pool = thread_pool.clone();
+    let thread_pool = thread_pool;
 
     std::thread::spawn(move || {
         for stream in listener.incoming() {

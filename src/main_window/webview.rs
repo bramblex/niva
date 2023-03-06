@@ -1,22 +1,26 @@
-use crate::env::Config;
+use crate::environment::EnvironmentRef;
+#[cfg(target_os = "windows")]
+use wry::application::window::Window::WebContext;
+
 use wry::{
     application::window::Window,
-    webview::{WebView, WebViewBuilder, FileDropEvent},
+    webview::{FileDropEvent, WebView, WebViewBuilder},
 };
 
 static PRELOAD_JS: &str = include_str!("../assets/preload.js");
 
 pub fn create<IpcHandler, FileDropHandler>(
-    entry_url: String, 
-    config: &Config, 
-    window: Window, 
+    env: EnvironmentRef,
+    entry_url: String,
+    window: Window,
     ipc_handler: IpcHandler,
-    file_drop_handler: FileDropHandler
+    file_drop_handler: FileDropHandler,
 ) -> WebView
 where
     IpcHandler: Fn(&Window, String) + 'static,
-    FileDropHandler : Fn(&Window, FileDropEvent) -> bool + 'static
+    FileDropHandler: Fn(&Window, FileDropEvent) -> bool + 'static,
 {
+    let config = &env.config;
     let mut webview_builder = WebViewBuilder::new(window).unwrap();
 
     webview_builder = webview_builder.with_initialization_script(PRELOAD_JS);
@@ -31,9 +35,13 @@ where
     }
 
     let prefix = entry_url.clone();
-    webview_builder = webview_builder.with_navigation_handler(move |url| {
-        url.starts_with(&prefix)
-    });
+    webview_builder = webview_builder.with_navigation_handler(move |url| url.starts_with(&prefix));
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut web_context = WebContext::new(Some(env.data_dir.clone()));
+        webview_builder = webview_builder.with_web_context(&mut web_context);
+    }
 
     let webview = webview_builder
         .with_ipc_handler(ipc_handler)

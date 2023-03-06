@@ -1,19 +1,31 @@
-use crate::env::{Config, MenuConfig, MenuItemConfig};
-use wry::application::{
-    menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
-};
+use crate::environment::{Config, MenuConfig, MenuItemConfig};
+use wry::application::menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes};
 
-pub fn create(config: &Config) -> MenuBar {
-    let mut menu = MenuBar::new();
-
-    let (native_menu_name, native_menu) = create_default_menu(config);
-    menu.add_submenu(&native_menu_name, true, native_menu);
-
+pub fn create(config: &Config) -> Option<MenuBar> {
     if let Some(MenuConfig(menu_item_config_list)) = &config.menu {
+        let mut menu = MenuBar::new();
+
+        #[cfg(target_os = "macos")]
+        {
+            let (native_menu_name, native_menu) = create_default_menu(config);
+            menu.add_submenu(&native_menu_name, true, native_menu);
+        }
+
         append_custom_menu(&mut menu, menu_item_config_list);
+        return Some(menu);
     }
 
-    menu
+    #[cfg(target_os = "macos")]
+    {
+        let (native_menu_name, native_menu) = create_default_menu(config);
+        let mut menu = MenuBar::new();
+        menu.add_submenu(&native_menu_name, true, native_menu);
+        Some(menu)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        return None;
+    }
 }
 
 fn append_custom_menu(menu: &mut MenuBar, menu_item_config_list: &Vec<MenuItemConfig>) {
@@ -28,7 +40,7 @@ fn append_custom_menu(menu: &mut MenuBar, menu_item_config_list: &Vec<MenuItemCo
             MenuItemConfig::SubMenu(label, submenu_item_config_list) => {
                 let mut submenu = MenuBar::new();
                 append_custom_menu(&mut submenu, submenu_item_config_list);
-                menu.add_submenu(&label, true, submenu);
+                menu.add_submenu(label, true, submenu);
             }
         }
     }

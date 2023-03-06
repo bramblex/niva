@@ -1,8 +1,10 @@
-use std::{io::Write, time::UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
 use serde_json::json;
+
+use base64::Engine;
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
@@ -19,6 +21,9 @@ pub fn call(request: ApiRequest) -> ApiResponse {
         "ls" => ls(request),
         "mkDir" => mk_dir(request),
         "rmDir" => rm_dir(request),
+
+        #[cfg(target_os = "windows")]
+        "getDrives" => get_drives(request),
 
         _ => ApiResponse::err(request.callback_id, "Method not found"),
     };
@@ -72,7 +77,7 @@ fn read(request: ApiRequest) -> ApiResponse {
         "utf8" => std::fs::read_to_string(path),
         "base64" => {
             let content = std::fs::read(path).unwrap();
-            Ok(base64::encode(content))
+            Ok(base64::engine::general_purpose::STANDARD.encode(content))
         }
         _ => return ApiResponse::err(request.callback_id, "Invalid encode"),
     };
@@ -109,13 +114,12 @@ fn write(request: ApiRequest) -> ApiResponse {
 
     let write_result = match encode.unwrap_or("utf8".to_string()).as_str() {
         "base64" => {
-            let engine = base64::engine::general_purpose::STANDARD;
-            let content = base64::decode(content).unwrap();
+            let content = base64::engine::general_purpose::STANDARD
+                .decode(content)
+                .unwrap();
             std::fs::write(path, content)
         }
-        "utf8" =>{
-            std::fs::write(path, content)
-        },
+        "utf8" => std::fs::write(path, content),
         _ => return ApiResponse::err(request.callback_id, "Invalid encode"),
     };
 
@@ -247,4 +251,9 @@ fn rm_dir(request: ApiRequest) -> ApiResponse {
     }
 
     ApiResponse::ok(request.callback_id, json!({}))
+}
+
+#[cfg(target_os = "windows")]
+fn get_drives(request: ApiRequest) -> ApiResponse {
+    windows::Win32::Storage::FileSystem::GetLogicalDrives()
 }

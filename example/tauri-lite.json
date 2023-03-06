@@ -1,0 +1,35 @@
+{
+  "name": "tauri-lite-example",
+  "uuid": "95863653-8007-4d36-974f-c839e76b93b9",
+  "icon": "logo.png",
+  "entry": "index.html",
+  "devtools": true,
+  "title": "Tauri Lite Example",
+  "size": [
+    1200.0,
+    1200.0
+  ],
+  "minimizable": null,
+  "always_on_top": true,
+  "menu": [
+    [
+      "hello",
+      [
+        [
+          "world",
+          123
+        ],
+        "---",
+        [
+          "hello",
+          456
+        ],
+        "---"
+      ]
+    ],
+    [
+      "world",
+      []
+    ]
+  ]
+}

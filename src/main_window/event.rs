@@ -5,27 +5,33 @@ use wry::application::{
     window::Theme,
 };
 
-use super::WebviewWarper;
+use crate::sys_api::ApiRequest;
+
+use super::{WebviewWarper, webview_api};
 
 #[derive(Debug)]
-pub struct EventContent(pub String, pub serde_json::Value);
+pub enum Content {
+    Event(String, serde_json::Value),
+    UnresolvedEvent(ApiRequest),
+}
 
-impl EventContent {
+impl Content {
     pub fn new<E, D>(event: E, data: D) -> Self
     where
         E: Into<String>,
         D: Into<serde_json::Value>,
     {
-        Self(event.into(), data.into())
+        Self::Event(event.into(), data.into())
     }
 }
 
-fn send_event<S>(main_webview_warper: &WebviewWarper, event: S, data: serde_json::Value)
+fn send_event<S, D>(main_webview_warper: &WebviewWarper, event: S, data: D)
 where
     S: Into<String>,
+    D: Into<serde_json::Value>,
 {
     let event = event.into();
-    let data_str = serde_json::to_string::<serde_json::Value>(&data).unwrap();
+    let data_str = serde_json::to_string::<serde_json::Value>(&data.into()).unwrap();
     main_webview_warper
         .0
         .evaluate_script(&format!("TauriLite.__emit__(\"{event}\", {data_str})"))
@@ -67,7 +73,7 @@ pub fn handle_window_event(
 
 pub fn handle(
     main_webview_warper: &WebviewWarper,
-    event: Event<EventContent>,
+    event: Event<Content>,
     control_flow: &mut ControlFlow,
 ) {
     *control_flow = ControlFlow::Wait;
@@ -86,8 +92,13 @@ pub fn handle(
             json!({ "menu_id": menu_id.0 }),
         ),
 
-        Event::UserEvent(EventContent(event, data)) => {
+        Event::UserEvent(Content::Event(event, data)) => {
             send_event(main_webview_warper, event, data);
+        }
+
+        Event::UserEvent(Content::UnresolvedEvent(request)) => {
+            let response =  webview_api::call(&main_webview_warper.0, request);
+            send_event(main_webview_warper, "ipc.callback", response);
         }
 
         _ => (),

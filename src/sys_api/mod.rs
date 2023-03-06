@@ -21,9 +21,9 @@ pub struct ApiResponse {
     pub callback_id: u32,
 }
 
-impl Into<serde_json::Value> for ApiResponse {
-    fn into(self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap()
+impl From<ApiResponse> for serde_json::Value {
+    fn from(val: ApiResponse) -> Self {
+        serde_json::to_value(val).unwrap()
     }
 }
 
@@ -65,5 +65,5 @@ pub fn call(request: ApiRequest) -> ApiResponse {
         _ => ApiResponse::err(request.callback_id, "Namespace not found".to_string()),
     };
 
-    return response;
+    response
 }

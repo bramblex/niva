@@ -45,3 +45,5 @@ impl ThreadPool {
         self.sender.send(job).unwrap();
     }
 }
+
+pub type ThreadPoolRef = Arc<Mutex<ThreadPool>>;

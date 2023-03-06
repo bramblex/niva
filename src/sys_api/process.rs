@@ -62,7 +62,7 @@ pub fn ch_dir(request: ApiRequest) -> ApiResponse {
     ApiResponse::ok(request.callback_id, json!({}))
 }
 
-pub fn exit(request: ApiRequest) -> ! {
+pub fn exit(_: ApiRequest) -> ! {
     std::process::exit(0);
 }
 

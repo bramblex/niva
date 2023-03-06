@@ -2004,6 +2004,8 @@ dependencies = [
  "serde",
  "serde_json",
  "ureq",
+ "uuid",
+ "winres",
  "wry",
 ]
 
@@ -2485,6 +2487,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf09497b8f8b5ac5d3bb4d05c0a99be20f26fd3d5f2db7b0716e946d5103658"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winres"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
+dependencies = [
+ "toml",
 ]
 
 [[package]]

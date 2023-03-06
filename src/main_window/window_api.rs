@@ -73,7 +73,7 @@ struct PositionOptions {
 
 // dpi
 fn scale_factor(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.scale_factor());
+    ApiResponse::ok(request.callback_id, window.scale_factor())
 }
 
 // position and size
@@ -87,7 +87,7 @@ fn inner_position(window: &Window, request: ApiRequest) -> ApiResponse {
             }),
         );
     }
-    return ApiResponse::err(request.callback_id, "failed to get inner position");
+    ApiResponse::err(request.callback_id, "failed to get inner position")
 }
 
 fn outer_position(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -100,7 +100,7 @@ fn outer_position(window: &Window, request: ApiRequest) -> ApiResponse {
             }),
         );
     }
-    return ApiResponse::err(request.callback_id, "failed to get outer position");
+    ApiResponse::err(request.callback_id, "failed to get outer position")
 }
 
 fn set_outer_position(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -110,18 +110,18 @@ fn set_outer_position(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let options = options_result.unwrap();
     window.set_outer_position(PhysicalPosition::new(options.x, options.y));
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
     let size = window.inner_size();
-    return ApiResponse::ok(
+    ApiResponse::ok(
         request.callback_id,
         json!({
             "width": size.width,
             "height": size.height,
         }),
-    );
+    )
 }
 
 fn set_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -131,18 +131,18 @@ fn set_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let options = options_result.unwrap();
     window.set_inner_size(PhysicalSize::new(options.width, options.height));
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn outer_size(window: &Window, request: ApiRequest) -> ApiResponse {
     let size = window.outer_size();
-    return ApiResponse::ok(
+    ApiResponse::ok(
         request.callback_id,
         json!({
             "width": size.width,
             "height": size.height,
         }),
-    );
+    )
 }
 
 fn set_min_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -152,7 +152,7 @@ fn set_min_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let options = options_result.unwrap();
     window.set_min_inner_size(Some(PhysicalSize::new(options.width, options.height)));
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_max_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -162,7 +162,7 @@ fn set_max_inner_size(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let options = options_result.unwrap();
     window.set_max_inner_size(Some(PhysicalSize::new(options.width, options.height)));
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 // misc options
@@ -174,11 +174,11 @@ fn set_title(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let title = title_result.unwrap();
     window.set_title(&title);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn title(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.title());
+    ApiResponse::ok(request.callback_id, window.title())
 }
 
 fn set_visible(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -188,16 +188,16 @@ fn set_visible(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let visible = visible_result.unwrap();
     window.set_visible(visible);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_focus(window: &Window, request: ApiRequest) -> ApiResponse {
     window.set_focus();
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn is_focused(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_focused());
+    ApiResponse::ok(request.callback_id, window.is_focused())
 }
 
 fn set_resizable(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -207,7 +207,7 @@ fn set_resizable(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let resizable = resizable_result.unwrap();
     window.set_resizable(resizable);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_minimizable(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -217,7 +217,7 @@ fn set_minimizable(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let minimizable = minimizable_result.unwrap();
     window.set_minimizable(minimizable);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_maximizable(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -227,7 +227,7 @@ fn set_maximizable(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let maximizable = maximizable_result.unwrap();
     window.set_maximizable(maximizable);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_closable(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -237,7 +237,7 @@ fn set_closable(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let closable = closable_result.unwrap();
     window.set_closable(closable);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_minimized(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -247,7 +247,7 @@ fn set_minimized(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let minimized = minimized_result.unwrap();
     window.set_minimized(minimized);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_maximized(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -257,39 +257,39 @@ fn set_maximized(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let maximized = maximized_result.unwrap();
     window.set_maximized(maximized);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn is_maximized(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_maximized());
+    ApiResponse::ok(request.callback_id, window.is_maximized())
 }
 
 fn is_minimized(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_minimized());
+    ApiResponse::ok(request.callback_id, window.is_minimized())
 }
 
 fn is_visible(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_visible());
+    ApiResponse::ok(request.callback_id, window.is_visible())
 }
 
 fn is_resizable(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_resizable());
+    ApiResponse::ok(request.callback_id, window.is_resizable())
 }
 
 fn is_minimizable(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_minimizable());
+    ApiResponse::ok(request.callback_id, window.is_minimizable())
 }
 
 fn is_maximizable(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_maximizable());
+    ApiResponse::ok(request.callback_id, window.is_maximizable())
 }
 
 fn is_closable(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_closable());
+    ApiResponse::ok(request.callback_id, window.is_closable())
 }
 
 fn is_decorated(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_decorated());
+    ApiResponse::ok(request.callback_id, window.is_decorated())
 }
 
 fn set_fullscreen(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -303,11 +303,11 @@ fn set_fullscreen(window: &Window, request: ApiRequest) -> ApiResponse {
     } else {
         None
     });
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn fullscreen(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.fullscreen().is_some());
+    ApiResponse::ok(request.callback_id, window.fullscreen().is_some())
 }
 
 fn set_decorations(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -317,7 +317,7 @@ fn set_decorations(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let decorations = decorations_result.unwrap();
     window.set_decorations(decorations);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_always_on_bottom(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -327,7 +327,7 @@ fn set_always_on_bottom(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let always_on_bottom = always_on_bottom_result.unwrap();
     window.set_always_on_top(always_on_bottom);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_always_on_top(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -337,7 +337,7 @@ fn set_always_on_top(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let always_on_top = always_on_top_result.unwrap();
     window.set_always_on_top(always_on_top);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn request_user_attention(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -351,32 +351,32 @@ fn request_user_attention(window: &Window, request: ApiRequest) -> ApiResponse {
         "critical" => window.request_user_attention(Some(UserAttentionType::Critical)),
         _ => return ApiResponse::err(request.callback_id, "invalid request_user_attention"),
     }
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn hide_menu(window: &Window, request: ApiRequest) -> ApiResponse {
     window.hide_menu();
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn show_menu(window: &Window, request: ApiRequest) -> ApiResponse {
     window.show_menu();
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn is_menu_visible(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, window.is_menu_visible());
+    ApiResponse::ok(request.callback_id, window.is_menu_visible())
 }
 
 fn theme(window: &Window, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(
+    ApiResponse::ok(
         request.callback_id,
         match window.theme() {
             Theme::Light => "light",
             Theme::Dark => "dark",
             _ => "system",
         },
-    );
+    )
 }
 
 fn set_content_protection(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -386,7 +386,7 @@ fn set_content_protection(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let content_protection = content_protection_result.unwrap();
     window.set_content_protection(content_protection);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_visible_on_all_workspaces(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -396,7 +396,7 @@ fn set_visible_on_all_workspaces(window: &Window, request: ApiRequest) -> ApiRes
     }
     let visible_on_all_workspaces = visible_on_all_workspaces_result.unwrap();
     window.set_visible_on_all_workspaces(visible_on_all_workspaces);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_cursor_icon(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -443,7 +443,7 @@ fn set_cursor_icon(window: &Window, request: ApiRequest) -> ApiResponse {
         "row_resize" => CursorIcon::RowResize,
         _ => CursorIcon::Arrow,
     });
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_cursor_position(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -452,8 +452,8 @@ fn set_cursor_position(window: &Window, request: ApiRequest) -> ApiResponse {
         return ApiResponse::err(request.callback_id, "invalid cursor_position");
     }
     let cursor_position = cursor_position_result.unwrap();
-    window.set_cursor_position(PhysicalPosition::new(cursor_position.x, cursor_position.y));
-    return ApiResponse::ok(request.callback_id, json!({}));
+    window.set_cursor_position(PhysicalPosition::new(cursor_position.x, cursor_position.y)).unwrap();
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_cursor_grab(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -462,8 +462,8 @@ fn set_cursor_grab(window: &Window, request: ApiRequest) -> ApiResponse {
         return ApiResponse::err(request.callback_id, "invalid cursor_grab");
     }
     let cursor_grab = cursor_grab_result.unwrap();
-    window.set_cursor_grab(cursor_grab);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    window.set_cursor_grab(cursor_grab).unwrap();
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_cursor_visible(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -473,12 +473,12 @@ fn set_cursor_visible(window: &Window, request: ApiRequest) -> ApiResponse {
     }
     let cursor_visible = cursor_visible_result.unwrap();
     window.set_cursor_visible(cursor_visible);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn drag_window(window: &Window, request: ApiRequest) -> ApiResponse {
-    window.drag_window();
-    return ApiResponse::ok(request.callback_id, json!({}));
+    window.drag_window().unwrap();
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn set_ignore_cursor_events(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -487,8 +487,8 @@ fn set_ignore_cursor_events(window: &Window, request: ApiRequest) -> ApiResponse
         return ApiResponse::err(request.callback_id, "invalid ignore_cursor_events");
     }
     let ignore_cursor_events = ignore_cursor_events_result.unwrap();
-    window.set_ignore_cursor_events(ignore_cursor_events);
-    return ApiResponse::ok(request.callback_id, json!({}));
+    window.set_ignore_cursor_events(ignore_cursor_events).unwrap();
+    ApiResponse::ok(request.callback_id, json!({}))
 }
 
 fn cursor_position(window: &Window, request: ApiRequest) -> ApiResponse {
@@ -502,5 +502,5 @@ fn cursor_position(window: &Window, request: ApiRequest) -> ApiResponse {
             }),
         );
     }
-    return ApiResponse::err(request.callback_id, "cursor position not available");
+    ApiResponse::err(request.callback_id, "cursor position not available")
 }
