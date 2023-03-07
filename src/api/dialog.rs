@@ -4,10 +4,10 @@ use serde_json::json;
 
 pub fn call(request: ApiRequest) -> ApiResponse {
     match request.method.as_str() {
-        "selectFile" => select_file(request),
-        "selectFiles" => select_files(request),
-        "selectFolder" => select_folder(request),
-        "selectFolders" => select_folders(request),
+        "pickFile" => pick_file(request),
+        "pickFiles" => pick_files(request),
+        "pickFolder" => pick_folder(request),
+        "pickFolders" => pick_folders(request),
         "saveFile" => save_file(request),
         "showMessage" => show_message(request),
         _ => ApiResponse::err(request.callback_id, "method not found"),
@@ -15,16 +15,16 @@ pub fn call(request: ApiRequest) -> ApiResponse {
 }
 
 #[derive(Deserialize)]
-struct SelectOptions {
+struct PickOptions {
     filters: Option<Vec<String>>,
     dir: Option<String>,
 }
 
-fn _create_dialog(options: SelectOptions) -> rfd::FileDialog {
+fn _create_dialog(options: PickOptions) -> rfd::FileDialog {
     let mut dialog = rfd::FileDialog::new();
     if let Some(extensions) = options.filters {
         let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-        dialog = dialog.add_filter("Select", &extensions);
+        dialog = dialog.add_filter("pick", &extensions);
     }
     if let Some(dir) = options.dir {
         dialog = dialog.set_directory(&dir);
@@ -32,8 +32,8 @@ fn _create_dialog(options: SelectOptions) -> rfd::FileDialog {
     return dialog;
 }
 
-fn select_file(request: ApiRequest) -> ApiResponse {
-    let options = serde_json::from_value::<SelectOptions>(request.data);
+fn pick_file(request: ApiRequest) -> ApiResponse {
+    let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
@@ -42,12 +42,12 @@ fn select_file(request: ApiRequest) -> ApiResponse {
 
     match result {
         Some(file) => ApiResponse::ok(request.callback_id, json!({ "file": file })),
-        None => ApiResponse::err(request.callback_id, "No file selected"),
+        None => ApiResponse::err(request.callback_id, "No file picked"),
     }
 }
 
-fn select_files(request: ApiRequest) -> ApiResponse {
-    let options = serde_json::from_value::<SelectOptions>(request.data);
+fn pick_files(request: ApiRequest) -> ApiResponse {
+    let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
@@ -56,12 +56,12 @@ fn select_files(request: ApiRequest) -> ApiResponse {
 
     match result {
         Some(files) => ApiResponse::ok(request.callback_id, json!({ "file": files })),
-        None => ApiResponse::err(request.callback_id, "No file selected"),
+        None => ApiResponse::err(request.callback_id, "No file picked"),
     }
 }
 
-fn select_folder(request: ApiRequest) -> ApiResponse {
-    let options = serde_json::from_value::<SelectOptions>(request.data);
+fn pick_folder(request: ApiRequest) -> ApiResponse {
+    let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
@@ -70,12 +70,12 @@ fn select_folder(request: ApiRequest) -> ApiResponse {
 
     match result {
         Some(dir) => ApiResponse::ok(request.callback_id, json!({ "dir": dir })),
-        None => ApiResponse::err(request.callback_id, "No file selected"),
+        None => ApiResponse::err(request.callback_id, "No file picked"),
     }
 }
 
-fn select_folders(request: ApiRequest) -> ApiResponse {
-    let options = serde_json::from_value::<SelectOptions>(request.data);
+fn pick_folders(request: ApiRequest) -> ApiResponse {
+    let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
@@ -84,12 +84,12 @@ fn select_folders(request: ApiRequest) -> ApiResponse {
 
     match result {
         Some(dirs) => ApiResponse::ok(request.callback_id, json!({ "dirs": dirs })),
-        None => ApiResponse::err(request.callback_id, "No file selected"),
+        None => ApiResponse::err(request.callback_id, "No file picked"),
     }
 }
 
 fn save_file(request: ApiRequest) -> ApiResponse {
-    let options = serde_json::from_value::<SelectOptions>(request.data);
+    let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
@@ -98,7 +98,7 @@ fn save_file(request: ApiRequest) -> ApiResponse {
 
     match result {
         Some(file) => ApiResponse::ok(request.callback_id, json!({ "file": file })),
-        None => ApiResponse::err(request.callback_id, "No file selected"),
+        None => ApiResponse::err(request.callback_id, "No file picked"),
     }
 }
 
