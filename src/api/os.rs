@@ -6,6 +6,8 @@ pub fn call(request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
         "info" => platform(request),
         "dirs" => dirs(request),
+        "sep" => sep(request),
+        "eol" => eol(request),
         _ => ApiResponse::err(request.callback_id,"Method not found"),
     };
 }
@@ -46,4 +48,21 @@ fn dirs(request: ApiRequest) -> ApiResponse {
         "template": unwrap_path_opt(user_dirs.template_dir()),
         "video": unwrap_path_opt(user_dirs.video_dir()),
     }));
+}
+
+fn sep(request: ApiRequest) -> ApiResponse {
+    ApiResponse::ok(request.callback_id, json!({
+        "sep":  std::path::MAIN_SEPARATOR
+    }))
+}
+
+fn eol(request: ApiRequest) -> ApiResponse {
+    #[cfg(target_os = "windows")]
+    let eol = "\r\n";
+    #[cfg(not(target_os = "windows"))]
+    let eol = "\n";
+
+    ApiResponse::ok(request.callback_id, json!({
+        "eol": eol,
+    }))
 }
