@@ -24,4 +24,5 @@ body,
 * {
   user-select: none;
   cursor: default;
+  box-sizing: border-box;
 }

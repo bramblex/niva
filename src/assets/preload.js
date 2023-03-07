@@ -20,12 +20,13 @@
       return;
     }
     var listeners = eventListeners[event];
-    eventListeners = [];
+    var newListeners = [];
     for (var i = 0; i < listeners.length; i++) {
       if (listeners[i] !== listener) {
-        eventListeners.push(listeners[i]);
+        newListeners.push(listeners[i]);
       }
     }
+    eventListeners[event] = newListeners;
   }
 
   function emit(event, data) {

@@ -4,8 +4,6 @@
 
 	"title": "Tauri Lite Devtools",
 	"size": [800, 600],
-	"min_size": [800, 600],
-	"max_size": [800, 600],
-	"resizable": false,
+	"resizable": true,
 	"alwaysOnTop": true
 }
