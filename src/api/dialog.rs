@@ -6,8 +6,8 @@ pub fn call(request: ApiRequest) -> ApiResponse {
     match request.method.as_str() {
         "pickFile" => pick_file(request),
         "pickFiles" => pick_files(request),
-        "pickFolder" => pick_folder(request),
-        "pickFolders" => pick_folders(request),
+        "pickDir" => pick_dir(request),
+        "pickDirs" => pick_dirs(request),
         "saveFile" => save_file(request),
         "showMessage" => show_message(request),
         _ => ApiResponse::err(request.callback_id, "method not found"),
@@ -15,9 +15,10 @@ pub fn call(request: ApiRequest) -> ApiResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PickOptions {
     filters: Option<Vec<String>>,
-    dir: Option<String>,
+    start_dir: Option<String>,
 }
 
 fn _create_dialog(options: PickOptions) -> rfd::FileDialog {
@@ -26,7 +27,7 @@ fn _create_dialog(options: PickOptions) -> rfd::FileDialog {
         let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
         dialog = dialog.add_filter("pick", &extensions);
     }
-    if let Some(dir) = options.dir {
+    if let Some(dir) = options.start_dir {
         dialog = dialog.set_directory(&dir);
     }
     return dialog;
@@ -60,7 +61,7 @@ fn pick_files(request: ApiRequest) -> ApiResponse {
     }
 }
 
-fn pick_folder(request: ApiRequest) -> ApiResponse {
+fn pick_dir(request: ApiRequest) -> ApiResponse {
     let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
@@ -74,7 +75,7 @@ fn pick_folder(request: ApiRequest) -> ApiResponse {
     }
 }
 
-fn pick_folders(request: ApiRequest) -> ApiResponse {
+fn pick_dirs(request: ApiRequest) -> ApiResponse {
     let options = serde_json::from_value::<PickOptions>(request.data);
     if options.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
