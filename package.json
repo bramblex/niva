@@ -1,7 +1,7 @@
 {
   "name": "tauri-lite",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "repository": "https://github.com/bramblex/tauri-lite.git",
   "author": "brambles <qjnight@gmail.com>",
   "dependencies": {
