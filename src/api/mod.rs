@@ -3,7 +3,13 @@ mod http;
 mod os;
 mod process;
 
+pub mod window;
+pub mod webview;
+pub mod dialog;
+
 use serde::{Deserialize, Serialize};
+
+use crate::environment::EnvironmentRef;
 
 #[derive(Debug, Deserialize)]
 pub struct ApiRequest {
@@ -56,12 +62,12 @@ impl ApiResponse {
     }
 }
 
-pub fn call(request: ApiRequest) -> ApiResponse {
+pub fn call(env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
     let response: ApiResponse = match request.namespace.as_str() {
         "fs" => fs::call(request),
         "http" => http::call(request),
         "os" => os::call(request),
-        "process" => process::call(request),
+        "process" => process::call(env, request),
         _ => ApiResponse::err(request.callback_id, "Namespace not found".to_string()),
     };
 

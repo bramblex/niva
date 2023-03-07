@@ -1,9 +1,7 @@
 mod event;
 mod menu;
 mod webview;
-mod webview_api;
 mod window;
-mod window_api;
 
 use serde_json::json;
 use wry::{
@@ -13,7 +11,7 @@ use wry::{
 
 use crate::{
     environment::EnvironmentRef,
-    sys_api::{ApiRequest, ApiResponse},
+    api::{self, ApiRequest, ApiResponse},
     thread_pool::{ThreadPoolRef},
 };
 
@@ -28,7 +26,7 @@ pub fn open(
     env: EnvironmentRef,
     entry_url: String,
     thread_pool: ThreadPoolRef,
-    api_call: fn(ApiRequest) -> ApiResponse,
+    api_call: fn(EnvironmentRef, ApiRequest) -> ApiResponse,
 ) -> ! {
     let event_loop = EventLoop::<Content>::with_user_event();
 
@@ -40,7 +38,7 @@ pub fn open(
     let mut web_context = WebContext::new(Some(env.data_dir.clone()));
 
     let main_webview = webview::create(
-        env,
+        env.clone(),
         &mut web_context,
         entry_url,
         main_window,
@@ -65,7 +63,7 @@ pub fn open(
                     event_loop_proxy
                         .send_event(Content::new(
                             "ipc.callback",
-                            window_api::call(window, request),
+                            api::window::call(window, request),
                         ))
                         .unwrap();
                 }
@@ -74,10 +72,19 @@ pub fn open(
                         .send_event(Content::UnresolvedEvent(request))
                         .unwrap();
                 }
+                "dialog" => {
+                    event_loop_proxy
+                        .send_event(Content::new(
+                            "ipc.callback",
+                            api::dialog::call(request),
+                        ))
+                        .unwrap();
+                }
                 _ => {
                     let event_loop_proxy = event_loop_proxy.clone();
+                    let env = env.clone();
                     thread_pool.lock().unwrap().run(move || {
-                        let response = api_call(request);
+                        let response = api_call(env, request);
                         event_loop_proxy
                             .send_event(Content::new("ipc.callback", response))
                             .unwrap();

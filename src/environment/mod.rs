@@ -1,5 +1,6 @@
 mod config;
 
+use serde::Serialize;
 use serde_json::json;
 use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
@@ -7,7 +8,8 @@ use std::sync::Arc;
 
 pub use config::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Environment {
     pub project_name: String,
     pub project_uuid: String,
@@ -19,10 +21,17 @@ pub struct Environment {
     pub config: Config,
 }
 
-pub type EnvironmentRef = Arc<Environment>;
+impl Environment {
+    pub fn to_json_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap()
+    }
+}
 
 unsafe impl Send for Environment {}
 unsafe impl Sync for Environment {}
+
+pub type EnvironmentRef = Arc<Environment>;
+
 
 fn get_work_dir() -> Result<PathBuf> {
     // if work dir is specified in command line arguments

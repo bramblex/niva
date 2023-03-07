@@ -36,7 +36,6 @@ fn dirs(request: ApiRequest) -> ApiResponse {
 
     return ApiResponse::ok(request.callback_id,json!({
         "home": unwrap_path(user_dirs.home_dir()),
-                "temp": unwrap_path(&std::env::temp_dir()),
         "audio": unwrap_path_opt(user_dirs.audio_dir()),
         "desktop": unwrap_path_opt(user_dirs.desktop_dir()),
         "document": unwrap_path_opt(user_dirs.document_dir()),

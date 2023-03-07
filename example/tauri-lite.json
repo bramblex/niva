@@ -10,7 +10,7 @@
     1200.0
   ],
   "minimizable": null,
-  "always_on_top": true,
+  "alwaysOnTop": true,
   "menu": [
     [
       "hello",

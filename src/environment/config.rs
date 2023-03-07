@@ -18,6 +18,7 @@ pub enum MenuItemConfig {
 pub struct MenuConfig(pub Vec<MenuItemConfig>);
 
 #[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     // project config
     pub name: String,

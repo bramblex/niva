@@ -1,6 +1,6 @@
 // TODO: window api
 
-use crate::sys_api::{ApiRequest, ApiResponse};
+use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
 use serde_json::json;
 use wry::application::dpi::{PhysicalPosition, PhysicalSize};

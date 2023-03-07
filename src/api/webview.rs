@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::json;
 use wry::webview::WebView;
-use crate::sys_api::{ApiResponse, ApiRequest};
+use super::{ApiResponse, ApiRequest};
 
 
 pub fn call(webview: &WebView, request: ApiRequest) -> ApiResponse {

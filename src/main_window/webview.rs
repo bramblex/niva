@@ -1,5 +1,4 @@
 use crate::environment::EnvironmentRef;
-#[cfg(target_os = "windows")]
 use wry::webview::WebContext;
 
 use wry::{
@@ -11,7 +10,7 @@ static PRELOAD_JS: &str = include_str!("../assets/preload.js");
 
 pub fn create<IpcHandler, FileDropHandler>(
     env: EnvironmentRef,
-    web_context: &mut WebContext,
+    _web_context: &mut WebContext,
     entry_url: String,
     window: Window,
     ipc_handler: IpcHandler,
@@ -40,7 +39,7 @@ where
 
     #[cfg(target_os = "windows")]
     {
-        webview_builder = webview_builder.with_web_context(web_context);
+        webview_builder = webview_builder.with_web_context(_web_context);
     }
 
     let webview = webview_builder

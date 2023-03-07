@@ -1,8 +1,10 @@
+use crate::environment::EnvironmentRef;
+
 use super::{ApiRequest, ApiResponse};
 use serde::Deserialize;
 use serde_json::json;
 
-pub fn call(request: ApiRequest) -> ApiResponse {
+pub fn call(_env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
     return match request.method.as_str() {
         "pid" => pid(request),
         "cwd" => cwd(request),
@@ -10,8 +12,14 @@ pub fn call(request: ApiRequest) -> ApiResponse {
         "env" => env(request),
         "exit" => exit(request),
         "exec" => exec(request),
+        "open" => open(request),
+        "tl_env" => tl_env(_env, request),
         _ => ApiResponse::err(request.callback_id,"Method not found".to_string()),
     };
+}
+
+pub fn tl_env(env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
+    return ApiResponse::ok(request.callback_id, env.to_json_value());
 }
 
 pub fn pid(request: ApiRequest) -> ApiResponse {
@@ -129,4 +137,23 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
             "stderr": String::from_utf8(output.stderr).unwrap(),
         }),
     )
+}
+
+
+#[derive(Deserialize)]
+struct OpenOptions {
+    pub uri: String,
+}
+
+fn open(request: ApiRequest) -> ApiResponse {
+    let options = serde_json::from_value::<OpenOptions>(request.data);
+    if options.is_err() {
+        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
+    }
+    let options = options.unwrap();
+    let result = opener::open(options.uri);
+    if result.is_err() {
+        return ApiResponse::err(request.callback_id,"Failed to open uri".to_string());
+    }
+    return ApiResponse::ok(request.callback_id, json!({}));
 }

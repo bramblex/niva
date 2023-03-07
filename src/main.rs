@@ -7,13 +7,22 @@
 mod environment;
 mod main_window;
 mod static_server;
-mod sys_api;
+mod api;
 mod thread_pool;
 
 use std::sync::{Arc, Mutex};
 use thread_pool::ThreadPool;
 
 fn main() {
+    // rfd::MessageDialog::new()
+    //     .set_level(rfd::MessageLevel::Error)
+    //     .set_title("hello")
+    //     .set_description("world")
+    //     .show();
+    // .set_title("Hello, World!")
+    // .set_description("This is a message dialog.")
+    // .unwrap();
+
     let env_result = environment::init();
     if let Err(err) = env_result {
         println!("Init Environment Error: {:?}", err.to_string());
@@ -32,5 +41,5 @@ fn main() {
     println!("Static server started at {:?}", entry_url);
 
     println!("Open main window");
-    main_window::open(env, entry_url , thread_pool, sys_api::call);
+    main_window::open(env, entry_url, thread_pool, api::call);
 }

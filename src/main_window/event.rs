@@ -5,9 +5,9 @@ use wry::application::{
     window::Theme,
 };
 
-use crate::sys_api::ApiRequest;
+use crate::api::{self, ApiRequest};
 
-use super::{WebviewWarper, webview_api};
+use super::{WebviewWarper};
 
 #[derive(Debug)]
 pub enum Content {
@@ -97,7 +97,7 @@ pub fn handle(
         }
 
         Event::UserEvent(Content::UnresolvedEvent(request)) => {
-            let response =  webview_api::call(&main_webview_warper.0, request);
+            let response = api::webview::call(&main_webview_warper.0, request);
             send_event(main_webview_warper, "ipc.callback", response);
         }
 
