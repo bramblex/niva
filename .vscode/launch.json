@@ -7,7 +7,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable normal example 'tauri-lite'",
+      "name": "Debug example",
       "cargo": {
         "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
         "filter": {
@@ -18,7 +18,29 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["example"],
+      "args": ["--work-dir", "example"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug devtools",
+      "cargo": {
+        "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
+        "filter": {
+          "name": "tauri-lite",
+          "kind": "bin"
+        },
+        "env": {
+          "RUST_BACKTRACE": "-l framework=WebKit"
+        }
+      },
+      "args": [
+        "--work-dir",
+        "devtools/public",
+        "--debug-entry-url",
+        "http://127.0.0.1:3000"
+      ],
       "cwd": "${workspaceFolder}"
     }
   ]

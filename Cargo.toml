@@ -29,6 +29,7 @@ directories = "4.0.1"
 uuid = { version = "1.3.0", features = ["v4"] }
 opener = "0.5.2"
 rfd = { version = "0.11.2", default-features = false, features = ["xdg-portal"]}
+fs_extra = "1.3.0"
 
 [build-dependencies]
 winres = "0.1.12"

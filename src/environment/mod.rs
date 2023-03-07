@@ -19,6 +19,9 @@ pub struct Environment {
     pub data_dir: PathBuf,
 
     pub config: Config,
+
+    // debug entry url
+    pub debug_entry_url: Option<String>,
 }
 
 impl Environment {
@@ -32,13 +35,39 @@ unsafe impl Sync for Environment {}
 
 pub type EnvironmentRef = Arc<Environment>;
 
+struct Args {
+    pub work_dir: Option<PathBuf>,
+    pub debug_entry_url: Option<String>,
+}
 
-fn get_work_dir() -> Result<PathBuf> {
-    // if work dir is specified in command line arguments
+fn get_args() -> Args {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() > 1 {
+    let arg_pairs: Vec<(String, String)> = args[1..]
+        .chunks(2)
+        .map(|c| (c[0].clone(), if c.len() > 1 { c[1].clone() } else { "".to_string() }))
+        .collect();
+    let mut args = Args {
+        work_dir: None,
+        debug_entry_url: None,
+    };
+    for (key, value) in arg_pairs {
+        match key.as_str() {
+            "--work-dir" => {
+                args.work_dir = Some(Path::new(value.as_str()).to_path_buf());
+            }
+            "--debug-entry-url" => {
+                args.debug_entry_url = Some(value);
+            }
+            _ => {}
+        }
+    }
+    args
+}
+
+fn get_work_dir(args: &Args) -> Result<PathBuf> {
+    // if work dir is specified in command line arguments
+    if let Some(custom_path) = &args.work_dir {
         let cwd = std::env::current_dir()?;
-        let custom_path = Path::new(args[1].as_str()).to_path_buf();
         let full_path = cwd.join(custom_path);
 
         // if custom_path a directory and exists, return it
@@ -90,7 +119,8 @@ fn get_or_create_config(work_dir: &Path) -> Result<Config> {
 }
 
 pub fn init() -> Result<Arc<Environment>> {
-    let work_dir = get_work_dir()?;
+    let args = get_args();
+    let work_dir = get_work_dir(&args)?;
 
     let config = get_or_create_config(&work_dir)?;
     let project_name = config.name.clone();
@@ -121,5 +151,6 @@ pub fn init() -> Result<Arc<Environment>> {
         temp_dir,
         data_dir,
         config,
+        debug_entry_url: args.debug_entry_url,
     }))
 }
