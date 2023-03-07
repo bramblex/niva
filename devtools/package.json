@@ -15,6 +15,7 @@
     "classnames": "^2.3.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.2",
     "react-scripts": "5.0.1",
     "typescript": "^4.4.2",
     "web-vitals": "^2.1.0"
