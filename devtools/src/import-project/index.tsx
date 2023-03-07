@@ -1,8 +1,8 @@
 import style from './style.module.css'
 
-export function CreateImportProject() {
+export function ImportProject() {
 
-	return <div className={style.emptyPage}>
+	return <div className={style.importProjectPage}>
 		<div className={style.title}>新建或导入 Tauri Lite 项目</div>
 		<div className={style.fileSelector}>
 			<div className={style.fileSelectorIcon}>+</div>

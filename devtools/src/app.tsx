@@ -1,6 +1,6 @@
 import './app.css';
-import { CreateImportProject } from './create-import-project';
+import { ImportProject } from './import-project';
 
 export function App() {
-  return <CreateImportProject />;
+  return <ImportProject />;
 }
