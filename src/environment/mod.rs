@@ -44,7 +44,16 @@ fn get_args() -> Args {
     let args: Vec<String> = std::env::args().collect();
     let arg_pairs: Vec<(String, String)> = args[1..]
         .chunks(2)
-        .map(|c| (c[0].clone(), if c.len() > 1 { c[1].clone() } else { "".to_string() }))
+        .map(|c| {
+            (
+                c[0].clone(),
+                if c.len() > 1 {
+                    c[1].clone()
+                } else {
+                    "".to_string()
+                },
+            )
+        })
         .collect();
     let mut args = Args {
         work_dir: None,
@@ -126,7 +135,7 @@ pub fn init() -> Result<Arc<Environment>> {
     let project_name = config.name.clone();
     let project_uuid = config.uuid.clone().unwrap();
 
-    let temp_dir = std::env::temp_dir();
+    let temp_dir = std::env::temp_dir().join(project_name.clone() + "." + &project_uuid);
 
     let base_dirs = directories::BaseDirs::new()
         .ok_or_else(|| Error::new(ErrorKind::Other, "BaseDirs not found"))?;

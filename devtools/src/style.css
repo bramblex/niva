@@ -1,0 +1,166 @@
+/* global css */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  user-select: none;
+  cursor: default;
+  box-sizing: border-box;
+}
+
+/* common */
+.link {
+  color: #007bff;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* App */
+.app-page-container {
+  padding: 32px 48px;
+  background: #f5f5f5;
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+}
+
+.app-page-title {
+  flex: 0 0 auto;
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.app-page-content {
+  margin-top: 32px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.app-page-footer {
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/* Import Project */
+.project-picker-container {
+  margin-top: 70px;
+
+  display: flex;
+  justify-content: center;
+}
+
+.project-picker {
+  flex: 0 0 auto;
+  background-color: #EFEFEF;
+  width: 360px;
+  height: 240px;
+  border-radius: 60px;
+  border: #CCC solid 0.5px;
+  display: flex;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.project-picker.drop-hover {
+  background-color: #EAEAEA;
+}
+
+.project-picker:active {
+  background-color: #EAEAEA;
+}
+
+.project-picker-icon {
+  font-size: 90px;
+  line-height: 90px;
+  color: #CCC;
+}
+
+.project-picker-text {
+  margin-top: 16px;
+  font-size: 16px;
+  line-height: 16px;
+  color: #999;
+}
+
+/* Project */
+.project-info-container {
+  margin-top: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.project-info-table {}
+
+.project-info-table-field {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.project-info-table-key {
+  font-size: 18px;
+  flex: 0 0 auto;
+  text-align: right;
+  width: 96px;
+  font-weight: bolder;
+  color: #333;
+}
+
+.project-info-table-value {
+  flex: 1 1 auto;
+  margin-left: 32px;
+  color: #666;
+}
+
+.project-operator-group {
+  margin-top: 32px;
+  display: flex;
+  justify-content: center;
+}
+
+.project-operator-button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 0.5px solid #CCC;
+  color: #333;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+
+  margin: 0px 8px;
+}
+
+.project-operator-button:hover {
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+}
+
+.project-operator-button:active {
+  background-color: #EAEAEA;
+}

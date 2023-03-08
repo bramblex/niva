@@ -15,7 +15,6 @@ use crate::{
     thread_pool::{ThreadPoolRef},
 };
 
-
 use self::event::Content;
 
 pub struct WebviewWarper(WebView);

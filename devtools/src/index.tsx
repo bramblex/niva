@@ -1,6 +1,7 @@
+import './style.css';
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
 import { App } from './app';
 
 TauriLite.addEventListener('*', (event, data) => {
@@ -10,6 +11,7 @@ TauriLite.addEventListener('*', (event, data) => {
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
+
 root.render(
   <React.StrictMode>
     <App />
