@@ -15,7 +15,7 @@ pub fn call(_env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
         "exec" => exec(request),
         "open" => open(request),
         "tl_env" => tl_env(_env, request),
-        _ => ApiResponse::err(request.callback_id,"Method not found".to_string()),
+        _ => ApiResponse::err(request.callback_id, "Method not found".to_string()),
     };
 }
 
@@ -43,10 +43,13 @@ pub fn cwd(request: ApiRequest) -> ApiResponse {
     )
 }
 
-fn current_exe(request: ApiRequest) -> ApiResponse{
-    ApiResponse::ok(request.callback_id, json!({
-        "exe": std::env::current_exe().unwrap(),
-    }))
+fn current_exe(request: ApiRequest) -> ApiResponse {
+    ApiResponse::ok(
+        request.callback_id,
+        json!({
+            "exe": std::env::current_exe().unwrap(),
+        }),
+    )
 }
 
 pub fn env(request: ApiRequest) -> ApiResponse {
@@ -67,12 +70,15 @@ struct ChDirOptions {
 pub fn ch_dir(request: ApiRequest) -> ApiResponse {
     let options_result = serde_json::from_value::<ChDirOptions>(request.data);
     if options_result.is_err() {
-        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
+        return ApiResponse::err(request.callback_id, "Invalid options".to_string());
     }
     let path = options_result.unwrap().path;
     let result = std::env::set_current_dir(path);
     if result.is_err() {
-        return ApiResponse::err(request.callback_id,"Failed to change directory".to_string());
+        return ApiResponse::err(
+            request.callback_id,
+            "Failed to change directory".to_string(),
+        );
     }
     ApiResponse::ok(request.callback_id, json!({}))
 }
@@ -94,7 +100,7 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     // 执行命令
     let options_result = serde_json::from_value::<ExecOptions>(request.data);
     if options_result.is_err() {
-        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
+        return ApiResponse::err(request.callback_id, "Invalid options".to_string());
     }
     let options = options_result.unwrap();
     let mut cmd = std::process::Command::new(options.cmd);
@@ -126,13 +132,13 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
                     }),
                 )
             }
-            Err(_) => return ApiResponse::err(request.callback_id,"Failed to exec cmd".to_string()),
+            Err(err) => return ApiResponse::err(request.callback_id, err.to_string()),
         }
     }
 
     let output_result = cmd.output();
-    if output_result.is_err() {
-        return ApiResponse::err(request.callback_id,"Failed to exec cmd".to_string());
+    if let Err(err) =  output_result {
+        return ApiResponse::err(request.callback_id, err.to_string());
     }
     let output = output_result.unwrap();
 
@@ -146,7 +152,6 @@ pub fn exec(request: ApiRequest) -> ApiResponse {
     )
 }
 
-
 #[derive(Deserialize)]
 struct OpenOptions {
     pub uri: String,
@@ -155,12 +160,12 @@ struct OpenOptions {
 fn open(request: ApiRequest) -> ApiResponse {
     let options = serde_json::from_value::<OpenOptions>(request.data);
     if options.is_err() {
-        return ApiResponse::err(request.callback_id,"Invalid options".to_string());
+        return ApiResponse::err(request.callback_id, "Invalid options".to_string());
     }
     let options = options.unwrap();
     let result = opener::open(options.uri);
     if result.is_err() {
-        return ApiResponse::err(request.callback_id,"Failed to open uri".to_string());
+        return ApiResponse::err(request.callback_id, "Failed to open uri".to_string());
     }
     return ApiResponse::ok(request.callback_id, json!({}));
 }

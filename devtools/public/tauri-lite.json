@@ -8,5 +8,6 @@
 		600
 	],
 	"resizable": false,
-	"alwaysOnTop": false
+	"alwaysOnTop": false,
+	"devtools": true
 }

@@ -106,9 +106,48 @@ export class ProjectModel extends StateModel<ProjectState | null> {
   }
 
   async build() {
+    const { os } = await TauriLite.api.os.info();
+    if (os.toLowerCase() === "macos") {
+      return this.buildMacOsApp();
+    } else if (os.toLowerCase() === "windows") {
+      return this.buildWindowsApp();
+    }
+  }
+
+  async buildWindowsApp() {
+    const { exe } = await TauriLite.api.process.currentExe();
+    const { cwd } = await TauriLite.api.process.cwd();
+    const { home } = await TauriLite.api.os.dirs();
+
+    const { file } = await TauriLite.api.dialog.saveFile({
+      filters: ['exe'],
+    });
+
+    const {
+      path, name, config,
+    } = this.state!;
+
+    const mainExePath = [path, name + '.exe'].join(this.sep);
+    const iconPath = [path, config.icon].join(this.sep);
+
+    await TauriLite.api.fs.cp({ from: exe, to: mainExePath });
+    await TauriLite.api.process.exec({
+      cmd: [cwd, 'appacker.exe'].join(this.sep),
+      args: [
+        '-s', path,
+        '-e', name + '.exe',
+        '-i', iconPath,
+        '-d', file,
+      ],
+    });
+    await TauriLite.api.fs.rm({ path: mainExePath });
+  }
+
+  async buildMacOsApp() {
     const { exe } = await TauriLite.api.process.currentExe();
     const { home } = await TauriLite.api.os.dirs();
     const { file } = await TauriLite.api.dialog.saveFile({
+      filters: ['app'],
       startDir: home,
     });
 
@@ -138,18 +177,17 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       await TauriLite.api.process.exec({
         cmd: "sips",
         args: [
-          "-z",
-          size.toString(),
-          size.toString(),
-          iconPath,
-          "--out",
-          [appIconsetPath, `icon_${size}x${size}.png`].join(this.sep),
+          "-z", size.toString(), size.toString(), iconPath,
+          "--out", [appIconsetPath, `icon_${size}x${size}.png`].join(this.sep),
         ],
       });
     }
     await TauriLite.api.process.exec({
       cmd: "iconutil",
-      args: ["-c", "icns", appIconsetPath, "-o", appIconPath],
+      args: [
+        "-c", "icns", appIconsetPath,
+        "-o", appIconPath
+      ],
     });
 
     // generate Info.plist
