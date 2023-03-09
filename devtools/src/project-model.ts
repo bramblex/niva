@@ -118,12 +118,41 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     const appMacOSPath = [appContentsPath, "MacOS"].join(this.sep);
     const executablePath = [appMacOSPath, this.state!.name].join(this.sep);
     const appInfoPlistPath = [appContentsPath, "Info.plist"].join(this.sep);
+    const appIconPath = [appResourcesPath, "icon.icns"].join(this.sep);
+    const appIconsetPath = [appResourcesPath, "icon.iconset"].join(this.sep);
 
+    // make base structure
     await TauriLite.api.fs.mkDir({ path: appPath });
     await TauriLite.api.fs.mkDir({ path: appContentsPath });
     await TauriLite.api.fs.mkDir({ path: appResourcesPath });
+    await TauriLite.api.fs.mkDir({ path: appIconsetPath });
+
     await TauriLite.api.fs.cp({ from: this.state!.path, to: appMacOSPath });
     await TauriLite.api.fs.cp({ from: exe, to: executablePath });
+
+    // create icon
+    let iconPath =
+      [this.state!.path, this.state!.config.icon].join(this.sep) ||
+      "./logo.png";
+    for (let size of [16, 32, 64, 128, 256, 512, 1024]) {
+      await TauriLite.api.process.exec({
+        cmd: "sips",
+        args: [
+          "-z",
+          size.toString(),
+          size.toString(),
+          iconPath,
+          "--out",
+          [appIconsetPath, `icon_${size}x${size}.png`].join(this.sep),
+        ],
+      });
+    }
+    await TauriLite.api.process.exec({
+      cmd: "iconutil",
+      args: ["-c", "icns", appIconsetPath, "-o", appIconPath],
+    });
+
+    // generate Info.plist
     await TauriLite.api.fs.write({
       path: appInfoPlistPath,
       content: generatePlist(this.state!.config),

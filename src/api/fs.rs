@@ -183,10 +183,19 @@ fn mv(request: ApiRequest) -> ApiResponse {
     }
     let options = data_result.unwrap();
 
-    let mv_result = std::fs::rename(options.from, options.to);
+    let from = std::path::Path::new(&options.from);
+    let mv_result = if from.is_dir() {
+        fs_extra::dir::move_dir(
+            from,
+            options.to,
+            &fs_extra::dir::CopyOptions::new().copy_inside(true),
+        )
+    } else {
+        fs_extra::file::move_file(from, options.to, &fs_extra::file::CopyOptions::new())
+    };
 
-    if mv_result.is_err() {
-        return ApiResponse::err(request.callback_id, "Cannot move file");
+    if let Err(err) = mv_result {
+        return ApiResponse::err(request.callback_id, err.to_string());
     }
 
     ApiResponse::ok(request.callback_id, json!({}))
@@ -199,10 +208,19 @@ fn cp(request: ApiRequest) -> ApiResponse {
     }
     let options = data_result.unwrap();
 
-    let cp_result = std::fs::copy(options.from, options.to);
+    let from = std::path::Path::new(&options.from);
+    let cp_result = if from.is_dir() {
+        fs_extra::dir::copy(
+            from,
+            options.to,
+            &fs_extra::dir::CopyOptions::new().copy_inside(true),
+        )
+    } else {
+        fs_extra::file::copy(from, options.to, &fs_extra::file::CopyOptions::new())
+    };
 
-    if cp_result.is_err() {
-        return ApiResponse::err(request.callback_id, "Cannot copy file");
+    if let Err(err) = cp_result {
+        return ApiResponse::err(request.callback_id, err.to_string());
     }
 
     ApiResponse::ok(request.callback_id, json!({}))
@@ -213,11 +231,18 @@ fn rm(request: ApiRequest) -> ApiResponse {
     if data_result.is_err() {
         return ApiResponse::err(request.callback_id, "Invalid options");
     }
-    let path = data_result.unwrap().path;
-    let rm_result = std::fs::remove_file(path);
 
-    if rm_result.is_err() {
-        return ApiResponse::err(request.callback_id, "Cannot remove file");
+    let path = &data_result.unwrap().path;
+    let path = std::path::Path::new(path);
+
+    let rm_result = if path.is_dir() {
+        fs_extra::dir::remove(path)
+    } else {
+        fs_extra::file::remove(path)
+    };
+
+    if let Err(err) = rm_result {
+        return ApiResponse::err(request.callback_id, err.to_string());
     }
 
     ApiResponse::ok(request.callback_id, json!({}))

@@ -11,7 +11,7 @@ export function generatePlist(config: any) {
     <key>CFBundleExecutable</key>
     <string>${config.name}</string>
     <key>CFBundleIconFile</key>
-    <string>${config.icon}</string>
+    <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>${config.name}.${config.uuid}</string>
     <key>CFBundleInfoDictionaryVersion</key>
