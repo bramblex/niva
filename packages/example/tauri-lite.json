@@ -11,6 +11,7 @@
   ],
   "minimizable": null,
   "alwaysOnTop": true,
+  "visibleOnAllWorkspaces": true,
   "menu": [
     [
       "hello",
