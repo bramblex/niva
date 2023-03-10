@@ -18,7 +18,7 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["--work-dir", "example"],
+      "args": ["--work-dir", "packages/example"],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -37,7 +37,7 @@
       },
       "args": [
         "--work-dir",
-        "devtools/public",
+        "packages/devtools/public",
         "--debug-entry-url",
         "http://127.0.0.1:3000"
       ],

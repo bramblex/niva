@@ -1,5 +1,4 @@
 /target
-/example/tauri-lite.exe*
-/node_modules
 
+node_modules
 yarn.lock

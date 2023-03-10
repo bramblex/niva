@@ -2390,11 +2390,16 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "tauri-lite-lib",
  "ureq",
  "uuid",
  "winres",
  "wry",
 ]
+
+[[package]]
+name = "tauri-lite-lib"
+version = "0.1.0"
 
 [[package]]
 name = "tempfile"

@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use thread_pool::ThreadPool;
 
 fn main() {
+    println!("{:?}", tauri_lite_lib::add(1, 2));
+
     let env_result = environment::init();
     if let Err(err) = env_result {
         println!("Init Environment Error: {:?}", err.to_string());
