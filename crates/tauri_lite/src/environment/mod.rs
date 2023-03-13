@@ -101,14 +101,14 @@ fn get_work_dir(args: &Args) -> Result<PathBuf> {
 }
 
 fn get_or_create_config(work_dir: &Path) -> Result<Config> {
-    let config_path = work_dir.join("tauri-lite.json");
+    let config_path = work_dir.join("tauri_lite.json");
     let config_exists = config_path.exists();
 
     if !config_exists {
         std::fs::write(
             &config_path,
             json!({
-                "name": "tauri-lite-project",
+                "name": "tauri_lite-project",
                 "uuid": uuid::Uuid::new_v4().to_string(),
             })
             .to_string(),

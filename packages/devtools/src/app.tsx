@@ -28,8 +28,8 @@ export function Page(prop: PropsWithChildren<{ title: string }>) {
     </div>
     <div className='app-page-footer'>
       Doc & Issue: <span className='link' onClick={() => {
-        TauriLite.api.process.open({ uri: 'https://github.com/bramblex/tauri-lite' });
-      }}>https://github.com/bramblex/tauri-lite</span>
+        TauriLite.api.process.open({ uri: 'https://github.com/bramblex/tauri_lite' });
+      }}>https://github.com/bramblex/tauri_lite</span>
     </div>
   </div>
 }

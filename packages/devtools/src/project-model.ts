@@ -38,7 +38,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       return;
     }
 
-    // check tauri-lite.json exists, if not create it
+    // check tauri_lite.json exists, if not create it
     const config = await this.loadOrCreateConfig(path);
 
     this.setState({
@@ -50,17 +50,17 @@ export class ProjectModel extends StateModel<ProjectState | null> {
   }
 
   getConfigPath() {
-    return [this.state!.path, "tauri-lite.json"].join(this.sep);
+    return [this.state!.path, "tauri_lite.json"].join(this.sep);
   }
 
   private async loadOrCreateConfig(path: string) {
-    const configPath = [path, "tauri-lite.json"].join(this.sep);
+    const configPath = [path, "tauri_lite.json"].join(this.sep);
     return await tryOr(
       async () => {
         const { content } = await TauriLite.api.fs.read({ path: configPath });
         const config = JSON.parse(content);
         if (!config.name || !config.uuid) {
-          config.name = config.name || "tauri-lite-project";
+          config.name = config.name || "tauri_lite-project";
           config.uuid = config.uuid || uuid();
           await TauriLite.api.fs.write({
             path: configPath,
@@ -71,7 +71,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       },
       async () => {
         const defaultConfig = {
-          name: "tauri-lite-project",
+          name: "tauri_lite-project",
           uuid: uuid(),
         };
         await TauriLite.api.fs.write({

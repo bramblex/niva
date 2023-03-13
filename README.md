@@ -2,7 +2,7 @@
 
 一个基于 Tauri WRY 跨端 Webview 库的轻量级的跨端应用开发框架。
 
-![screenshot](https://github.com/bramblex/tauri-lite/raw/main/examples/normal/screenshot.png)
+![screenshot](https://github.com/bramblex/tauri_lite/raw/main/examples/normal/screenshot.png)
 
 ## 目标
 
@@ -27,12 +27,12 @@
 ## Usage
 
 1. 下载或者编译 Tauri Lite.
-2. 将 target/{release, debug}/tauri-lite 拖进 web 前端项目的目标目录，比如本项目的 example 目录。
-3. 确保项目目录下有 index.html 文件，如果需要更多配置可以使用 tauri-lite.json。
-4. 双击 tauri-lite 即可打开应用程序。
+2. 将 target/{release, debug}/tauri_lite 拖进 web 前端项目的目标目录，比如本项目的 example 目录。
+3. 确保项目目录下有 index.html 文件，如果需要更多配置可以使用 tauri_lite.json。
+4. 双击 tauri_lite 即可打开应用程序。
 
 ## Config
-Tauri Lite 可以通过 tauri-lite.json 提供项目和窗口的配置。
+Tauri Lite 可以通过 tauri_lite.json 提供项目和窗口的配置。
 
 ### Project config
 项目基本配置，绝大部分配置只有在打包发布时候才有用。除了 name 字段外，其他字段都是可选的。

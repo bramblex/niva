@@ -9,9 +9,9 @@
       "request": "launch",
       "name": "Debug example",
       "cargo": {
-        "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
+        "args": ["build", "--bin=tauri_lite", "--package=tauri_lite"],
         "filter": {
-          "name": "tauri-lite",
+          "name": "tauri_lite",
           "kind": "bin"
         },
         "env": {
@@ -26,9 +26,9 @@
       "request": "launch",
       "name": "Debug devtools",
       "cargo": {
-        "args": ["build", "--bin=tauri-lite", "--package=tauri-lite"],
+        "args": ["build", "--bin=tauri_lite", "--package=tauri_lite"],
         "filter": {
-          "name": "tauri-lite",
+          "name": "tauri_lite",
           "kind": "bin"
         },
         "env": {
