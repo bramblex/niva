@@ -1,12 +1,24 @@
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
+use serde::Deserialize;
+use wry::{
+    application::{window::{Window, WindowId}, event_loop::EventLoopWindowTarget},
+    webview::WebView,
+};
+
+use crate::event::CallbackEvent;
+
+#[derive(Deserialize, Debug)]
 pub struct Size(pub f64, pub f64);
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Position(pub f64, pub f64);
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum MenuItemConfig {
     NativeItem(String),
@@ -14,32 +26,12 @@ pub enum MenuItemConfig {
     SubMenu(String, Vec<MenuItemConfig>),
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct MenuConfig(pub Vec<MenuItemConfig>);
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Config {
-    // project config
-    pub name: String,
-    pub uuid: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub author: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub copyright: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub license: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub website: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub website_label: Option<String>,
+pub struct WindowOptions {
     // webview config
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
@@ -99,8 +91,31 @@ pub struct Config {
     // window menu
     #[serde(skip_serializing_if = "Option::is_none")]
     pub menu: Option<MenuConfig>,
+}
 
-    // runtime config
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workers: Option<usize>,
+type WindowRef = Arc<Mutex<Window>>;
+type WebviewRef = Arc<Mutex<WebView>>;
+
+pub struct WindowManager {
+    base_url: String,
+    windows: HashMap<WindowId, (WindowRef, WebviewRef)>,
+}
+
+impl WindowManager {
+    pub fn new(base_url: String) -> Self {
+        Self {
+            base_url,
+            windows: HashMap::new()
+        }
+    }
+
+    pub fn create(&self, window_options: &WindowOptions, target: &EventLoopWindowTarget<CallbackEvent>) -> Result<WindowId> {
+    }
+
+    pub fn close(&self, window_id: WindowId) -> Result<()> {
+    }
+    
+    fn create_webview(&self, window_options: &WindowOptions, window :&Window) -> Result<Webview>{
+    }
+
 }

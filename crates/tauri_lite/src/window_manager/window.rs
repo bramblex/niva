@@ -1,9 +1,11 @@
-use super::{event::Content, menu};
-use crate::environment::{Position, Size, EnvironmentRef};
+use super::{
+    menu,
+    options::{Position, Size, WindowOptions},
+    EventLoop, EventLoopWindowTarget,
+};
 use wry::application::{
     dpi,
-    event_loop::EventLoop,
-    window::{Fullscreen, Theme, Window, WindowBuilder},
+    window::{Fullscreen, Theme, Window, WindowBuilder}, platform::macos::WindowBuilderExtMacOS,
 };
 
 #[cfg(target_os = "windows")]
@@ -24,18 +26,17 @@ impl From<Size> for dpi::Size {
 #[cfg(target_os = "windows")]
 static DEFAULT_ICON: &[u8] = include_bytes!("../assets/icon.bitmap");
 
-pub fn create(env: EnvironmentRef, event_loop: &EventLoop<Content>) -> Window {
-    let config = &env.config;
-    // window config
+pub fn create(target: &EventLoopWindowTarget, options: &WindowOptions) -> Window {
+    // window options
     let mut window_builder = WindowBuilder::new();
 
-    let title = config.title.clone().unwrap_or(config.name.clone());
+    let title = options.title.clone().unwrap_or("".to_string());
     window_builder = window_builder.with_title(title);
 
     #[cfg(target_os = "windows")]
     {
         let icon = (|| {
-            if let Some(window_icon) = &config.window_icon {
+            if let Some(window_icon) = &options.window_icon {
                 let result = std::fs::read(window_icon);
                 if let Ok(data) = result {
                     let icon = Icon::from_rgba(data, 32, 32);
@@ -53,7 +54,7 @@ pub fn create(env: EnvironmentRef, event_loop: &EventLoop<Content>) -> Window {
         window_builder = window_builder.with_window_icon(icon);
     }
 
-    if let Some(theme_str) = &config.theme {
+    if let Some(theme_str) = &options.theme {
         match theme_str.as_str() {
             "dark" => {
                 window_builder = window_builder.with_theme(Some(Theme::Dark));
@@ -65,81 +66,81 @@ pub fn create(env: EnvironmentRef, event_loop: &EventLoop<Content>) -> Window {
         }
     }
 
-    if let Some(size) = &config.size {
+    if let Some(size) = &options.size {
         window_builder = window_builder.with_inner_size(*size);
     }
 
-    if let Some(min_size) = &config.min_size {
+    if let Some(min_size) = &options.min_size {
         window_builder = window_builder.with_min_inner_size(*min_size);
     }
 
-    if let Some(max_size) = &config.max_size {
+    if let Some(max_size) = &options.max_size {
         window_builder = window_builder.with_max_inner_size(*max_size);
     }
 
-    if let Some(position) = config.position {
-        window_builder = window_builder.with_position(position);
+    if let Some(position) = &options.position {
+        window_builder = window_builder.with_position(*position);
     }
 
-    if let Some(resizable) = &config.resizable {
+    if let Some(resizable) = &options.resizable {
         window_builder = window_builder.with_resizable(*resizable);
     }
 
-    if let Some(minimizable) = &config.minimizable {
+    if let Some(minimizable) = &options.minimizable {
         window_builder = window_builder.with_minimizable(*minimizable);
     }
 
-    if let Some(maximizable) = &config.maximizable {
+    if let Some(maximizable) = &options.maximizable {
         window_builder = window_builder.with_maximizable(*maximizable);
     }
 
-    if let Some(closable) = &config.closable {
+    if let Some(closable) = &options.closable {
         window_builder = window_builder.with_closable(*closable);
     }
 
-    if config.fullscreen.is_some() {
+    if options.fullscreen.is_some() {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
 
-    if let Some(maximized) = &config.maximized {
+    if let Some(maximized) = &options.maximized {
         window_builder = window_builder.with_maximized(*maximized);
     }
 
-    if let Some(visible) = &config.visible {
+    if let Some(visible) = &options.visible {
         window_builder = window_builder.with_visible(*visible);
     }
 
-    if let Some(transparent) = &config.transparent {
+    if let Some(transparent) = &options.transparent {
         window_builder = window_builder.with_transparent(*transparent);
     }
 
-    if let Some(decorations) = &config.decorations {
+    if let Some(decorations) = &options.decorations {
         window_builder = window_builder.with_decorations(*decorations);
     }
 
-    if let Some(always_on_top) = &config.always_on_top {
+    if let Some(always_on_top) = &options.always_on_top {
         window_builder = window_builder.with_always_on_top(*always_on_top);
     }
 
-    if let Some(always_on_bottom) = &config.always_on_bottom {
+    if let Some(always_on_bottom) = &options.always_on_bottom {
         window_builder = window_builder.with_always_on_bottom(*always_on_bottom);
     }
 
-    if let Some(visible_on_all_workspaces) = &config.visible_on_all_workspaces {
+    if let Some(visible_on_all_workspaces) = &options.visible_on_all_workspaces {
         window_builder = window_builder.with_visible_on_all_workspaces(*visible_on_all_workspaces);
     }
 
-    if let Some(focused) = &config.focused {
+    if let Some(focused) = &options.focused {
         window_builder = window_builder.with_focused(*focused);
     }
 
-    if let Some(content_protection) = &config.content_protection {
+    if let Some(content_protection) = &options.content_protection {
         window_builder = window_builder.with_content_protection(*content_protection);
     }
 
-    if let Some(menu) = menu::create(config) {
+    if let Some(menu) = menu::create(&options.menu) {
         window_builder = window_builder.with_menu(menu);
     };
 
-    window_builder.build(event_loop).unwrap()
+    window_builder.build(target).unwrap()
 }

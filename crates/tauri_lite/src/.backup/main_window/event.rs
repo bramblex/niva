@@ -1,29 +1,14 @@
 use serde_json::json;
 use wry::application::{
     event::{Event, WindowEvent},
-    event_loop::ControlFlow,
+    event_loop::{ControlFlow, EventLoopWindowTarget},
     window::Theme,
 };
 
-use crate::api::{self, ApiRequest};
 
-use super::{WebviewWarper};
+use crate::event::CallbackEvent;
 
-#[derive(Debug)]
-pub enum Content {
-    Event(String, serde_json::Value),
-    UnresolvedEvent(ApiRequest),
-}
-
-impl Content {
-    pub fn new<E, D>(event: E, data: D) -> Self
-    where
-        E: Into<String>,
-        D: Into<serde_json::Value>,
-    {
-        Self::Event(event.into(), data.into())
-    }
-}
+use super::WebviewWarper;
 
 fn send_event<S, D>(main_webview_warper: &WebviewWarper, event: S, data: D)
 where
@@ -73,7 +58,8 @@ pub fn handle_window_event(
 
 pub fn handle(
     main_webview_warper: &WebviewWarper,
-    event: Event<Content>,
+    event: Event<CallbackEvent>,
+    target: &EventLoopWindowTarget<CallbackEvent>,
     control_flow: &mut ControlFlow,
 ) {
     *control_flow = ControlFlow::Wait;
@@ -89,16 +75,13 @@ pub fn handle(
         Event::MenuEvent { menu_id, .. } => send_event(
             main_webview_warper,
             "menu.click",
-            json!({ "menu_id": menu_id.0 }),
+            json!({ "menuId": menu_id.0 }),
         ),
 
-        Event::UserEvent(Content::Event(event, data)) => {
-            send_event(main_webview_warper, event, data);
-        }
-
-        Event::UserEvent(Content::UnresolvedEvent(request)) => {
-            let response = api::webview::call(&main_webview_warper.0, request);
-            send_event(main_webview_warper, "ipc.callback", response);
+        Event::UserEvent(callback) => {
+            if let Some(next) = callback.call(&main_webview_warper.0, target, control_flow) {
+                *control_flow = next;
+            };
         }
 
         _ => (),

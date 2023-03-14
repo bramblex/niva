@@ -1,23 +1,23 @@
-use crate::environment::{Config, MenuConfig, MenuItemConfig};
+use super::options::{MenuItemOptions, MenuOptions};
 use wry::application::menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes};
 
-pub fn create(config: &Config) -> Option<MenuBar> {
-    if let Some(MenuConfig(menu_item_config_list)) = &config.menu {
+pub fn create(options: &Option<MenuOptions>) -> Option<MenuBar> {
+    if let Some(MenuOptions(menu_item_options_list)) = &options {
         let mut menu = MenuBar::new();
 
         #[cfg(target_os = "macos")]
         {
-            let (native_menu_name, native_menu) = create_default_menu(config);
+            let (native_menu_name, native_menu) = create_default_menu();
             menu.add_submenu(&native_menu_name, true, native_menu);
         }
 
-        append_custom_menu(&mut menu, menu_item_config_list);
+        append_custom_menu(&mut menu, menu_item_options_list);
         return Some(menu);
     }
 
     #[cfg(target_os = "macos")]
     {
-        let (native_menu_name, native_menu) = create_default_menu(config);
+        let (native_menu_name, native_menu) = create_default_menu();
         let mut menu = MenuBar::new();
         menu.add_submenu(&native_menu_name, true, native_menu);
         Some(menu)
@@ -28,18 +28,18 @@ pub fn create(config: &Config) -> Option<MenuBar> {
     }
 }
 
-fn append_custom_menu(menu: &mut MenuBar, menu_item_config_list: &Vec<MenuItemConfig>) {
-    for config in menu_item_config_list {
-        match config {
-            MenuItemConfig::NativeItem(label) => {
+fn append_custom_menu(menu: &mut MenuBar, menu_item_options_list: &Vec<MenuItemOptions>) {
+    for options in menu_item_options_list {
+        match options {
+            MenuItemOptions::NativeItem(label) => {
                 append_native_item(menu, label);
             }
-            MenuItemConfig::MenuItem(label, id) => {
+            MenuItemOptions::MenuItem(label, id) => {
                 menu.add_item(MenuItemAttributes::new(label).with_id(MenuId(*id)));
             }
-            MenuItemConfig::SubMenu(label, submenu_item_config_list) => {
+            MenuItemOptions::SubMenu(label, submenu_item_options_list) => {
                 let mut submenu = MenuBar::new();
-                append_custom_menu(&mut submenu, submenu_item_config_list);
+                append_custom_menu(&mut submenu, submenu_item_options_list);
                 menu.add_submenu(label, true, submenu);
             }
         }
@@ -59,8 +59,8 @@ fn append_native_item(menu: &mut MenuBar, label: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn create_default_menu(config: &Config) -> (String, MenuBar) {
-    let native_menu_name = config.title.clone().unwrap_or(config.name.clone());
+fn create_default_menu() -> (String, MenuBar) {
+    let native_menu_name = "File".to_string();
     let mut native_menu = MenuBar::new();
 
     native_menu.add_native_item(MenuItem::SelectAll);

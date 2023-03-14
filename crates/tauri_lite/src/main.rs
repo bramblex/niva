@@ -4,64 +4,45 @@
     windows_subsystem = "windows"
 )]
 
-mod api;
-mod api_manager;
-mod environment;
-mod main_window;
-mod static_server;
+use window_manager::EventLoop;
+use wry::application::{
+    event::{Event, WindowEvent},
+    event_loop::ControlFlow,
+};
+
+mod utils;
 mod thread_pool;
-
-use std::sync::{Arc, Mutex};
-use thread_pool::ThreadPool;
-
-/*
-    Environment
-
-    StaticServer(env, task_runner)
-
-    ApiManager
-        .new(task_runner, env)
-        .register_api(method, ApiInstance)
-        .call(method, ApiRequest)
-
-        ApiInstance(
-            handle_rpc: (env, window, ipc_message) -> UserEvent((webview) => {}), 
-            handle_event: (webview, UserEvent) -> (),
-        )
-
-    WindowManager
-        ::new(env, api_manager)
-        .create_window(window_options, entry_url)
-        .get_window(window_id)
-        .close_window(window_id)
-        .run_event_loop()
- */
+mod static_server;
+mod window_manager;
+mod api_manager;
 
 fn main() {
-    let env_result = environment::init();
-    if let Err(err) = env_result {
-        println!("Init Environment Error: {:?}", err.to_string());
-        return;
-    }
+    let event_loop = EventLoop::with_user_event();
 
-    let env = env_result.unwrap();
-    println!("Init Environment Success");
-    println!("work_dir: {:?}", env.work_dir);
-    println!("config: {:?}", env.config);
+    let mut window_manager = window_manager::WindowManager::new(event_loop.create_proxy());
+    let main_window_id = window_manager.create_window(&event_loop, &Default::default());
 
-    let workers = env.config.workers.unwrap_or(5);
-    let thread_pool = Arc::new(Mutex::new(ThreadPool::new(workers)));
-    println!("Init thread pool workers: {:?}", workers);
-
-    let entry_url: String = static_server::start(env.clone(), thread_pool.clone());
-    println!("Static server started at {:?}", entry_url);
-
-    println!("Open main window");
-    let debug_entry_url = env.debug_entry_url.clone();
-    main_window::open(
-        env,
-        debug_entry_url.unwrap_or(entry_url),
-        thread_pool,
-        api::call,
-    );
+    event_loop.run(move |event, target, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        match event {
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::CloseRequested,
+                ..
+            } => { 
+                if window_id == main_window_id {
+                    *control_flow = ControlFlow::Exit;
+                } else {
+                    window_manager.remove_window(window_id);
+                }
+            }
+            Event::UserEvent(t) => match t.as_str() {
+                "open" => {
+                    window_manager.create_window(target, &Default::default());
+                }
+                _ => (),
+            },
+            _ => (),
+        }
+    });
 }

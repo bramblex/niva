@@ -1,15 +1,14 @@
+use anyhow::Result;
 mod config;
 
-use serde::Serialize;
 use serde_json::json;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use config::*;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct Environment {
     pub project_name: String,
     pub project_uuid: String,
@@ -18,16 +17,10 @@ pub struct Environment {
     pub temp_dir: PathBuf,
     pub data_dir: PathBuf,
 
-    pub config: Config,
+    pub config: ProjectOptions,
 
     // debug entry url
     pub debug_entry_url: Option<String>,
-}
-
-impl Environment {
-    pub fn to_json_value(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap()
-    }
 }
 
 unsafe impl Send for Environment {}
@@ -85,11 +78,7 @@ fn get_work_dir(args: &Args) -> Result<PathBuf> {
         }
 
         // if custom_path is not a directory, return error
-        let err = Error::new(
-            ErrorKind::Other,
-            "Custom path is not a directory or not exists",
-        );
-        return Err(err);
+        anyhow::anyhow!("Custom path is not a directory or not exists");
     }
 
     // if work dir is not specified in command line arguments,
@@ -100,7 +89,7 @@ fn get_work_dir(args: &Args) -> Result<PathBuf> {
     Ok(default_work_dir)
 }
 
-fn get_or_create_config(work_dir: &Path) -> Result<Config> {
+fn get_or_create_config(work_dir: &Path) -> Result<ProjectOptions> {
     let config_path = work_dir.join("tauri_lite.json");
     let config_exists = config_path.exists();
 
@@ -116,12 +105,13 @@ fn get_or_create_config(work_dir: &Path) -> Result<Config> {
     }
 
     let content = std::fs::read_to_string(&config_path)?;
-    let mut config = serde_json::from_str::<Config>(&content)?;
+    let mut config = serde_json::from_str::<ProjectOptions>(&content)?;
 
     // if config uuid is not exists, create a new one and write back to config file.
     if config.uuid.is_none() {
-        config.uuid = Some(uuid::Uuid::new_v4().to_string());
-        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
+        anyhow::anyhow!("Config uuid is not exists");
+    //     config.uuid = Some(uuid::Uuid::new_v4().to_string());
+    //     std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
     }
 
     Ok(config)

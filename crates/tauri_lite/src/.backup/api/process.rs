@@ -20,7 +20,7 @@ pub fn call(_env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
 }
 
 pub fn tl_env(env: EnvironmentRef, request: ApiRequest) -> ApiResponse {
-    return ApiResponse::ok(request.callback_id, env.to_json_value());
+    return ApiResponse::ok(request.callback_id, json!({ }));
 }
 
 pub fn pid(request: ApiRequest) -> ApiResponse {

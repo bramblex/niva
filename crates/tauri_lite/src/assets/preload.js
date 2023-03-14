@@ -64,14 +64,13 @@
 
   var callbacks = {};
 
-  function call(namespace, method, data) {
+  function call(method, args) {
     var callbackId = getNextCallbackId();
-    window.ipc.postMessage(JSON.stringify({
-      namespace: namespace,
-      method: method,
-      data: data,
-      callback_id: callbackId
-    }));
+    window.ipc.postMessage(JSON.stringify([
+      callbackId,
+      method,
+      args
+    ]));
 
     var _resolve, _reject;
     var promise = new Promise((resolve, reject) => {
@@ -87,14 +86,18 @@
 
   function resolve(response) {
     setTimeout(function () {
-      var promise = callbacks[response.callback_id];
+      var callbackId = response[0];
+      var code = response[1];
+      var data = response[3];
+
+      var promise = callbacks[callbackId];
       if (promise) {
-        if (response.code === 0) {
-          promise.resolve(response.data);
+        if (code === 0) {
+          promise.resolve(data);
         } else {
           promise.reject(response);
         }
-        delete callbacks[response.callback_id];
+        delete callbacks[callbackId];
       }
     }, 0);
   }
@@ -104,8 +107,8 @@
       get: function (_, namespace) {
         return new Proxy({}, {
           get: function (_, method) {
-            return function (data) {
-              return call(namespace, method, data || {})
+            return function () {
+              return call(namespace + '.' + method, Array.prototype.slice.call(arguments))
             }
           }
         })

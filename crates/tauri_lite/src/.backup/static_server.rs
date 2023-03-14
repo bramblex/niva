@@ -1,4 +1,4 @@
-use crate::thread_pool::ThreadPool;
+use crate::{environment::EnvironmentRef, thread_pool::ThreadPool};
 use std::{
     io::{BufRead, Error, ErrorKind, Result, Write},
     net::{TcpListener, TcpStream},
@@ -15,23 +15,26 @@ fn get_tcp_listener() -> Result<(TcpListener, u16)> {
     Err(Error::new(ErrorKind::Other, "No available port to listen"))
 }
 
-pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
+pub fn start(env: EnvironmentRef, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
+    let entry = env.config.window.entry.clone().unwrap_or("index.html".to_string());
+    let root_dir = env.work_dir.clone();
+
     let (listener, port) = get_tcp_listener().unwrap();
     let thread_pool = thread_pool;
 
     std::thread::spawn(move || {
         for stream in listener.incoming() {
+            let entry = entry.clone();
             let root_dir = root_dir.clone();
             match stream {
                 Ok(mut stream) => {
                     thread_pool.lock().unwrap().run(move || {
                         let request_path = get_request_path(&mut stream);
-                        let request_path = if request_path.ends_with("/") {
-                            request_path + "index.html"
+                        let file_path = if request_path == "/" {
+                            root_dir.join(entry)
                         } else {
-                            request_path
+                            root_dir.join(request_path.strip_prefix('/').unwrap())
                         };
-                        let file_path = root_dir.join(request_path.strip_prefix('/').unwrap());
                         let file_result = std::fs::read(&file_path);
                         if file_result.is_err() {
                             write_404_response(&mut stream);
@@ -47,7 +50,7 @@ pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
         }
     });
 
-    let entry_url = format!("http://127.0.0.1:{port}/");
+    let entry_url = format!("http://127.0.0.1:{port}");
     println!("Server started at {}", entry_url);
     entry_url
 }
