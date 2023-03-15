@@ -6,31 +6,26 @@ use std::{
     pin::Pin,
 };
 
+pub mod event_handler;
+
 use wry::{
-    application::{
-        event::Event,
-        event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
-    },
+    application::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
     webview::WebView,
 };
 
 use crate::api_manager::ApiResponse;
 
-pub struct CallbackEvent(
-    pub  Pin<
-        Box<
-            dyn Fn(
-                    &WebView,
-                    &EventLoopWindowTarget<CallbackEvent>,
-                    &ControlFlow,
-                ) -> Option<ControlFlow>
-                + Send,
-        >,
-    >,
-);
+type Callback =
+    Pin<Box<dyn Fn(&WebView, &EventLoopWindowTarget<CallbackEvent>, &mut ControlFlow) + Send>>;
+pub struct CallbackEvent(pub Callback);
 
 impl CallbackEvent {
-    pub fn call(&self, webview: &WebView, event_loop: &EventLoopWindowTarget<CallbackEvent>, control_flow: &ControlFlow) -> Option<ControlFlow> {
+    pub fn call(
+        &self,
+        webview: &WebView,
+        event_loop: &EventLoopWindowTarget<CallbackEvent>,
+        control_flow: &mut ControlFlow,
+    ) {
         (self.0)(webview, event_loop, control_flow)
     }
 }
@@ -43,30 +38,22 @@ impl Debug for CallbackEvent {
 
 pub struct MainEventLoop(pub EventLoop<CallbackEvent>);
 
+pub type MainEventLoopTarget = EventLoopWindowTarget<CallbackEvent>;
+
 impl MainEventLoop {
     pub fn new() -> Self {
         MainEventLoop(EventLoop::<CallbackEvent>::with_user_event())
     }
 
-    pub fn run<F>(self, event_handler: F) -> !
-    where
-        F: 'static
-            + FnMut(Event<'_, CallbackEvent>, &EventLoopWindowTarget<CallbackEvent>, &mut ControlFlow),
-    {
-        self.0.run(event_handler);
+    pub fn create_proxy(&self) -> MainEventLoopProxy {
+        MainEventLoopProxy(self.0.create_proxy())
     }
 }
 
 impl Deref for MainEventLoop {
     type Target = EventLoop<CallbackEvent>;
     fn deref(&self) -> &Self::Target {
-        return &self.0;
-    }
-}
-
-impl MainEventLoop {
-    pub fn create_proxy(&self) -> MainEventLoopProxy {
-        MainEventLoopProxy(self.0.create_proxy())
+        &self.0
     }
 }
 
@@ -76,7 +63,7 @@ pub struct MainEventLoopProxy(pub EventLoopProxy<CallbackEvent>);
 impl Deref for MainEventLoopProxy {
     type Target = EventLoopProxy<CallbackEvent>;
     fn deref(&self) -> &Self::Target {
-        return &self.0;
+        &self.0
     }
 }
 
@@ -85,7 +72,7 @@ unsafe impl Sync for MainEventLoopProxy {}
 
 impl MainEventLoopProxy {
     pub fn ipc_send_callback(&self, response: ApiResponse) -> Result<()> {
-        Ok(self.ipc_send_event("ipc.callback", response)?)
+        self.ipc_send_event("ipc.callback", response)
     }
 
     pub fn ipc_send_event<S: Into<String>, D: Serialize>(&self, event: S, data: D) -> Result<()> {
@@ -96,7 +83,6 @@ impl MainEventLoopProxy {
                 webview
                     .evaluate_script(&format!("TauriLite.__emit__(\"{event}\", {data_str})"))
                     .unwrap();
-                None
             })))
             .unwrap();
         Ok(())

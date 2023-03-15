@@ -1,11 +1,12 @@
+use crate::event_loop::MainEventLoopTarget;
+
 use super::{
     menu,
     options::{Position, Size, WindowOptions},
-    EventLoop, EventLoopWindowTarget,
 };
 use wry::application::{
     dpi,
-    window::{Fullscreen, Theme, Window, WindowBuilder}, platform::macos::WindowBuilderExtMacOS,
+    window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 
 #[cfg(target_os = "windows")]
@@ -26,7 +27,7 @@ impl From<Size> for dpi::Size {
 #[cfg(target_os = "windows")]
 static DEFAULT_ICON: &[u8] = include_bytes!("../assets/icon.bitmap");
 
-pub fn create(target: &EventLoopWindowTarget, options: &WindowOptions) -> Window {
+pub fn create(target: &MainEventLoopTarget, options: &WindowOptions) -> Window {
     // window options
     let mut window_builder = WindowBuilder::new();
 

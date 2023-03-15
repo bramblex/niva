@@ -1,6 +1,5 @@
+use crate::window_manager::options::WindowOptions;
 use serde::Deserialize;
-
-use crate::window_manager::WindowOptions;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

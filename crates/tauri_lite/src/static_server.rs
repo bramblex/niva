@@ -19,6 +19,7 @@ pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
     let (listener, port) = get_tcp_listener().unwrap();
     let thread_pool = thread_pool;
 
+    let root_dir = root_dir.to_path_buf();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let root_dir = root_dir.clone();
@@ -26,7 +27,7 @@ pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
                 Ok(mut stream) => {
                     thread_pool.lock().unwrap().run(move || {
                         let request_path = get_request_path(&mut stream);
-                        let request_path = if request_path.ends_with("/") {
+                        let request_path = if request_path.ends_with('/') {
                             request_path + "index.html"
                         } else {
                             request_path
@@ -47,7 +48,7 @@ pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
         }
     });
 
-    let entry_url = format!("http://127.0.0.1:{port}/");
+    let entry_url = format!("http://127.0.0.1:{port}");
     println!("Server started at {}", entry_url);
     entry_url
 }

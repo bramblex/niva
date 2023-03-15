@@ -2,7 +2,7 @@ use std::{collections::HashMap, pin::Pin};
 
 use crate::{
     environment::EnvironmentRef,
-    thread_pool::ThreadPoolRef, event::{MainEventLoopProxy, CallbackEvent},
+    thread_pool::ThreadPoolRef, event_loop::{MainEventLoopProxy, CallbackEvent},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -20,9 +20,9 @@ impl ApiArgs {
         Ok(serde_json::from_value::<(T,)>(self.0.clone())?.0)
     }
 
-    pub fn get<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
-        Ok(serde_json::from_value(self.0.clone())?)
-    }
+    // pub fn get<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
+    //     Ok(serde_json::from_value(self.0.clone())?)
+    // }
 
     pub fn get_with_optional<T: serde::de::DeserializeOwned>(&self, args_size: usize) -> Result<T> {
         let mut args = serde_json::from_value::<Vec<serde_json::Value>>(self.0.clone())?;
@@ -42,6 +42,10 @@ impl ApiRequest {
 
     pub fn ok<D: Serialize>(&self, data: D) -> ApiResponse {
         ApiResponse(self.0, 0, "ok".to_string(), json!(data))
+    }
+
+    pub fn args (&self) -> &ApiArgs {
+        &self.2
     }
 }
 
@@ -119,27 +123,25 @@ impl ApiManager {
             EnvironmentRef,
             &WebView,
             ApiRequest,
-            &ControlFlow,
-        ) -> Result<(T, Option<ControlFlow>)>,
+            &mut ControlFlow,
+        ) -> Result<T>,
     ) {
         let event_loop = self.event_loop.clone();
         let env = self.env.clone();
         let api_instance: ApiInstance = Box::pin(move |_, request| {
             let env = env.clone();
-            let request = request.clone();
+            let request = request;
             event_loop
                 .send_event(CallbackEvent(Box::pin(move |webview, _, control_flow| {
                     let result = api_func(env.clone(), webview, request.clone(), control_flow);
                     match result {
-                        Ok((data, control_flow)) => {
+                        Ok(data) => {
                             let response = request.ok(data);
-                            Self::_send_ipc_callback(webview, response.clone()).unwrap();
-                            control_flow
+                            Self::_send_ipc_callback(webview, response).unwrap();
                         }
                         Err(err) => {
                             let response = request.err(-1, err.to_string());
-                            Self::_send_ipc_callback(webview, response.clone()).unwrap();
-                            None
+                            Self::_send_ipc_callback(webview, response).unwrap();
                         }
                     }
                 })))

@@ -78,7 +78,7 @@ fn get_work_dir(args: &Args) -> Result<PathBuf> {
         }
 
         // if custom_path is not a directory, return error
-        anyhow::anyhow!("Custom path is not a directory or not exists");
+        return Err(anyhow::anyhow!("Custom path is not a directory or not exists"));
     }
 
     // if work dir is not specified in command line arguments,
@@ -105,13 +105,13 @@ fn get_or_create_config(work_dir: &Path) -> Result<ProjectOptions> {
     }
 
     let content = std::fs::read_to_string(&config_path)?;
-    let mut config = serde_json::from_str::<ProjectOptions>(&content)?;
+    let config = serde_json::from_str::<ProjectOptions>(&content)?;
 
     // if config uuid is not exists, create a new one and write back to config file.
     if config.uuid.is_none() {
-        anyhow::anyhow!("Config uuid is not exists");
-    //     config.uuid = Some(uuid::Uuid::new_v4().to_string());
-    //     std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
+        return Err(anyhow::anyhow!("Config uuid is not exists"));
+        //     config.uuid = Some(uuid::Uuid::new_v4().to_string());
+        //     std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
     }
 
     Ok(config)
@@ -121,7 +121,8 @@ pub fn init() -> Result<Arc<Environment>> {
     let args = get_args();
     let work_dir = get_work_dir(&args)?;
 
-    let config = get_or_create_config(&work_dir)?;
+    let mut config = get_or_create_config(&work_dir)?;
+    config.window.title = Some(config.window.title.unwrap_or_else(|| config.name.clone()));
     let project_name = config.name.clone();
     let project_uuid = config.uuid.clone().unwrap();
 

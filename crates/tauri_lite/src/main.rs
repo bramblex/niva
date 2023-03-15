@@ -4,45 +4,43 @@
     windows_subsystem = "windows"
 )]
 
-use window_manager::EventLoop;
-use wry::application::{
-    event::{Event, WindowEvent},
-    event_loop::ControlFlow,
-};
+use crate::event_loop::{event_handler::handle, MainEventLoop};
+use anyhow::{Context, Result};
+use std::sync::{Arc, Mutex};
 
-mod utils;
-mod thread_pool;
-mod static_server;
-mod window_manager;
 mod api_manager;
+mod apis;
+mod environment;
+mod event_loop;
+mod static_server;
+mod thread_pool;
+mod window_manager;
 
-fn main() {
-    let event_loop = EventLoop::with_user_event();
+fn main() -> Result<()> {
+    let env = environment::init().with_context(|| "Init EnvironmentError")?;
+    println!("Init Environment Success");
+    println!("{:?}", env);
 
-    let mut window_manager = window_manager::WindowManager::new(event_loop.create_proxy());
-    let main_window_id = window_manager.create_window(&event_loop, &Default::default());
+    let thread_pool = Arc::new(Mutex::new(thread_pool::ThreadPool::new(4)));
+    let event_loop = MainEventLoop::new();
 
+    let mut api_manager =
+        api_manager::ApiManager::new(env.clone(), thread_pool.clone(), event_loop.create_proxy());
+
+    apis::register_apis(&mut api_manager);
+
+    let base_url = static_server::start(&env.work_dir, thread_pool);
+    let mut window_manager = window_manager::WindowManager::new(
+        env.clone(),
+        base_url,
+        api_manager,
+        event_loop.create_proxy(),
+    );
+
+    let (_, main_webview) = window_manager.create_window(&event_loop, &env.config.window);
+
+    let event_loop = event_loop.0;
     event_loop.run(move |event, target, control_flow| {
-        *control_flow = ControlFlow::Wait;
-        match event {
-            Event::WindowEvent {
-                window_id,
-                event: WindowEvent::CloseRequested,
-                ..
-            } => { 
-                if window_id == main_window_id {
-                    *control_flow = ControlFlow::Exit;
-                } else {
-                    window_manager.remove_window(window_id);
-                }
-            }
-            Event::UserEvent(t) => match t.as_str() {
-                "open" => {
-                    window_manager.create_window(target, &Default::default());
-                }
-                _ => (),
-            },
-            _ => (),
-        }
+        handle(main_webview.clone(), event, target, control_flow)
     });
 }
