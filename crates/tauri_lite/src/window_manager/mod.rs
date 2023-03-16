@@ -4,8 +4,9 @@ use std::{
 };
 
 use crate::{
-    api_manager::{ApiManager},
-    event_loop::{MainEventLoopProxy, MainEventLoopTarget}, environment::EnvironmentRef,
+    api_manager::ApiManager,
+    environment::EnvironmentRef,
+    event_loop::{MainEventLoopProxy, MainEventLoopTarget},
 };
 use wry::{application::window::WindowId, webview::WebView};
 
@@ -27,7 +28,12 @@ pub struct WindowManager {
 }
 
 impl WindowManager {
-    pub fn new(env: EnvironmentRef, base_url: String, api_manager: ApiManager, event_loop: MainEventLoopProxy) -> Self {
+    pub fn new(
+        env: EnvironmentRef,
+        base_url: String,
+        api_manager: ApiManager,
+        event_loop: MainEventLoopProxy,
+    ) -> Self {
         Self {
             env,
             base_url,
@@ -37,13 +43,15 @@ impl WindowManager {
         }
     }
 
-    // pub fn get_window(&self, window_id: WindowId) -> Option<WebViewRef> {
-    //     self.webview_map.get(&window_id).cloned()
-    // }
+    #[allow(dead_code)]
+    pub fn get_window(&self, window_id: WindowId) -> Option<WebViewRef> {
+        self.webview_map.get(&window_id).cloned()
+    }
 
-    // pub fn remove_window(&mut self, window_id: WindowId) -> Option<WebViewRef> {
-    //     self.webview_map.remove(&window_id)
-    // }
+    #[allow(dead_code)]
+    pub fn remove_window(&mut self, window_id: WindowId) -> Option<WebViewRef> {
+        self.webview_map.remove(&window_id)
+    }
 
     pub fn create_window(
         &mut self,
@@ -52,7 +60,13 @@ impl WindowManager {
     ) -> (WindowId, WebViewRef) {
         let window = window::create(target, options);
         let window_id = window.id();
-        let base_url = self.base_url.clone();
+
+        let base_url = self
+            .env
+            .debug_entry_url
+            .clone()
+            .unwrap_or(self.base_url.clone());
+
         let entry = options.entry.clone().unwrap_or("".to_string());
         let entry = format!("{base_url}/{entry}");
         let webview = Arc::new(Mutex::new(webview::create(
@@ -62,7 +76,7 @@ impl WindowManager {
             options,
             &self.env.data_dir,
             base_url,
-            entry
+            entry,
         )));
         self.webview_map.insert(window_id, webview.clone());
         (window_id, webview)

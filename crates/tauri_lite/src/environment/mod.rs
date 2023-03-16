@@ -97,7 +97,7 @@ fn get_or_create_config(work_dir: &Path) -> Result<ProjectOptions> {
         std::fs::write(
             &config_path,
             json!({
-                "name": "tauri_lite-project",
+                "name": "tauri_lite_project",
                 "uuid": uuid::Uuid::new_v4().to_string(),
             })
             .to_string(),

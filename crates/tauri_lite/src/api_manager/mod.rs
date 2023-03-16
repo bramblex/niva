@@ -20,9 +20,10 @@ impl ApiArgs {
         Ok(serde_json::from_value::<(T,)>(self.0.clone())?.0)
     }
 
-    // pub fn get<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
-    //     Ok(serde_json::from_value(self.0.clone())?)
-    // }
+    #[allow(dead_code)]
+    pub fn get<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
+        Ok(serde_json::from_value(self.0.clone())?)
+    }
 
     pub fn get_with_optional<T: serde::de::DeserializeOwned>(&self, args_size: usize) -> Result<T> {
         let mut args = serde_json::from_value::<Vec<serde_json::Value>>(self.0.clone())?;

@@ -1,0 +1,25 @@
+
+.doc-tab-container {
+	display: flex;
+	height: 420px;
+}
+
+.doc-tree {
+	flex: 0 0 auto;
+	overflow-y: auto;
+	width: 240px;
+}
+
+.doc-content {
+	flex: 1 1 auto;
+	margin-left: 16px;
+	overflow-y: auto;
+}
+
+.doc-tree-item {
+	cursor: pointer;
+}
+
+.doc-tree-item:focus {
+	outline: 1px dotted #000;
+}

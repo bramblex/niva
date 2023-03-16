@@ -18,7 +18,7 @@
   - [*] 窗口事件支持
   - [*] 窗口操作 API 支持
   - [*] 窗口 icon 支持
-- [ ] 项目打包脚本支持
+- [ ] 项目构建脚本支持
   - [ ] MacOS
   - [ ] Windows
 - [ ] 其他 API 支持
@@ -35,7 +35,7 @@
 Tauri Lite 可以通过 tauri_lite.json 提供项目和窗口的配置。
 
 ### Project config
-项目基本配置，绝大部分配置只有在打包发布时候才有用。除了 name 字段外，其他字段都是可选的。
+项目基本配置，绝大部分配置只有在构建发布时候才有用。除了 name 字段外，其他字段都是可选的。
 
 | 字段          | 类型   | 默认值 | 描述                    |
 | ------------- | ------ | ------ | ----------------------- |
@@ -226,7 +226,7 @@ interface ExecResult {
 ```
 
 ## Bundle
-将程序打包成单个可执行文件方案
+将程序构建成单个可执行文件方案
 
 - windows - https://github.com/SerGreen/Appacker
 - macos - https://github.com/burtonageo/cargo-bundle

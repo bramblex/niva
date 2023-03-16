@@ -1,8 +1,6 @@
 {
   "private": true,
   "workspaces": [
-    "packages/tauri_lite-api",
-    "packages/devtools",
-    "packages/example"
+    "packages/devtools"
   ]
 }
