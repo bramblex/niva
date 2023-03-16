@@ -20,7 +20,7 @@ pub struct Environment {
     pub config: ProjectOptions,
 
     // debug entry url
-    pub debug_entry_url: Option<String>,
+    pub debug_entry: Option<String>,
 }
 
 unsafe impl Send for Environment {}
@@ -30,7 +30,7 @@ pub type EnvironmentRef = Arc<Environment>;
 
 struct Args {
     pub work_dir: Option<PathBuf>,
-    pub debug_entry_url: Option<String>,
+    pub debug_entry: Option<String>,
 }
 
 fn get_args() -> Args {
@@ -50,15 +50,15 @@ fn get_args() -> Args {
         .collect();
     let mut args = Args {
         work_dir: None,
-        debug_entry_url: None,
+        debug_entry: None,
     };
     for (key, value) in arg_pairs {
         match key.as_str() {
             "--work-dir" => {
                 args.work_dir = Some(Path::new(value.as_str()).to_path_buf());
             }
-            "--debug-entry-url" => {
-                args.debug_entry_url = Some(value);
+            "--debug-entry" => {
+                args.debug_entry = Some(value);
             }
             _ => {}
         }
@@ -151,6 +151,6 @@ pub fn init() -> Result<Arc<Environment>> {
         temp_dir,
         data_dir,
         config,
-        debug_entry_url: args.debug_entry_url,
+        debug_entry: args.debug_entry,
     }))
 }

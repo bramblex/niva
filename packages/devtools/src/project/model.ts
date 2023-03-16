@@ -50,10 +50,6 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     });
   }
 
-  private getConfigPath() {
-    return;
-  }
-
   private async loadOrCreateConfig(configPath: string) {
     if (!(await fs.exists(configPath))) {
       const ok = await modal.confirm(
@@ -105,16 +101,25 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 
   edit() {
     return tryOrAlertAsync(async () => {
-      await process.open(this.getConfigPath());
+      await process.open(this.state!.configPath);
     });
   }
 
   debug() {
+    const workDir = this.state!.path;
+    const debugEntry = this.state!.config.debugEntry;
+
     return tryOrAlertAsync(async () => {
       const exe = await process.currentExe();
-      process.exec(exe, ["--work-dir", this.state!.path], {
-        detached: true,
-      });
+      process.exec(
+        exe,
+        [
+          "--work-dir",
+          workDir,
+          ...(debugEntry ? ["--debug-entry", debugEntry] : []),
+        ],
+        { detached: true }
+      );
     });
   }
 

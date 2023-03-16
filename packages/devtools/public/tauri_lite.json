@@ -17,5 +17,6 @@
 		255,
 		255,
 		0
-	]
+	],
+	"debugEntry": "http://localhost:3000"
 }

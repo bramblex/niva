@@ -74,7 +74,7 @@ pub fn handle(
 
         Event::MenuEvent { menu_id, .. } => send_event(
             main_webview_warper,
-            "menu.click",
+            "menu.clicked",
             json!({ "menuId": menu_id.0 }),
         ),
 

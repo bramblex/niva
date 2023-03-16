@@ -20,7 +20,7 @@ const doc: DocTreeNode = ['文档', [
 			['createDir', <div>fs.createDir</div>],
 			['createDirAll', <div>fs.createDirAll</div>],
 			['readDir', <div>fs.readDir</div>],
-		]],
+		], false],
 		['dialog', [
 			['showMessage', <div>dialog.showMessage</div>],
 			['pickFile', <div>dialog.pickFile</div>],
@@ -28,18 +28,18 @@ const doc: DocTreeNode = ['文档', [
 			['pickDir', <div>dialog.pickDir</div>],
 			['pickDirs', <div>dialog.pickDirs</div>],
 			['saveFile', <div>dialog.saveFile</div>],
-		]],
+		], false],
 		['http', [
 			['request', <div>http.request</div>],
 			['get', <div>http.get</div>],
 			['post', <div>http.post</div>],
-		]],
+		], false],
 		['os', [
 			['info', <div>os.info</div>],
 			['dirs', <div>os.dirs</div>],
 			['sep', <div>os.sep</div>],
 			['eol', <div>os.eol</div>],
-		]],
+		], false],
 		['process', [
 			['pid', <div>process.pid</div>],
 			['currentDir', <div>process.currentDir</div>],
@@ -48,13 +48,13 @@ const doc: DocTreeNode = ['文档', [
 			['exit', <div>process.exit</div>],
 			['exec', <div>process.exec</div>],
 			['open', <div>process.open</div>],
-		]],
+		], false],
 		['webview', [
 			['isDevtoolsOpen', <div>webview.isDevtoolsOpen</div>],
 			['openDevtools', <div>webview.openDevtools</div>],
 			['closeDevtools', <div>webview.closeDevtools</div>],
 			['setBackgroundColor', <div>webview.setBackgroundColor</div>],
-		]],
+		], false],
 		['window', [
 			['scaleFactor', <div>window.scaleFactor</div>],
 			['innerPosition', <div>window.innerPosition</div>],
@@ -98,8 +98,26 @@ const doc: DocTreeNode = ['文档', [
 			['setCursorVisible', <div>window.setCursorVisible</div>],
 			['dragWindow', <div>window.dragWindow</div>],
 			['setIgnoreCursorEvents', <div>window.setIgnoreCursorEvents</div>],
-		]],
+		], false],
 	]],
+	['事件', [
+		['window', [
+			['focused', <div>window.focused</div>],
+			['scaleFactorChanged', <div>window.scaleFactorChanged</div>],
+			['themeChanged', <div>window.themeChanged</div>],
+		], false],
+		['menu', [
+			['clicked', <div>menu.clicked</div>],
+		], false],
+		['fileDrop', [
+			['hovered', <div>fileDrop.hovered</div>],
+			['dropped', <div>fileDrop.dropped</div>],
+			['cancelled', <div>fileDrop.cancelled</div>],
+		], false],
+		['ipc', [
+			['callback', <div>ipc.callback</div>],
+		], false]
+	]]
 ]]
 
 

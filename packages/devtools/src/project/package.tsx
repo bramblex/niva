@@ -1,5 +1,27 @@
 import { useModel, useModelContext } from "@bramblex/state-model-react";
+import { useEffect, useState } from "react";
+import { pathJoin } from "../utils";
 import { ProjectModel } from "./model";
+
+export function Icon() {
+	const { state } = useModel(useModelContext(ProjectModel));
+
+	const [iconSrc, setIconSrc] = useState("");
+	const [err, setErr] = useState("");
+
+	useEffect(() => {
+		const { fs } = TauriLite.api;
+		const iconPath = pathJoin(state!.path, state!.config.icon);
+		fs.read(iconPath, 'base64')
+			.then((data: string) => setIconSrc(`data:image/png;base64,${data}`))
+			.catch(() => setErr(`❌图标读取失败 "${iconPath})"`));
+	}, [state]);
+
+	return <div style={{ marginLeft: '40px' }}>
+		{iconSrc ? <img style={{ height: '64px', width: '64px', pointerEvents: 'none' }} alt="" src={iconSrc} /> : <p>图标读取中...</p>}
+		{err ? <p>{err}</p> : null}
+	</div>
+}
 
 export function ProjectPage() {
 	const project = useModelContext(ProjectModel);
@@ -19,12 +41,13 @@ export function ProjectPage() {
 	return <div>
 		<fieldset>
 			<legend>项目信息</legend>
-			<ul>
-				<li>项目名(name): {state.name}</li>
-				<li>UUID(uuid): {state.uuid}</li>
-				<li>项目目录: {state.path} </li>
-				<li>配置文件: {state.configPath} </li>
-			</ul>
+				{state.config.icon ? <Icon /> : null}
+				<ul >
+					<li>项目名(name): {state.name}</li>
+					<li>UUID(uuid): {state.uuid}</li>
+					<li>项目目录: {state.path} </li>
+					<li>配置文件: {state.configPath} </li>
+				</ul>
 		</fieldset>
 
 		<fieldset>

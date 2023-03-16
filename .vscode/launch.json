@@ -38,7 +38,7 @@
       "args": [
         "--work-dir",
         "packages/devtools/public",
-        "--debug-entry-url",
+        "--debug-entry",
         "http://127.0.0.1:3000"
       ],
       "cwd": "${workspaceFolder}"

@@ -63,7 +63,7 @@ impl WindowManager {
 
         let base_url = self
             .env
-            .debug_entry_url
+            .debug_entry
             .clone()
             .unwrap_or(self.base_url.clone());
 
