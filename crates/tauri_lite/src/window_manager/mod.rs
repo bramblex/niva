@@ -8,7 +8,10 @@ use crate::{
     environment::EnvironmentRef,
     event_loop::{MainEventLoopProxy, MainEventLoopTarget},
 };
-use wry::{application::window::WindowId, webview::WebView};
+use wry::{
+    application::window::WindowId,
+    webview::{WebContext, WebView},
+};
 
 use self::options::WindowOptions;
 
@@ -67,6 +70,8 @@ impl WindowManager {
             .clone()
             .unwrap_or(self.base_url.clone());
 
+        let mut web_context = WebContext::new(Some(self.env.data_dir.clone()));
+
         let entry = options.entry.clone().unwrap_or("".to_string());
         let entry = format!("{base_url}/{entry}");
         let webview = Arc::new(Mutex::new(webview::create(
@@ -74,11 +79,13 @@ impl WindowManager {
             self.api_manager.clone(),
             window,
             options,
-            &self.env.data_dir,
+            &mut web_context,
             base_url,
             entry,
         )));
-        self.webview_map.insert(window_id, webview.clone());
+
+        self.webview_map
+            .insert(window_id, webview.clone());
         (window_id, webview)
     }
 }

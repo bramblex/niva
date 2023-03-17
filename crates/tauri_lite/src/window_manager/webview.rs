@@ -1,9 +1,12 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use serde_json::json;
 use wry::{
     application::window::Window,
-    webview::{FileDropEvent, WebView, WebViewBuilder},
+    webview::{FileDropEvent, WebContext, WebView, WebViewBuilder},
 };
 
 use crate::{api_manager::ApiManager, event_loop::MainEventLoopProxy};
@@ -17,7 +20,7 @@ pub fn create(
     api_manager: Arc<ApiManager>,
     window: Window,
     options: &WindowOptions,
-    _data_dir: &Path,
+    web_context: &mut WebContext,
     base_url: String,
     entry: String,
 ) -> WebView {
@@ -35,7 +38,6 @@ pub fn create(
         webview_builder = webview_builder.with_transparent(*transparent);
     }
 
-
     if let Some(background_color) = &options.background_color {
         webview_builder = webview_builder.with_background_color(*background_color);
     }
@@ -43,11 +45,7 @@ pub fn create(
     webview_builder =
         webview_builder.with_navigation_handler(move |url| url.starts_with(&base_url));
 
-    #[cfg(target_os = "windows")]
-    {
-        let mut _web_context = WebContext::new(Some(data_dir.to_path_buf()));
-        webview_builder = webview_builder.with_web_context(&mut _web_context);
-    }
+    webview_builder = webview_builder.with_web_context(web_context);
 
     let webview = webview_builder
         .with_ipc_handler(move |window, request_str| {

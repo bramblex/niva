@@ -161,9 +161,9 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     const mainExePath = pathJoin(path, name + ".exe");
     const iconPath = pathJoin(path, config.icon);
 
-    const progress = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
+    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
 
-    process.addTask("正在复制可执行文件...", async () => {
+    progress.addTask("正在复制可执行文件...", async () => {
       await fs.copy(exe, mainExePath);
     });
 
@@ -184,7 +184,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       await fs.remove(mainExePath);
     });
 
-    await process.run();
+    await progress.run();
+    close();
 
     return appPath;
   }
@@ -207,7 +208,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     const appIconPath = pathJoin(appResourcesPath, "icon.icns");
     const appIconsetPath = pathJoin(appResourcesPath, "icon.iconset");
 
-    const progress = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
+    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
 
     progress.addTask("正在创建目录结构...", async () => {
       // make base structure
@@ -257,6 +258,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     });
 
     await progress.run();
+    close();
 
     return appPath;
   }

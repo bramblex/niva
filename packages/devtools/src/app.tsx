@@ -24,7 +24,12 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   }, []);
 
   return (<div className={classNames("window", { active })}>
-    <div className="title-bar" onMouseDownCapture={() => TauriLite.api.window.dragWindow()}>
+    <div className="title-bar" onMouseDownCapture={(ev) => {
+      const t = ev.target as HTMLElement;
+      if (t.tagName !== 'BUTTON' && t.tagName !== 'A') {
+        TauriLite.api.window.dragWindow();
+      }
+    }}>
       <div className="title-bar-text">Tauri Lite Devtools</div>
       <div className="title-bar-controls">
         <button aria-label="Minimize" onClick={() => TauriLite.api.window.setMinimized(true)}></button>

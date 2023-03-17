@@ -229,7 +229,7 @@ const createDoc: () => DocTreeNode = () => ['文档', [
 			['exec',
 				<ApiExample cases={[
 					['process.exec', ['echo', ["hello world"]], 'Mac OS'],
-					['process.exec', ['dir', ["C:\\"]], 'Windows'],
+					['process.exec', ['help', []], 'Windows'],
 				]} />
 			],
 			['open', <ApiExample cases={[

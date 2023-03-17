@@ -121,7 +121,7 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 		return promise;
 	}
 
-	progress(title: string, message: string): ProgressModel {
+	progress(title: string, message: string): [ProgressModel, () => void] {
 		const progress = new ProgressModel();
 		function Progress({ close }: DialogComponentProps) {
 			useModel(progress);
@@ -155,7 +155,7 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 				</div>
 			)
 		}
-		return progress;
+		return [progress, this.show(Progress, {})];
 	}
 }
 
