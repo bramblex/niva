@@ -4,6 +4,6 @@
     "packages/devtools"
   ],
   "scripts": {
-    "build:devtools": "cd packages/devtools && yarn build"
+    "build:devtools": "cd packages/devtools && npm run build"
   }
 }

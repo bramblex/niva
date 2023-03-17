@@ -7,7 +7,7 @@
 			"group": "build",
 			"problemMatcher": [],
 			"label": "build:devtools",
-			"detail": "cd packages/devtools && yarn build"
+			"detail": "cd packages/devtools && npm run build"
 		}
 	]
 }

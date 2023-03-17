@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use serde_json::json;
 use wry::{
