@@ -68,6 +68,24 @@ export function dirname(path: string) {
   return path.split(sep!).slice(0, -1).join(sep!);
 }
 
+let dirs: { temp: string, home: string } | null = null;
+TauriLite.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
+
+export function tempWith(path: string) {
+  return pathJoin(dirs!.temp, path);
+}
+
+export function getHome() {
+  return dirs!.home;
+}
+
+let currentDir: string | null = null;
+TauriLite.api.process.currentDir().then((dir: string) => (currentDir = dir));
+
+export function getCurrentDir() {
+  return currentDir!;
+}
+
 type XPromise<T> = Promise<T> & {
   resolve: (value: T) => void;
 };

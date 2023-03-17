@@ -1,5 +1,5 @@
-
 .doc-tab-container {
+	flex: 1 1 auto;
 	display: flex;
 	height: 450px;
 }
@@ -14,6 +14,7 @@
 	flex: 1 1 auto;
 	margin-left: 16px;
 	overflow-y: auto;
+	overflow-x: hidden;
 }
 
 .doc-tree-item {
@@ -31,3 +32,9 @@
 
 	box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
+
+.doc-content pre {
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+ 
