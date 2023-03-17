@@ -1,12 +1,12 @@
 use anyhow::Result;
-mod config;
+mod options;
 
 use serde_json::json;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use config::*;
+pub use options::*;
 
 #[derive(Debug)]
 pub struct Environment {
@@ -31,6 +31,7 @@ pub type EnvironmentRef = Arc<Environment>;
 struct Args {
     pub work_dir: Option<PathBuf>,
     pub debug_entry: Option<String>,
+    pub devtools: Option<String>,
 }
 
 fn get_args() -> Args {
@@ -51,6 +52,7 @@ fn get_args() -> Args {
     let mut args = Args {
         work_dir: None,
         debug_entry: None,
+        devtools: None
     };
     for (key, value) in arg_pairs {
         match key.as_str() {
@@ -59,6 +61,9 @@ fn get_args() -> Args {
             }
             "--debug-entry" => {
                 args.debug_entry = Some(value);
+            }
+            "--devtools" => {
+                args.devtools = Some(value);
             }
             _ => {}
         }
@@ -123,6 +128,12 @@ pub fn init() -> Result<Arc<Environment>> {
 
     let mut config = get_or_create_config(&work_dir)?;
     config.window.title = Some(config.window.title.unwrap_or_else(|| config.name.clone()));
+    if let Some(debug) = args.devtools {
+        if (debug == "true") || (debug == "1") {
+            config.window.devtools = Some(true);
+        }
+    }
+
     let project_name = config.name.clone();
     let project_uuid = config.uuid.clone().unwrap();
 

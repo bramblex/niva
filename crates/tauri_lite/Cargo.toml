@@ -36,3 +36,4 @@ anyhow = "1.0.69"
 
 [build-dependencies]
 winres = "0.1.12"
+build-version = "0.1.1"

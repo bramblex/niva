@@ -10,6 +10,7 @@ import {
   withCtxP,
 } from "../utils";
 import { modal } from "../modal";
+import { OptionsEditor } from "./options-editor";
 
 const { os, fs, process, dialog } = TauriLite.api;
 
@@ -101,7 +102,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 
   edit() {
     return tryOrAlertAsync(async () => {
-      await process.open(this.state!.configPath);
+      modal.show(OptionsEditor, {project: this});
     });
   }
 
@@ -116,6 +117,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         [
           "--work-dir",
           workDir,
+          "--devtools",
+          "true",
           ...(debugEntry ? ["--debug-entry", debugEntry] : []),
         ],
         { detached: true }

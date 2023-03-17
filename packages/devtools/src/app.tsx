@@ -11,11 +11,13 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     arch: '',
     version: '',
   });
+  const [version, setVersion] = useState('')
 
   useEffect(() => {
     const handler = (_: string, { focused }: { focused: boolean }) => setActive(focused);
     TauriLite.addEventListener('window.focused', handler);
     TauriLite.api.os.info().then(setSystemInfo);
+    TauriLite.api.process.version().then(setVersion);
     return () => {
       TauriLite.removeEventListener('window.focused', handler);
     };
@@ -40,6 +42,9 @@ function WindowFrame(props: PropsWithChildren<{}>) {
       </p>
       <p className="status-bar-field" style={{ flex: '0 0 auto' }}>
         System: {systemInfo.os} {systemInfo.arch} {systemInfo.version}
+      </p>
+      <p className="status-bar-field" style={{ flex: '0 0 auto' }}>
+        Version: {version}
       </p>
     </div>
   </div>)

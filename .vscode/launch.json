@@ -7,24 +7,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug example",
-      "cargo": {
-        "args": ["build", "--bin=tauri_lite", "--package=tauri_lite"],
-        "filter": {
-          "name": "tauri_lite",
-          "kind": "bin"
-        },
-        "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
-        }
-      },
-      "args": ["--work-dir", "packages/example"],
-      "cwd": "${workspaceFolder}"
-    },
-    {
-      "type": "lldb",
-      "request": "launch",
-      "name": "Debug devtools",
+      "name": "Run Devtools(Debug)",
       "cargo": {
         "args": ["build", "--bin=tauri_lite", "--package=tauri_lite"],
         "filter": {
@@ -39,7 +22,36 @@
         "--work-dir",
         "packages/devtools/public",
         "--debug-entry",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        "--devtools",
+        "true"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Run Devtools(Release)",
+      "preLaunchTask": "build:devtools",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=tauri_lite",
+          "--package=tauri_lite",
+          "--release"
+        ],
+        "filter": {
+          "name": "tauri_lite",
+          "kind": "bin"
+        },
+        "env": {
+          "RUST_BACKTRACE": "-l framework=WebKit"
+        }
+      },
+      "args": [
+        "--work-dir",
+        "packages/devtools/build",
+        "true"
       ],
       "cwd": "${workspaceFolder}"
     }

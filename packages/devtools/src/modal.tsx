@@ -2,7 +2,8 @@
 import { StateModel } from '@bramblex/state-model'
 import { useModel } from '@bramblex/state-model-react'
 import classNames from 'classnames';
-import { createPromise } from './utils';
+import { ComponentType } from 'react';
+import { createPromise, uuid } from './utils';
 
 export class ProgressModel extends StateModel<{ text: string, progress: number, error: boolean }> {
 	private tasks: [string, () => Promise<void>][] = [];
@@ -37,29 +38,35 @@ export class ProgressModel extends StateModel<{ text: string, progress: number, 
 	}
 }
 
-class ModelModel extends StateModel<JSX.Element | null> {
+export type DialogComponentProps = { close: () => any };
+
+class ModelModel extends StateModel<[string, ComponentType][]> {
 	constructor() {
-		super(null);
+		super([]);
 	}
 
-	show(element: JSX.Element) {
-		this.setState(element);
+	show<Props extends {}>(Component: ComponentType<Props & DialogComponentProps>, props: Props) {
+		const id = uuid();
+		const close = () => {
+			this.setState(this.state.filter(([_id]) => _id !== id));
+		}
+		this.setState(
+			[...this.state, [id, () => <Component close={close} {...props} />]]
+		);
+		return close;
 	}
 
-	hide() {
-		this.setState(null);
-	}
 
 	alert(title: string, message: string): Promise<void> {
 		const promise = createPromise<void>();
 
-		function Alert() {
+		function Alert({ close }: DialogComponentProps) {
 			return <div className="window active is-bright">
 				<div className="title-bar">
 					<div className="title-bar-text" id="dialog-title">{title}</div>
 					<div className="title-bar-controls">
 						<button aria-label="Close" onClick={() => {
-							modal.hide();
+							close();
 							promise.resolve();
 						}}></button>
 					</div>
@@ -69,27 +76,27 @@ class ModelModel extends StateModel<JSX.Element | null> {
 				</div>
 				<footer style={{ textAlign: "right" }}>
 					<button onClick={() => {
-						modal.hide();
+						close();
 						promise.resolve();
 					}}>确认</button>
 				</footer>
 			</div>
 		}
 
-		this.show(<Alert />)
+		this.show(Alert, {})
 		return promise;
 	}
 
 	confirm(title: string, message: string): Promise<boolean> {
 		const promise = createPromise<boolean>();
 
-		function Confirm() {
+		function Confirm({ close }: DialogComponentProps) {
 			return <div className="window active is-bright">
 				<div className="title-bar">
 					<div className="title-bar-text" id="dialog-title">{title}</div>
 					<div className="title-bar-controls">
 						<button aria-label="Close" onClick={() => {
-							modal.hide();
+							close();
 							promise.resolve(false);
 						}}></button>
 					</div>
@@ -99,24 +106,24 @@ class ModelModel extends StateModel<JSX.Element | null> {
 				</div>
 				<footer style={{ textAlign: "right" }}>
 					<button style={{ marginRight: '6px' }} onClick={() => {
-						modal.hide();
+						close();
 						promise.resolve(false);
 					}}>取消</button>
 					<button className="default" onClick={() => {
-						modal.hide();
+						close();
 						promise.resolve(true);
 					}}>确认</button>
 				</footer>
 			</div>
 		}
 
-		this.show(<Confirm />)
+		this.show(Confirm, {})
 		return promise;
 	}
 
 	progress(title: string, message: string): ProgressModel {
 		const progress = new ProgressModel();
-		function Progress() {
+		function Progress({ close }: DialogComponentProps) {
 			useModel(progress);
 			const { state } = progress;
 
@@ -142,13 +149,12 @@ class ModelModel extends StateModel<JSX.Element | null> {
 					</div>
 					{state.error ? <footer style={{ textAlign: "right" }}>
 						<button className="default" onClick={() => {
-							modal.hide();
+							close();
 						}}>确认</button>
 					</footer> : null}
 				</div>
 			)
 		}
-		this.show(<Progress />)
 		return progress;
 	}
 }
@@ -156,9 +162,10 @@ class ModelModel extends StateModel<JSX.Element | null> {
 export const modal = new ModelModel();
 
 export function Modal() {
-	const { state } = useModel(modal);
+	const { state: modals } = useModel(modal);
 
-	return state ? (<div className='modal'>
-		{state}
+	return modals.length > 0 ? (<div className='modal-container'>
+		{modals.map(([id, Component], i) =>
+			<div key={id} className={classNames('modal', { 'modal-active': modals.length === i + 1 })}><Component /></div>)}
 	</div>) : null
 }

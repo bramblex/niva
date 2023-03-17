@@ -1,3 +1,5 @@
+import './style.css'
+
 import { useLocalModel, useModel, useModelContext, useModelProvider } from "@bramblex/state-model-react";
 import { ImportPage } from "./import";
 import { ProjectModel } from "./model";

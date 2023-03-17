@@ -1,8 +1,10 @@
+include!(concat!(env!("OUT_DIR"), "/version.rs"));
+
 use crate::{
     api_manager::{ApiManager, ApiRequest},
     environment::EnvironmentRef,
 };
-use anyhow::Result;
+use anyhow::{Result, Ok};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use wry::{application::{window::Window, event_loop::ControlFlow}, webview::WebView};
@@ -16,6 +18,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("process.exit", exit);
     api_manager.register_async_api("process.exec", exec);
     api_manager.register_async_api("process.open", open);
+    api_manager.register_api("process.version", version);
 }
 
 fn pid(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<u32> {
@@ -92,4 +95,12 @@ fn open(_: EnvironmentRef, request: ApiRequest) -> Result<()> {
     let uri= request.args().get_single::<String>()?;
     opener::open(uri)?;
     Ok(())
+}
+
+fn version(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<String> {
+    if let Some(version) = GIT_BUILD_VERSION {
+        Ok(version.to_string())
+    } else {
+        Ok("unknown".to_string())
+    }
 }

@@ -7,9 +7,7 @@
 		800,
 		600
 	],
-	"resizable": true,
-	"alwaysOnTop": true,
-	"devtools": true,
+	"resizable": false,
 	"decorations": false,
 	"transparent": true,
 	"backgroundColor": [

@@ -11,7 +11,6 @@ pub struct Meta {
     pub copyright: Option<String>,
     pub license: Option<String>,
     pub website: Option<String>,
-    pub website_label: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

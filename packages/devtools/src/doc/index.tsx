@@ -1,13 +1,15 @@
-import { StrictMode, useState } from 'react';
+import { useState } from 'react';
+import { Options } from './options';
+import { QuickStart } from './quick-start';
 import './style.css'
 
 type DocTreeNodeItem = [string, JSX.Element]
 type DocTreeNode = [string, DocTreeNode[], boolean?] | DocTreeNodeItem
 
-const indexNode: DocTreeNodeItem = ['快速开始', <div>Hello</div>];
+const indexNode: DocTreeNodeItem = ['快速开始', <QuickStart />];
 const doc: DocTreeNode = ['文档', [
 	indexNode,
-	['项目配置', <div></div>],
+	['项目配置', <Options />],
 	['Api', [
 		['fs', [
 			['stat', <div>fs.stat</div>],
@@ -101,6 +103,7 @@ const doc: DocTreeNode = ['文档', [
 		], false],
 	]],
 	['事件', [
+		['事件监听', <div></div>],
 		['window', [
 			['focused', <div>window.focused</div>],
 			['scaleFactorChanged', <div>window.scaleFactorChanged</div>],
@@ -131,7 +134,9 @@ function DocTree({ node, onItemClick }: { node: DocTreeNode, onItemClick: (node:
 			</ul>
 		</details>
 	}
-	return <li className='doc-tree-item' onClick={() => onItemClick([name, children])}>{name}</li>
+	return <li >
+		<span className='doc-tree-item' onClick={() => onItemClick([name, children])}>{name}</span>
+	</li>
 }
 
 export function DocTab() {
@@ -139,12 +144,9 @@ export function DocTab() {
 	const [name, content] = item;
 
 	return <div className="doc-tab-container">
-		<StrictMode>
-			<ul className="tree-view has-collapse-button has-connector has-container doc-tree">
-				<DocTree node={doc} onItemClick={item => setItem(item)} />
-			</ul>
-		</StrictMode>
-
+		<ul className="tree-view has-collapse-button has-connector has-container doc-tree">
+			<DocTree node={doc} onItemClick={item => setItem(item)} />
+		</ul>
 		<fieldset className='doc-content'>
 			<legend>{name}</legend>
 			{content}

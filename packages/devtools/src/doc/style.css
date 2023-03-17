@@ -1,7 +1,7 @@
 
 .doc-tab-container {
 	display: flex;
-	height: 420px;
+	height: 450px;
 }
 
 .doc-tree {
@@ -20,6 +20,14 @@
 	cursor: pointer;
 }
 
-.doc-tree-item:focus {
-	outline: 1px dotted #000;
+
+.doc-tree-item:hover {
+	text-decoration: underline;
+}
+
+.doc-content img {
+	width: 300px;
+	height: auto;
+
+	box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }

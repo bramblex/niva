@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "build:devtools",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "build:devtools",
+			"detail": "cd packages/devtools && yarn build"
+		}
+	]
+}

@@ -2,6 +2,7 @@ import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { useEffect, useState } from "react";
 import { pathJoin } from "../utils";
 import { ProjectModel } from "./model";
+import { OptionsEditor } from "./options-editor";
 
 export function Icon() {
 	const { state } = useModel(useModelContext(ProjectModel));
@@ -18,7 +19,7 @@ export function Icon() {
 	}, [state]);
 
 	return <div style={{ marginLeft: '40px' }}>
-		{iconSrc ? <img style={{ height: '64px', width: '64px', pointerEvents: 'none' }} alt="" src={iconSrc} /> : <p>图标读取中...</p>}
+		{iconSrc ? <img style={{ height: '64px', width: '64px' }} alt="" src={iconSrc} /> : <p>图标读取中...</p>}
 		{err ? <p>{err}</p> : null}
 	</div>
 }
@@ -63,6 +64,5 @@ export function ProjectPage() {
 			)}
 			<button className="default" style={{ marginLeft: 'auto' }} onClick={() => project.build()}>构建项目</button>
 		</div>
-
 	</div>
 }
