@@ -29,7 +29,6 @@ fn stat(_: EnvironmentRef, request: ApiRequest) -> Result<Value> {
 
     Ok(json!({
         "isDir": meta.is_dir(),
-        "isDir": meta.is_dir(),
         "isFile": meta.is_file(),
         "isSymlink": meta.file_type().is_symlink(),
         "size": meta.len(),

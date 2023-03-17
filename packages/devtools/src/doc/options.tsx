@@ -2,15 +2,15 @@ import options1 from './screenshots/options-1.png';
 import options2 from './screenshots/options-2.png';
 
 
-type OptionField = [string, string?]
+type OptionField = [string]
 
 const options: Record<string, Record<string, OptionField>> = {
 	'基本选项': {
-		name: ['项目名', '必填'],
-		uuid: ['UUID', '不可修改'],
+		name: ['项目名, 必填'],
+		uuid: ['UUID, 不可修改'],
 	},
 	'调试选项': {
-		debugEntry: ['调试入口', 'vue / react 等项目调试时使用，如 http://localhost:3000'],
+		debugEntry: ['调试入口, vue / react 等项目调试时使用，如 http://localhost:3000'],
 	},
 	'项目选项（仅构建时使用）': {
 		icon: ['图标'],
@@ -22,12 +22,12 @@ const options: Record<string, Record<string, OptionField>> = {
 		website: ['网站'],
 	},
 	'窗口选项': {
-		entry: ['入口文件', '不填则默认为 index.html'],
+		entry: ['入口文件, 不填则默认为 index.html'],
 		backgroundColor: ['背景颜色 RGBA, 例如 [255, 255, 255, 1]'],
 		devtools: ['是否启用开发者工具'],
 		title: ['窗口标题'],
 		theme: ['窗口主题'],
-		size: ['窗口大小', '不填则默认为 [800, 600]'],
+		size: ['窗口大小, 不填则默认为 [800, 600]'],
 		minSize: ['窗口最小大小'],
 		maxSize: ['窗口最大大小'],
 		position: ['窗口位置'],
@@ -45,7 +45,7 @@ const options: Record<string, Record<string, OptionField>> = {
 		visibleOnAllWorkspaces: ['是否在所有工作区可见'],
 		focused: ['是否聚焦于窗口'],
 		contentProtection: ['是否启用内容保护'],
-		menu: ['窗口菜单选项', '详见下方'],
+		menu: ['窗口菜单选项, 详见下方'],
 	},
 };
 

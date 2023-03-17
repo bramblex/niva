@@ -1,232 +1,336 @@
 # Tauri Lite
 
-一个基于 Tauri WRY 跨端 Webview 库的轻量级的跨端应用开发框架。
+一个基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
-![screenshot](https://github.com/bramblex/tauri_lite/raw/main/examples/normal/screenshot.png)
+![screenshot](screenshots/main.png)
+
+（这个窗口只是看着像 Win7，但整个窗口都是用 html 和 css 绘制而成）
 
 ## 目标
 
-- 跨平台 - 支持 Macos, Windows。
-- 轻量级
-  - 不依赖 Node.js，Chromium，Electron 等其他三方以来，将可执行文件拖进项目即可使用。
-  - 可执行文件 < 3M (Tauri 6M+, Electron 100M+)
-- 开发效率 - 与 Web 开发一致，不需要额外学习 NodeJS，Electron 或者 Rust。
+- 超轻量
+  - 可执行文件只有 3MB （Mac OS 3.3MB，Windows 2.5MB），zip 后只有 1MB 上下。
+  - 不依赖 NodeJS 、Chromium 或 Webkit 等庞然大物，仅依赖系统原生 Webview。
+- 极易用
+  - 不需要学习 NodeJS、Electron 或者 Rust 等复杂的框架和技术，只需要最基本的前端技术即可开发出跨端桌面应用。
+  - 不需要使用命令行。TauriLite 提供您图形化开发工具，调试构建只需要点一下按钮。
+- 跨平台
+  - 支持 MacOS 和 Windows，双端只需一套代码。
 
 ## TODO
-- [*] 用户自定义菜单栏
-- [*] 窗口功能支持
-  - [*] 窗口事件支持
-  - [*] 窗口操作 API 支持
-  - [*] 窗口 icon 支持
-- [ ] 项目构建脚本支持
-  - [ ] MacOS
-  - [ ] Windows
-- [ ] 其他 API 支持
-  - [ ] ...
 
-## Usage
+- [x] 单窗口模式
+- [x] 应用构建
+  - [x] MacOS 构建
+  - [x] Windows 构建
+  - [ ] Windows APP Icon 和窗口 Icon 自定义
+  - [ ] 构建是在可执行文件中加入 Meta 信息
+- [x] API
+  - [x] fs
+  - [x] http
+  - [x] dialog
+  - [x] os
+  - [x] process
+  - [x] window
+  - [x] webview
+- [x] 开发者工具
+  - [x] 调试窗口
+  - [x] Api 文档与示例
+  - [x] 项目配置编辑器
+- [ ] 多窗口模式
+  - [ ] 打开多窗口
+  - [ ] 多窗口间通讯
+- [ ] 全局快捷键
+- [ ] 系统 Tray
 
-1. 下载或者编译 Tauri Lite.
-2. 将 target/{release, debug}/tauri_lite 拖进 web 前端项目的目标目录，比如本项目的 example 目录。
-3. 确保项目目录下有 index.html 文件，如果需要更多配置可以使用 tauri_lite.json。
-4. 双击 tauri_lite 即可打开应用程序。
+## 快速开始
 
-## Config
-Tauri Lite 可以通过 tauri_lite.json 提供项目和窗口的配置。
+1. 在 [Release 页面](https://github.com/bramblex/tauri_lite/releases) 中下载对应系统的开发者工具(Devtools)。
+2. 打开开发者工具(Devtools)，导入或者新建项目。如果有已经有的前端项目，可以通过「选择项目」index.html 文件所得目录。如果没有项目则可以直接通过「新建项目」新建一个 Tauri 项目。
+   - ![quick-start-1](screenshots/quick-start-1.png)
+3. 项目打开或者新建以后，会进入项目页面，可以直接通过启动调试打开 TauriLite 窗口，也可以点击构建将项目打包成一个可执行文件。
+   - ![quick-start-2](screenshots/quick-start-2.png)
+4. 在开发中如果遇到问题，可以直接在开发者工具(Devtools)中查看文档。
+   - ![quick-start-3](screenshots/quick-start-3.png)
+5. 如果你用的是 React 或者 Vue，可以使用项目的 public 文件夹作为项目根目录，并且通过配置 `debugEntry` 选项让 TauriLite 窗口用开发链接作为入口。
+   - ![quick-start-4](screenshots/quick-start-4.png)
+   - ![quick-start-5](screenshots/quick-start-5.png)
 
-### Project config
-项目基本配置，绝大部分配置只有在构建发布时候才有用。除了 name 字段外，其他字段都是可选的。
+## 项目配置
 
-| 字段          | 类型   | 默认值 | 描述                    |
-| ------------- | ------ | ------ | ----------------------- |
-| name          | string |        | 应用名称                |
-| icon          | string |        | 应用图标，窗口图标(WIP) |
-| version       | string |        | 应用版本                |
-| author        | string |        | 应用作者                |
-| description   | string |        | 应用描述                |
-| copyright     | string |        | 应用版权                |
-| website       | string |        | 应用网站                |
-| website_label | string |        | 应用网站标签            |
+### 基本选项
 
-### Window & Webview config
-窗口和 Webview 配置
+- name: 项目名
+- uuid: 项目 UUID 由开发者工具(Devtools)自动生成，不建议修改。
 
-| 字段                      | 类型             | 默认值           | 描述                                         |
-| ------------------------- | ---------------- | ---------------- | -------------------------------------------- |
-| entry                     | string           | index.html       | 入口文件                                     |
-| title                     | string           | 默认取 name 字段 | 窗口标题                                     |
-| devtools                  | bool             | false            | 是否启用调试工具                             |
-| background_color          | [u8, u8, u8, u8] | [255,255,255,1]  | 背景颜色 [R, G, B, A], Alpha 只能设置 0 和 1 |
-| theme                     | light \| dark    | light            | 窗口主题                                     |
-| size                      | [f64, f64]       | [800, 600]       | 窗口大小                                     |
-| min_size                  | [f64, f64]       |                  | 窗口最小大小                                 |
-| max_size                  | [f64, f64]       |                  | 窗口最大大小                                 |
-| position                  | [f64, f64]       | [0, 0]           | 窗口位置                                     |
-| resizable                 | bool             | true             | 是否可调整大小                               |
-| minimizable               | bool             | true             | 是否可最小化                                 |
-| maximizable               | bool             | true             | 是否可最大化                                 |
-| closable                  | bool             | true             | 是否可关闭                                   |
-| fullscreen                | bool             | true             | 是否默认全屏                                 |
-| maximized                 | bool             | false            | 是否默认最大化                               |
-| visible                   | bool             | true             | 是否默认可见                                 |
-| focused                   | bool             | false            | 是否默认聚焦                                 |
-| content_protection        | bool             | false            | 是否启用内容保护                             |
-| transparent               | bool             | false            | 窗口透明，需配合 background_color 使用       |
-| decorations               | bool             | true             | 是否显示窗口装饰(窗口边框)                   |
-| always_on_top             | bool             | false            | 是否总是显示在最上层                         |
-| always_on_button          | bool             | false            | 是否总是显示在最底层                         |
-| visible_on_all_workspaces | bool             | false            | 是否在所有工作区显示                         |
-| menu                      | Menu[]           |                  | 用户菜单栏配置(WIP)                          |
+### 调试选项
 
-### Menu
-WIP: 用户菜单栏配置
+- debugEntry: 调试入口, vue / react 等项目调试时使用，如 http://localhost:3000
 
-### Runtime config
-运行时配置
-| 字段    | 类型 | 默认值 | 描述             |
-| ------- | ---- | ------ | ---------------- |
-| workers | u32  | 5      | 运行时线程池大小 |
+### 项目选项（仅构建时用）
 
+- icon: 图标
+- version: 版本
+- author: 作者
+- description: 描述
+- copyright: 版权
+- license: 许可证
+- website: 网站
+
+### 窗口选项
+
+- entry: 入口文件, 不填则默认为 index.html
+- backgroundColor: 背景颜色 RGBA, 例如 [255, 255, 255, 1]
+- devtools: 是否启用开发者工具
+- title: 窗口标题
+- theme: 窗口主题
+- size: 窗口大小, 不填则默认为 [800, 600]
+- minSize: 窗口最小大小
+- maxSize: 窗口最大大小
+- position: 窗口位置
+- resizable: 是否可调整窗口大小
+- minimizable: 是否可最小化窗口
+- maximizable: 是否可最大化窗口
+- closable: 是否可关闭窗口
+- fullscreen: 是否全屏显示
+- maximized: 是否最大化窗口
+- visible: 是否可见
+- transparent: 是否透明
+- decorations: 是否显示窗口装饰
+- alwaysOnTop: 是否总在最前面
+- alwaysOnBottom: 是否总在最后面
+- visibleOnAllWorkspaces: 是否在所有工作区可见
+- focused: 是否聚焦于窗口
+- contentProtection: 是否启用内容保护
+- menu: 窗口菜单选项, 详见下方
+
+### 菜单选项
+
+```ts
+type MenuOptions = [string, number] | [string, MenuOptions] | "---";
+```
+
+例子：
+
+```json
+{
+  "menu": [
+    [
+      "menu1",
+      [["world", 123], "---", ["hello", 456], ["submenu", [["item", 789]]]],
+      "menu2",
+      []
+    ]
+  ]
+}
+```
 
 ## API
-Tauri lite 提供了一些基础的 API，可以在前端代码中直接使用，所有的 Api 都返回 Promise。
-```js
-// webview with Proxy support 
-TauriLite.api.fs.ls({ path: './' })
-//            ↑  ↑
-//    namespace  method
-  .then(console.log)
-  .catch(console.error)
 
-// webview without Proxy support
-TauriLite.call('fs.ls', { path: './'})
-//              ↑  ↑
-//      namespace  method
-  .then(console.log)
-  .catch(console.error)
-```
-
-### File System
-文件系统相关 api
-
-| API    | 参数类型                        | 返回类型             | 描述              |
-| ------ | ------------------------------- | -------------------- | ----------------- |
-| stat   | {path: string}                  | {metadata: MetaData} | 获取文件信息      |
-| exists | {path: string}                  | {exists: bool}       | 判断文件是否存在  |
-| read   | {path: string}                  | {content: string}    | 读取文件内容      |
-| write  | {path: string, content: string} |                      | 写入文件内容      |
-| append | {path: string, content: string} |                      | 追加文件内容(WIP) |
-| mv     | {path: string, newPath: string} |                      | 移动文件          |
-| cp     | {path: string, newPath: string} |                      | 复制文件          |
-| rm     | {path: string}                  |                      | 删除文件          |
-| ls     | {path: Option<string>}          | {files: string[]}    | 列出目录下的文件  |
-| mkDir  | {path: string}                  |                      | 创建目录          |
-| rmDir  | {path: string}                  |                      | 删除目录          |
-| link   | {path: string, newPath: string} |                      | 创建链接(WIP)     |
+### fs
 
 ```ts
-// MetaData 类型
-interface MetaData {
-  isFile: bool,
-  isDir: bool,
-  isSymlink: bool,
-  size: number,
-  accessed: number,
-  modified: number,
-  created: number,
+function stat(path: string): Promise<Stat>;
+function exists(path: string): Promise<boolean>;
+function read(path: string, encode?: "utf8" | "base64"): Promise<string>;
+function write(
+  path: string,
+  content: string?,
+  encode?: "utf8" | "base64"
+): Promise<void>;
+function copy(
+  from: string,
+  to: string,
+  copyOptions?: CopyOptions
+): Promise<void>;
+function move(
+  from: string,
+  to: string,
+  copyOptions?: CopyOptions
+): Promise<void>;
+function remove(path: string): Promise<void>;
+function createDir(path: string): Promise<void>;
+function createDirAll(path: string): Promise<void>;
+function readDir(path: string): Promise<ReadDirItem[]>;
+
+interface ReadDirItem {
+  name: string;
+  type: "file" | "dir";
+}
+
+interface Stat {
+  isDir: boolean;
+  isFile: boolean;
+  isSymlink: boolean;
+  size: number;
+  modified: number;
+  accessed: number;
+  created: number;
+}
+
+interface CopyOptions {
+  overwrite?: boolean;
+  skipExist?: boolean;
+  bufferSize?: number;
+  copyInode?: boolean;
+  contentOnly?: boolean;
+  depth?: number;
 }
 ```
 
-### Http
-HTTP 网络请求相关 api
-
-| API      | 参数类型 | 返回类型 | 描述          |
-| -------- | -------- | -------- | ------------- |
-| request  | Request  | Response | 发送请求      |
-| download |          |          | 下载文件(WIP) |
+### http
 
 ```ts
-// Request 类型
-interface Request {
-  url: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS',
-  headers?: { [key: string]: string },
-  body?: string,
+function request(options: RequestOptions): Promise<Response>;
+function get(url: string, headers?: Headers): Promise<Response>;
+function post(url: string, body: string, headers?: Headers): Promise<Response>;
+
+interface Headers {
+  [key: string]: string;
 }
 
-// Response 类型
+interface RequestOptions {
+  method: string;
+  url: string;
+  headers?: Headers;
+  body?: string;
+}
+
 interface Response {
-  status: number,
-  headers: { [key: string]: string },
-  body: string,
+  status: number;
+  headers: Headers;
+  body: string;
 }
 ```
 
-### OS
-系统相关 api
-
-| API  | 参数类型 | 返回类型 | 描述             |
-| ---- | -------- | -------- | ---------------- |
-| info |          | Info     | 获取操作系统信息 |
-| dirs |          | Dirs     | 获取系统目录     |
+### dialog
 
 ```ts
-// Info 类型
-interface Info {
-  os: string,
-  arch: string,
-  version: string,
+function showMessage(
+  title: string,
+  message?: string,
+  level?: "info" | "warning" | "error"
+): Promise<void>;
+function pickFile(extensions?: string[], startDir?: string): Promise<string>;
+function pickFiles(extensions?: string[], startDir?: string): Promise<string[]>;
+function pickDir(startDir?: string): Promise<string>;
+function pickDirs(startDir?: string): Promise<string[]>;
+function saveFile(extensions?: string[], startDir?: string): Promise<string>;
+```
+
+### os
+
+```ts
+function info(): Promise<OsInfo>;
+function dirs(): Promise<Dirs>;
+function sep(): Promise<string>;
+function eol(): Promise<string>;
+
+interface OsInfo {
+  os: string;
+  arch: string;
+  version: string;
 }
 
 interface Dirs {
-  home: string,
-  temp: string,
-  audio: string,
-  desktop: string,
-  document: string,
-  download: string,
-  font: string,
-  picture: string,
-  public: string,
-  template: string,
-  video: string,
+  work: string;
+  temp: string;
+  data: string;
+  home: string;
+  audio: string;
+  desktop: string;
+  document: string;
+  download: string;
+  font: string;
+  picture: string;
+  public: string;
+  template: string;
+  video: string;
 }
 ```
 
-### Process
-进程相关 api
-
-| API   | 参数类型       | 返回类型           | 描述           |
-| ----- | -------------- | ------------------ | -------------- |
-| pid   |                | {pid: number}      | 获取进程 id    |
-| cwd   |                | {cwd: string}      | 获取当前目录   |
-| chDir | {path: string} |                    | 切换当前目录   |
-| env   |                | {[string]: string} | 获取环境变量   |
-| exit  |                |                    | 退出进程       |
-| exec  | ExecOptions    | ExecResult         | 执行命令或程序 |
+### process
 
 ```ts
-// ExecOptions 类型
+function pid(): Promise<number>;
+function currentDir(): Promise<string>;
+function currentExe(): Promise<string>;
+function env(): Promise<Record<string, string>>;
+function setCurrentDir(path: string): Promise<void>;
+function exit(): Promise<void>;
+function exec(
+  cmd: string,
+  args: string[],
+  options: ExecOptions
+): Promise<ExecResult>;
+function open(uri: string): Promise<void>;
+function version(): Promise<string>;
+
 interface ExecOptions {
-  command: string, // 命令或程序
-  args?: string[], // 命令或程序参数
-  cwd?: string, // 工作目录
-  env?: { [key: string]: string }, // 环境变量
-  detached?: bool, // 是否分离进程
+  env?: Record<string, string>;
+  currentDir?: string;
+  detached?: boolean;
 }
 
 interface ExecResult {
-  pid: number, // 进程 id(仅在 detached 为 true 时有效)
-
-  // 以下字段仅在 detached 为 false 时有效
-  status: number, // 进程退出状态
-  stdout: string, // 标准输出
-  stderr: string, // 错误输出
+  status: number;
+  stdout: string;
+  stderr: string;
 }
 ```
 
-## Bundle
-将程序构建成单个可执行文件方案
+### webview
 
-- windows - https://github.com/SerGreen/Appacker
-- macos - https://github.com/burtonageo/cargo-bundle
+- isDevtoolsOpen
+- openDevtools
+- closeDevtools
+- setBackgroundColor
+
+### window
+
+- scaleFactor
+- innerPosition
+- outerPosition
+- setOuterPosition
+- innerSize
+- setInnerSize
+- outerSize
+- setMinInnerSize
+- setMaxInnerSize
+- setTitle
+- title
+- isVisible
+- setVisible
+- isFocused
+- setFocus
+- isResizable
+- setResizable
+- isMinimizable
+- setMinimizable
+- isMaximizable
+- setMaximizable
+- isClosable
+- setClosable
+- isMinimized
+- setMinimized
+- isMaximized
+- setMaximized
+- Decorated
+- setDecorated
+- fullscreen
+- setFullscreen
+- setAlwaysOnTop
+- setAlwaysOnBottom
+- requestUserAttention
+- setContentProtection
+- setVisibleOnAllWorkspaces
+- setCursorIcon
+- setCursorPosition
+- setCursorGrab
+- setCursorVisible
+- dragWindow
+- setIgnoreCursorEvents
+
+## License
+
+MIT
