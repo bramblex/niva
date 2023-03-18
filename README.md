@@ -24,7 +24,7 @@
   - [x] MacOS 构建
   - [x] Windows 构建
   - [ ] Windows APP Icon 和窗口 Icon 自定义
-  - [ ] 构建是在可执行文件中加入 Meta 信息
+  - [ ] 构建时在可执行文件中加入 Meta 信息
 - [x] API
   - [x] fs
   - [x] http
