@@ -1,14 +1,15 @@
 use anyhow::{Ok, Result};
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+#[cfg(target_os = "windows")]
 use self::win_resource::load_resource;
 
 mod utils;
-pub mod win_resource;
+#[cfg(target_os = "windows")]
+mod win_resource;
 
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
@@ -21,7 +22,7 @@ pub type ResourceManagerRef = Arc<dyn ResourceManager>;
 pub fn create(resource_dir: Option<PathBuf>) -> Result<ResourceManagerRef> {
     match resource_dir {
         Some(dir) => Ok(Arc::new(FileSystemResource {
-            root_dir: dir.to_path_buf(),
+            root_dir: dir,
         })),
         None => {
             #[cfg(target_os = "macos")]
@@ -66,7 +67,7 @@ impl ResourceManager for FileSystemResource {
 
     fn extract(&self, from: String, to: &Path) -> Result<()> {
         fs_extra::file::copy(
-            &self.root_dir.join(from),
+            self.root_dir.join(from),
             to,
             &fs_extra::file::CopyOptions::new(),
         )?;
@@ -80,6 +81,7 @@ struct WindowsExecutableResourceManager {
     data: Vec<u8>,
 }
 
+#[cfg(target_os = "windows")]
 impl std::fmt::Debug for WindowsExecutableResourceManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WindowsExecutableResourceManager")

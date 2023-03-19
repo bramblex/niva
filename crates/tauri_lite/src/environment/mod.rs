@@ -1,7 +1,7 @@
 use anyhow::Result;
 mod options;
 
-use serde_json::json;
+
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

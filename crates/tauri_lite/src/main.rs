@@ -4,10 +4,9 @@
     windows_subsystem = "windows"
 )]
 
-use crate::{event_loop::{event_handler::handle, MainEventLoop}, resource_manager::win_resource::load_resource};
+use crate::{event_loop::{event_handler::handle, MainEventLoop}};
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
-use resource_manager::ResourceManager;
 
 mod api_manager;
 mod apis;

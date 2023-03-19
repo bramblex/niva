@@ -2,7 +2,6 @@ use crate::{resource_manager::ResourceManagerRef, thread_pool::ThreadPool};
 use std::{
     io::{BufRead, Error, ErrorKind, Result, Write},
     net::{TcpListener, TcpStream},
-    path::Path,
     sync::{Arc, Mutex},
 };
 

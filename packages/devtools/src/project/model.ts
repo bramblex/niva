@@ -233,7 +233,7 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
     });
 
     progress.addTask("正在复制项目文件...", async () => {
-      await fs.copy(this.state!.path, appMacOSPath, {
+      await fs.copy(this.state!.path, appResourcesPath, {
         contentOnly: true,
       });
       await fs.copy(exe, executablePath);
