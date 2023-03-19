@@ -3,10 +3,18 @@ import { DialogComponentProps } from "../modal";
 import { ProjectModel } from "./model";
 
 import AceEditor from 'react-ace';
+import ace from "ace-builds";
+
 import 'ace-builds/src-noconflict/mode-json';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/ext-language_tools'
+
 import { tryOrAlertAsync, withCtx, withCtxP } from '../utils';
+
+// eslint-disable-next-line import/no-webpack-loader-syntax
+const jsonWorkerUrl = require("file-loader!ace-builds/src-noconflict/worker-json").default;
+ace.config.setModuleUrl("ace/mode/json_worker", jsonWorkerUrl);
+
 
 const { fs } = TauriLite.api;
 

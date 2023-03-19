@@ -7,7 +7,7 @@ use crate::{
     api_manager::{ApiManager, ApiRequest},
     environment::EnvironmentRef,
 };
-use std::time::UNIX_EPOCH;
+use std::{time::UNIX_EPOCH, path::Path};
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.stat", stat);
@@ -20,6 +20,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.createDir", create_dir);
     api_manager.register_async_api("fs.createDirAll", create_dir_all);
     api_manager.register_async_api("fs.readDir", read_dir);
+    api_manager.register_async_api("fs.readDirAll", read_dir_all);
 }
 
 
@@ -183,7 +184,7 @@ fn create_dir_all(_: EnvironmentRef, request: ApiRequest) -> Result<()> {
     Ok(())
 }
 
-fn read_dir(_: EnvironmentRef, request: ApiRequest) -> Result<Vec<Value>> {
+fn read_dir(_: EnvironmentRef, request: ApiRequest) -> Result<Vec<String>> {
     let (path,) = request.args().get_with_optional::<(Option<String>,)>(1)?;
     let path = path.unwrap_or(".".to_string());
 
@@ -192,14 +193,29 @@ fn read_dir(_: EnvironmentRef, request: ApiRequest) -> Result<Vec<Value>> {
         let entry = entry?;
         let path = entry.path();
         let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
-        let file_type = match path.is_dir() {
-            true => "dir",
-            false => "file",
-        };
-        entries.push(json!({
-            "name": file_name,
-            "type": file_type
-        }));
+        entries.push(file_name);
     }
     Ok(entries)
+}
+
+fn _visit_dirs(dir: &Path, prefix: &Path, files: &mut Vec<String>) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let rel_path = path.strip_prefix(prefix).unwrap();
+        if path.is_dir() {
+            _visit_dirs(&path, prefix, files)?;
+        } else {
+            files.push(rel_path.to_str().unwrap().to_string());
+        }
+    }
+    Ok(())
+}
+
+fn read_dir_all(_: EnvironmentRef, request: ApiRequest) -> Result<Vec<String>> {
+    let path = request.args().get_single::<String>()?;
+    let path = Path::new(&path);
+    let mut files: Vec<String> = Vec::new();
+    _visit_dirs(path, path, &mut files)?;
+    Ok(files)
 }

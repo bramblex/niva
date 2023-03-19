@@ -36,7 +36,7 @@ function ApiExample(props: { cases: [string, any[]?, string?][] }) {
 			TauriLite.api.process.setCurrentDir(getCurrentDir());
 			// clear temp dir
 			TauriLite.api.fs.readDir(tempWith(''))
-				.then((list: { name: string }[]) => list.map(item => TauriLite.api.fs.remove(tempWith(item.name))));
+				.then((list: string[]) => list.map(name => TauriLite.api.fs.remove(tempWith(name))));
 		}
 	}, []);
 	return <>
@@ -129,6 +129,14 @@ const createDoc: () => DocTreeNode = () => ['文档', [
 				<ApiExample cases={[
 					['fs.write', [tempWith("test.txt"), "hello world"]],
 					['fs.readDir', [tempWith("")]],
+				]} />
+			],
+			['readDirAll',
+				<ApiExample cases={[
+					['fs.write', [tempWith("test.txt"), "hello world"]],
+					['fs.createDir', [tempWith("test-dir")]],
+					['fs.write', [tempWith("test-dir", "test.txt"), "hello world"]],
+					['fs.readDirAll', [tempWith("")]],
 				]} />
 			],
 		], false],

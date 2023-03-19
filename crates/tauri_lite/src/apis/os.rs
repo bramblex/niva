@@ -28,7 +28,6 @@ fn dirs(env: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
     let user_dirs = UserDirs::new().unwrap();
 
     Ok(json!({
-        "work": env.work_dir,
         "temp": env.temp_dir,
         "data": env.data_dir,
 

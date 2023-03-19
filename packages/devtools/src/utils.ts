@@ -71,8 +71,8 @@ export function dirname(path: string) {
 let dirs: { temp: string, home: string } | null = null;
 TauriLite.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
 
-export function tempWith(path: string) {
-  return pathJoin(dirs!.temp, path);
+export function tempWith(...paths: string[]) {
+  return pathJoin(dirs!.temp, ...paths);
 }
 
 export function getHome() {
@@ -91,10 +91,39 @@ type XPromise<T> = Promise<T> & {
 };
 
 export function createPromise<T>(): XPromise<T> {
-  let resolve: (value: T) => void = (v: T) => {};
+  let resolve: (value: T) => void = (v: T) => { };
   let promise = new Promise<T>(
     (_resolve) => (resolve = _resolve)
   ) as XPromise<T>;
   promise.resolve = resolve;
   return promise;
+}
+
+export function base64ToArrayBuffer(base64: string) {
+  const binary_string = window.atob(base64);
+  const len = binary_string.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary_string.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+export function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+export function concatArrayBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
+  const newBuffer = new ArrayBuffer(buffer1.byteLength + buffer2.byteLength);
+  // copy the contents of buffer1 into the new buffer
+  new Uint8Array(newBuffer, 0, buffer1.byteLength).set(new Uint8Array(buffer1));
+  // copy the contents of buffer2 into the new buffer, starting at the end of buffer1
+  new Uint8Array(newBuffer, buffer1.byteLength, buffer2.byteLength).set(new Uint8Array(buffer2));
+  return newBuffer;
 }

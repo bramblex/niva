@@ -19,7 +19,7 @@
         }
       },
       "args": [
-        "--work-dir",
+        "--resource-dir",
         "packages/devtools/public",
         "--debug-entry",
         "http://127.0.0.1:3000",
@@ -48,12 +48,8 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": [
-        "--work-dir",
-        "packages/devtools/build",
-        "true"
-      ],
+      "args": ["--resource-dir", "packages/devtools/build", "true"],
       "cwd": "${workspaceFolder}"
-    }
+    },
   ]
 }

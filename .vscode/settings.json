@@ -1,9 +1,11 @@
 {
 	"cSpell.words": [
 		"Borderless",
+		"bramblex",
 		"fullscreen",
 		"maximizable",
 		"minimizable",
+		"pako",
 		"Tauri",
 		"ureq"
 	]

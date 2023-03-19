@@ -4,7 +4,7 @@
     windows_subsystem = "windows"
 )]
 
-use crate::event_loop::{event_handler::handle, MainEventLoop};
+use crate::{event_loop::{event_handler::handle, MainEventLoop}};
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
 
@@ -12,12 +12,14 @@ mod api_manager;
 mod apis;
 mod environment;
 mod event_loop;
+mod resource_manager;
 mod static_server;
 mod thread_pool;
 mod window_manager;
 
 fn main() -> Result<()> {
     let env = environment::init().with_context(|| "Init EnvironmentError")?;
+
     println!("Init Environment Success");
     println!("{:?}", env);
 
@@ -29,7 +31,7 @@ fn main() -> Result<()> {
 
     apis::register_apis(&mut api_manager);
 
-    let base_url = static_server::start(&env.work_dir, thread_pool);
+    let base_url = static_server::start(env.resource.clone(), thread_pool);
     let mut window_manager = window_manager::WindowManager::new(
         env.clone(),
         base_url,

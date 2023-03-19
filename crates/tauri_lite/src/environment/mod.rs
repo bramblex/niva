@@ -1,11 +1,12 @@
 use anyhow::Result;
 mod options;
 
-use serde_json::json;
+
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::resource_manager::{self, ResourceManagerRef};
 pub use options::*;
 
 #[derive(Debug)]
@@ -13,7 +14,9 @@ pub struct Environment {
     pub project_name: String,
     pub project_uuid: String,
 
-    pub work_dir: PathBuf,
+    // resource
+    pub resource: ResourceManagerRef,
+
     pub temp_dir: PathBuf,
     pub data_dir: PathBuf,
 
@@ -29,7 +32,7 @@ unsafe impl Sync for Environment {}
 pub type EnvironmentRef = Arc<Environment>;
 
 struct Args {
-    pub work_dir: Option<PathBuf>,
+    pub resource_dir: Option<PathBuf>,
     pub debug_entry: Option<String>,
     pub devtools: Option<String>,
 }
@@ -50,14 +53,21 @@ fn get_args() -> Args {
         })
         .collect();
     let mut args = Args {
-        work_dir: None,
+        resource_dir: None,
         debug_entry: None,
-        devtools: None
+        devtools: None,
     };
     for (key, value) in arg_pairs {
         match key.as_str() {
-            "--work-dir" => {
-                args.work_dir = Some(Path::new(value.as_str()).to_path_buf());
+            "--resource-dir" => {
+                let path = Path::new(value.as_str());
+                let path = if path.is_relative() {
+                    let current_dir = std::env::current_dir().unwrap();
+                    current_dir.join(path)
+                } else {
+                    path.to_path_buf()
+                };
+                args.resource_dir = Some(path);
             }
             "--debug-entry" => {
                 args.debug_entry = Some(value);
@@ -71,71 +81,29 @@ fn get_args() -> Args {
     args
 }
 
-fn get_work_dir(args: &Args) -> Result<PathBuf> {
-    // if work dir is specified in command line arguments
-    if let Some(custom_path) = &args.work_dir {
-        let cwd = std::env::current_dir()?;
-        let full_path = cwd.join(custom_path);
-
-        // if custom_path a directory and exists, return it
-        if full_path.is_dir() {
-            return Ok(full_path);
-        }
-
-        // if custom_path is not a directory, return error
-        return Err(anyhow::anyhow!("Custom path is not a directory or not exists"));
-    }
-
-    // if work dir is not specified in command line arguments,
-    // return executable dir path as default work dir
-    let executable_path = std::env::current_exe()?;
-    // executable parent always exists
-    let default_work_dir = executable_path.parent().unwrap().to_path_buf();
-    Ok(default_work_dir)
-}
-
-fn get_or_create_config(work_dir: &Path) -> Result<ProjectOptions> {
-    let config_path = work_dir.join("tauri_lite.json");
-    let config_exists = config_path.exists();
-
-    if !config_exists {
-        std::fs::write(
-            &config_path,
-            json!({
-                "name": "tauri_lite_project",
-                "uuid": uuid::Uuid::new_v4().to_string(),
-            })
-            .to_string(),
-        )?;
-    }
-
-    let content = std::fs::read_to_string(&config_path)?;
-    let config = serde_json::from_str::<ProjectOptions>(&content)?;
-
-    // if config uuid is not exists, create a new one and write back to config file.
-    if config.uuid.is_none() {
-        return Err(anyhow::anyhow!("Config uuid is not exists"));
-        //     config.uuid = Some(uuid::Uuid::new_v4().to_string());
-        //     std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
-    }
-
-    Ok(config)
+fn get_options(resource: ResourceManagerRef) -> Result<ProjectOptions> {
+    let options_content = resource.read("tauri_lite.json".to_string())?;
+    let options = serde_json::from_slice::<ProjectOptions>(&options_content)?;
+    Ok(options)
 }
 
 pub fn init() -> Result<Arc<Environment>> {
+    print!("Initializing environment... ");
     let args = get_args();
-    let work_dir = get_work_dir(&args)?;
+    println!("get args done.");
+    let resource = resource_manager::create(args.resource_dir)?;
+    print!("create resource manager done.");
 
-    let mut config = get_or_create_config(&work_dir)?;
-    config.window.title = Some(config.window.title.unwrap_or_else(|| config.name.clone()));
+    let mut options = get_options(resource.clone())?;
+    options.window.title = Some(options.window.title.unwrap_or_else(|| options.name.clone()));
     if let Some(debug) = args.devtools {
         if (debug == "true") || (debug == "1") {
-            config.window.devtools = Some(true);
+            options.window.devtools = Some(true);
         }
     }
 
-    let project_name = config.name.clone();
-    let project_uuid = config.uuid.clone().unwrap();
+    let project_name = options.name.clone();
+    let project_uuid = options.uuid.clone();
 
     let temp_dir = std::env::temp_dir().join(project_name.clone() + "." + &project_uuid);
 
@@ -153,15 +121,13 @@ pub fn init() -> Result<Arc<Environment>> {
         std::fs::create_dir_all(&temp_dir)?;
     }
 
-    std::env::set_current_dir(&work_dir)?;
-
     Ok(Arc::new(Environment {
         project_name,
         project_uuid,
-        work_dir,
+        resource,
         temp_dir,
         data_dir,
-        config,
+        config: options,
         debug_entry: args.debug_entry,
     }))
 }
