@@ -1,11 +1,16 @@
 use anyhow::{Ok, Result};
 use std::{
     path::{Path, PathBuf},
-    sync::Arc, io::Read,
+    sync::Arc,
 };
 
 #[cfg(target_os = "windows")]
+use std::io::Read;
+
+#[cfg(target_os = "windows")]
 use self::win_resource::load_resource;
+
+#[cfg(target_os = "windows")]
 use std::collections::HashMap;
 
 mod utils;
