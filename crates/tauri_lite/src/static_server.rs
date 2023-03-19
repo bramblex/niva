@@ -1,4 +1,4 @@
-use crate::thread_pool::ThreadPool;
+use crate::{resource_manager::ResourceManagerRef, thread_pool::ThreadPool};
 use std::{
     io::{BufRead, Error, ErrorKind, Result, Write},
     net::{TcpListener, TcpStream},
@@ -15,16 +15,14 @@ fn get_tcp_listener() -> Result<(TcpListener, u16)> {
     Err(Error::new(ErrorKind::Other, "No available port to listen"))
 }
 
-pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
+pub fn start(resource: ResourceManagerRef, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
     let (listener, port) = get_tcp_listener().unwrap();
     let thread_pool = thread_pool;
-
-    let root_dir = root_dir.to_path_buf();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            let root_dir = root_dir.clone();
             match stream {
                 Ok(mut stream) => {
+                    let resource = resource.clone();
                     thread_pool.lock().unwrap().run(move || {
                         let request_path = get_request_path(&mut stream);
                         let request_path = if request_path.ends_with('/') {
@@ -32,13 +30,13 @@ pub fn start(root_dir: &Path, thread_pool: Arc<Mutex<ThreadPool>>) -> String {
                         } else {
                             request_path
                         };
-                        let file_path = root_dir.join(request_path.strip_prefix('/').unwrap());
-                        let file_result = std::fs::read(&file_path);
+                        let file_path = request_path.strip_prefix('/').unwrap().to_string();
+                        let file_result = resource.read(file_path.clone());
                         if file_result.is_err() {
                             write_404_response(&mut stream);
                             return;
                         }
-                        write_response(&mut stream, &file_path, file_result.unwrap());
+                        write_response(&mut stream, file_path, file_result.unwrap());
                     });
                 }
                 Err(e) => {
@@ -72,7 +70,7 @@ fn write_404_response(stream: &mut TcpStream) {
     stream.write_all(&buf).unwrap();
 }
 
-fn write_response(stream: &mut TcpStream, file_path: &Path, content: Vec<u8>) {
+fn write_response(stream: &mut TcpStream, file_path: String, content: Vec<u8>) {
     let mut buf: Vec<u8> = Vec::new();
 
     let len = content.len();

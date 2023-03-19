@@ -1,8 +1,12 @@
 import { StateModel } from "@bramblex/state-model";
 import { generatePlist } from "./template";
 import {
+  arrayBufferToBase64,
+  base64ToArrayBuffer,
+  concatArrayBuffers,
   dirname,
   pathJoin,
+  tempWith,
   tryOrAlertAsync,
   tryOrP,
   uuid,
@@ -12,7 +16,7 @@ import {
 import { modal } from "../modal";
 import { OptionsEditor } from "./options-editor";
 
-const { os, fs, process, dialog } = TauriLite.api;
+const { os, fs, process, dialog, resource } = TauriLite.api;
 
 interface ProjectState {
   name: string;
@@ -102,12 +106,12 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 
   edit() {
     return tryOrAlertAsync(async () => {
-      modal.show(OptionsEditor, {project: this});
+      modal.show(OptionsEditor, { project: this });
     });
   }
 
   debug() {
-    const workDir = this.state!.path;
+    const projectPath = this.state!.path;
     const debugEntry = this.state!.config.debugEntry;
 
     return tryOrAlertAsync(async () => {
@@ -115,8 +119,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       process.exec(
         exe,
         [
-          "--work-dir",
-          workDir,
+          "--resource-dir",
+          projectPath,
           "--devtools",
           "true",
           ...(debugEntry ? ["--debug-entry", debugEntry] : []),
@@ -148,46 +152,55 @@ export class ProjectModel extends StateModel<ProjectState | null> {
   }
 
   private async buildWindowsApp(): Promise<string> {
-    const exe = await process.currentExe();
-    const cwd = await process.currentDir();
-
+    const currentExe = await process.currentExe();
     const file = await dialog.saveFile(["exe"]);
-
     if (!file) {
       throw new Error("未选择exe文件");
     }
-    const appPath = file.endsWith(".exe") ? file : file + ".exe";
-    const { path, name, config } = this.state!;
-    const mainExePath = pathJoin(path, name + ".exe");
-    const iconPath = pathJoin(path, config.icon);
+    const targetExe = file.endsWith(".exe") ? file : file + ".exe";
 
-    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
+    const resourcePath = this.state!.path;
+    const buildPath = tempWith(this.state!.name);
+    const indexesKey = "TAURI_LITE_RESOURCE_INDEXES";
+    const indexesPath = pathJoin(buildPath, indexesKey);
+    const dataKey = "TAURI_LITE_RESOURCE_DATA";
+    const dataPath = pathJoin(buildPath, dataKey);
 
-    progress.addTask("正在复制可执行文件...", async () => {
-      await fs.copy(exe, mainExePath);
-    });
+    await fs.createDirAll(buildPath);
 
-    progress.addTask("正在构建应用...", async () => {
-      await process.exec(pathJoin(cwd, "appacker.exe"), [
-        "-s",
-        path,
-        "-e",
-        name + ".exe",
-        "-i",
-        iconPath,
-        "-d",
-        appPath,
-      ]);
-    });
+    const fileIndexes: Record<string, [number, number]> = {}
+    let buffer = new ArrayBuffer(0);
 
-    progress.addTask("正在清理临时文件...", async () => {
-      await fs.remove(mainExePath);
-    });
+    for (const name of await fs.readDirAll(resourcePath)) {
+      const filePath = pathJoin(resourcePath, name);
+      const fileKey = name.replace(/\\/g, "/");
+      const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, 'base64'));
+      fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
+      buffer = concatArrayBuffers(buffer, fileBuffer);
+    }
 
-    await progress.run();
-    close();
+    await Promise.all([
+      fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
+      fs.write(dataPath, arrayBufferToBase64(buffer), 'base64'),
+      resource.extract("ResourceHacker.exe", pathJoin(buildPath, "ResourceHacker.exe")),
+    ])
 
-    return appPath;
+    await fs.write(pathJoin(buildPath, "bundle_script.txt"), `
+[FILENAMES]
+Exe=    ${currentExe}
+SaveAs= ${targetExe}
+Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
+[COMMANDS]
+-addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
+-addoverwrite ${dataPath}, RCDATA,${dataKey},1033
+`);
+
+    await process.exec(
+      pathJoin(buildPath, "ResourceHacker.exe"),
+      ['-script', pathJoin(buildPath, "bundle_script.txt")]
+    )
+
+    return targetExe;
   }
 
   private async buildMacOsApp() {

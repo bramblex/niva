@@ -18,7 +18,7 @@ pub struct Meta {
 pub struct ProjectOptions {
     // project config
     pub name: String,
-    pub uuid: Option<String>,
+    pub uuid: String,
 
     // meta config
     #[serde(flatten)]
