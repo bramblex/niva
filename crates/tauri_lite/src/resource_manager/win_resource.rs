@@ -34,7 +34,7 @@ pub fn load_resource(name: &str) -> Result<Vec<u8>> {
             return Err(anyhow::anyhow!("Failed to lock resource."));
         }
 
-        let mut data: Vec<u8> = Vec::with_capacity(size);
+        let mut data: Vec<u8> = vec![0; size];
         std::ptr::copy(lp_res_data, data.as_mut_ptr(), size);
 
         FreeResource(h_res_data);

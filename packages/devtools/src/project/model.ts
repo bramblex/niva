@@ -15,6 +15,7 @@ import {
 } from "../utils";
 import { modal } from "../modal";
 import { OptionsEditor } from "./options-editor";
+import pako from 'pako'
 
 const { os, fs, process, dialog, resource } = TauriLite.api;
 
@@ -161,31 +162,41 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 
     const resourcePath = this.state!.path;
     const buildPath = tempWith(this.state!.name);
-    const indexesKey = "TAURI_LITE_RESOURCE_INDEXES";
+    const indexesKey = "RESOURCE_INDEXES";
     const indexesPath = pathJoin(buildPath, indexesKey);
-    const dataKey = "TAURI_LITE_RESOURCE_DATA";
+    const dataKey = "RESOURCE_DATA";
     const dataPath = pathJoin(buildPath, dataKey);
 
-    await fs.createDirAll(buildPath);
+    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
 
-    const fileIndexes: Record<string, [number, number]> = {}
+    progress.addTask("正在准备构建环境...", async () => {
+      await fs.createDirAll(buildPath);
+    });
+
     let buffer = new ArrayBuffer(0);
+    const fileIndexes: Record<string, [number, number]> = {}
+    progress.addTask("正在构建资源文件...", async () => {
+      for (const name of await fs.readDirAll(resourcePath)) {
+        const filePath = pathJoin(resourcePath, name);
+        const fileKey = name.replace(/\\/g, "/");
+        const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, 'base64'));
+        fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
+        buffer = concatArrayBuffers(buffer, fileBuffer);
+      }
+    });
 
-    for (const name of await fs.readDirAll(resourcePath)) {
-      const filePath = pathJoin(resourcePath, name);
-      const fileKey = name.replace(/\\/g, "/");
-      const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, 'base64'));
-      fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
-      buffer = concatArrayBuffers(buffer, fileBuffer);
-    }
+    progress.addTask("正在压缩资源文件...", async () => {
+      const compressedBuffer = pako.deflateRaw(buffer).buffer;
+      await Promise.all([
+        fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
+        fs.write(dataPath, arrayBufferToBase64(compressedBuffer), 'base64'),
+      ])
+    });
 
-    await Promise.all([
-      fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
-      fs.write(dataPath, arrayBufferToBase64(buffer), 'base64'),
-      resource.extract("ResourceHacker.exe", pathJoin(buildPath, "ResourceHacker.exe")),
-    ])
 
-    await fs.write(pathJoin(buildPath, "bundle_script.txt"), `
+    progress.addTask("正在构建可执行文件...", async () => {
+      await resource.extract("ResourceHacker.exe", pathJoin(buildPath, "ResourceHacker.exe"));
+      await fs.write(pathJoin(buildPath, "bundle_script.txt"), `
 [FILENAMES]
 Exe=    ${currentExe}
 SaveAs= ${targetExe}
@@ -194,19 +205,21 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 -addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
 -addoverwrite ${dataPath}, RCDATA,${dataKey},1033
 `);
+      await process.exec(
+        pathJoin(buildPath, "ResourceHacker.exe"),
+        ['-script', pathJoin(buildPath, "bundle_script.txt")]
+      )
+    })
 
-    await process.exec(
-      pathJoin(buildPath, "ResourceHacker.exe"),
-      ['-script', pathJoin(buildPath, "bundle_script.txt")]
-    )
+    await progress.run();
+    close();
 
     return targetExe;
   }
 
   private async buildMacOsApp() {
-    const exe = await process.currentExe();
+    const currentExe = await process.currentExe();
     const file = await dialog.saveFile(["app"]);
-    const currentDir = await process.currentDir();
 
     if (!file) {
       throw new Error("未选择app文件");
@@ -236,14 +249,16 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
       await fs.copy(this.state!.path, appResourcesPath, {
         contentOnly: true,
       });
-      await fs.copy(exe, executablePath);
+      await fs.copy(currentExe, executablePath);
     });
 
     progress.addTask("正在生成图标...", async () => {
       // create icon
-      const iconPath =
-        pathJoin(this.state!.path, this.state!.config.icon) ||
-        pathJoin(currentDir, "logo.png");
+      const iconPath = pathJoin(this.state!.path, this.state!.config.icon);
+
+      if (!iconPath) {
+        return;
+      }
 
       for (let size of [16, 32, 64, 128, 256, 512, 1024]) {
         await process.exec("sips", [

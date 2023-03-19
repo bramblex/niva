@@ -2399,6 +2399,7 @@ dependencies = [
  "base64 0.21.0",
  "build-version",
  "directories",
+ "flate2",
  "fs_extra",
  "mime_guess",
  "native-tls",

@@ -88,8 +88,11 @@ fn get_options(resource: ResourceManagerRef) -> Result<ProjectOptions> {
 }
 
 pub fn init() -> Result<Arc<Environment>> {
+    print!("Initializing environment... ");
     let args = get_args();
+    println!("get args done.");
     let resource = resource_manager::create(args.resource_dir)?;
+    print!("create resource manager done.");
 
     let mut options = get_options(resource.clone())?;
     options.window.title = Some(options.window.title.unwrap_or_else(|| options.name.clone()));

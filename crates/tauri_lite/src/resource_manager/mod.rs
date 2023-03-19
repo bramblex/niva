@@ -1,7 +1,7 @@
 use anyhow::{Ok, Result};
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::Arc, io::Read,
 };
 
 #[cfg(target_os = "windows")]
@@ -96,10 +96,17 @@ impl std::fmt::Debug for WindowsExecutableResourceManager {
 #[cfg(target_os = "windows")]
 impl WindowsExecutableResourceManager {
     pub fn new() -> Result<WindowsExecutableResourceManager> {
-        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&load_resource(
-            "TAURI_LITE_RESOURCE_INDEXES",
-        )?)?;
-        let data = load_resource("TAURI_LITE_RESOURCE_DATA")?;
+        println!("new resource.");
+        let indexes_data = load_resource( "RESOURCE_INDEXES")?;
+        println!("indexes_data: {:?}", indexes_data.len());
+        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
+        println!("indexes: {:?}", indexes);
+        let compressed_data = load_resource("RESOURCE_DATA")?;
+        println!("compressed_data: {:?}", compressed_data.len());
+        let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
+        let mut data = Vec::new();
+        decoder.read_to_end(&mut data)?;
+        println!("data: {:?}", data.len());
         Ok(WindowsExecutableResourceManager { indexes, data })
     }
 }

@@ -48,12 +48,8 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": [
-        "--resource-dir",
-        "packages/devtools/build",
-        "true"
-      ],
+      "args": ["--resource-dir", "packages/devtools/build", "true"],
       "cwd": "${workspaceFolder}"
-    }
+    },
   ]
 }
