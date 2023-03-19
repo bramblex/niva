@@ -6,6 +6,7 @@ use std::{
 
 #[cfg(target_os = "windows")]
 use self::win_resource::load_resource;
+use std::collections::HashMap;
 
 mod utils;
 #[cfg(target_os = "windows")]
@@ -46,6 +47,7 @@ struct FileSystemResource {
 }
 
 impl FileSystemResource {
+    #[allow(dead_code)]
     pub fn new(root_dir: PathBuf) -> Result<FileSystemResource> {
         root_dir
             .exists()
@@ -109,11 +111,10 @@ impl ResourceManager for WindowsExecutableResourceManager {
     }
 
     fn read(&self, path: String) -> Result<Vec<u8>> {
-        let (offset, length) = self
+        let (offset, length) = *self
             .indexes
             .get(&path)
-            .ok_or(anyhow::anyhow!("File not found."))?
-            .clone();
+            .ok_or(anyhow::anyhow!("File not found."))?;
         Ok(self.data[offset..(offset + length)].to_vec())
     }
 

@@ -35,7 +35,6 @@ pub fn load_resource(name: &str) -> Result<Vec<u8>> {
         }
 
         let mut data: Vec<u8> = Vec::with_capacity(size);
-        data.set_len(size);
         std::ptr::copy(lp_res_data, data.as_mut_ptr(), size);
 
         FreeResource(h_res_data);
