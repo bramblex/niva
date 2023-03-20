@@ -92,6 +92,11 @@ export function ImportPage() {
 			onClick={async () => {
 				const { home } = await os.dirs();
 				const projectDir = await dialog.saveFile([], home);
+
+				if (!projectDir) {
+					return;
+				}
+
 				const sep = await os.sep();
 
 				const projectName = projectDir.split(sep).pop();
