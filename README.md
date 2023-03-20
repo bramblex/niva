@@ -45,8 +45,10 @@
 
 ## 快速开始
 
-1. 在 [Release 页面](https://github.com/bramblex/tauri_lite/releases) 中下载对应系统的开发者工具(Devtools)。
-2. 打开开发者工具(Devtools)，导入或者新建项目。如果有已经有的前端项目，可以通过「选择项目」index.html 文件所得目录。如果没有项目则可以直接通过「新建项目」新建一个 Tauri 项目。
+1. 点这里 [Release 页面](https://github.com/bramblex/tauri_lite/releases) ，下载对应系统的开发者工具(Devtools)。
+2. 打开开发者工具(Devtools)，选择或者新建项目。      
+   - 如果已有项目，可以通过「选择项目」选中打包后的目录(目录包含index.html)。        
+   - 如果没有项目，可以通过「新建项目」新建一个 Tauri 项目。
    - ![quick-start-1](screenshots/quick-start-1.png)
 3. 项目打开或者新建以后，会进入项目页面，可以直接通过启动调试打开 TauriLite 窗口，也可以点击构建将项目打包成一个可执行文件。
    - ![quick-start-2](screenshots/quick-start-2.png)
