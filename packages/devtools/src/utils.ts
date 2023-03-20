@@ -68,7 +68,7 @@ export function dirname(path: string) {
   return path.split(sep!).slice(0, -1).join(sep!);
 }
 
-let dirs: { temp: string, home: string } | null = null;
+let dirs: { temp: string; home: string } | null = null;
 TauriLite.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
 
 export function tempWith(...paths: string[]) {
@@ -91,7 +91,7 @@ type XPromise<T> = Promise<T> & {
 };
 
 export function createPromise<T>(): XPromise<T> {
-  let resolve: (value: T) => void = (v: T) => { };
+  let resolve: (value: T) => void = (v: T) => {};
   let promise = new Promise<T>(
     (_resolve) => (resolve = _resolve)
   ) as XPromise<T>;
@@ -110,7 +110,7 @@ export function base64ToArrayBuffer(base64: string) {
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = '';
+  let binary = "";
   const bytes = new Uint8Array(buffer);
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
@@ -124,6 +124,22 @@ export function concatArrayBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
   // copy the contents of buffer1 into the new buffer
   new Uint8Array(newBuffer, 0, buffer1.byteLength).set(new Uint8Array(buffer1));
   // copy the contents of buffer2 into the new buffer, starting at the end of buffer1
-  new Uint8Array(newBuffer, buffer1.byteLength, buffer2.byteLength).set(new Uint8Array(buffer2));
+  new Uint8Array(newBuffer, buffer1.byteLength, buffer2.byteLength).set(
+    new Uint8Array(buffer2)
+  );
   return newBuffer;
+}
+
+export async function packageResource(projectResourcePath: string) {
+  const { fs } = TauriLite.api;
+  let buffer = new ArrayBuffer(0);
+  const fileIndexes: Record<string, [number, number]> = {};
+  for (const name of await fs.readDirAll(projectResourcePath)) {
+    const filePath = pathJoin(projectResourcePath, name);
+    const fileKey = name.replace(/\\/g, "/");
+    const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, "base64"));
+    fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
+    buffer = concatArrayBuffers(buffer, fileBuffer);
+  }
+  return [fileIndexes, buffer] as const;
 }

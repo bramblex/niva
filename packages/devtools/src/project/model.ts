@@ -5,6 +5,7 @@ import {
   base64ToArrayBuffer,
   concatArrayBuffers,
   dirname,
+  packageResource,
   pathJoin,
   tempWith,
   tryOrAlertAsync,
@@ -15,7 +16,7 @@ import {
 } from "../utils";
 import { modal } from "../modal";
 import { OptionsEditor } from "./options-editor";
-import pako from 'pako'
+import pako from "pako";
 
 const { os, fs, process, dialog, resource } = TauriLite.api;
 
@@ -26,6 +27,9 @@ interface ProjectState {
   configPath: string;
   config: any;
 }
+
+const indexesKey = "RESOURCE_INDEXES";
+const dataKey = "RESOURCE_DATA";
 
 export class ProjectModel extends StateModel<ProjectState | null> {
   constructor() {
@@ -159,44 +163,44 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       throw new Error("未选择exe文件");
     }
     const targetExe = file.endsWith(".exe") ? file : file + ".exe";
-
-    const resourcePath = this.state!.path;
+    const projectResourcePath = this.state!.path;
     const buildPath = tempWith(this.state!.name);
-    const indexesKey = "RESOURCE_INDEXES";
     const indexesPath = pathJoin(buildPath, indexesKey);
-    const dataKey = "RESOURCE_DATA";
     const dataPath = pathJoin(buildPath, dataKey);
 
-    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
+    const [progress, close] = modal.progress(
+      "正在构建应用",
+      "正在构建应用, 请稍候..."
+    );
 
     progress.addTask("正在准备构建环境...", async () => {
       await fs.createDirAll(buildPath);
     });
 
+    let fileIndexes: Record<string, [number, number]> = {};
     let buffer = new ArrayBuffer(0);
-    const fileIndexes: Record<string, [number, number]> = {}
     progress.addTask("正在构建资源文件...", async () => {
-      for (const name of await fs.readDirAll(resourcePath)) {
-        const filePath = pathJoin(resourcePath, name);
-        const fileKey = name.replace(/\\/g, "/");
-        const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, 'base64'));
-        fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
-        buffer = concatArrayBuffers(buffer, fileBuffer);
-      }
+      const [_fileIndex, _buffer] = await packageResource(projectResourcePath);
+      fileIndexes = _fileIndex;
+      buffer = _buffer;
     });
 
     progress.addTask("正在压缩资源文件...", async () => {
       const compressedBuffer = pako.deflateRaw(buffer).buffer;
       await Promise.all([
         fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
-        fs.write(dataPath, arrayBufferToBase64(compressedBuffer), 'base64'),
-      ])
+        fs.write(dataPath, arrayBufferToBase64(compressedBuffer), "base64"),
+      ]);
     });
 
-
     progress.addTask("正在构建可执行文件...", async () => {
-      await resource.extract("ResourceHacker.exe", pathJoin(buildPath, "ResourceHacker.exe"));
-      await fs.write(pathJoin(buildPath, "bundle_script.txt"), `
+      await resource.extract(
+        "ResourceHacker.exe",
+        pathJoin(buildPath, "ResourceHacker.exe")
+      );
+      await fs.write(
+        pathJoin(buildPath, "bundle_script.txt"),
+        `
 [FILENAMES]
 Exe=    ${currentExe}
 SaveAs= ${targetExe}
@@ -204,12 +208,13 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 [COMMANDS]
 -addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
 -addoverwrite ${dataPath}, RCDATA,${dataKey},1033
-`);
-      await process.exec(
-        pathJoin(buildPath, "ResourceHacker.exe"),
-        ['-script', pathJoin(buildPath, "bundle_script.txt")]
-      )
-    })
+`
+      );
+      await process.exec(pathJoin(buildPath, "ResourceHacker.exe"), [
+        "-script",
+        pathJoin(buildPath, "bundle_script.txt"),
+      ]);
+    });
 
     await progress.run();
     close();
@@ -229,12 +234,19 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
     const appContentsPath = pathJoin(appPath, "Contents");
     const appResourcesPath = pathJoin(appContentsPath, "Resources");
     const appMacOSPath = pathJoin(appContentsPath, "MacOS");
-    const executablePath = pathJoin(appMacOSPath, this.state!.name);
+    const appExecutablePath = pathJoin(appMacOSPath, this.state!.name);
     const appInfoPlistPath = pathJoin(appContentsPath, "Info.plist");
     const appIconPath = pathJoin(appResourcesPath, "icon.icns");
     const appIconsetPath = pathJoin(appResourcesPath, "icon.iconset");
 
-    const [progress, close] = modal.progress("正在构建应用", "正在构建应用, 请稍候...");
+    const projectResourcePath = this.state!.path;
+    const indexesPath = pathJoin(appResourcesPath, indexesKey);
+    const dataPath = pathJoin(appResourcesPath, dataKey);
+
+    const [progress, close] = modal.progress(
+      "正在构建应用",
+      "正在构建应用, 请稍候..."
+    );
 
     progress.addTask("正在创建目录结构...", async () => {
       // make base structure
@@ -245,11 +257,24 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
       await fs.createDir(appMacOSPath);
     });
 
-    progress.addTask("正在复制项目文件...", async () => {
-      await fs.copy(this.state!.path, appResourcesPath, {
-        contentOnly: true,
-      });
-      await fs.copy(currentExe, executablePath);
+    progress.addTask("正在复制可执行文件...", async () => {
+      await fs.copy(currentExe, appExecutablePath);
+    });
+
+    let fileIndexes: Record<string, [number, number]> = {};
+    let buffer = new ArrayBuffer(0);
+    progress.addTask("正在构建资源文件...", async () => {
+      const [_fileIndex, _buffer] = await packageResource(projectResourcePath);
+      fileIndexes = _fileIndex;
+      buffer = _buffer;
+    });
+
+    progress.addTask("正在压缩资源文件...", async () => {
+      const compressedBuffer = pako.deflateRaw(buffer).buffer;
+      await Promise.all([
+        fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
+        fs.write(dataPath, arrayBufferToBase64(compressedBuffer), "base64"),
+      ]);
     });
 
     progress.addTask("正在生成图标...", async () => {
