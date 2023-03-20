@@ -55,8 +55,10 @@ fn _create_dialog(
 ) -> rfd::FileDialog {
     let mut dialog = rfd::FileDialog::new();
     if let Some(extensions) = filters {
-        let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-        dialog = dialog.add_filter("pick", &extensions);
+        if !extensions.is_empty() {
+            let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+            dialog = dialog.add_filter("pick", &extensions);
+        }
     }
     if let Some(dir) = start_dir {
         dialog = dialog.set_directory(dir);
