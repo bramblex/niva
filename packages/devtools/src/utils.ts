@@ -143,3 +143,25 @@ export async function packageResource(projectResourcePath: string) {
   }
   return [fileIndexes, buffer] as const;
 }
+
+export function parseArgs(args: string[]) {
+  const result: Record<string, string> = {};
+  for (const arg of args.slice(1)) {
+    if (arg.startsWith("--")) {
+      const [key, value] = arg.slice(2).split("=");
+      result[key] = value || "";
+    }
+  }
+  return result;
+}
+
+export function isAbsolutePath(path: string) {
+  return /^(\/|[A-Z]:\\)/.test(path);
+}
+
+export async function resolvePath(path: string) {
+  const { process } = TauriLite.api;
+  return isAbsolutePath(path)
+    ? path
+    : pathJoin(await process.currentDir(), path);
+}

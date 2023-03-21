@@ -10,6 +10,7 @@ use std::{
 use self::win_resource::load_resource;
 
 mod utils;
+
 #[cfg(target_os = "windows")]
 mod win_resource;
 
@@ -24,16 +25,7 @@ pub type ResourceManagerRef = Arc<dyn ResourceManager>;
 pub fn create(resource_dir: Option<PathBuf>) -> Result<ResourceManagerRef> {
     match resource_dir {
         Some(dir) => Ok(Arc::new(FileSystemResource::new(dir)?)),
-        None => {
-            #[cfg(target_os = "macos")]
-            {
-                Ok(Arc::new(MacOSAppResourceManager::new()?))
-            }
-            #[cfg(target_os = "windows")]
-            {
-                Ok(Arc::new(WindowsExecutableResourceManager::new()?))
-            }
-        }
+        None => Ok(Arc::new(AppResourceManager::new()?)),
     }
 }
 
@@ -43,7 +35,6 @@ struct FileSystemResource {
 }
 
 impl FileSystemResource {
-    #[allow(dead_code)]
     pub fn new(root_dir: PathBuf) -> Result<FileSystemResource> {
         root_dir
             .exists()
@@ -73,69 +64,12 @@ impl ResourceManager for FileSystemResource {
     }
 }
 
-#[cfg(target_os = "windows")]
-struct WindowsExecutableResourceManager {
+struct AppResourceManager {
     indexes: HashMap<String, (usize, usize)>,
     data: Vec<u8>,
 }
 
-#[cfg(target_os = "windows")]
-impl std::fmt::Debug for WindowsExecutableResourceManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WindowsExecutableResourceManager")
-            .field("indexes", &self.indexes)
-            .field("data", &"Vec<u8>")
-            .finish()
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl WindowsExecutableResourceManager {
-    pub fn new() -> Result<WindowsExecutableResourceManager> {
-        println!("new resource.");
-        let indexes_data = load_resource("RESOURCE_INDEXES")?;
-        println!("indexes_data: {:?}", indexes_data.len());
-        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
-        println!("indexes: {:?}", indexes);
-        let compressed_data = load_resource("RESOURCE_DATA")?;
-        println!("compressed_data: {:?}", compressed_data.len());
-        let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
-        let mut data = Vec::new();
-        decoder.read_to_end(&mut data)?;
-        println!("data: {:?}", data.len());
-        Ok(WindowsExecutableResourceManager { indexes, data })
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl ResourceManager for WindowsExecutableResourceManager {
-    fn exists(&self, path: String) -> bool {
-        self.indexes.contains_key(&path)
-    }
-
-    fn read(&self, path: String) -> Result<Vec<u8>> {
-        let (offset, length) = *self
-            .indexes
-            .get(&path)
-            .ok_or(anyhow::anyhow!("File not found."))?;
-        Ok(self.data[offset..(offset + length)].to_vec())
-    }
-
-    fn extract(&self, from: String, to: &Path) -> Result<()> {
-        let content = self.read(from)?;
-        std::fs::write(to, content)?;
-        Ok(())
-    }
-}
-
-#[cfg(target_os = "macos")]
-struct MacOSAppResourceManager {
-    indexes: HashMap<String, (usize, usize)>,
-    data: Vec<u8>,
-}
-
-#[cfg(target_os = "macos")]
-impl std::fmt::Debug for MacOSAppResourceManager {
+impl std::fmt::Debug for AppResourceManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MacOSAppResourceManager")
             .field("indexes", &self.indexes)
@@ -144,9 +78,9 @@ impl std::fmt::Debug for MacOSAppResourceManager {
     }
 }
 
-#[cfg(target_os = "macos")]
-impl MacOSAppResourceManager {
-    pub fn new() -> Result<MacOSAppResourceManager> {
+impl AppResourceManager {
+    #[cfg(target_os = "macos")]
+    pub fn new() -> Result<AppResourceManager> {
         let resources_dir = std::env::current_exe()?
             .parent()
             .ok_or(anyhow::anyhow!("Invalid resource directory."))?
@@ -161,12 +95,27 @@ impl MacOSAppResourceManager {
         let mut data = Vec::new();
         decoder.read_to_end(&mut data)?;
         println!("data: {:?}", data.len());
-        Ok(MacOSAppResourceManager { indexes, data })
+        Ok(AppResourceManager { indexes, data })
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn new() -> Result<AppResourceManager> {
+        println!("new resource.");
+        let indexes_data = load_resource("RESOURCE_INDEXES")?;
+        println!("indexes_data: {:?}", indexes_data.len());
+        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
+        println!("indexes: {:?}", indexes);
+        let compressed_data = load_resource("RESOURCE_DATA")?;
+        println!("compressed_data: {:?}", compressed_data.len());
+        let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
+        let mut data = Vec::new();
+        decoder.read_to_end(&mut data)?;
+        println!("data: {:?}", data.len());
+        Ok(AppResourceManager { indexes, data })
     }
 }
 
-#[cfg(target_os = "macos")]
-impl ResourceManager for MacOSAppResourceManager {
+impl ResourceManager for AppResourceManager {
     fn exists(&self, path: String) -> bool {
         self.indexes.contains_key(&path)
     }

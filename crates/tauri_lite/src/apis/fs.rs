@@ -23,7 +23,6 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.readDirAll", read_dir_all);
 }
 
-
 fn stat(_: EnvironmentRef, request: ApiRequest) -> Result<Value> {
     let path = request.args().get_single::<String>()?;
     let meta = std::fs::metadata(path)?;

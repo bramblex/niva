@@ -227,6 +227,7 @@ const createDoc: () => DocTreeNode = () => ['文档', [
 			['pid', <ApiExample cases={[['process.pid'],]} />],
 			['currentDir', <ApiExample cases={[['process.currentDir'],]} />],
 			['env', <ApiExample cases={[['process.env'],]} />],
+			['args', <ApiExample cases={[['process.args'],]} />],
 			['setCurrentDir',
 				<ApiExample cases={[
 					['process.setCurrentDir', [getHome()]],

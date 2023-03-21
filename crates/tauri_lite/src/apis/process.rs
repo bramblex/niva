@@ -14,6 +14,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.currentDir", current_dir);
     api_manager.register_api("process.currentExe", current_exe);
     api_manager.register_api("process.env", env);
+    api_manager.register_api("process.args", args);
     api_manager.register_api("process.setCurrentDir", set_current_dir);
     api_manager.register_event_api("process.exit", exit);
     api_manager.register_async_api("process.exec", exec);
@@ -36,6 +37,11 @@ fn current_exe(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
 fn env(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
     let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
     Ok(json!(env))
+}
+
+fn args(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
+    let args = std::env::args().collect::<Vec<String>>();
+    Ok(json!(args))
 }
 
 fn set_current_dir(_: EnvironmentRef, _: &Window, request: ApiRequest) -> Result<()> {

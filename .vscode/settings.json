@@ -8,5 +8,8 @@
 		"pako",
 		"Tauri",
 		"ureq"
+	],
+	"cSpell.enableFiletypes": [
+		"shellscript"
 	]
 }

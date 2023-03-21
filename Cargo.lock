@@ -2641,7 +2641,6 @@ dependencies = [
  "serde",
  "serde_json",
  "ureq",
- "uuid",
  "winapi",
  "winres",
  "wry",

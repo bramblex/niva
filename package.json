@@ -2,8 +2,5 @@
   "private": true,
   "workspaces": [
     "packages/devtools"
-  ],
-  "scripts": {
-    "build:devtools": "cd packages/devtools && npm run build"
-  }
+  ]
 }

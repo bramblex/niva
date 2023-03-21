@@ -124,47 +124,43 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       process.exec(
         exe,
         [
-          "--resource-dir",
-          projectPath,
-          "--devtools",
-          "true",
-          ...(debugEntry ? ["--debug-entry", debugEntry] : []),
+          `--resource-dir=${projectPath}`,
+          "--devtools=true",
+          ...(debugEntry ? [`--debug-entry=${debugEntry}`] : []),
         ],
         { detached: true }
       );
     });
   }
 
-  build() {
+  build(target?: string) {
     return tryOrAlertAsync(async () => {
       const { os: osType } = await os.info();
 
       let appPath: string;
       if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
-        appPath = await this.buildMacOsApp();
+        appPath = await this.buildMacOsApp(target);
       } else if (osType.toLowerCase() === "windows") {
-        appPath = await this.buildWindowsApp();
+        appPath = await this.buildWindowsApp(target);
       } else {
         throw new Error(`不支持当前操作系统 "${osType}"`);
       }
 
-      if (
-        await modal.confirm("构建成功", `应用 ${this.state!.name} 已成功构建`)
-      ) {
-        process.open(dirname(appPath));
-      }
+      modal
+        .confirm("构建成功", `应用 ${this.state!.name} 已成功构建`)
+        .then((ok) => ok && process.open(dirname(appPath)));
     });
   }
 
-  private async buildWindowsApp(): Promise<string> {
+  private async buildWindowsApp(_target?: string): Promise<string> {
     const currentExe = await process.currentExe();
-    const file = await dialog.saveFile(["exe"]);
+    const file = _target || (await dialog.saveFile(["exe"]));
     if (!file) {
       throw new Error("未选择exe文件");
     }
     const targetExe = file.endsWith(".exe") ? file : file + ".exe";
     const projectResourcePath = this.state!.path;
-    const buildPath = tempWith(this.state!.name);
+    const buildPath = tempWith(`${this.state!.name}.${this.state!.uuid}`);
     const indexesPath = pathJoin(buildPath, indexesKey);
     const dataPath = pathJoin(buildPath, dataKey);
 
@@ -216,15 +212,19 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
       ]);
     });
 
+    progress.addTask("正在清理构建环境...", async () => {
+      await fs.remove(buildPath);
+    });
+
     await progress.run();
     close();
 
     return targetExe;
   }
 
-  private async buildMacOsApp() {
+  private async buildMacOsApp(_target?: string) {
     const currentExe = await process.currentExe();
-    const file = await dialog.saveFile(["app"]);
+    const file = _target || (await dialog.saveFile(["app"]));
 
     if (!file) {
       throw new Error("未选择app文件");
