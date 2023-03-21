@@ -1,2 +1,2 @@
 [workspace]
-members = ["crates/tauri_lite"]
+members = ["crates/tauri_lite", "crates/icon_creator"]
