@@ -191,7 +191,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 
     progress.addTask("正在构建可执行文件...", async () => {
       await resource.extract(
-        "ResourceHacker.exe",
+        "windows/ResourceHacker.exe",
         pathJoin(buildPath, "ResourceHacker.exe")
       );
       await fs.write(

@@ -1,11 +1,12 @@
 #!/bin/bash
 
 VERSION=$(git describe --tags --always | sed 's/\./_/g')
+rm -rf dist
 mkdir -p dist
-rm -rf dist/*
 
 cd packages/devtools
 npm run build
+rm -rf build/windows
 cd ../..
 
 rm -rf target/release
