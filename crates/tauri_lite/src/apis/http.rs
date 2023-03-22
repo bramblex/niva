@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
 pub fn register_apis(api_manager: &mut ApiManager) {
@@ -21,12 +21,18 @@ struct RequestOptions {
     pub url: String,
     pub headers: Option<Headers>,
     pub body: Option<String>,
+    pub proxy: Option<String>,
 }
 
 fn _request(options: RequestOptions) -> Result<Value> {
-    let agent = ureq::AgentBuilder::new()
-        .tls_connector(Arc::new(native_tls::TlsConnector::new().unwrap()))
-        .build();
+    let mut agent_builder = ureq::AgentBuilder::new().tls_connector(Arc::new(native_tls::TlsConnector::new()?));
+
+    if let Some(proxy) = options.proxy {
+        let proxy = ureq::Proxy::new(proxy)?;
+        agent_builder = agent_builder.proxy(proxy);
+    }
+
+    let agent = agent_builder.build();
 
     let mut http_request = agent.request(&options.method, options.url.as_str());
 
@@ -66,22 +72,27 @@ fn request(_: EnvironmentRef, request: ApiRequest) -> Result<Value> {
 }
 
 fn get(_: EnvironmentRef, request: ApiRequest) -> Result<Value> {
-    let (url, headers) = request.args().get_with_optional::<(String, Option<Headers>)>(2)?;
-    _request(RequestOptions{
+    let (url, headers) = request
+        .args()
+        .get_with_optional::<(String, Option<Headers>)>(2)?;
+    _request(RequestOptions {
         method: "GET".to_string(),
         url,
         headers,
         body: None,
+        proxy: None,
     })
 }
 
 fn post(_: EnvironmentRef, request: ApiRequest) -> Result<Value> {
-    let (url, body, headers) = request.args().get_with_optional::<(String, String, Option<Headers>)>(3)?;
-    _request(RequestOptions{
+    let (url, body, headers) = request
+        .args()
+        .get_with_optional::<(String, String, Option<Headers>)>(3)?;
+    _request(RequestOptions {
         method: "POST".to_string(),
         url,
         headers,
         body: Some(body),
+        proxy: None,
     })
 }
-

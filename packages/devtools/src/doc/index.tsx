@@ -200,6 +200,12 @@ const createDoc: () => DocTreeNode = () => ['文档', [
 						},
 						body: '{ "message": "hello world" }',
 					}]],
+
+					['http.request', [{
+						method: 'GET',
+						url: 'https://www.google.com/',
+						proxy: '127.0.0.1:8118',
+					}]],
 				]} />
 			],
 			['get',
