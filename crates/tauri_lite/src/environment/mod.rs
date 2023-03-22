@@ -40,10 +40,10 @@ struct Args {
 fn parse_args(args: &[String]) -> HashMap<String, String> {
     let mut result = HashMap::new();
     for arg in args.iter().skip(1) {
-        if arg.starts_with("--") {
-            let (key, value) = match arg[2..].split_once("=") {
+        if let Some(arg) = arg.strip_prefix("--") {
+            let (key, value) = match arg.split_once('=') {
                 Some((k, v)) => (k.to_string(), v.to_string()),
-                None => (arg[2..].to_string(), "".to_string()),
+                None => (arg.to_string(), "".to_string()),
             };
             result.insert(key, value);
         }
@@ -101,7 +101,7 @@ pub fn init() -> Result<Arc<Environment>> {
     let project_uuid = options.uuid.clone();
 
     let project_dir_name =
-        project_name.clone() + "_" + &project_uuid.get(0..8).ok_or(anyhow!("uuid too short"))?;
+        project_name.clone() + "_" + project_uuid.get(0..8).ok_or(anyhow!("uuid too short"))?;
     let temp_dir = std::env::temp_dir().join(&project_dir_name);
 
     let base_dirs = directories::BaseDirs::new()
