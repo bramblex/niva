@@ -222,7 +222,6 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 -delete ICON,7,0
 -addoverwrite ${pathJoin(buildPath, "icon.ico")}, ICONGROUP,1,1033
 -addoverwrite ${pathJoin(buildPath, "icon.bitmap")}, RCDATA,ICON_BITMAP,1033
--addoverwrite ${versionInfoPath}, VERSIONINFO,1,1033
 `;
 
       const script = `
@@ -234,6 +233,7 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 -addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
 -addoverwrite ${dataPath}, RCDATA,${dataKey},1033
 ${this.state!.config.icon ? iconScript : ""}
+-addoverwrite ${versionInfoPath}, VERSIONINFO,1,1033
 `;
 
       await fs.write(

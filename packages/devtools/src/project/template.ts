@@ -31,14 +31,17 @@ export function plistTemplate(config: any) {
     <key>NSHighResolutionCapable</key>
     <true />
     <key>NSHumanReadableCopyright</key>
-    <string>${config.copyright}</string>
+    <string>${config.copyright || ""}</string>
   </dict>
 </plist>
 `;
 }
 
 function parseVersion(versionString: string): number[] {
-  const versionDigits = versionString.replace(/[^0-9.]/g, '').split('.').map(Number);
+  const versionDigits = versionString
+    .replace(/[^0-9.]/g, "")
+    .split(".")
+    .map(Number);
   while (versionDigits.length < 4) {
     versionDigits.push(0);
   }
@@ -46,7 +49,7 @@ function parseVersion(versionString: string): number[] {
 }
 
 export function versionInfoTemplate(config: any) {
-  const numberVersion = parseVersion(config.version).join(',');
+  const numberVersion = parseVersion(config.version).join(",");
 
   return `
 1 VERSIONINFO
@@ -59,11 +62,11 @@ BLOCK "StringFileInfo"
 {
   BLOCK "040904b0"
   {
-    VALUE "CompanyName", ${JSON.stringify(config.companyName)}
-    VALUE "FileDescription", ${JSON.stringify(config.description)}
+    VALUE "CompanyName", ${JSON.stringify(config.companyName || "")}
+    VALUE "FileDescription", ${JSON.stringify(config.description || "")}
     VALUE "FileVersion", ${JSON.stringify(config.version)}
     VALUE "InternalName", "tauri_lite.exe"
-    VALUE "LegalCopyright", ${JSON.stringify(config.copyright)}
+    VALUE "LegalCopyright", ${JSON.stringify(config.copyright || "")}
     VALUE "OriginalFilename", "tauri_lite.exe"
     VALUE "ProductName", ${JSON.stringify(config.name)}
     VALUE "ProductVersion", ${JSON.stringify(config.version)}
