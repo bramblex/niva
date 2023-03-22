@@ -4,8 +4,9 @@ VERSION=$(git describe --tags --always | sed 's/\./_/g')
 rm -rf dist
 mkdir -p dist
 
+yarn
 cd packages/devtools
-npm run build
+yarn build
 rm -rf build/windows
 cd ../..
 

@@ -7,6 +7,7 @@ set "VERSION=!VERSION:.=_!"
 rd /s /q dist
 mkdir dist
 
+yarn
 cd packages\devtools
 rd /s /q build
 call npm run build
