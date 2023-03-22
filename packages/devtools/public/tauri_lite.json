@@ -1,6 +1,7 @@
 {
 	"name": "TauriLiteDevtools",
 	"uuid": "9bef098a-a44f-40cb-9247-86c902f2c410",
+	"version": "v0.0.4",
 	"title": "Tauri Lite Devtools",
 	"icon": "logo.png",
 	"size": [
