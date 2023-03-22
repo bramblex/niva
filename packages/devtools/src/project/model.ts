@@ -160,7 +160,9 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     }
     const targetExe = file.endsWith(".exe") ? file : file + ".exe";
     const projectResourcePath = this.state!.path;
-    const buildPath = tempWith(`${this.state!.name}.${this.state!.uuid}`);
+    const buildPath = tempWith(
+      `${this.state!.name}_${this.state!.uuid.slice(0, 8)}`
+    );
     const indexesPath = pathJoin(buildPath, indexesKey);
     const dataPath = pathJoin(buildPath, dataKey);
 
@@ -187,7 +189,6 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
         fs.write(dataPath, arrayBufferToBase64(compressedBuffer), "base64"),
       ]);
-
     });
 
     progress.addTask("正在生成图标...", async () => {
@@ -195,7 +196,10 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         return;
       }
       const iconPath = pathJoin(this.state!.path, this.state!.config.icon);
-      await resource.extract("windows/icon_creator.exe", pathJoin(buildPath, "icon_creator.exe"));
+      await resource.extract(
+        "windows/icon_creator.exe",
+        pathJoin(buildPath, "icon_creator.exe")
+      );
       await process.exec(pathJoin(buildPath, "icon_creator.exe"), [
         iconPath,
         pathJoin(buildPath, "icon.ico"),
@@ -235,10 +239,7 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 ${this.state!.config.icon ? iconScript : ""}
 `;
 
-      await fs.write(
-        pathJoin(buildPath, "bundle_script.txt"),
-        script
-      );
+      await fs.write(pathJoin(buildPath, "bundle_script.txt"), script);
 
       await process.exec(pathJoin(buildPath, "ResourceHacker.exe"), [
         "-script",
