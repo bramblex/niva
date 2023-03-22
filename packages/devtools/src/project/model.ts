@@ -1,5 +1,5 @@
 import { StateModel } from "@bramblex/state-model";
-import { generatePlist } from "./template";
+import { plistTemplate, versionInfoTemplate } from "./template";
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -209,6 +209,9 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         pathJoin(buildPath, "ResourceHacker.exe")
       );
 
+      const versionInfoPath = pathJoin(buildPath, "VERSION_INFO");
+      await fs.write(versionInfoPath, versionInfoTemplate(this.state!.config));
+
       const iconScript = `
 -delete ICON,1,0
 -delete ICON,2,0
@@ -219,6 +222,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
 -delete ICON,7,0
 -addoverwrite ${pathJoin(buildPath, "icon.ico")}, ICONGROUP,1,1033
 -addoverwrite ${pathJoin(buildPath, "icon.bitmap")}, RCDATA,ICON_BITMAP,1033
+-addoverwrite ${versionInfoPath}, VERSIONINFO,1,1033
 `;
 
       const script = `
@@ -338,7 +342,7 @@ ${this.state!.config.icon ? iconScript : ""}
 
     progress.addTask("正在生成Info.plist配置...", async () => {
       // generate Info.plist
-      await fs.write(appInfoPlistPath, generatePlist(this.state!.config));
+      await fs.write(appInfoPlistPath, plistTemplate(this.state!.config));
     });
 
     await progress.run();
