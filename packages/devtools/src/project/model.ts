@@ -233,7 +233,6 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 -addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
 -addoverwrite ${dataPath}, RCDATA,${dataKey},1033
 ${this.state!.config.icon ? iconScript : ""}
--addoverwrite ${versionInfoPath}, VERSIONINFO,1,1033
 `;
 
       await fs.write(

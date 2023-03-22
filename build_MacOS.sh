@@ -6,6 +6,7 @@ mkdir -p dist
 
 yarn
 cd packages/devtools
+rm -rf build
 yarn build
 rm -rf build/windows
 cd ../..
