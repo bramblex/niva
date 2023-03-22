@@ -7,10 +7,10 @@ set "VERSION=!VERSION:.=_!"
 rd /s /q dist
 mkdir dist
 
-yarn
+call yarn
 cd packages\devtools
 rd /s /q build
-call npm run build
+call yarn build
 cd ..\..
 
 rd /s /q target\release
