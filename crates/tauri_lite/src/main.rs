@@ -17,6 +17,9 @@ mod static_server;
 mod thread_pool;
 mod window_manager;
 
+#[cfg(target_os = "windows")]
+mod win_utils;
+
 fn main() -> Result<()> {
     let env = environment::init().with_context(|| "Init EnvironmentError")?;
 
@@ -39,7 +42,7 @@ fn main() -> Result<()> {
         event_loop.create_proxy(),
     );
 
-    let (_, main_webview) = window_manager.create_window(&event_loop, &env.config.window);
+    let (_, main_webview) = window_manager.create_window(&event_loop, &env.options.window);
 
     let event_loop = event_loop.0;
     event_loop.run(move |event, target, control_flow| {

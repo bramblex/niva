@@ -27,7 +27,6 @@ pub struct WindowOptions {
 
     // window config
     pub title: Option<String>,
-    pub window_icon: Option<String>,
     pub theme: Option<String>,
     pub size: Option<Size>,
     pub min_size: Option<Size>,

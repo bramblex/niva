@@ -6,14 +6,6 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(target_os = "windows")]
-use self::win_resource::load_resource;
-
-mod utils;
-
-#[cfg(target_os = "windows")]
-mod win_resource;
-
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
     fn read(&self, path: String) -> Result<Vec<u8>>;
@@ -100,6 +92,8 @@ impl AppResourceManager {
 
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<AppResourceManager> {
+        use crate::win_utils::load_resource;
+
         println!("new resource.");
         let indexes_data = load_resource("RESOURCE_INDEXES")?;
         println!("indexes_data: {:?}", indexes_data.len());

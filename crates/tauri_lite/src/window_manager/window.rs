@@ -9,9 +9,6 @@ use wry::application::{
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 
-#[cfg(target_os = "windows")]
-use wry::application::window::Icon;
-
 impl From<Position> for dpi::Position {
     fn from(val: Position) -> Self {
         dpi::Position::Logical(dpi::LogicalPosition::new(val.0, val.1))
@@ -36,22 +33,24 @@ pub fn create(target: &MainEventLoopTarget, options: &WindowOptions) -> Window {
 
     #[cfg(target_os = "windows")]
     {
-        let icon = (|| {
-            if let Some(window_icon) = &options.window_icon {
-                let result = std::fs::read(window_icon);
-                if let Ok(data) = result {
-                    let icon = Icon::from_rgba(data, 32, 32);
-                    if let Ok(icon) = icon {
-                        return Some(icon);
-                    }
+        use crate::win_utils::load_resource;
+        use wry::application::window::Icon;
+        let icon = || -> Option<Icon> {
+            let icon_bitmap = load_resource("ICON_BITMAP");
+
+            if let Ok(data) = icon_bitmap {
+                let icon = Icon::from_rgba(data, 32, 32);
+                if let Ok(icon) = icon {
+                    return Some(icon);
                 }
             }
+
             let icon = Icon::from_rgba(DEFAULT_ICON.to_vec(), 32, 32);
             if let Ok(icon) = icon {
                 return Some(icon);
             }
             None
-        })();
+        }();
         window_builder = window_builder.with_window_icon(icon);
     }
 

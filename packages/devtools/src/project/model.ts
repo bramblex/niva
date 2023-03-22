@@ -187,6 +187,20 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
         fs.write(dataPath, arrayBufferToBase64(compressedBuffer), "base64"),
       ]);
+
+    });
+
+    progress.addTask("正在生成图标...", async () => {
+      if (!this.state!.config.icon) {
+        return;
+      }
+      const iconPath = pathJoin(this.state!.path, this.state!.config.icon);
+      await resource.extract("windows/icon_creator.exe", pathJoin(buildPath, "icon_creator.exe"));
+      await process.exec(pathJoin(buildPath, "icon_creator.exe"), [
+        iconPath,
+        pathJoin(buildPath, "icon.ico"),
+        pathJoin(buildPath, "icon.bitmap"),
+      ]);
     });
 
     progress.addTask("正在构建可执行文件...", async () => {
@@ -194,9 +208,20 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         "windows/ResourceHacker.exe",
         pathJoin(buildPath, "ResourceHacker.exe")
       );
-      await fs.write(
-        pathJoin(buildPath, "bundle_script.txt"),
-        `
+
+      const iconScript = `
+-delete ICON,1,0
+-delete ICON,2,0
+-delete ICON,3,0
+-delete ICON,4,0
+-delete ICON,5,0
+-delete ICON,6,0
+-delete ICON,7,0
+-addoverwrite ${pathJoin(buildPath, "icon.ico")}, ICONGROUP,1,1033
+-addoverwrite ${pathJoin(buildPath, "icon.bitmap")}, RCDATA,ICON_BITMAP,1033
+`;
+
+      const script = `
 [FILENAMES]
 Exe=    ${currentExe}
 SaveAs= ${targetExe}
@@ -204,8 +229,14 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 [COMMANDS]
 -addoverwrite ${indexesPath}, RCDATA,${indexesKey},1033
 -addoverwrite ${dataPath}, RCDATA,${dataKey},1033
-`
+${this.state!.config.icon ? iconScript : ""}
+`;
+
+      await fs.write(
+        pathJoin(buildPath, "bundle_script.txt"),
+        script
       );
+
       await process.exec(pathJoin(buildPath, "ResourceHacker.exe"), [
         "-script",
         pathJoin(buildPath, "bundle_script.txt"),
@@ -279,11 +310,11 @@ Log=    ${pathJoin(buildPath, "ResourceHacker.log")}
 
     progress.addTask("正在生成图标...", async () => {
       // create icon
-      const iconPath = pathJoin(this.state!.path, this.state!.config.icon);
-
-      if (!iconPath) {
+      if (!this.state!.config.icon) {
         return;
       }
+
+      const iconPath = pathJoin(this.state!.path, this.state!.config.icon);
 
       for (let size of [16, 32, 64, 128, 256, 512, 1024]) {
         await process.exec("sips", [

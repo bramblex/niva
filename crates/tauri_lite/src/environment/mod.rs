@@ -20,7 +20,7 @@ pub struct Environment {
     pub temp_dir: PathBuf,
     pub data_dir: PathBuf,
 
-    pub config: ProjectOptions,
+    pub options: ProjectOptions,
 
     // debug entry url
     pub debug_entry: Option<String>,
@@ -122,7 +122,7 @@ pub fn init() -> Result<Arc<Environment>> {
         resource,
         temp_dir,
         data_dir,
-        config: options,
+        options,
         debug_entry: args.debug_entry,
     }))
 }
