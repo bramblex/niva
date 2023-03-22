@@ -30,7 +30,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
         TauriLite.api.window.dragWindow();
       }
     }}>
-      <div className="title-bar-text">Tauri Lite Devtools</div>
+      <div className="title-bar-text"><img className="window-icon" src="logo.png" alt="" />Tauri Lite Devtools</div>
       <div className="title-bar-controls">
         <button aria-label="Minimize" onClick={() => TauriLite.api.window.setMinimized(true)}></button>
         <button aria-label="Close" onClick={() => TauriLite.api.process.exit()}></button>

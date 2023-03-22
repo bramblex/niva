@@ -11,7 +11,7 @@ body,
 * {
   user-select: none;
   cursor: default;
-	min-width: 0;
+  min-width: 0;
 }
 
 /* common */
@@ -35,6 +35,12 @@ body,
 
   display: flex;
   flex-direction: column;
+}
+
+.window-icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
 }
 
 .window-body {
