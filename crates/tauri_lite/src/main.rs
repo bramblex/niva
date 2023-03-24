@@ -49,3 +49,29 @@ fn main() -> Result<()> {
         handle(main_webview.clone(), event, target, control_flow)
     });
 }
+
+// use std::{future::Future, pin::Pin};
+
+// async fn test((a, b): (u32, u32)) -> u32 {
+//     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+//     println!("test");
+//     a + b
+// }
+
+// type BoxFuture<T> = Pin<Box<(dyn Future<Output = T> + 'static)>>;
+// type BoxAsyncFn<T, R> = Box<dyn Fn(T) -> BoxFuture<R> + 'static>;
+
+// fn box_async_fn<T, R, FutureR>(f: fn(T) -> FutureR) -> BoxAsyncFn<T, R>
+// where
+//     T: 'static,
+//     R: 'static,
+//     FutureR: Future<Output = R> + 'static,
+// {
+//     Box::new(move |t| Box::pin(f(t)))
+// }
+
+// #[tokio::main]
+// async fn main() {
+//     let f = box_async_fn(test);
+//     println!("{:?}.", f((1, 2)).await);
+// }
