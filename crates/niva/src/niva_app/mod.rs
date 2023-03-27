@@ -29,7 +29,7 @@ use self::{
     event_handler::EventHandler,
     options::NivaOptions,
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
-    utils::{arc, ArcMut, png_to_icon},
+    utils::{arc, ArcMut },
     window_manager::{niva_window::NivaWindow, options::NivaWindowOptions, WindowManager},
 };
 
@@ -165,12 +165,12 @@ impl NivaApp {
         let main_window = self.open_window(options, &event_loop)?;
 
         // build tray
-        let icon = png_to_icon(&self.resource_manager.read("icon.png".to_string()).unwrap()).unwrap();
-        #[cfg(target_os = "windows")]
-        let system_tray = SystemTrayBuilder::new(icon, None)
-            .with_tooltip("tao - windowing creation library")
-            .build(&event_loop)
-            .unwrap();
+        // let icon = png_to_icon(&self.resource_manager.read("icon.png".to_string()).unwrap()).unwrap();
+        // #[cfg(target_os = "windows")]
+        // let system_tray = SystemTrayBuilder::new(icon, None)
+        //     .with_tooltip("tao - windowing creation library")
+        //     .build(&event_loop)
+        //     .unwrap();
 
         let event_handler = EventHandler::new(self, main_window);
 

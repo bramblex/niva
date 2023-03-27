@@ -1,7 +1,9 @@
 
 mod win_utils;
+mod image_utils;
 
 use anyhow::{Ok, Result};
+use tao::window::Icon;
 use std::{
     collections::HashMap,
     io::Read,
@@ -12,6 +14,19 @@ pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
     fn read(&self, path: String) -> Result<Vec<u8>>;
     fn extract(&self, from: String, to: &Path) -> Result<()>;
+
+    fn load_icon(&self, path: String) -> Result<Icon> {
+        let data = self.read(path.clone())?;
+        if path.ends_with("png") {
+            image_utils::png_to_icon(&data)
+        } else if path.ends_with("jpg") {
+            image_utils::jpg_to_icon(&data)
+        } else if path.ends_with("jpeg") {
+            image_utils::jpg_to_icon(&data)
+        } else {
+            Err(anyhow::anyhow!("Unsupported icon format."))
+        }
+    }
 }
 
 #[derive(Debug)]

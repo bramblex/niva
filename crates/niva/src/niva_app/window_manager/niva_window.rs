@@ -15,7 +15,7 @@ use wry::{
 use crate::{
     niva_app::{
         resource_manager,
-        utils::{arc, png_to_icon},
+        utils::{arc},
         NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget,
     },
     unsafe_impl_sync_send,
@@ -52,9 +52,9 @@ impl NivaWindow {
         let id_name = app.launch_info.id_name.clone();
 
         let window = WindowBuilder::new()
-            .with_window_icon(Some(
-                png_to_icon(&app.resource_manager.read("icon.png".to_string()).unwrap()).unwrap(),
-            ))
+            // .with_window_icon(Some(
+            //     png_to_icon(&app.resource_manager.read("icon.png".to_string()).unwrap()).unwrap(),
+            // ))
             .build(target)?;
 
         let event_loop_proxy = app.event_loop_proxy.clone();
