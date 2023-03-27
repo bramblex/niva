@@ -16,7 +16,7 @@ const jsonWorkerUrl = require("file-loader!ace-builds/src-noconflict/worker-json
 ace.config.setModuleUrl("ace/mode/json_worker", jsonWorkerUrl);
 
 
-const { fs } = TauriLite.api;
+const { fs } = Niva.api;
 
 interface OptionsEditorProps extends DialogComponentProps {
 	project: ProjectModel;

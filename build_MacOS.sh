@@ -14,9 +14,9 @@ cd ../..
 rm -rf target/release
 RUSTFLAGS="-l framework=WebKit" cargo build --release
 
-target/release/tauri_lite \
+target/release/niva \
 	--resource-dir=packages/devtools/build \
 	--project=packages/devtools/build \
-	--build=dist/TauriLiteDevTools.app
+	--build=dist/NivaDevTools.app
 
-zip -r dist/TauriLiteDevTools_"$VERSION"_MacOS.zip dist/TauriLiteDevTools.app
+zip -r dist/NivaDevTools_"$VERSION"_MacOS.zip dist/NivaDevTools.app

@@ -19,7 +19,7 @@ function ApiCase(props: { method: string, args: any[], desc?: string }) {
 		<pre>{_method}({args.map((arg, i) => JSON.stringify(arg)).join(',')})</pre>
 		<p>
 			<button onClick={() => {
-				TauriLite.api[namespace][method](...args)
+				Niva.api[namespace][method](...args)
 					.then((res: any) => setResult(JSON.stringify(res, null, 2)))
 					.catch((err: any) => setResult(err.toString()))
 			}}>测试</button>
@@ -33,10 +33,10 @@ function ApiExample(props: { cases: [string, any[]?, string?][] }) {
 	const { cases } = props;
 	useEffect(() => {
 		return () => {
-			TauriLite.api.process.setCurrentDir(getCurrentDir());
+			Niva.api.process.setCurrentDir(getCurrentDir());
 			// clear temp dir
-			TauriLite.api.fs.readDir(tempWith(''))
-				.then((list: string[]) => list.map(name => TauriLite.api.fs.remove(tempWith(name))));
+			Niva.api.fs.readDir(tempWith(''))
+				.then((list: string[]) => list.map(name => Niva.api.fs.remove(tempWith(name))));
 		}
 	}, []);
 	return <>
@@ -51,7 +51,7 @@ function DragExample() {
 		<p>拖动下方方块:</p>
 		<div
 			style={{ width: '100px', height: '100px', background: 'red' }}
-			onMouseDown={() => TauriLite.api.window.dragWindow()}>
+			onMouseDown={() => Niva.api.window.dragWindow()}>
 		</div>
 	</div>
 }
@@ -60,7 +60,7 @@ function EventExample(props: { event: string, exampleData: any }) {
 	const { event, exampleData } = props;
 	return <div>
 		<p><b>示例代码:</b></p>
-		<pre>TauriLite.addListener({JSON.stringify(event)}, (event, data) ={'>'} {'{'}...{'}'})</pre>
+		<pre>Niva.addListener({JSON.stringify(event)}, (event, data) ={'>'} {'{'}...{'}'})</pre>
 		<p>示例 data 结构</p>
 		<pre>{JSON.stringify(exampleData, null, 2)}</pre>
 	</div>
@@ -248,7 +248,7 @@ const createDoc: () => DocTreeNode = () => ['文档', [
 				]} />
 			],
 			['open', <ApiExample cases={[
-				['process.open', ["https://github.com/bramblex/tauri_lite"]],
+				['process.open', ["https://github.com/bramblex/niva"]],
 				['fs.write', [tempWith("test.txt"), "hello world"]],
 				['process.open', [tempWith("test.txt")]],
 			]} />

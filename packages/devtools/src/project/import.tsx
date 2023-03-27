@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
 
-const { fs, os, dialog } = TauriLite.api;
+const { fs, os, dialog } = Niva.api;
 
 class HistoryMode extends StateModel<string[]> {
 	private historyFilePath!: string;
@@ -71,9 +71,9 @@ export function ImportPage() {
 
 		history.init();
 
-		TauriLite.addEventListener('fileDrop.dropped', handleDrop);
+		Niva.addEventListener('fileDrop.dropped', handleDrop);
 		return () => {
-			TauriLite.removeEventListener('fileDrop.dropped', handleDrop);
+			Niva.removeEventListener('fileDrop.dropped', handleDrop);
 		}
 	}, []);
 
@@ -103,7 +103,7 @@ export function ImportPage() {
 				fs.createDir(projectDir);
 
 				const files = [
-					["tauri_lite.json", JSON.stringify({ name: projectName, uuid: uuid() })],
+					["niva.json", JSON.stringify({ name: projectName, uuid: uuid() })],
 					["index.html", "<h1>Hello World!</h1><script src='./index.js'></script>"],
 					["index.js", "console.log('Hello World!')"]
 				];

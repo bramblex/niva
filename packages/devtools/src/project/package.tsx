@@ -11,7 +11,7 @@ export function Icon() {
 	const [err, setErr] = useState("");
 
 	useEffect(() => {
-		const { fs } = TauriLite.api;
+		const { fs } = Niva.api;
 		const iconPath = pathJoin(state!.path, state!.config.icon);
 		fs.read(iconPath, 'base64')
 			.then((data: string) => setIconSrc(`data:image/png;base64,${data}`))

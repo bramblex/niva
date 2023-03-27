@@ -1,5 +1,5 @@
-# Tauri Lite 开发者工具
-用于开发调试 Tauri Lite 应用
+# Niva 开发者工具
+用于开发调试 Niva 应用
 
 ## Todo
 - [ ] 项目导入

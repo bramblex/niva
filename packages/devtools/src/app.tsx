@@ -15,11 +15,11 @@ function WindowFrame(props: PropsWithChildren<{}>) {
 
   useEffect(() => {
     const handler = (_: string, { focused }: { focused: boolean }) => setActive(focused);
-    TauriLite.addEventListener('window.focused', handler);
-    TauriLite.api.os.info().then(setSystemInfo);
-    TauriLite.api.process.version().then(setVersion);
+    Niva.addEventListener('window.focused', handler);
+    Niva.api.os.info().then(setSystemInfo);
+    Niva.api.process.version().then(setVersion);
     return () => {
-      TauriLite.removeEventListener('window.focused', handler);
+      Niva.removeEventListener('window.focused', handler);
     };
   }, []);
 
@@ -27,13 +27,13 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     <div className="title-bar" onMouseDownCapture={(ev) => {
       const t = ev.target as HTMLElement;
       if (t.tagName !== 'BUTTON' && t.tagName !== 'A') {
-        TauriLite.api.window.dragWindow();
+        Niva.api.window.dragWindow();
       }
     }}>
-      <div className="title-bar-text"><img className="window-icon" src="logo.png" alt="" />Tauri Lite Devtools</div>
+      <div className="title-bar-text"><img className="window-icon" src="logo.png" alt="" />Niva Devtools</div>
       <div className="title-bar-controls">
-        <button aria-label="Minimize" onClick={() => TauriLite.api.window.setMinimized(true)}></button>
-        <button aria-label="Close" onClick={() => TauriLite.api.process.exit()}></button>
+        <button aria-label="Minimize" onClick={() => Niva.api.window.setMinimized(true)}></button>
+        <button aria-label="Close" onClick={() => Niva.api.process.exit()}></button>
       </div>
     </div>
     <div className="window-body has-space">
@@ -42,8 +42,8 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     <div className="status-bar">
       <p className="status-bar-field">
         Doc & Issue: <span className='link' onClick={() => {
-          TauriLite.api.process.open('https://github.com/bramblex/tauri_lite');
-        }}>https://github.com/bramblex/tauri_lite</span>
+          Niva.api.process.open('https://github.com/bramblex/niva');
+        }}>https://github.com/bramblex/niva</span>
       </p>
       <p className="status-bar-field" style={{ flex: '0 0 auto' }}>
         System: {systemInfo.os} {systemInfo.arch} {systemInfo.version}
