@@ -11,6 +11,7 @@ pub struct Position(pub f64, pub f64);
 #[serde(rename_all = "camelCase")]
 pub struct NivaWindowOptions {
     pub entry: Option<String>,
+    pub parent: Option<u32>,
 
     pub title: Option<String>,
     pub icon: Option<String>,
@@ -47,6 +48,7 @@ impl Default for NivaWindowOptions {
     fn default() -> Self {
         Self {
             entry: None,
+            parent: None,
             title: None,
             icon: None,
             theme: None,

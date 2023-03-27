@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use serde_json::json;
 use tao::{
-    event::{Event, WindowEvent, TrayEvent},
+    event::{Event, TrayEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoopWindowTarget},
 };
 
@@ -34,13 +34,20 @@ impl EventHandler {
             Event::WindowEvent {
                 event, window_id, ..
             } => {
-                let window = self.app.get_window_inner(window_id).unwrap();
+                let window = self.app.get_window_inner(window_id);
+                if (window.is_err()) {
+                    return;
+                }
+                let window = window.unwrap();
 
                 match event {
                     WindowEvent::Focused(focused) => {
                         window.send_ipc_event("window.focused", focused);
-                    },
-                    WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => {
+                    }
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor,
+                        new_inner_size,
+                    } => {
                         window.send_ipc_event(
                             "window.scaleFactorChanged",
                             json!({
@@ -48,7 +55,7 @@ impl EventHandler {
                                 "newInnerSize": new_inner_size
                             }),
                         );
-                    },
+                    }
                     WindowEvent::ThemeChanged(theme) => {
                         window.send_ipc_event(
                             "window.themeChanged",
@@ -60,14 +67,14 @@ impl EventHandler {
                                 }
                             }),
                         );
-                    },
+                    }
                     WindowEvent::CloseRequested => {
-                        if window.id == self.main_window.id {
+                        if window.id == 0 {
                             *control_flow = ControlFlow::Exit;
                         } else {
                             self.app.close_window(window.id);
                         }
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -92,14 +99,14 @@ impl EventHandler {
             Event::TrayEvent { event, .. } => match event {
                 TrayEvent::RightClick => {
                     self.main_window.send_ipc_event("tray.rightClicked", "");
-                },
+                }
                 TrayEvent::LeftClick => {
                     self.main_window.send_ipc_event("tray.leftClicked", "");
-                },
+                }
                 TrayEvent::DoubleClick => {
                     self.main_window.send_ipc_event("tray.doubleClicked", "");
-                },
-                _ => ()
+                }
+                _ => (),
             },
 
             Event::UserEvent(callback) => {

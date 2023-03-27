@@ -1,3 +1,6 @@
+
+mod win_utils;
+
 use anyhow::{Ok, Result};
 use std::{
     collections::HashMap,
@@ -82,7 +85,7 @@ impl AppResourceManager {
 
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<AppResourceManager> {
-        use crate::win_utils::load_resource;
+        use win_utils::load_resource;
 
         println!("new resource.");
         let indexes_data = load_resource("RESOURCE_INDEXES")?;

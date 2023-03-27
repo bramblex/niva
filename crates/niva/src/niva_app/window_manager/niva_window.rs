@@ -21,6 +21,8 @@ use crate::{
 
 use super::options::NivaWindowOptions;
 
+static INITIALIZE_SCRIPT: &str = include_str!("../../../assets/initialize_script.js");
+
 pub struct NivaWindow {
     pub id: NivaId,
     pub window_id: WindowId,
@@ -52,6 +54,7 @@ impl NivaWindow {
         let webview = WebViewBuilder::new(window)
             .unwrap()
             .with_web_context(web_context)
+            .with_initialization_script(INITIALIZE_SCRIPT)
             .with_custom_protocol("niva".to_string(), move |request| {
                 let mut path = request.uri().path().to_string();
                 if path.ends_with("/") {

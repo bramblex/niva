@@ -22,7 +22,7 @@ use super::{
 pub struct ApiArguments(Value);
 
 impl ApiArguments {
-    pub fn get_single<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
+    pub fn single<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         Ok(serde_json::from_value::<(T,)>(self.0.clone())?.0)
     }
 
@@ -30,7 +30,7 @@ impl ApiArguments {
         Ok(serde_json::from_value(self.0.clone())?)
     }
 
-    pub fn get_with_optional<T: serde::de::DeserializeOwned>(&self, args_size: usize) -> Result<T> {
+    pub fn optional<T: serde::de::DeserializeOwned>(&self, args_size: usize) -> Result<T> {
         let mut args = serde_json::from_value::<Vec<serde_json::Value>>(self.0.clone())?;
         args.resize(args_size, json!(null));
         let args = json!(args);
@@ -40,13 +40,12 @@ impl ApiArguments {
 
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ApiRequest(pub NivaId, pub NivaId, pub String, pub ApiArguments);
+pub struct ApiRequest(pub NivaId, pub String, pub ApiArguments);
 
 impl ApiRequest {
     pub fn err<C: Into<i32>, S: Into<String>>(&self, code: C, msg: S) -> ApiResponse {
         ApiResponse(
             self.0,
-            self.1,
             code.into(),
             msg.into(),
             json!(null),
@@ -56,7 +55,6 @@ impl ApiRequest {
     pub fn ok<D: Serialize>(&self, data: D) -> ApiResponse {
         ApiResponse(
             self.0,
-            self.1,
             0,
             "ok".to_string(),
             json!(data),
@@ -64,14 +62,14 @@ impl ApiRequest {
     }
 
     pub fn args(&self) -> &ApiArguments {
-        &self.3
+        &self.2
     }
 }
 
 pub type Code = i32;
 
 #[derive(Serialize, Clone)]
-pub struct ApiResponse(NivaId, NivaId, Code, String, Value);
+pub struct ApiResponse(NivaId, Code, String, Value);
 
 pub type ApiInstance = Pin<Box<dyn Fn(Arc<NivaApp>, Arc<NivaWindow>, ApiRequest) -> Result<()>>>;
 
@@ -169,7 +167,7 @@ impl ApiManager {
 
         let request = serde_json::from_str::<ApiRequest>(&request_str)?;
 
-        let api = self.api_instance.get(&request.2);
+        let api = self.api_instance.get(&request.1);
 
         if api.is_none() {
             window.send_ipc_callback(request.err(-1, format!("api not found")))?;
