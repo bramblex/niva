@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::Deref, sync::Arc};
 use serde::Serialize;
 use serde_json::json;
 use tao::{
-    event_loop::{ControlFlow, self},
+    event_loop::{self, ControlFlow},
     window::{Window, WindowBuilder, WindowId},
 };
 use wry::{
@@ -14,7 +14,9 @@ use wry::{
 
 use crate::{
     niva_app::{
-        resource_manager, NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget, utils::arc,
+        resource_manager,
+        utils::{arc, png_to_icon},
+        NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget,
     },
     unsafe_impl_sync_send,
 };
@@ -48,9 +50,16 @@ impl NivaWindow {
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
         let id_name = app.launch_info.id_name.clone();
-        let window = WindowBuilder::new().build(target)?;
+
+        let window = WindowBuilder::new()
+            .with_window_icon(Some(
+                png_to_icon(&app.resource_manager.read("icon.png".to_string()).unwrap()).unwrap(),
+            ))
+            .build(target)?;
+
         let event_loop_proxy = app.event_loop_proxy.clone();
         let resource_manager = app.resource_manager.clone();
+
         let webview = WebViewBuilder::new(window)
             .unwrap()
             .with_web_context(web_context)
@@ -129,5 +138,4 @@ impl NivaWindow {
     pub fn send_ipc_callback<D: Serialize>(self: &Arc<Self>, data: D) -> Result<()> {
         self.send_ipc_event("ipc.callback", json!(data))
     }
-
 }

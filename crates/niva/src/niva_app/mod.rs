@@ -1,10 +1,10 @@
 mod api;
 mod api_manager;
+mod event_handler;
 mod options;
 mod resource_manager;
 mod utils;
 mod window_manager;
-mod event_handler;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -18,17 +18,19 @@ use std::{
 };
 
 use tao::{
+    event::Event,
     event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
-    window::{Window, WindowId}, event::Event,
+    window::{Window, WindowId}, system_tray::SystemTrayBuilder,
 };
 
 use self::{
     api::register_api_instances,
     api_manager::ApiManager,
+    event_handler::EventHandler,
     options::NivaOptions,
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
-    utils::{arc, ArcMut},
-    window_manager::{niva_window::NivaWindow, options::NivaWindowOptions, WindowManager}, event_handler::EventHandler,
+    utils::{arc, ArcMut, png_to_icon},
+    window_manager::{niva_window::NivaWindow, options::NivaWindowOptions, WindowManager},
 };
 
 pub type NivaId = u32;
@@ -161,6 +163,14 @@ impl NivaApp {
         // create niva main window to launch application.
         let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
         let main_window = self.open_window(options, &event_loop)?;
+
+        // build tray
+        let icon = png_to_icon(&self.resource_manager.read("icon.png".to_string()).unwrap()).unwrap();
+        #[cfg(target_os = "windows")]
+        let system_tray = SystemTrayBuilder::new(icon, None)
+            .with_tooltip("tao - windowing creation library")
+            .build(&event_loop)
+            .unwrap();
 
         let event_handler = EventHandler::new(self, main_window);
 
