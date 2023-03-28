@@ -30,9 +30,10 @@ use self::{
     event_handler::EventHandler,
     options::{NivaActivationPolicy, NivaOptions},
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
+    shortcut_manager::NivaShortcutManager,
     tray::NivaTray,
     utils::{arc, ArcMut},
-    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager}, shortcut_manager::NivaShortcutManager,
+    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager},
 };
 
 pub type NivaId = u32;
@@ -68,6 +69,7 @@ pub struct NivaApp {
     resource_manager: Arc<dyn ResourceManager>,
     window_manager: ArcMut<WindowManager>, // Window manager.
     api_manager: ArcMut<ApiManager>,
+    shortcut_manager: ArcMut<NivaShortcutManager>,
 
     event_loop_proxy: EventLoopProxy<NivaEvent>, // Event loop proxy.
 }
@@ -107,11 +109,16 @@ impl NivaApp {
 
         let window_manager = WindowManager::new(&launch_info);
 
+        // build shortcuts
+        let shortcut_manager =
+            NivaShortcutManager::new(&launch_info.options.shortcuts, &event_loop);
+
         let app = Arc::new(NivaApp {
             launch_info,
             resource_manager,
             window_manager: window_manager.clone(),
             api_manager: api_manager.clone(),
+            shortcut_manager,
             event_loop_proxy: event_loop.create_proxy(),
         });
 
@@ -160,6 +167,35 @@ impl NivaApp {
             .close_window(id)
     }
 
+    pub fn register_shortcut(self: &Arc<NivaApp>, accelerator_str: String, id: u16) -> Result<()> {
+        self.shortcut_manager
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
+            .register(accelerator_str, id)
+    }
+
+    pub fn unregister_shortcut(self: &Arc<NivaApp>, id: u16) -> Result<()> {
+        self.shortcut_manager
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
+            .unregister(id)
+    }
+
+    pub fn unregister_all_shortcuts(self: &Arc<NivaApp>) -> Result<()> {
+        self.shortcut_manager
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
+            .unregister_all()
+    }
+
+    pub fn list_shortcuts(self: &Arc<NivaApp>) -> Result<Vec<(u16, String)>> {
+        self.shortcut_manager
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
+            .list()
+    }
+
+
     pub fn close_window_inner(self: &Arc<NivaApp>, window_id: WindowId) -> Result<()> {
         self.window_manager
             .lock()
@@ -179,20 +215,11 @@ impl NivaApp {
         let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
         let main_window = self.open_window(options, &event_loop)?;
 
+
         // build tray
-        let tray_options = self.launch_info.options.tray.clone();
+        let tray_options = &self.launch_info.options.tray.clone();
         let _tray = match tray_options {
             Some(tray_options) => Some(NivaTray::build(&self, &tray_options, &event_loop)),
-            None => None,
-        };
-
-        // build shortcuts
-        let shortcuts_options = self.launch_info.options.shortcuts.clone();
-        let _shortcuts = match shortcuts_options {
-            Some(shortcuts_options) => Some(NivaShortcutManager::build(
-                &shortcuts_options,
-                &event_loop,
-            )),
             None => None,
         };
 

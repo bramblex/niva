@@ -8,6 +8,8 @@ mod http;
 // mod process;
 // mod webview;
 // mod resource;
+mod clipboard;
+mod shortcut;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);
@@ -18,4 +20,6 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     // process::register_apis(api_manager);
     // webview::register_apis(api_manager);
     // resource::register_apis(api_manager);
+    clipboard::register_api_instances(api_manager);
+    shortcut::register_api_instances(api_manager);
 }
