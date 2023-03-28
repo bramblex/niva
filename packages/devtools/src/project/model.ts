@@ -124,8 +124,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       process.exec(
         exe,
         [
-          `--resource-dir=${projectPath}`,
-          "--devtools=true",
+          `--debug-resource=${projectPath}`,
+          "--debug-devtools=true",
           ...(debugEntry ? [`--debug-entry=${debugEntry}`] : []),
         ],
         { detached: true }

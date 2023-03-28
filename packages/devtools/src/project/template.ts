@@ -49,7 +49,7 @@ function parseVersion(versionString: string): number[] {
 }
 
 export function versionInfoTemplate(config: any) {
-  const numberVersion = parseVersion(config.version).join(",");
+  const numberVersion = parseVersion(config.version || "").join(",");
 
   return `
 1 VERSIONINFO
