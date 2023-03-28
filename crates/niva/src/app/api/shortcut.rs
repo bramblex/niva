@@ -24,8 +24,8 @@ fn register(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<()> {
-    let (accelerator_str, id) = request.args().get::<(String, u16)>()?;
-    app.register_shortcut(accelerator_str, id)
+    let (id, accelerator_str) = request.args().get::<(u16, String)>()?;
+    app.register_shortcut(id, accelerator_str)
 }
 
 fn unregister(

@@ -30,14 +30,14 @@ impl NivaShortcutManager {
 
         if let Some(ShortcutsOptions(options)) = options.clone() {
             for (accelerator_str, id) in options {
-                manager.register(accelerator_str, id);
+                manager.register( id,accelerator_str );
             }
         }
 
         arc_mut(manager)
     }
 
-    pub fn register(&mut self, accelerator_str: String, id: u16) -> Result<()> {
+    pub fn register(&mut self, id: u16, accelerator_str: String) -> Result<()> {
         if self.shortcuts.contains_key(&id) {
             return Err(anyhow!("Shortcut with id {} already registered", id));
         }
@@ -67,7 +67,8 @@ impl NivaShortcutManager {
     }
 
     pub fn list(&self) -> Result<Vec<(u16, String)>> {
-        Ok(self.shortcuts
+        Ok(self
+            .shortcuts
             .iter()
             .map(|(id, (accelerator_str, _))| (*id, accelerator_str.clone()))
             .collect())

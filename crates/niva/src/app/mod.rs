@@ -167,11 +167,11 @@ impl NivaApp {
             .close_window(id)
     }
 
-    pub fn register_shortcut(self: &Arc<NivaApp>, accelerator_str: String, id: u16) -> Result<()> {
+    pub fn register_shortcut(self: &Arc<NivaApp>, id: u16, accelerator_str: String) -> Result<()> {
         self.shortcut_manager
             .lock()
             .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
-            .register(accelerator_str, id)
+            .register(id, accelerator_str)
     }
 
     pub fn unregister_shortcut(self: &Arc<NivaApp>, id: u16) -> Result<()> {
@@ -195,7 +195,6 @@ impl NivaApp {
             .list()
     }
 
-
     pub fn close_window_inner(self: &Arc<NivaApp>, window_id: WindowId) -> Result<()> {
         self.window_manager
             .lock()
@@ -215,14 +214,12 @@ impl NivaApp {
         let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
         let main_window = self.open_window(options, &event_loop)?;
 
-
         // build tray
         let tray_options = &self.launch_info.options.tray.clone();
         let _tray = match tray_options {
             Some(tray_options) => Some(NivaTray::build(&self, &tray_options, &event_loop)),
             None => None,
         };
-
 
         let event_handler = EventHandler::new(self, main_window);
         event_loop.run(move |event, target, control_flow| {
