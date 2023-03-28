@@ -1,10 +1,11 @@
 use anyhow::Result;
-use base64::Engine;
 use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::{
+use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    environment::EnvironmentRef,
+    window_manager::window::NivaWindow,
+    NivaApp,
 };
 
 pub fn register_apis(api_manager: &mut ApiManager) {
@@ -13,9 +14,9 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_async_api("resource.extract", extract);
 }
 
-fn exists(env: EnvironmentRef, request: ApiRequest) -> Result<bool> {
-    let path = request.args().get_single::<String>()?;
-    Ok(env.resource.exists(path))
+fn exists(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<bool> {
+    let path = request.args().single::<String>()?;
+    Ok(app.resource_manager.exists(path))
 }
 
 #[derive(Deserialize)]
@@ -26,26 +27,22 @@ enum EncodeType {
     BASE64,
 }
 
-fn read(env: EnvironmentRef, request: ApiRequest) -> Result<String> {
-    let (path, encode) = request
-        .args()
-        .get_with_optional::<(String, Option<EncodeType>)>(2)?;
+fn read(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
+    let (path, encode) = request.args().optional::<(String, Option<EncodeType>)>(2)?;
 
     let encode = encode.unwrap_or(EncodeType::UTF8);
-    let content = env.resource.read(path)?;
+    let content = app.resource_manager.load(path)?;
     let content = match encode {
         EncodeType::UTF8 => String::from_utf8(content)?,
-        EncodeType::BASE64 => base64::engine::general_purpose::STANDARD.encode(content),
+        EncodeType::BASE64 => base64::encode_config(content, base64::STANDARD),
     };
 
     Ok(content)
 }
 
-fn extract(env: EnvironmentRef, request: ApiRequest) -> Result<()> {
-    let (from, to) = request
-        .args()
-        .get::<(String, String)>()?;
-    let content = env.resource.read(from)?;
+fn extract(env: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (from, to) = request.args().get::<(String, String)>()?;
+    let content = env.resource_manager.load(from)?;
     std::fs::write(to, content)?;
     Ok(())
 }

@@ -1,11 +1,12 @@
 use anyhow::Result;
 use directories::UserDirs;
 use serde_json::{json, Value};
-use wry::application::window::Window;
+use std::sync::Arc;
 
-use crate::{
+use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    environment::EnvironmentRef,
+    window_manager::window::NivaWindow,
+    NivaApp,
 };
 
 pub fn register_apis(api_manager: &mut ApiManager) {
@@ -15,7 +16,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.eol", eol);
 }
 
-fn info(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
+fn info(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
     let info = os_info::get();
     Ok(json!({
         "os": info.os_type().to_string(),
@@ -24,12 +25,12 @@ fn info(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
     }))
 }
 
-fn dirs(env: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
+fn dirs(app: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
     let user_dirs = UserDirs::new().unwrap();
 
     Ok(json!({
-        "temp": env.temp_dir,
-        "data": env.data_dir,
+        "temp": app.launch_info.temp_dir,
+        "data": app.launch_info.data_dir,
 
         "home": user_dirs.home_dir(),
         "audio": user_dirs.audio_dir(),
@@ -44,11 +45,11 @@ fn dirs(env: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<Value> {
     }))
 }
 
-fn sep(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<String> {
+fn sep(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
     Ok(std::path::MAIN_SEPARATOR.to_string())
 }
 
-fn eol(_: EnvironmentRef, _: &Window, _: ApiRequest) -> Result<String> {
+fn eol(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
     #[cfg(target_os = "windows")]
     let eol = "\r\n";
     #[cfg(not(target_os = "windows"))]
