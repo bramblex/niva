@@ -1,16 +1,15 @@
-
 #[cfg(target_os = "windows")]
 mod win_utils;
 
 mod image_utils;
 
 use anyhow::{Ok, Result};
-use tao::window::Icon;
 use std::{
     collections::HashMap,
     io::Read,
     path::{Path, PathBuf},
 };
+use tao::window::Icon;
 
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
@@ -42,7 +41,9 @@ impl FileSystemResource {
             .exists()
             .then(|| root_dir.is_dir())
             .ok_or(anyhow::anyhow!("Invalid resource directory."))?;
-        Ok(FileSystemResource { root_dir: root_dir.to_path_buf() })
+        Ok(FileSystemResource {
+            root_dir: root_dir.to_path_buf(),
+        })
     }
 }
 

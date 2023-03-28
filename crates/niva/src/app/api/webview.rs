@@ -18,20 +18,20 @@ pub fn register_apis(api_manager: &mut ApiManager) {
 }
 
 fn is_devtools_open(
-    app: Arc<NivaApp>,
+    _app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
+    _request: ApiRequest,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<bool> {
     Ok(window.webview.is_devtools_open())
 }
 
 fn open_devtools(
-    app: Arc<NivaApp>,
+    _app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
+    _request: ApiRequest,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     window.webview.open_devtools();
@@ -39,10 +39,10 @@ fn open_devtools(
 }
 
 fn close_devtools(
-    app: Arc<NivaApp>,
+    _app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
+    _request: ApiRequest,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     window.webview.close_devtools();
@@ -50,10 +50,10 @@ fn close_devtools(
 }
 
 fn set_background_color(
-    app: Arc<NivaApp>,
+    _app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
     request: ApiRequest,
-    target: &NivaWindowTarget,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     let color = request.args().single::<(u8, u8, u8, u8)>()?;

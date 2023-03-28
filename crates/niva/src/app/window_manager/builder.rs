@@ -8,7 +8,10 @@ use crate::{
 };
 use anyhow::Result;
 use serde_json::json;
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::{Borrow, Cow},
+    sync::Arc,
+};
 use tao::{
     menu::{self, MenuBar, MenuId, MenuItem, MenuItemAttributes},
     window::{Fullscreen, Theme, Window, WindowBuilder},
@@ -115,8 +118,8 @@ impl NivaBuilder {
     pub fn build_menu(menu_options: &Option<MenuOptions>) -> Option<MenuBar> {
         if let Some(menu_options) = menu_options {
             let mut menu = MenuBar::new();
-            Self::append_custom_menu(&mut menu, &menu_options.0);
-            return Some(menu)
+            Self::build_custom_menu(&mut menu, &menu_options.0);
+            return Some(menu);
         }
         None
     }
@@ -179,10 +182,11 @@ impl NivaBuilder {
         let id_name = app.launch_info.id_name.clone();
         let protocol = "niva";
 
+        let debug_entry = app.launch_info.arguments.debug_entry.clone();
         #[cfg(target_os = "macos")]
-        let base_url = format!("{}://{}", protocol, id_name);
+        let base_url = debug_entry.unwrap_or(format!("{}://{}", protocol, id_name));
         #[cfg(target_os = "windows")]
-        let base_url = format!("https://{}.{}", protocol, id_name);
+        let base_url = debug_entry.unwrap_or(format!("https://{}.{}", protocol, id_name));
 
         let entry_url = format!(
             "{}/{}",
