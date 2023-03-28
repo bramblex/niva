@@ -2,5 +2,11 @@
 pub struct NivaTrayManager {
 }
 
-pub struct NivaTray {
+impl NivaTrayManager {
+    pub fn new(options: &Option<NivaTrayOptions>) -> ArcMut<NivaTrayManager> {
+    }
+
+    pub fn create() {
+    }
+
 }
