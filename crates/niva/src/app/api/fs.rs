@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 
 use std::{path::Path, sync::Arc, time::UNIX_EPOCH};
 
-use crate::niva_app::{
+use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    window_manager::niva_window::NivaWindow,
+    window_manager::window::NivaWindow,
     NivaApp,
 };
 

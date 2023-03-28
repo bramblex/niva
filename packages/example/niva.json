@@ -4,9 +4,22 @@
 	"visible": false,
 	"icon": "icon.png",
 	"window": {
-		"icon": "icon.png"
+		"icon": "icon.png",
+		"menu": [
+			["sub_menu", [
+				["world", 456],
+				"---",
+				["Quit", 789]
+			]]
+		]
 	},
 	"tray": {
-		"icon": "icon.png"
+		"icon": "icon.png",
+		"menu": [
+			["hello", 123],
+			["world", 456],
+			"---",
+			["Quit", 789]
+		]
 	}
 }

@@ -14,7 +14,7 @@ use self::thread_pool::ThreadPool;
 use super::{
     options::NivaOptions,
     utils::{arc_mut, ArcMut},
-    window_manager::niva_window::NivaWindow,
+    window_manager::window::NivaWindow,
     NivaApp, NivaId, NivaWindowTarget,
 };
 
@@ -120,7 +120,7 @@ impl ApiManager {
         api_func: fn(Arc<NivaApp>, Arc<NivaWindow>, ApiRequest) -> Result<T>,
     ) {
         let api_instance: ApiInstance = Box::pin(move |app, window, request| {
-            let result = api_func(app.clone(), window.clone(), request.clone());
+            let result = api_func(app, window.clone(), request.clone());
             let response = match result {
                 Ok(data) => request.ok(data),
                 Err(err) => request.err(-1, err.to_string()),
@@ -170,12 +170,12 @@ impl ApiManager {
         let api = self.api_instance.get(&request.1);
 
         if api.is_none() {
-            window.send_ipc_callback(request.err(-1, format!("api not found")))?;
+            window.send_ipc_callback(request.err(-1, "api not found".to_string()))?;
             return Err(anyhow!("api not found"));
         }
 
         let api_func = api.unwrap();
-        let result = api_func(app.clone(), window.clone(), request.clone());
+        let result = api_func(app, window.clone(), request.clone());
 
         if let Err(err) = result {
             window.send_ipc_callback(request.err(-1, err.to_string()))?;

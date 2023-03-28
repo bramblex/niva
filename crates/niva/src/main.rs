@@ -4,13 +4,13 @@
     windows_subsystem = "windows"
 )]
 
-mod niva_app;
+mod app;
 
 use anyhow::{Result};
-use niva_app::{NivaApp, NivaEventLoop};
+use app::{NivaApp, NivaEventLoop};
 
 fn main() -> Result<()> {
-    let event_loop = NivaEventLoop::with_user_event();
-    let app = NivaApp::new(&event_loop)?;
+    let mut event_loop = NivaEventLoop::with_user_event();
+    let app = NivaApp::new(&mut event_loop)?;
     app.run(event_loop)
 }

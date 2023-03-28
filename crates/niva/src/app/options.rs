@@ -19,7 +19,7 @@ pub struct NivaOptions {
     pub workers: Option<u32>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub enum NivaActivationPolicy {
     #[serde(rename = "regular")]
     Regular,
@@ -29,7 +29,7 @@ pub enum NivaActivationPolicy {
     Prohibited,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MenuItemOptions {
     NativeItem(String),
@@ -37,10 +37,10 @@ pub enum MenuItemOptions {
     SubMenu(String, Vec<MenuItemOptions>),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct MenuOptions(pub Vec<MenuItemOptions>);
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct NivaTrayOptions {
     pub icon: String,
     pub title: Option<String>,

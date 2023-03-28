@@ -3,9 +3,9 @@ use serde_json::json;
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
-use crate::niva_app::{
+use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    window_manager::{niva_window::NivaWindow, options::NivaWindowOptions},
+    window_manager::{window::NivaWindow, options::NivaWindowOptions},
     NivaApp, NivaId, NivaWindowTarget,
 };
 
@@ -19,10 +19,10 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 
 fn open(
     app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
+    _window: Arc<NivaWindow>,
     request: ApiRequest,
     target: &NivaWindowTarget,
-    control_flow: &mut ControlFlow,
+    _control_flow: &mut ControlFlow,
 ) -> Result<NivaId> {
     let (options,) = request
         .args()
@@ -35,7 +35,7 @@ fn close(
     app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
     request: ApiRequest,
-    target: &NivaWindowTarget,
+    _target: &NivaWindowTarget,
     control_flow: &mut ControlFlow,
 ) -> Result<()> {
     let (id,) = request.args().optional::<(Option<NivaId>,)>(1)?;
@@ -64,9 +64,9 @@ fn send_message(
 }
 
 fn current(
-    app: Arc<NivaApp>,
+    _app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
-    request: ApiRequest,
+    _request: ApiRequest,
 ) -> Result<NivaId> {
     Ok(window.id)
 }

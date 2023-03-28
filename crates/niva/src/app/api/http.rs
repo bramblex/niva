@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
-use crate::niva_app::{api_manager::{ApiManager, ApiRequest}, NivaApp, window_manager::niva_window::NivaWindow};
+use crate::app::{api_manager::{ApiManager, ApiRequest}, NivaApp, window_manager::window::NivaWindow};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("http.request", request);

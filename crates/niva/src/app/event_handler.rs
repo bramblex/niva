@@ -7,7 +7,7 @@ use tao::{
     event_loop::{ControlFlow, EventLoopWindowTarget},
 };
 
-use super::{window_manager::niva_window::NivaWindow, NivaApp, NivaEvent};
+use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
@@ -35,13 +35,15 @@ impl EventHandler {
                 event, window_id, ..
             } => {
                 let window = self.app.get_window_inner(window_id);
-                if (window.is_err()) {
+                if window.is_err() {
                     return;
                 }
                 let window = window.unwrap();
 
                 match event {
                     WindowEvent::Focused(focused) => {
+                        #[cfg(target_os = "macos")]
+                        window.set_current_menu();
                         window.send_ipc_event("window.focused", focused);
                     }
                     WindowEvent::ScaleFactorChanged {
@@ -98,13 +100,13 @@ impl EventHandler {
 
             Event::TrayEvent { event, .. } => match event {
                 TrayEvent::RightClick => {
-                    self.main_window.send_ipc_event("tray.rightClicked", "");
+                    self.main_window.send_ipc_event("tray.rightClicked", json!(null));
                 }
                 TrayEvent::LeftClick => {
-                    self.main_window.send_ipc_event("tray.leftClicked", "");
+                    self.main_window.send_ipc_event("tray.leftClicked", json!(null));
                 }
                 TrayEvent::DoubleClick => {
-                    self.main_window.send_ipc_event("tray.doubleClicked", "");
+                    self.main_window.send_ipc_event("tray.doubleClicked", json!(null));
                 }
                 _ => (),
             },

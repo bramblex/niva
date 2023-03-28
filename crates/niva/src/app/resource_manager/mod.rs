@@ -1,5 +1,7 @@
 
+#[cfg(target = "windows")]
 mod win_utils;
+
 mod image_utils;
 
 use anyhow::{Ok, Result};
@@ -12,17 +14,17 @@ use std::{
 
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
-    fn read(&self, path: String) -> Result<Vec<u8>>;
+    fn load(&self, path: String) -> Result<Vec<u8>>;
     fn extract(&self, from: String, to: &Path) -> Result<()>;
 
     fn load_icon(&self, path: String) -> Result<Icon> {
-        let data = self.read(path.clone())?;
+        let data = self.load(path.clone())?;
         if path.ends_with("png") {
             image_utils::png_to_icon(&data)
-        } else if path.ends_with("jpg") {
-            image_utils::jpg_to_icon(&data)
-        } else if path.ends_with("jpeg") {
-            image_utils::jpg_to_icon(&data)
+        // } else if path.ends_with("jpg") {
+        //     image_utils::jpg_to_icon(&data)
+        // } else if path.ends_with("jpeg") {
+        //     image_utils::jpg_to_icon(&data)
         } else {
             Err(anyhow::anyhow!("Unsupported icon format."))
         }
@@ -50,7 +52,7 @@ impl ResourceManager for FileSystemResource {
         path.exists() && path.is_file()
     }
 
-    fn read(&self, path: String) -> Result<Vec<u8>> {
+    fn load(&self, path: String) -> Result<Vec<u8>> {
         Ok(std::fs::read(self.root_dir.join(path))?)
     }
 
@@ -122,7 +124,7 @@ impl ResourceManager for AppResourceManager {
         self.indexes.contains_key(&path)
     }
 
-    fn read(&self, path: String) -> Result<Vec<u8>> {
+    fn load(&self, path: String) -> Result<Vec<u8>> {
         let (offset, length) = *self
             .indexes
             .get(&path)
@@ -131,7 +133,7 @@ impl ResourceManager for AppResourceManager {
     }
 
     fn extract(&self, from: String, to: &Path) -> Result<()> {
-        let content = self.read(from)?;
+        let content = self.load(from)?;
         std::fs::write(to, content)?;
         Ok(())
     }

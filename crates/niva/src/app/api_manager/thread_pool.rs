@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use crate::niva_app::utils::{arc_mut, ArcMut};
+use crate::app::utils::{arc_mut, ArcMut};
 
 type Task = Box<dyn FnOnce() -> Result<()> + Send + 'static>;
 

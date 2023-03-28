@@ -3,8 +3,10 @@ mod api_manager;
 mod event_handler;
 mod options;
 mod resource_manager;
+mod tray;
 mod utils;
 mod window_manager;
+mod shortcut_manager;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -18,19 +20,19 @@ use std::{
 };
 
 use tao::{
-    event::Event,
     event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
-    window::{Window, WindowId}, system_tray::SystemTrayBuilder,
+    window::{Window, WindowId},
 };
 
 use self::{
     api::register_api_instances,
     api_manager::ApiManager,
     event_handler::EventHandler,
-    options::NivaOptions,
+    options::{NivaActivationPolicy, NivaOptions},
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
-    utils::{arc, ArcMut },
-    window_manager::{niva_window::NivaWindow, options::NivaWindowOptions, WindowManager},
+    tray::NivaTray,
+    utils::{arc, ArcMut},
+    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager},
 };
 
 pub type NivaId = u32;
@@ -71,7 +73,7 @@ pub struct NivaApp {
 }
 
 impl NivaApp {
-    pub fn new(event_loop: &NivaEventLoop) -> Result<Arc<NivaApp>> {
+    pub fn new(event_loop: &mut NivaEventLoop) -> Result<Arc<NivaApp>> {
         let arguments = NivaArguments::new();
 
         let resource_manager: Arc<dyn ResourceManager> = match &arguments.debug_resource {
@@ -80,6 +82,19 @@ impl NivaApp {
         };
 
         let launch_info = NivaLaunchInfo::new(arguments, resource_manager.clone())?;
+
+        #[cfg(target_os = "macos")]
+        {
+            use wry::application::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+            if let Some(p) = launch_info.options.activation.clone() {
+                let policy = match p {
+                    NivaActivationPolicy::Regular => ActivationPolicy::Regular,
+                    NivaActivationPolicy::Accessory => ActivationPolicy::Accessory,
+                    NivaActivationPolicy::Prohibited => ActivationPolicy::Prohibited,
+                };
+                event_loop.set_activation_policy(policy);
+            }
+        }
 
         // create api manager and register api instances
         let api_manager = ApiManager::new(&launch_info.options);
@@ -109,6 +124,14 @@ impl NivaApp {
             .lock()
             .map_err(|_| anyhow!("Failed to lock api manager"))?
             .bind_app(app.clone());
+
+
+        // build tray
+        let tray_options = app.launch_info.options.tray.clone();
+        let _tray = match tray_options {
+            Some(tray_options) => Some(NivaTray::build(&app, &tray_options, &event_loop)),
+            None => None,
+        };
 
         Ok(app)
     }
@@ -164,16 +187,7 @@ impl NivaApp {
         let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
         let main_window = self.open_window(options, &event_loop)?;
 
-        // build tray
-        // let icon = png_to_icon(&self.resource_manager.read("icon.png".to_string()).unwrap()).unwrap();
-        // #[cfg(target_os = "windows")]
-        // let system_tray = SystemTrayBuilder::new(icon, None)
-        //     .with_tooltip("tao - windowing creation library")
-        //     .build(&event_loop)
-        //     .unwrap();
-
         let event_handler = EventHandler::new(self, main_window);
-
         event_loop.run(move |event, target, control_flow| {
             event_handler.handle(event, target, control_flow);
         });
@@ -207,7 +221,7 @@ impl NivaArguments {
             .get("debug-devtools")
             .map(|v| v == "true")
             .unwrap_or(false);
-        let debug_resource = args_map.get("debug-resource").map(|v| PathBuf::from(v));
+        let debug_resource = args_map.get("debug-resource").map(PathBuf::from);
         let debug_entry = args_map.get("debug-entry").map(|v| v.to_string());
 
         Self {
@@ -235,7 +249,7 @@ impl NivaLaunchInfo {
         arguments: NivaArguments,
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
-        let content = resource_manager.read("niva.json".to_string())?;
+        let content = resource_manager.load("niva.json".to_string())?;
         let options: NivaOptions = serde_json::from_slice(&content)?;
 
         let name = options.name.clone();
@@ -247,7 +261,7 @@ impl NivaLaunchInfo {
         let data_dir = base_dirs.data_dir().join(&id_name);
         let cache_dir = base_dirs.cache_dir().join(&id_name);
 
-        return Ok(NivaLaunchInfo {
+        Ok(NivaLaunchInfo {
             name,
             uuid,
             id_name,
@@ -256,6 +270,6 @@ impl NivaLaunchInfo {
             temp_dir,
             options,
             arguments,
-        });
+        })
     }
 }

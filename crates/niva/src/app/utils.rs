@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+
 use std::sync::{Arc, Mutex};
 
 pub type ArcMut<T> = Arc<Mutex<T>>;
@@ -32,5 +32,22 @@ macro_rules! unsafe_impl_sync_send {
     ($type:ty) => {
         unsafe impl Send for $type {}
         unsafe impl Sync for $type {}
+    };
+}
+
+
+#[macro_export]
+macro_rules! set_property_some {
+    ($builder:ident, $property:ident, $value:expr) => {
+        if let Some(value) = $value.clone() {
+            $builder = $builder.$property(value);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! set_property {
+    ($builder:ident, $property:ident, $value:expr) => {
+        $builder = $builder.$property($value);
     };
 }

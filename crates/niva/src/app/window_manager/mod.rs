@@ -1,5 +1,6 @@
-pub mod niva_window;
+pub mod window;
 pub mod options;
+mod builder;
 
 use anyhow::{anyhow, Result};
 use serde::Serialize;
@@ -10,7 +11,7 @@ use wry::webview::WebContext;
 
 use crate::unsafe_impl_sync_send;
 
-use self::{niva_window::NivaWindow, options::NivaWindowOptions};
+use self::{window::NivaWindow, options::NivaWindowOptions};
 use super::{utils::{Counter, ArcMut, arc_mut}, NivaLaunchInfo, NivaApp, NivaId, NivaWindowTarget};
 
 unsafe_impl_sync_send!(WindowManager);

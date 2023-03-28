@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::niva_app::options::MenuOptions;
+use crate::app::options::MenuOptions;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 pub struct Size(pub f64, pub f64);
@@ -7,11 +7,13 @@ pub struct Size(pub f64, pub f64);
 #[derive(Deserialize, Debug, Clone, Copy)]
 pub struct Position(pub f64, pub f64);
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct NivaWindowOptions {
     pub entry: Option<String>,
     pub parent: Option<u32>,
+    pub devtools: Option<bool>,
 
     pub title: Option<String>,
     pub icon: Option<String>,
@@ -44,33 +46,4 @@ pub struct NivaWindowOptions {
     pub menu: Option<MenuOptions>,
 }
 
-impl Default for NivaWindowOptions {
-    fn default() -> Self {
-        Self {
-            entry: None,
-            parent: None,
-            title: None,
-            icon: None,
-            theme: None,
-            size: None,
-            min_size: None,
-            max_size: None,
-            position: None,
-            resizable: None,
-            minimizable: None,
-            maximizable: None,
-            closable: None,
-            fullscreen: None,
-            maximized: None,
-            visible: None,
-            transparent: None,
-            decorations: None,
-            always_on_top: None,
-            always_on_bottom: None,
-            visible_on_all_workspaces: None,
-            focused: None,
-            content_protection: None,
-            menu: None,
-        }
-    }
-}
+
