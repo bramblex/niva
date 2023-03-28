@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use super::window_manager::options::NivaWindowOptions;
+use super::{window_manager::options::NivaWindowOptions, NivaId};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +16,7 @@ pub struct NivaOptions {
     // app options
     pub activation: Option<NivaActivationPolicy>, // (MacOS Only)Activation policy of the application.
     pub tray: Option<NivaTrayOptions>,
+    pub shortcuts: Option<ShortcutsOptions>,
     pub workers: Option<u32>,
 }
 
@@ -47,3 +48,7 @@ pub struct NivaTrayOptions {
     pub tooltip: Option<String>,
     pub menu: Option<MenuOptions>,
 }
+
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ShortcutsOptions(pub Vec<(String, u16)>);

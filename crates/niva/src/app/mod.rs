@@ -3,10 +3,10 @@ mod api_manager;
 mod event_handler;
 mod options;
 mod resource_manager;
+mod shortcut_manager;
 mod tray;
 mod utils;
 mod window_manager;
-mod shortcut_manager;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -32,7 +32,7 @@ use self::{
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     tray::NivaTray,
     utils::{arc, ArcMut},
-    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager},
+    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager}, shortcut_manager::NivaShortcutManager,
 };
 
 pub type NivaId = u32;
@@ -125,14 +125,6 @@ impl NivaApp {
             .map_err(|_| anyhow!("Failed to lock api manager"))?
             .bind_app(app.clone());
 
-
-        // build tray
-        let tray_options = app.launch_info.options.tray.clone();
-        let _tray = match tray_options {
-            Some(tray_options) => Some(NivaTray::build(&app, &tray_options, &event_loop)),
-            None => None,
-        };
-
         Ok(app)
     }
 
@@ -186,6 +178,24 @@ impl NivaApp {
         // create niva main window to launch application.
         let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
         let main_window = self.open_window(options, &event_loop)?;
+
+        // build tray
+        let tray_options = self.launch_info.options.tray.clone();
+        let _tray = match tray_options {
+            Some(tray_options) => Some(NivaTray::build(&self, &tray_options, &event_loop)),
+            None => None,
+        };
+
+        // build shortcuts
+        let shortcuts_options = self.launch_info.options.shortcuts.clone();
+        let _shortcuts = match shortcuts_options {
+            Some(shortcuts_options) => Some(NivaShortcutManager::build(
+                &shortcuts_options,
+                &event_loop,
+            )),
+            None => None,
+        };
+
 
         let event_handler = EventHandler::new(self, main_window);
         event_loop.run(move |event, target, control_flow| {

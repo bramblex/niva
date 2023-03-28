@@ -1,5 +1,5 @@
 
-#[cfg(target = "windows")]
+#[cfg(target_os = "windows")]
 mod win_utils;
 
 mod image_utils;

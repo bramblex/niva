@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use serde_json::json;
 use tao::{
     event::{Event, TrayEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoopWindowTarget},
+    event_loop::{ControlFlow, EventLoopWindowTarget}, accelerator::AcceleratorId,
 };
 
 use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
@@ -111,6 +111,9 @@ impl EventHandler {
                 _ => (),
             },
 
+            Event::GlobalShortcutEvent(AcceleratorId(id)) => {
+                self.main_window.send_ipc_event("shortcut.emit", id);
+            }
             Event::UserEvent(callback) => {
                 let result = callback(target, control_flow);
                 match result {
