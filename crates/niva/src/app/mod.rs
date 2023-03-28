@@ -7,6 +7,7 @@ mod shortcut_manager;
 mod tray;
 mod utils;
 mod window_manager;
+mod menu;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;

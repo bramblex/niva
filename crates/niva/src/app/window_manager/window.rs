@@ -77,6 +77,12 @@ impl NivaWindow {
         self.set_menu(NivaBuilder::build_menu(&self.options.menu));
     }
 
+    pub fn update_menu() {
+    }
+
+    pub fn get_current_menu() {
+    }
+
     pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(
         self: &Arc<Self>,
         f: F,

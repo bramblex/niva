@@ -1616,7 +1616,6 @@ dependencies = [
  "directories",
  "flate2",
  "fs_extra",
- "jpeg-decoder",
  "mime_guess",
  "native-tls",
  "opener",
