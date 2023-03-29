@@ -3,8 +3,9 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use serde_json::json;
 use tao::{
+    accelerator::AcceleratorId,
     event::{Event, TrayEvent, WindowEvent},
-    event_loop::{ControlFlow, EventLoopWindowTarget}, accelerator::AcceleratorId,
+    event_loop::{ControlFlow, EventLoopWindowTarget},
 };
 
 use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
@@ -34,7 +35,10 @@ impl EventHandler {
             Event::WindowEvent {
                 event, window_id, ..
             } => {
-                let window = self.app.get_window_inner(window_id);
+                let window = self
+                    .app
+                    .window()
+                    .and_then(|w| w.get_window_inner(window_id));
                 if window.is_err() {
                     return;
                 }
@@ -74,7 +78,9 @@ impl EventHandler {
                         if window.id == 0 {
                             *control_flow = ControlFlow::Exit;
                         } else {
-                            self.app.close_window(window.id);
+                            self.app
+                                .window()
+                                .and_then(|mut w| w.close_window(window.id));
                         }
                     }
                     _ => (),
@@ -84,9 +90,14 @@ impl EventHandler {
             Event::MenuEvent {
                 menu_id, window_id, ..
             } => {
-                let window = window_id
-                    .ok_or(anyhow!("Window id not founc."))
-                    .and_then(|window_id| self.app.get_window_inner(window_id));
+                let window =
+                    window_id
+                        .ok_or(anyhow!("Window id not founc."))
+                        .and_then(|window_id| {
+                            self.app
+                                .window()
+                                .and_then(|w| w.get_window_inner(window_id))
+                        });
 
                 match window {
                     Ok(window) => {
@@ -98,15 +109,18 @@ impl EventHandler {
                 }
             }
 
-            Event::TrayEvent { event, .. } => match event {
+            Event::TrayEvent { id, event, .. } => match event {
                 TrayEvent::RightClick => {
-                    self.main_window.send_ipc_event("tray.rightClicked", json!(null));
+                    self.main_window
+                        .send_ipc_event("tray.rightClicked", json!(id.0));
                 }
                 TrayEvent::LeftClick => {
-                    self.main_window.send_ipc_event("tray.leftClicked", json!(null));
+                    self.main_window
+                        .send_ipc_event("tray.leftClicked", json!(id.0));
                 }
                 TrayEvent::DoubleClick => {
-                    self.main_window.send_ipc_event("tray.doubleClicked", json!(null));
+                    self.main_window
+                        .send_ipc_event("tray.doubleClicked", json!(id.0));
                 }
                 _ => (),
             },

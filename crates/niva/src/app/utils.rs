@@ -1,4 +1,3 @@
-
 use std::sync::{Arc, Mutex};
 
 pub type ArcMut<T> = Arc<Mutex<T>>;
@@ -11,16 +10,28 @@ pub fn arc_mut<T>(t: T) -> ArcMut<T> {
     Arc::new(Mutex::new(t))
 }
 
-pub struct Counter {
-    next_id: u32,
+pub struct Counter<T> {
+    next_id: T,
 }
 
-impl Counter {
+impl Counter<u32> {
     pub fn new(start: u32) -> Self {
         Self { next_id: start }
     }
 
     pub fn next(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+}
+
+impl Counter<u16> {
+    pub fn new(start: u16) -> Self {
+        Self { next_id: start }
+    }
+
+    pub fn next(&mut self) -> u16 {
         let id = self.next_id;
         self.next_id += 1;
         id
@@ -35,7 +46,6 @@ macro_rules! unsafe_impl_sync_send {
     };
 }
 
-
 #[macro_export]
 macro_rules! set_property_some {
     ($builder:ident, $property:ident, $value:expr) => {
@@ -49,5 +59,21 @@ macro_rules! set_property_some {
 macro_rules! set_property {
     ($builder:ident, $property:ident, $value:expr) => {
         $builder = $builder.$property($value);
+    };
+}
+
+#[macro_export]
+macro_rules! lock {
+    ($value:expr) => {
+        $value
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock {}.", stringify!($value)))?
+    };
+}
+
+#[macro_export]
+macro_rules! lock_force {
+    ($value:expr) => {
+        $value.lock().unwrap()
     };
 }

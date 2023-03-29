@@ -14,7 +14,7 @@ use wry::{
 };
 
 use crate::{
-    app::{utils::arc, NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget},
+    app::{utils::{arc, ArcMut}, NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget},
     unsafe_impl_sync_send,
 };
 
@@ -40,7 +40,6 @@ pub struct NivaWindow {
     pub window_id: WindowId,
     pub webview: WebView,
     pub options: NivaWindowOptions,
-
     event_loop_proxy: NivaEventLoopProxy,
 }
 
@@ -78,9 +77,6 @@ impl NivaWindow {
     }
 
     pub fn update_menu() {
-    }
-
-    pub fn get_current_menu() {
     }
 
     pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(

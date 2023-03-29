@@ -25,7 +25,7 @@ fn register(
     _: &mut ControlFlow,
 ) -> Result<()> {
     let (id, accelerator_str) = request.args().get::<(u16, String)>()?;
-    app.register_shortcut(id, accelerator_str)
+    app.shortcut()?.register(id, accelerator_str)
 }
 
 fn unregister(
@@ -36,7 +36,7 @@ fn unregister(
     _: &mut ControlFlow,
 ) -> Result<()> {
     let id = request.args().single::<u16>()?;
-    app.unregister_shortcut(id)
+    app.shortcut()?.unregister(id)
 }
 
 fn unregister_all(
@@ -46,7 +46,7 @@ fn unregister_all(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<()> {
-    app.unregister_all_shortcuts()
+    app.shortcut()?.unregister_all()
 }
 
 fn list(
@@ -56,5 +56,5 @@ fn list(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<Vec<(u16, String)>> {
-    app.list_shortcuts()
+    app.shortcut()?.list()
 }

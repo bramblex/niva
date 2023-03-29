@@ -1,5 +1,8 @@
+use super::{
+    shortcut_manager::ShortcutsOptions, tray_manager::NivaTrayOptions,
+    window_manager::options::NivaWindowOptions, NivaId,
+};
 use serde::Deserialize;
-use super::{window_manager::options::NivaWindowOptions, NivaId};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -40,15 +43,3 @@ pub enum MenuItemOptions {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct MenuOptions(pub Vec<MenuItemOptions>);
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct NivaTrayOptions {
-    pub icon: String,
-    pub title: Option<String>,
-    pub tooltip: Option<String>,
-    pub menu: Option<MenuOptions>,
-}
-
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct ShortcutsOptions(pub Vec<(String, u16)>);

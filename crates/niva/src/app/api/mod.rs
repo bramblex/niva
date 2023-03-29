@@ -10,6 +10,7 @@ mod resource;
 mod shortcut;
 mod webview;
 mod window;
+mod tray;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);
@@ -22,4 +23,5 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     resource::register_apis(api_manager);
     clipboard::register_api_instances(api_manager);
     shortcut::register_api_instances(api_manager);
+    tray::register_api_instances(api_manager);
 }

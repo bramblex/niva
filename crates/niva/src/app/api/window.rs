@@ -27,7 +27,7 @@ fn open(
     let (options,) = request
         .args()
         .optional::<(Option<NivaWindowOptions>,)>(1)?;
-    let new_window = app.open_window(&options.unwrap_or_default(), target)?;
+    let new_window = app.window()?.open_window(&options.unwrap_or_default(), target)?;
     Ok(new_window.id)
 }
 
@@ -46,7 +46,7 @@ fn close(
         return Ok(());
     }
 
-    app.close_window(id)
+    app.window()?.close_window(id)
 }
 
 fn send_message(
@@ -55,7 +55,7 @@ fn send_message(
     request: ApiRequest,
 ) -> Result<()> {
     let (id, message) = request.args().get::<(NivaId, String)>()?;
-    let remote = app.get_window(id)?;
+    let remote = app.window()?.get_window(id)?;
     remote.send_ipc_event("window.message", json!({
         "from": window.id,
         "message": message,

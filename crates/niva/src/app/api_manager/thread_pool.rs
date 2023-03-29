@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use crate::app::utils::{arc_mut, ArcMut};
+use crate::{app::utils::{arc_mut, ArcMut}, lock_force};
 
 type Task = Box<dyn FnOnce() -> Result<()> + Send + 'static>;
 
@@ -41,7 +41,7 @@ impl ThreadPool {
     fn create_worker(receiver: ArcMut<Receiver<Task>>) -> thread::JoinHandle<()> {
         std::thread::spawn(move || {
             loop {
-                let job = receiver.lock().unwrap().recv();
+                let job = lock_force!(receiver).recv();
                 // unlock receiver before job start
                 if let Ok(job) = job {
                     match job() {

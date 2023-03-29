@@ -210,7 +210,7 @@ impl NivaBuilder {
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 
-        let resource_manager = app.resource_manager.clone();
+        let resource_manager = app._resource.clone();
         builder = builder.with_custom_protocol(protocol.to_string(), move |request| {
             let mut path = request.uri().path().to_string();
             if path.ends_with('/') {
@@ -239,7 +239,9 @@ impl NivaBuilder {
 
         let drop_app = app.clone();
         set_property!(builder, with_file_drop_handler, move |window, event| {
-            let window_result = drop_app.get_window_inner(window.id());
+            let window_result = drop_app
+                .window()
+                .and_then(|w| w.get_window_inner(window.id()));
             match window_result {
                 Ok(window) => match event {
                     FileDropEvent::Hovered { paths, position } => {
@@ -274,8 +276,10 @@ impl NivaBuilder {
 
         let ipc_app = app.clone();
         set_property!(builder, with_ipc_handler, move |window, request_str| {
-            if let Err(err) = ipc_app.call_api(window, request_str) {
-                let window = ipc_app.get_window_inner(window.id());
+            if let Err(err) = ipc_app.api().and_then(|w| w.call(window, request_str)) {
+                let window = ipc_app
+                    .window()
+                    .and_then(|w| w.get_window_inner(window.id()));
                 if let Ok(window) = window {
                     window.send_ipc_callback(json!({
                         "ipc.error": err.to_string(),

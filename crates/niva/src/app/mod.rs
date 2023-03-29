@@ -1,13 +1,13 @@
 mod api;
 mod api_manager;
 mod event_handler;
+mod menu;
 mod options;
 mod resource_manager;
 mod shortcut_manager;
-mod tray;
+mod tray_manager;
 mod utils;
 mod window_manager;
-mod menu;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -17,13 +17,16 @@ use std::{
     ops::Deref,
     path::PathBuf,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, MutexGuard},
 };
 
 use tao::{
     event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
+    global_shortcut::ShortcutManager,
     window::{Window, WindowId},
 };
+
+use crate::{lock, lock_force};
 
 use self::{
     api::register_api_instances,
@@ -32,7 +35,7 @@ use self::{
     options::{NivaActivationPolicy, NivaOptions},
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
-    tray::NivaTray,
+    tray_manager::NivaTrayManager,
     utils::{arc, ArcMut},
     window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager},
 };
@@ -67,10 +70,12 @@ impl Deref for NivaEvent {
 
 pub struct NivaApp {
     launch_info: NivaLaunchInfo, // NivaApp launch info, contains this command line arguments and niva.json project options.
-    resource_manager: Arc<dyn ResourceManager>,
-    window_manager: ArcMut<WindowManager>, // Window manager.
-    api_manager: ArcMut<ApiManager>,
-    shortcut_manager: ArcMut<NivaShortcutManager>,
+
+    _resource: Arc<dyn ResourceManager>,
+    _window: ArcMut<WindowManager>, // Window manager.
+    _api: ArcMut<ApiManager>,
+    _shortcut: ArcMut<NivaShortcutManager>,
+    _tray: ArcMut<NivaTrayManager>,
 
     event_loop_proxy: EventLoopProxy<NivaEvent>, // Event loop proxy.
 }
@@ -102,9 +107,7 @@ impl NivaApp {
         // create api manager and register api instances
         let api_manager = ApiManager::new(&launch_info.options);
         {
-            let mut api_manager = api_manager
-                .lock()
-                .map_err(|_| anyhow!("Failed to lock api manager"))?;
+            let mut api_manager = lock!(api_manager);
             register_api_instances(&mut api_manager);
         }
 
@@ -114,113 +117,64 @@ impl NivaApp {
         let shortcut_manager =
             NivaShortcutManager::new(&launch_info.options.shortcuts, &event_loop);
 
+        let tray_manager = NivaTrayManager::new();
+
         let app = Arc::new(NivaApp {
             launch_info,
-            resource_manager,
-            window_manager: window_manager.clone(),
-            api_manager: api_manager.clone(),
-            shortcut_manager,
+            _resource: resource_manager,
+            _window: window_manager.clone(),
+            _api: api_manager.clone(),
+            _shortcut: shortcut_manager,
+            _tray: tray_manager.clone(),
+
             event_loop_proxy: event_loop.create_proxy(),
         });
 
         // bind app to window manager
-        window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .bind_app(app.clone());
-        api_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock api manager"))?
-            .bind_app(app.clone());
+        lock!(window_manager).bind_app(app.clone());
+        lock!(api_manager).bind_app(app.clone());
+        lock!(tray_manager).bind_app(app.clone());
 
         Ok(app)
     }
 
-    pub fn open_window(
-        self: &Arc<NivaApp>,
-        options: &NivaWindowOptions,
-        target: &NivaWindowTarget,
-    ) -> Result<Arc<NivaWindow>> {
-        self.window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .open_window(options, target)
+    pub fn launch_info<'a>(self: &'a Arc<Self>) -> &'a NivaLaunchInfo {
+        &self.launch_info
     }
 
-    pub fn get_window(self: &Arc<NivaApp>, id: NivaId) -> Result<Arc<NivaWindow>> {
-        self.window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .get_window(id)
+    pub fn resource<'a>(self: &'a Arc<Self>) -> &'a Arc<dyn ResourceManager> {
+        &self._resource
     }
 
-    pub fn get_window_inner(self: &Arc<NivaApp>, window_id: WindowId) -> Result<Arc<NivaWindow>> {
-        self.window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .get_window_inner(window_id)
+    pub fn window<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, WindowManager>> {
+        Ok(lock_force!(self._window))
     }
 
-    pub fn close_window(self: &Arc<NivaApp>, id: NivaId) -> Result<()> {
-        self.window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .close_window(id)
+    pub fn api<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, ApiManager>> {
+        Ok(lock_force!(self._api))
     }
 
-    pub fn register_shortcut(self: &Arc<NivaApp>, id: u16, accelerator_str: String) -> Result<()> {
-        self.shortcut_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
-            .register(id, accelerator_str)
+    pub fn shortcut<'a>(
+        self: &'a Arc<Self>,
+    ) -> Result<MutexGuard<'a, NivaShortcutManager>> {
+        Ok(lock_force!(self._shortcut))
     }
 
-    pub fn unregister_shortcut(self: &Arc<NivaApp>, id: u16) -> Result<()> {
-        self.shortcut_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
-            .unregister(id)
-    }
-
-    pub fn unregister_all_shortcuts(self: &Arc<NivaApp>) -> Result<()> {
-        self.shortcut_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
-            .unregister_all()
-    }
-
-    pub fn list_shortcuts(self: &Arc<NivaApp>) -> Result<Vec<(u16, String)>> {
-        self.shortcut_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock shortcuts manager"))?
-            .list()
-    }
-
-    pub fn close_window_inner(self: &Arc<NivaApp>, window_id: WindowId) -> Result<()> {
-        self.window_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock window manager"))?
-            .close_window_inner(window_id)
-    }
-
-    pub fn call_api(self: &Arc<NivaApp>, window: &Window, request_str: String) -> Result<()> {
-        self.api_manager
-            .lock()
-            .map_err(|_| anyhow!("Failed to lock api manager"))?
-            .call(window, request_str)
+    pub fn tray<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaTrayManager>> {
+        Ok(lock_force!(self._tray))
     }
 
     pub fn run(self: Arc<NivaApp>, event_loop: NivaEventLoop) -> Result<()> {
         // create niva main window to launch application.
-        let options: &NivaWindowOptions = &self.clone().launch_info.options.window;
-        let main_window = self.open_window(options, &event_loop)?;
+        let main_window_options: &NivaWindowOptions = &self.clone().launch_info.options.window;
+        let main_window = self
+            .window()?
+            .open_window(main_window_options, &event_loop)?;
 
-        // build tray
         let tray_options = &self.launch_info.options.tray.clone();
-        let _tray = match tray_options {
-            Some(tray_options) => Some(NivaTray::build(&self, &tray_options, &event_loop)),
-            None => None,
-        };
+        if let Some(options) = tray_options {
+            &self.tray()?.create(options, &event_loop)?;
+        }
 
         let event_handler = EventHandler::new(self, main_window);
         event_loop.run(move |event, target, control_flow| {

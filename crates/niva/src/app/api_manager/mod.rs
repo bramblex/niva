@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use wry::application::{event_loop::ControlFlow, window::Window};
 
-use crate::unsafe_impl_sync_send;
+use crate::{unsafe_impl_sync_send, lock_force};
 
 use self::thread_pool::ThreadPool;
 
@@ -102,7 +102,7 @@ impl ApiManager {
     ) {
         let thread_pool = self.thread_pool.clone();
         let api_instance: ApiInstance = Box::pin(move |app, window, request| {
-            thread_pool.lock().unwrap().run(move || {
+            lock_force!(thread_pool).run(move || {
                 let result = api_func(app.clone(), window.clone(), request.clone());
                 let response = match result {
                     Ok(data) => request.ok(data),
@@ -163,7 +163,7 @@ impl ApiManager {
 
     pub fn call(&self, _window: &Window, request_str: String) -> Result<()> {
         let app = self.app.clone().ok_or(anyhow!("app not set"))?;
-        let window = app.get_window_inner(_window.id())?;
+        let window = app.window()?.get_window_inner(_window.id())?;
 
         let request = serde_json::from_str::<ApiRequest>(&request_str)?;
 

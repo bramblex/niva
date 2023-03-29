@@ -18,7 +18,7 @@ unsafe_impl_sync_send!(WindowManager);
 pub struct WindowManager {
     app: Option<Arc<NivaApp>>,
 
-    id_counter: Counter,
+    id_counter: Counter<u32>,
     web_context: WebContext,
     windows: HashMap<NivaId, Arc<NivaWindow>>,
     id_map: HashMap<WindowId, NivaId>,
@@ -28,7 +28,7 @@ impl WindowManager {
     pub fn new(launch_info: &NivaLaunchInfo) -> ArcMut<Self> {
         arc_mut(Self {
             app: None,
-            id_counter: Counter::new(0),
+            id_counter: Counter::<u32>::new(0),
             web_context: WebContext::new(Some(launch_info.data_dir.clone())),
             windows: HashMap::new(),
             id_map: HashMap::new(),

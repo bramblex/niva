@@ -1,16 +1,19 @@
 use crate::unsafe_impl_sync_send;
 
 use super::{
-    options::ShortcutsOptions,
     utils::{arc, arc_mut, ArcMut, Counter},
     NivaEventLoop, NivaId,
 };
 use anyhow::{anyhow, Result};
+use serde::Deserialize;
 use std::{collections::HashMap, hash::Hash, result, str::FromStr, sync::Arc};
 use tao::{
     accelerator::{Accelerator, AcceleratorId},
     global_shortcut::{GlobalShortcut, ShortcutManager},
 };
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ShortcutsOptions(pub Vec<(String, u16)>);
 
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
