@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tao::{
     event_loop::ControlFlow,
-    window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
+    window::{CursorIcon, Fullscreen, Theme, UserAttentionType}, monitor::MonitorHandle,
 };
 
 use crate::app::{
@@ -19,15 +19,23 @@ use crate::app::{
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api(
-        "monitor.current",
-        |_, window, request| -> Result<Value> {
-            Ok(json!(null))
-            // let (options,) = request.args().optional::<(Option<NivaWindowOptions>,)>(1)?;
-            // let new_window = app
-            //     .window()?
-            //     .open_window(&options.unwrap_or_default(), target)?;
-            // Ok(new_window.id)
+        "monitor.list",
+        |_, window, request| -> Result<Vec<Value>> {
+            Ok(vec![])
         },
     );
 
+    api_manager.register_api(
+        "monitor.current",
+        |_, window, request| -> Result<Vec<Value>> {
+            Ok(vec![])
+        },
+    );
+
+    api_manager.register_api(
+        "monitor.primary",
+        |_, window, request| -> Result<Vec<Value>> {
+            Ok(vec![])
+        },
+    );
 }

@@ -16,6 +16,18 @@ use crate::app::{
     NivaApp, NivaId, NivaWindowTarget,
 };
 
+macro_rules! logical {
+    ($window:expr, $method:ident) => {
+        $window.$method().to_logical::<f64>($window.scale_factor())
+    };
+}
+
+macro_rules! logical_try {
+    ($window:expr, $method:ident) => {
+        $window.$method()?.to_logical::<f64>($window.scale_factor())
+    };
+}
+
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api(
         "window.open",
@@ -94,11 +106,11 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.innerPosition", |_, window, _| {
-        Ok(window.inner_position()?)
+        Ok(logical_try!(window, inner_position))
     });
 
     api_manager.register_api("window.outerPosition", |_, window, _| {
-        Ok(window.outer_position()?)
+        Ok(logical_try!(window, outer_position))
     });
 
     api_manager.register_api("window.setOuterPosition", |_, window, request| {
@@ -108,7 +120,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.innerSize", |_, window, _| {
-        Ok(window.inner_size())
+        Ok(logical!(window, inner_size))
     });
 
     api_manager.register_api("window.setInnerSize", |_, window, request| {
@@ -117,7 +129,9 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
         Ok(())
     });
 
-    api_manager.register_api("window.outerSize", |_, window, _| Ok(window.outer_size()));
+    api_manager.register_api("window.outerSize", |_, window, _| {
+        Ok(logical!(window, outer_size))
+    });
 
     api_manager.register_api("window.setMinInnerSize", |_, window, request| {
         let size = request.args().single::<NivaSize>()?;
@@ -307,7 +321,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("cursorPosition", |_, window, _| {
-        Ok(window.cursor_position()?)
+        Ok(logical_try!(window, cursor_position))
     });
 
     api_manager.register_api("window.setCursorPosition", |_, window, request| {
