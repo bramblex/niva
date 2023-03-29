@@ -3,7 +3,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
-use crate::app::{api_manager::{ApiManager, ApiRequest}, NivaApp, window_manager::window::NivaWindow};
+use crate::{
+    app::{
+        api_manager::{ApiManager, ApiRequest},
+        window_manager::window::NivaWindow,
+        NivaApp,
+    },
+    args_match, opts_match,
+};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("http.request", request);
@@ -23,7 +30,8 @@ struct RequestOptions {
 }
 
 fn _request(options: RequestOptions) -> Result<Value> {
-    let mut agent_builder = ureq::AgentBuilder::new().tls_connector(Arc::new(native_tls::TlsConnector::new()?));
+    let mut agent_builder =
+        ureq::AgentBuilder::new().tls_connector(Arc::new(native_tls::TlsConnector::new()?));
 
     if let Some(proxy) = options.proxy {
         let proxy = ureq::Proxy::new(proxy)?;
@@ -65,14 +73,12 @@ fn _request(options: RequestOptions) -> Result<Value> {
 }
 
 fn request(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    let options = request.args().single::<RequestOptions>()?;
+    args_match!(request, options: RequestOptions);
     _request(options)
 }
 
 fn get(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    let (url, headers) = request
-        .args()
-        .optional::<(String, Option<Headers>)>(2)?;
+    opts_match!(request, url: String, headers: Option<Headers>);
     _request(RequestOptions {
         method: "GET".to_string(),
         url,
@@ -83,9 +89,7 @@ fn get(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value
 }
 
 fn post(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    let (url, body, headers) = request
-        .args()
-        .optional::<(String, String, Option<Headers>)>(3)?;
+    opts_match!(request, url: String, body: String, headers: Option<Headers>);
     _request(RequestOptions {
         method: "POST".to_string(),
         url,

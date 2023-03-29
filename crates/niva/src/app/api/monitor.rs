@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 
 use tao::monitor::MonitorHandle;
 
-use crate::{app::api_manager::ApiManager, logical};
+use crate::{app::api_manager::ApiManager, logical, args_match};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("monitor.list", |_, window, _| -> Result<Vec<Value>> {
@@ -25,7 +25,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("monitor.fromPoint", |_, window, request| -> Result<Value> {
-        let (x, y) = request.args().get::<(f64, f64)>()?;
+        args_match!(request, x: f64, y: f64);
         match window.monitor_from_point(x, y) {
             Some(monitor) => Ok(monitor_to_value(monitor)),
             None => Ok(json!(null)),

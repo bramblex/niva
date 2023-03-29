@@ -22,9 +22,9 @@ use super::{
 pub struct ApiArguments(Value);
 
 impl ApiArguments {
-    pub fn single<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
-        Ok(serde_json::from_value::<(T,)>(self.0.clone())?.0)
-    }
+    // pub fn single<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
+    //     Ok(serde_json::from_value::<(T,)>(self.0.clone())?.0)
+    // }
 
     pub fn get<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         Ok(serde_json::from_value(self.0.clone())?)

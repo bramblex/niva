@@ -3,12 +3,12 @@ use anyhow::Result;
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
-use crate::app::{
+use crate::{app::{
     api_manager::{ApiManager, ApiRequest},
     tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
     window_manager::window::NivaWindow,
     NivaApp, NivaWindowTarget,
-};
+}, args_match};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("tray.create", create);
@@ -25,7 +25,7 @@ fn create(
     target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<u16> {
-    let options = request.args().single::<NivaTrayOptions>()?;
+    args_match!(request, options: NivaTrayOptions);
     let id = app.tray()?.create(&options, target)?;
     Ok(id)
 }
@@ -37,7 +37,7 @@ fn destroy(
     _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
-    let id = request.args().single::<u16>()?;
+    args_match!(request, id: u16);
     app.tray()?.destroy(id)?;
     Ok(())
 }
@@ -70,7 +70,7 @@ fn update(
     _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
-    let (id, options) = request.args().get::<(u16, NivaTrayUpdateOptions)>()?;
+    args_match!(request, id: u16, options: NivaTrayUpdateOptions);
     app.tray()?.update(id, &options)?;
     Ok(())
 }

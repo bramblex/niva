@@ -3,11 +3,11 @@ use anyhow::Result;
 use std::sync::Arc;
 use tao::{clipboard::Clipboard, event_loop::ControlFlow};
 
-use crate::app::{
+use crate::{app::{
     api_manager::{ApiManager, ApiRequest},
     window_manager::window::NivaWindow,
     NivaApp, NivaWindowTarget,
-};
+}, args_match};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("clipboard.read", read);
@@ -31,7 +31,7 @@ fn write(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<()> {
-    let text = request.args().single::<String>()?;
+    args_match!(request, text: String);
     Clipboard::new().write_text(text);
     Ok(())
 }

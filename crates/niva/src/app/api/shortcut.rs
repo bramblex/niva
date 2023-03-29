@@ -3,11 +3,11 @@ use anyhow::Result;
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
-use crate::app::{
+use crate::{app::{
     api_manager::{ApiManager, ApiRequest},
     window_manager::window::NivaWindow,
     NivaApp, NivaWindowTarget,
-};
+}, args_match};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("shortcut.register", register);
@@ -23,7 +23,7 @@ fn register(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<()> {
-    let (id, accelerator_str) = request.args().get::<(u16, String)>()?;
+    args_match!(request, id: u16, accelerator_str: String);
     app.shortcut()?.register(id, accelerator_str)
 }
 
@@ -34,7 +34,7 @@ fn unregister(
     _: &NivaWindowTarget,
     _: &mut ControlFlow,
 ) -> Result<()> {
-    let id = request.args().single::<u16>()?;
+    args_match!(request, id: u16);
     app.shortcut()?.unregister(id)
 }
 

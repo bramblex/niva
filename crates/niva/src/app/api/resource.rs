@@ -2,11 +2,11 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::app::{
+use crate::{app::{
     api_manager::{ApiManager, ApiRequest},
     window_manager::window::NivaWindow,
     NivaApp,
-};
+}, args_match, opts_match};
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_async_api("resource.exists", exists);
@@ -15,7 +15,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
 }
 
 fn exists(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<bool> {
-    let path = request.args().single::<String>()?;
+    args_match!(request, path: String);
     Ok(app.resource.exists(path))
 }
 
@@ -28,7 +28,7 @@ enum EncodeType {
 }
 
 fn read(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
-    let (path, encode) = request.args().optional::<(String, Option<EncodeType>)>(2)?;
+    opts_match!(request, path: String, encode: Option<EncodeType>);
 
     let encode = encode.unwrap_or(EncodeType::UTF8);
     let content = app.resource.load(path)?;
@@ -41,7 +41,8 @@ fn read(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<St
 }
 
 fn extract(env: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let (from, to) = request.args().get::<(String, String)>()?;
+    args_match!(request, from: String, to: String);
+
     let content = env.resource.load(from)?;
     std::fs::write(to, content)?;
     Ok(())

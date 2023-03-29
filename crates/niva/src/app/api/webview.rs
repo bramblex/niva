@@ -14,7 +14,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("webview.isDevtoolsOpen", is_devtools_open);
     api_manager.register_event_api("webview.openDevtools", open_devtools);
     api_manager.register_event_api("webview.closeDevtools", close_devtools);
-    api_manager.register_event_api("webview.setBackgroundColor", set_background_color);
+    // api_manager.register_event_api("webview.setBackgroundColor", set_background_color);
 }
 
 fn is_devtools_open(
@@ -49,14 +49,14 @@ fn close_devtools(
     Ok(())
 }
 
-fn set_background_color(
-    _app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
-    request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<()> {
-    let color = request.args().single::<(u8, u8, u8, u8)>()?;
-    window.webview.set_background_color(color)?;
-    Ok(())
-}
+// fn set_background_color(
+//     _app: Arc<NivaApp>,
+//     window: Arc<NivaWindow>,
+//     request: ApiRequest,
+//     _target: &NivaWindowTarget,
+//     _control_flow: &mut ControlFlow,
+// ) -> Result<()> {
+//     let color = request.args().single::<(u8, u8, u8, u8)>()?;
+//     window.webview.set_background_color(color)?;
+//     Ok(())
+// }

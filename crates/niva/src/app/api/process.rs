@@ -1,10 +1,10 @@
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
-use crate::app::{
+use crate::{app::{
     api_manager::{ApiManager, ApiRequest},
     window_manager::window::NivaWindow,
     NivaApp, NivaWindowTarget,
-};
+}, args_match, opts_match};
 use anyhow::{Ok, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -47,7 +47,7 @@ fn args(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
 }
 
 fn set_current_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let path = request.args().single::<String>()?;
+    args_match!(request, path: String);
     std::env::set_current_dir(path)?;
     Ok(())
 }
@@ -72,9 +72,7 @@ struct ExecOptions {
 }
 
 fn exec(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    let (cmd, args, options) = request
-        .args()
-        .optional::<(String, Option<Vec<String>>, Option<ExecOptions>)>(3)?;
+    opts_match!(request, cmd: String, args: Option<Vec<String>>, options: Option<ExecOptions>);
 
     let mut cmd = std::process::Command::new(cmd);
 
@@ -108,7 +106,7 @@ fn exec(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Valu
 }
 
 fn open(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let uri = request.args().single::<String>()?;
+    args_match!(request, uri: String);
     opener::open(uri)?;
     Ok(())
 }

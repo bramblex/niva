@@ -85,6 +85,10 @@ impl WindowManager {
         Ok(())
     }
 
+    pub fn list_windows<'a>(&'a self) -> Vec<&'a Arc<NivaWindow>> {
+        self.windows.values().collect()
+    }
+
     // pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
     //     let id = self
     //         .id_map
