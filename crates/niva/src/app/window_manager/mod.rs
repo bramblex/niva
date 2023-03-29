@@ -1,18 +1,20 @@
-pub mod window;
-pub mod options;
 mod builder;
+pub mod options;
+pub mod window;
 
 use anyhow::{anyhow, Result};
-use serde::Serialize;
-use serde_json::Value;
+
 use std::{collections::HashMap, sync::Arc};
 use tao::window::WindowId;
 use wry::webview::WebContext;
 
 use crate::unsafe_impl_sync_send;
 
-use self::{window::NivaWindow, options::NivaWindowOptions};
-use super::{utils::{Counter, ArcMut, arc_mut}, NivaLaunchInfo, NivaApp, NivaId, NivaWindowTarget};
+use self::{options::NivaWindowOptions, window::NivaWindow};
+use super::{
+    utils::{arc_mut, ArcMut, Counter},
+    NivaApp, NivaId, NivaLaunchInfo, NivaWindowTarget,
+};
 
 unsafe_impl_sync_send!(WindowManager);
 pub struct WindowManager {
@@ -83,21 +85,20 @@ impl WindowManager {
         Ok(())
     }
 
-    pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
-        let id = self
-            .id_map
-            .remove(&window_id)
-            .ok_or(anyhow!("Window not found"))?;
-        self.close_window(id)
-    }
+    // pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
+    //     let id = self
+    //         .id_map
+    //         .remove(&window_id)
+    //         .ok_or(anyhow!("Window not found"))?;
+    //     self.close_window(id)
+    // }
 
-
-    pub fn broadcast<E: Into<String>, P: Serialize>(self: Arc<Self>, event: E, payload: P) {
-        let event: String = event.into();
-        let payload: Value = serde_json::to_value(payload).unwrap();
-        for (_, window) in self.windows.iter() {
-            let window = window.clone();
-            window.send_ipc_event(event.clone(), payload.clone());
-        }
-    }
+    // pub fn broadcast<E: Into<String>, P: Serialize>(self: Arc<Self>, event: E, payload: P) {
+    //     let event: String = event.into();
+    //     let payload: Value = serde_json::to_value(payload).unwrap();
+    //     for (_, window) in self.windows.iter() {
+    //         let window = window.clone();
+    //         log_if_err!(window.send_ipc_event(event.clone(), payload.clone()));
+    //     }
+    // }
 }

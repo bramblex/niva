@@ -4,7 +4,7 @@ use crate::{
         options::{MenuItemOptions, MenuOptions},
         NivaApp, NivaId, NivaWindowTarget,
     },
-    set_property, set_property_some,
+    set_property, set_property_some, log_if_err, log_err,
 };
 use anyhow::Result;
 use serde_json::json;
@@ -242,30 +242,30 @@ impl NivaBuilder {
             match window_result {
                 Ok(window) => match event {
                     FileDropEvent::Hovered { paths, position } => {
-                        window.send_ipc_event(
+                        log_if_err!(window.send_ipc_event(
                             "fileDrop.hovered",
                             json!({
                                 "paths": paths,
                                 "position": (position.x, position.y),
                             }),
-                        );
+                        ));
                     }
                     FileDropEvent::Dropped { paths, position } => {
-                        window.send_ipc_event(
+                        log_if_err!(window.send_ipc_event(
                             "fileDrop.dropped",
                             json!({
                                 "paths": paths,
                                 "position": (position.x, position.y),
                             }),
-                        );
+                        ));
                     }
                     FileDropEvent::Cancelled => {
-                        window.send_ipc_event("fileDrop.cancelled", json!(null));
+                        log_if_err!(window.send_ipc_event("fileDrop.cancelled", json!(null)));
                     }
                     _ => (),
                 },
                 Err(err) => {
-                    println!("Error: {}", err);
+                    log_err!(err);
                 }
             }
             false
@@ -278,9 +278,9 @@ impl NivaBuilder {
                     .window()
                     .and_then(|w| w.get_window_inner(window.id()));
                 if let Ok(window) = window {
-                    window.send_ipc_callback(json!({
+                    log_if_err!(window.send_ipc_callback(json!({
                         "ipc.error": err.to_string(),
-                    }));
+                    })));
                 }
             };
         });

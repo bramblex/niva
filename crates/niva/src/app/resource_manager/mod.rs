@@ -89,33 +89,23 @@ impl AppResourceManager {
             .ok_or(anyhow::anyhow!("Invalid resource directory."))?
             .join("../Resources/");
         let indexes_data = std::fs::read(resources_dir.join("RESOURCE_INDEXES"))?;
-        println!("indexes_data: {:?}", indexes_data.len());
         let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
-        println!("indexes: {:?}", indexes);
         let compressed_data = std::fs::read(resources_dir.join("RESOURCE_DATA"))?;
-        println!("compressed_data: {:?}", compressed_data.len());
         let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
         let mut data = Vec::new();
         decoder.read_to_end(&mut data)?;
-        println!("data: {:?}", data.len());
         Ok(AppResourceManager { indexes, data })
     }
 
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<AppResourceManager> {
         use win_utils::load_resource;
-
-        println!("new resource.");
         let indexes_data = load_resource("RESOURCE_INDEXES")?;
-        println!("indexes_data: {:?}", indexes_data.len());
         let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
-        println!("indexes: {:?}", indexes);
         let compressed_data = load_resource("RESOURCE_DATA")?;
-        println!("compressed_data: {:?}", compressed_data.len());
         let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
         let mut data = Vec::new();
         decoder.read_to_end(&mut data)?;
-        println!("data: {:?}", data.len());
         Ok(AppResourceManager { indexes, data })
     }
 }

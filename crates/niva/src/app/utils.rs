@@ -95,3 +95,26 @@ macro_rules! logical_try {
         $window.$method()?.to_logical::<f64>($window.scale_factor())
     };
 }
+
+#[macro_export]
+macro_rules! log_if_err {
+    ($result:expr) => {
+        if let Err(e) = $result {
+            println!("[Error]: {}", e);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log {
+    ($result:expr) => {
+        println!("[Info]: {}", $result);
+    };
+}
+
+#[macro_export]
+macro_rules! log_err {
+    ($result:expr) => {
+        println!("[Error]: {}", $result);
+    };
+}

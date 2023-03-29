@@ -1,4 +1,4 @@
-use crate::unsafe_impl_sync_send;
+use crate::{unsafe_impl_sync_send, log_if_err};
 
 use super::{
     utils::{arc_mut, ArcMut},
@@ -33,7 +33,7 @@ impl NivaShortcutManager {
 
         if let Some(ShortcutsOptions(options)) = options.clone() {
             for (accelerator_str, id) in options {
-                manager.register(id, accelerator_str);
+                log_if_err!(manager.register(id, accelerator_str));
             }
         }
 

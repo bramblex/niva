@@ -40,7 +40,8 @@ pub type NivaEventLoop = EventLoop<NivaEvent>;
 pub type NivaEventLoopProxy = EventLoopProxy<NivaEvent>;
 pub type NivaWindowTarget = EventLoopWindowTarget<NivaEvent>;
 
-pub struct NivaEvent(Pin<Box<dyn Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send>>);
+pub type NivaCallback = Pin<Box<dyn Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send>>;
+pub struct NivaEvent(NivaCallback);
 
 impl Debug for NivaEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

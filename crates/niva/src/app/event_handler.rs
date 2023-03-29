@@ -8,6 +8,8 @@ use tao::{
     event_loop::{ControlFlow, EventLoopWindowTarget},
 };
 
+use crate::log_if_err;
+
 use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
 
 pub struct EventHandler {
@@ -48,22 +50,22 @@ impl EventHandler {
                     WindowEvent::Focused(focused) => {
                         #[cfg(target_os = "macos")]
                         window.switch_menu();
-                        window.send_ipc_event("window.focused", focused);
+                        log_if_err!(window.send_ipc_event("window.focused", focused));
                     }
                     WindowEvent::ScaleFactorChanged {
                         scale_factor,
                         new_inner_size,
                     } => {
-                        window.send_ipc_event(
+                        log_if_err!(window.send_ipc_event(
                             "window.scaleFactorChanged",
                             json!({
                                 "scaleFactor": scale_factor,
                                 "newInnerSize": new_inner_size
                             }),
-                        );
+                        ));
                     }
                     WindowEvent::ThemeChanged(theme) => {
-                        window.send_ipc_event(
+                        log_if_err!(window.send_ipc_event(
                             "window.themeChanged",
                             json!({
                                 "theme": match theme {
@@ -72,15 +74,16 @@ impl EventHandler {
                                     _ => "",
                                 }
                             }),
-                        );
+                        ));
                     }
                     WindowEvent::CloseRequested => {
                         if window.id == 0 {
                             *control_flow = ControlFlow::Exit;
                         } else {
-                            self.app
+                            log_if_err!(self
+                                .app
                                 .window()
-                                .and_then(|mut w| w.close_window(window.id));
+                                .and_then(|mut w| w.close_window(window.id)));
                         }
                     }
                     _ => (),
@@ -101,40 +104,40 @@ impl EventHandler {
 
                 match window {
                     Ok(window) => {
-                        window.send_ipc_event("menu.clicked", menu_id.0);
+                        log_if_err!(window.send_ipc_event("menu.clicked", menu_id.0));
                     }
                     Err(_) => {
-                        self.main_window.send_ipc_event("menu.clicked", menu_id.0);
+                        log_if_err!(self.main_window.send_ipc_event("menu.clicked", menu_id.0));
                     }
                 }
             }
 
             Event::TrayEvent { id, event, .. } => match event {
                 TrayEvent::RightClick => {
-                    self.main_window
-                        .send_ipc_event("tray.rightClicked", json!(id.0));
+                    log_if_err!(self.main_window
+                        .send_ipc_event("tray.rightClicked", json!(id.0)));
                 }
                 TrayEvent::LeftClick => {
-                    self.main_window
-                        .send_ipc_event("tray.leftClicked", json!(id.0));
+                    log_if_err!(self.main_window
+                        .send_ipc_event("tray.leftClicked", json!(id.0)));
                 }
                 TrayEvent::DoubleClick => {
-                    self.main_window
-                        .send_ipc_event("tray.doubleClicked", json!(id.0));
+                    log_if_err!(self.main_window
+                        .send_ipc_event("tray.doubleClicked", json!(id.0)));
                 }
                 _ => (),
             },
 
             Event::GlobalShortcutEvent(AcceleratorId(id)) => {
-                self.main_window.send_ipc_event("shortcut.emit", id);
+                log_if_err!(self.main_window.send_ipc_event("shortcut.emit", id));
             }
             Event::UserEvent(callback) => {
                 let result = callback(target, control_flow);
                 match result {
                     Ok(_) => (),
                     Err(err) => {
-                        self.main_window
-                            .send_ipc_event("ipc.error", err.to_string());
+                        log_if_err!(self.main_window
+                            .send_ipc_event("ipc.error", err.to_string()));
                     }
                 }
             }
