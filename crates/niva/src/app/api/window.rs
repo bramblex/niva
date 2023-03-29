@@ -1,32 +1,20 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::json;
-use std::sync::Arc;
+
 use tao::{
     event_loop::ControlFlow,
     window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
 };
 
-use crate::app::{
-    api_manager::{ApiManager, ApiRequest},
-    options::MenuOptions,
-    window_manager::{
-        options::{NivaPosition, NivaSize, NivaWindowOptions},
-        window::NivaWindow,
+use crate::{
+    app::{
+        api_manager::ApiManager,
+        options::MenuOptions,
+        window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions},
+        NivaId,
     },
-    NivaApp, NivaId, NivaWindowTarget,
+    logical, logical_try,
 };
-
-macro_rules! logical {
-    ($window:expr, $method:ident) => {
-        $window.$method().to_logical::<f64>($window.scale_factor())
-    };
-}
-
-macro_rules! logical_try {
-    ($window:expr, $method:ident) => {
-        $window.$method()?.to_logical::<f64>($window.scale_factor())
-    };
-}
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api(
@@ -153,6 +141,21 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 
     api_manager.register_api("window.title", |_, window, _| Ok(window.title()));
 
+    api_manager.register_api("window.isVisible", |_, window, _| Ok(window.is_visible()));
+
+    api_manager.register_api("window.setVisible", |_, window, request| {
+        let visible = request.args().single::<bool>()?;
+        window.set_visible(visible);
+        Ok(())
+    });
+
+    api_manager.register_api("window.isFocused", |_, window, _| Ok(window.is_focused()));
+
+    api_manager.register_api("window.setFocus", |_, window, _| {
+        window.set_focus();
+        Ok(())
+    });
+
     api_manager.register_api("window.isResizable", |_, window, _| {
         Ok(window.is_resizable())
     });
@@ -224,12 +227,27 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setFullscreen", |_, window, request| {
-        let fullscreen = request.args().single::<bool>()?;
-        window.set_fullscreen(if fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        });
+        let (is_fullscreen, monitor_name) = request.args().optional::<(bool, Option<String>)>(2)?;
+        if !is_fullscreen {
+            window.set_fullscreen(None);
+            return Ok(());
+        }
+
+        match monitor_name {
+            Some(name) => {
+                let monitor = window
+                    .available_monitors()
+                    .find(|m| m.name() == Some(name.clone()));
+                if monitor.is_none() {
+                    return Err(anyhow!("Monitor not found"));
+                }
+                window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+            }
+            None => {
+                window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            }
+        };
+
         Ok(())
     });
 
@@ -320,7 +338,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
         Ok(())
     });
 
-    api_manager.register_api("cursorPosition", |_, window, _| {
+    api_manager.register_api("window.cursorPosition", |_, window, _| {
         Ok(logical_try!(window, cursor_position))
     });
 

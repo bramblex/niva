@@ -6,14 +6,14 @@ use super::utils::Counter;
 use super::{
     options::{MenuItemOptions, MenuOptions},
     utils::{arc_mut, ArcMut},
-    NivaApp, NivaEventLoop, NivaWindowTarget,
+    NivaApp, NivaWindowTarget,
 };
 use tao::TrayId;
 
 use anyhow::{anyhow, Ok, Result};
 use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
-use tao::{event_loop, system_tray::SystemTray};
+use tao::system_tray::SystemTray;
 use tao::{
     menu::{ContextMenu, MenuId, MenuItem, MenuItemAttributes},
     system_tray::SystemTrayBuilder,
@@ -23,6 +23,7 @@ use tao::{
 use tao::platform::macos::{SystemTrayBuilderExtMacOS, SystemTrayExtMacOS};
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct NivaTrayOptions {
     pub icon: String,
     pub title: Option<String>,
@@ -31,6 +32,7 @@ pub struct NivaTrayOptions {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct NivaTrayUpdateOptions {
     pub icon: Option<String>,
     pub title: Option<String>,
@@ -58,11 +60,7 @@ impl NivaTrayManager {
         self.app = Some(app);
     }
 
-    pub fn create(
-        &mut self,
-        options: &NivaTrayOptions,
-        target: &NivaWindowTarget,
-    ) -> Result<u16> {
+    pub fn create(&mut self, options: &NivaTrayOptions, target: &NivaWindowTarget) -> Result<u16> {
         let id = self.counter.next();
         let tray = self.build_tray(id, options, target)?;
         self.trays.insert(id, tray);
@@ -70,7 +68,8 @@ impl NivaTrayManager {
     }
 
     pub fn destroy(&mut self, id: u16) -> Result<()> {
-        let tray = self.trays
+        let _tray = self
+            .trays
             .remove(&id)
             .ok_or(anyhow!("Tray with id {} not found", id))?;
 
@@ -90,7 +89,7 @@ impl NivaTrayManager {
     }
 
     pub fn list(&self) -> Result<Vec<u16>> {
-        Ok(self.trays.keys().map(|id| *id).collect())
+        Ok(self.trays.keys().copied().collect())
     }
 
     pub fn update(&mut self, id: u16, options: &NivaTrayUpdateOptions) -> Result<()> {
@@ -132,10 +131,7 @@ impl NivaTrayManager {
 
         let icon = app.resource.load_icon(options.icon.clone())?;
 
-        let menu = match &options.menu {
-            Some(menu_options) => Some(Self::build_menu(menu_options)),
-            None => None,
-        };
+        let menu = options.menu.as_ref().map(Self::build_menu);
 
         let mut builder = SystemTrayBuilder::new(icon, menu);
         set_property!(builder, with_id, TrayId(id));

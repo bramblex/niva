@@ -1,12 +1,12 @@
 use crate::unsafe_impl_sync_send;
 
 use super::{
-    utils::{arc, arc_mut, ArcMut, Counter},
-    NivaEventLoop, NivaId,
+    utils::{arc_mut, ArcMut},
+    NivaEventLoop,
 };
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
-use std::{collections::HashMap, hash::Hash, result, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr};
 use tao::{
     accelerator::{Accelerator, AcceleratorId},
     global_shortcut::{GlobalShortcut, ShortcutManager},
@@ -33,7 +33,7 @@ impl NivaShortcutManager {
 
         if let Some(ShortcutsOptions(options)) = options.clone() {
             for (accelerator_str, id) in options {
-                manager.register( id,accelerator_str );
+                manager.register(id, accelerator_str);
             }
         }
 

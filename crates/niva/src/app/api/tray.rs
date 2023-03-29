@@ -1,13 +1,13 @@
 use anyhow::Result;
-use serde_json::json;
+
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
 use crate::app::{
     api_manager::{ApiManager, ApiRequest},
     tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
-    window_manager::{options::NivaWindowOptions, window::NivaWindow},
-    NivaApp, NivaId, NivaWindowTarget,
+    window_manager::window::NivaWindow,
+    NivaApp, NivaWindowTarget,
 };
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
@@ -34,7 +34,7 @@ fn destroy(
     app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
     request: ApiRequest,
-    target: &NivaWindowTarget,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     let id = request.args().single::<u16>()?;
@@ -45,8 +45,8 @@ fn destroy(
 fn destroy_all(
     app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
+    _request: ApiRequest,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     app.tray()?.destroy_all()?;
@@ -56,8 +56,8 @@ fn destroy_all(
 fn list(
     app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
+    _request: ApiRequest,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<Vec<u16>> {
     app.tray()?.list()
@@ -67,7 +67,7 @@ fn update(
     app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
     request: ApiRequest,
-    target: &NivaWindowTarget,
+    _target: &NivaWindowTarget,
     _control_flow: &mut ControlFlow,
 ) -> Result<()> {
     let (id, options) = request.args().get::<(u16, NivaTrayUpdateOptions)>()?;

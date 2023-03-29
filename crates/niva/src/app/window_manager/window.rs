@@ -1,19 +1,15 @@
 use crate::lock_force;
 
 use anyhow::{anyhow, Result};
-use std::{borrow::Cow, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
 use serde::Serialize;
 use serde_json::json;
 use tao::{
-    dpi,
     event_loop::ControlFlow,
     window::{Window, WindowId},
 };
-use wry::{
-    http::Response,
-    webview::{WebContext, WebView, WebViewBuilder},
-};
+use wry::webview::{WebContext, WebView};
 
 use crate::{
     app::{
@@ -24,10 +20,7 @@ use crate::{
     unsafe_impl_sync_send,
 };
 
-use super::{
-    builder::NivaBuilder,
-    options::{NivaWindowOptions},
-};
+use super::{builder::NivaBuilder, options::NivaWindowOptions};
 
 pub struct NivaWindow {
     pub id: NivaId,
@@ -68,14 +61,18 @@ impl NivaWindow {
     #[cfg(target_os = "macos")]
     pub fn switch_menu(self: &Arc<Self>) {
         let menu_options = lock_force!(self.menu_options);
-        self.webview.window().set_menu(NivaBuilder::build_menu(&menu_options));
+        self.webview
+            .window()
+            .set_menu(NivaBuilder::build_menu(&menu_options));
     }
 
     pub fn set_menu(self: &Arc<Self>, options: &Option<MenuOptions>) {
         let mut menu_options = lock_force!(self.menu_options);
         *menu_options = options.clone();
         if self.is_focused() && self.is_menu_visible() {
-            self.webview.window().set_menu(NivaBuilder::build_menu(&menu_options));
+            self.webview
+                .window()
+                .set_menu(NivaBuilder::build_menu(&menu_options));
         }
     }
 

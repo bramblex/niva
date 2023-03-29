@@ -19,13 +19,9 @@ use std::{
     sync::{Arc, MutexGuard},
 };
 
-use tao::{
-    event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget},
-    global_shortcut::ShortcutManager,
-    window::{Window, WindowId},
-};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
-use crate::{lock, lock_force};
+use crate::lock;
 
 use self::{
     api::register_api_instances,
@@ -36,7 +32,7 @@ use self::{
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
     utils::{arc, ArcMut},
-    window_manager::{options::NivaWindowOptions, window::NivaWindow, WindowManager},
+    window_manager::{options::NivaWindowOptions, WindowManager},
 };
 
 pub type NivaId = u32;
@@ -113,8 +109,7 @@ impl NivaApp {
         let window_manager = WindowManager::new(&launch_info);
 
         // build shortcuts
-        let shortcut_manager =
-            NivaShortcutManager::new(&launch_info.options.shortcuts, &event_loop);
+        let shortcut_manager = NivaShortcutManager::new(&launch_info.options.shortcuts, event_loop);
 
         let tray_manager = NivaTrayManager::new();
 
@@ -147,9 +142,7 @@ impl NivaApp {
         Ok(lock!(self._api))
     }
 
-    pub fn shortcut<'a>(
-        self: &'a Arc<Self>,
-    ) -> Result<MutexGuard<'a, NivaShortcutManager>> {
+    pub fn shortcut<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaShortcutManager>> {
         Ok(lock!(self._shortcut))
     }
 
@@ -166,7 +159,7 @@ impl NivaApp {
 
         let tray_options = &self.launch_info.options.tray.clone();
         if let Some(options) = tray_options {
-            &self.tray()?.create(options, &event_loop)?;
+            let _ = self.tray()?.create(options, &event_loop)?;
         }
 
         let event_handler = EventHandler::new(self, main_window);

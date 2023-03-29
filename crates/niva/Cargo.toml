@@ -4,6 +4,10 @@ description = "A lightweight Tauri alternative"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+lto = true
+
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 wry = { version = "0.27.0", default-features = false, features = [
@@ -12,8 +16,7 @@ wry = { version = "0.27.0", default-features = false, features = [
 	"fullscreen",
 	"file-drop",
 	"protocol",
-	"tray",
-	"objc-exception",
+	"tray"
 ] }
 tao = { version = "0.18.3", features = ["tray"] }
 ureq = { version = "2.6.2", default-features = false, features = [

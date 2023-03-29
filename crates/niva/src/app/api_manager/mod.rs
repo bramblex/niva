@@ -39,7 +39,6 @@ impl ApiArguments {
 }
 
 #[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct ApiRequest(pub NivaId, pub String, pub ApiArguments);
 
 impl ApiRequest {

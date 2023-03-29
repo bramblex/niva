@@ -12,6 +12,7 @@ mod webview;
 mod window;
 mod tray;
 mod monitor;
+mod extra;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);
@@ -25,4 +26,6 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     clipboard::register_api_instances(api_manager);
     shortcut::register_api_instances(api_manager);
     tray::register_api_instances(api_manager);
+    monitor::register_api_instances(api_manager);
+    extra::register_api_instances(api_manager);
 }

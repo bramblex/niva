@@ -2,18 +2,15 @@ use super::options::NivaWindowOptions;
 use crate::{
     app::{
         options::{MenuItemOptions, MenuOptions},
-        resource_manager, NivaApp, NivaId, NivaWindowTarget,
+        NivaApp, NivaId, NivaWindowTarget,
     },
     set_property, set_property_some,
 };
 use anyhow::Result;
 use serde_json::json;
-use std::{
-    borrow::{Borrow, Cow},
-    sync::Arc,
-};
+use std::{borrow::Cow, sync::Arc};
 use tao::{
-    menu::{self, MenuBar, MenuId, MenuItem, MenuItemAttributes},
+    menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 use wry::{
@@ -28,7 +25,7 @@ pub struct NivaBuilder {}
 impl NivaBuilder {
     pub fn build_window(
         app: &Arc<NivaApp>,
-        id: NivaId,
+        _id: NivaId,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Window> {
@@ -206,7 +203,7 @@ impl NivaBuilder {
             set_property!(builder, with_background_color, (255, 255, 255, 0));
         }
 
-        let prefix = base_url.clone();
+        let prefix = base_url;
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 

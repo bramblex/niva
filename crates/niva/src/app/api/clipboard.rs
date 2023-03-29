@@ -1,12 +1,12 @@
 use anyhow::Result;
-use serde_json::json;
+
 use std::sync::Arc;
-use tao::{event_loop::ControlFlow, clipboard::Clipboard};
+use tao::{clipboard::Clipboard, event_loop::ControlFlow};
 
 use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    window_manager::{options::NivaWindowOptions, window::NivaWindow},
-    NivaApp, NivaId, NivaWindowTarget,
+    window_manager::window::NivaWindow,
+    NivaApp, NivaWindowTarget,
 };
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {

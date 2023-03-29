@@ -77,3 +77,21 @@ macro_rules! lock_force {
         $value.lock().unwrap()
     };
 }
+
+#[macro_export]
+macro_rules! logical {
+    ($window:expr, $method:ident) => {
+        $window.$method().to_logical::<f64>($window.scale_factor())
+    };
+
+    ($window:expr, $item:expr, $method:ident) => {
+        $item.$method().to_logical::<f64>($window.scale_factor())
+    };
+}
+
+#[macro_export]
+macro_rules! logical_try {
+    ($window:expr, $method:ident) => {
+        $window.$method()?.to_logical::<f64>($window.scale_factor())
+    };
+}
