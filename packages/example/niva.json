@@ -5,6 +5,10 @@
 	"icon": "icon.png",
 	"window": {
 		"icon": "icon.png",
+		"size": {
+			"width": 800,
+			"height": 800
+		},
 		"menu": [
 			["sub_menu", [
 				["world", 456],

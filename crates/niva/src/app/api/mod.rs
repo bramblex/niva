@@ -11,6 +11,7 @@ mod shortcut;
 mod webview;
 mod window;
 mod tray;
+mod monitor;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);

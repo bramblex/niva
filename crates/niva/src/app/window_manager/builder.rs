@@ -210,7 +210,7 @@ impl NivaBuilder {
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 
-        let resource_manager = app._resource.clone();
+        let resource_manager = app.resource.clone();
         builder = builder.with_custom_protocol(protocol.to_string(), move |request| {
             let mut path = request.uri().path().to_string();
             if path.ends_with('/') {

@@ -1,3 +1,5 @@
+use crate::lock_force;
+
 use anyhow::{anyhow, Result};
 use std::{borrow::Cow, ops::Deref, sync::Arc};
 
@@ -14,32 +16,24 @@ use wry::{
 };
 
 use crate::{
-    app::{utils::{arc, ArcMut}, NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget},
+    app::{
+        options::MenuOptions,
+        utils::{arc, arc_mut, ArcMut},
+        NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget,
+    },
     unsafe_impl_sync_send,
 };
 
 use super::{
     builder::NivaBuilder,
-    options::{NivaWindowOptions, Position, Size},
+    options::{NivaWindowOptions},
 };
-
-impl From<Position> for dpi::Position {
-    fn from(val: Position) -> Self {
-        dpi::Position::Logical(dpi::LogicalPosition::new(val.0, val.1))
-    }
-}
-
-impl From<Size> for dpi::Size {
-    fn from(val: Size) -> Self {
-        dpi::Size::Logical(dpi::LogicalSize::new(val.0, val.1))
-    }
-}
 
 pub struct NivaWindow {
     pub id: NivaId,
     pub window_id: WindowId,
     pub webview: WebView,
-    pub options: NivaWindowOptions,
+    pub menu_options: ArcMut<Option<MenuOptions>>,
     event_loop_proxy: NivaEventLoopProxy,
 }
 
@@ -66,17 +60,23 @@ impl NivaWindow {
             id,
             window_id: webview.window().id(),
             webview,
-            options: options.clone(),
+            menu_options: arc_mut(options.menu.clone()),
             event_loop_proxy: app.event_loop_proxy.clone(),
         }))
     }
 
     #[cfg(target_os = "macos")]
-    pub fn set_current_menu(self: &Arc<Self>) {
-        self.set_menu(NivaBuilder::build_menu(&self.options.menu));
+    pub fn switch_menu(self: &Arc<Self>) {
+        let menu_options = lock_force!(self.menu_options);
+        self.webview.window().set_menu(NivaBuilder::build_menu(&menu_options));
     }
 
-    pub fn update_menu() {
+    pub fn set_menu(self: &Arc<Self>, options: &Option<MenuOptions>) {
+        let mut menu_options = lock_force!(self.menu_options);
+        *menu_options = options.clone();
+        if self.is_focused() && self.is_menu_visible() {
+            self.webview.window().set_menu(NivaBuilder::build_menu(&menu_options));
+        }
     }
 
     pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(

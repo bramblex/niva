@@ -47,7 +47,7 @@ impl EventHandler {
                 match event {
                     WindowEvent::Focused(focused) => {
                         #[cfg(target_os = "macos")]
-                        window.set_current_menu();
+                        window.switch_menu();
                         window.send_ipc_event("window.focused", focused);
                     }
                     WindowEvent::ScaleFactorChanged {

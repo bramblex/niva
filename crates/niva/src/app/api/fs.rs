@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use std::{path::Path, sync::Arc, time::UNIX_EPOCH};
+use std::{path::Path, sync::Arc, time::UNIX_EPOCH, io::Write};
 
 use crate::app::{
     api_manager::{ApiManager, ApiRequest},
@@ -15,6 +15,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.exists", exists);
     api_manager.register_async_api("fs.read", read);
     api_manager.register_async_api("fs.write", write);
+    api_manager.register_async_api("fs.append", append);
     api_manager.register_async_api("fs.copy", copy);
     api_manager.register_async_api("fs.move", move_);
     api_manager.register_async_api("fs.remove", remove);
@@ -83,6 +84,33 @@ fn write(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()>
         }
         EncodeType::UTF8 => std::fs::write(path, content)?,
     };
+    Ok(())
+}
+
+fn append(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (path, content, encode) = request
+        .args()
+        .optional::<(String, String, Option<EncodeType>)>(3)?;
+    let encode = encode.unwrap_or(EncodeType::UTF8);
+
+    match encode {
+        EncodeType::BASE64 => {
+            let content = base64::decode(content)?;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(path)?
+                .write_all(&content)?;
+        }
+        EncodeType::UTF8 => {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(path)?
+                .write_all(content.as_bytes())?;
+        }
+    };
+
     Ok(())
 }
 

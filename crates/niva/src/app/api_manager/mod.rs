@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use wry::application::{event_loop::ControlFlow, window::Window};
 
-use crate::{unsafe_impl_sync_send, lock_force};
+use crate::{lock_force, unsafe_impl_sync_send};
 
 use self::thread_pool::ThreadPool;
 
@@ -44,21 +44,11 @@ pub struct ApiRequest(pub NivaId, pub String, pub ApiArguments);
 
 impl ApiRequest {
     pub fn err<C: Into<i32>, S: Into<String>>(&self, code: C, msg: S) -> ApiResponse {
-        ApiResponse(
-            self.0,
-            code.into(),
-            msg.into(),
-            json!(null),
-        )
+        ApiResponse(self.0, code.into(), msg.into(), json!(null))
     }
 
     pub fn ok<D: Serialize>(&self, data: D) -> ApiResponse {
-        ApiResponse(
-            self.0,
-            0,
-            "ok".to_string(),
-            json!(data),
-        )
+        ApiResponse(self.0, 0, "ok".to_string(), json!(data))
     }
 
     pub fn args(&self) -> &ApiArguments {

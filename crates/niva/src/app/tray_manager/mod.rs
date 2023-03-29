@@ -105,7 +105,7 @@ impl NivaTrayManager {
                 .app
                 .clone()
                 .ok_or(anyhow!("App not bound to tray manager"))?
-                ._resource
+                .resource
                 .load_icon(icon)?;
             tray.set_icon(icon);
         }
@@ -130,7 +130,7 @@ impl NivaTrayManager {
             .clone()
             .ok_or(anyhow!("App not bound to tray manager"))?;
 
-        let icon = app._resource.load_icon(options.icon.clone())?;
+        let icon = app.resource.load_icon(options.icon.clone())?;
 
         let menu = match &options.menu {
             Some(menu_options) => Some(Self::build_menu(menu_options)),

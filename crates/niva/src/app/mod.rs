@@ -1,7 +1,6 @@
 mod api;
 mod api_manager;
 mod event_handler;
-mod menu;
 mod options;
 mod resource_manager;
 mod shortcut_manager;
@@ -71,7 +70,7 @@ impl Deref for NivaEvent {
 pub struct NivaApp {
     launch_info: NivaLaunchInfo, // NivaApp launch info, contains this command line arguments and niva.json project options.
 
-    _resource: Arc<dyn ResourceManager>,
+    resource: Arc<dyn ResourceManager>,
     _window: ArcMut<WindowManager>, // Window manager.
     _api: ArcMut<ApiManager>,
     _shortcut: ArcMut<NivaShortcutManager>,
@@ -121,7 +120,9 @@ impl NivaApp {
 
         let app = Arc::new(NivaApp {
             launch_info,
-            _resource: resource_manager,
+
+            resource: resource_manager,
+
             _window: window_manager.clone(),
             _api: api_manager.clone(),
             _shortcut: shortcut_manager,
@@ -138,30 +139,22 @@ impl NivaApp {
         Ok(app)
     }
 
-    pub fn launch_info<'a>(self: &'a Arc<Self>) -> &'a NivaLaunchInfo {
-        &self.launch_info
-    }
-
-    pub fn resource<'a>(self: &'a Arc<Self>) -> &'a Arc<dyn ResourceManager> {
-        &self._resource
-    }
-
     pub fn window<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, WindowManager>> {
-        Ok(lock_force!(self._window))
+        Ok(lock!(self._window))
     }
 
     pub fn api<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, ApiManager>> {
-        Ok(lock_force!(self._api))
+        Ok(lock!(self._api))
     }
 
     pub fn shortcut<'a>(
         self: &'a Arc<Self>,
     ) -> Result<MutexGuard<'a, NivaShortcutManager>> {
-        Ok(lock_force!(self._shortcut))
+        Ok(lock!(self._shortcut))
     }
 
     pub fn tray<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaTrayManager>> {
-        Ok(lock_force!(self._tray))
+        Ok(lock!(self._tray))
     }
 
     pub fn run(self: Arc<NivaApp>, event_loop: NivaEventLoop) -> Result<()> {

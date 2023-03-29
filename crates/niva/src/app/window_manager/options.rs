@@ -1,11 +1,10 @@
 use serde::Deserialize;
+use tao::dpi::{LogicalSize, LogicalPosition};
 use crate::app::options::MenuOptions;
 
-#[derive(Deserialize, Debug, Clone, Copy)]
-pub struct Size(pub f64, pub f64);
+pub type NivaSize = LogicalSize<f64>;
+pub type NivaPosition = LogicalPosition<f64>;
 
-#[derive(Deserialize, Debug, Clone, Copy)]
-pub struct Position(pub f64, pub f64);
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -18,11 +17,11 @@ pub struct NivaWindowOptions {
     pub title: Option<String>,
     pub icon: Option<String>,
     pub theme: Option<String>,
-    pub size: Option<Size>,
-    pub min_size: Option<Size>,
-    pub max_size: Option<Size>,
+    pub size: Option<NivaSize>,
+    pub min_size: Option<NivaSize>,
+    pub max_size: Option<NivaSize>,
 
-    pub position: Option<Position>,
+    pub position: Option<NivaPosition>,
 
     pub resizable: Option<bool>,
     pub minimizable: Option<bool>,
