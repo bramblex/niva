@@ -44,7 +44,7 @@ impl NivaBuilder {
             options
                 .icon
                 .clone()
-                .map(move |icon_path| app.resource_manager.load_icon(icon_path).ok())
+                .map(move |icon_path| app.resource.load_icon(icon_path).ok())
         );
 
         set_property_some!(

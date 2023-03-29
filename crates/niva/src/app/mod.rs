@@ -27,7 +27,7 @@ use self::{
     api::register_api_instances,
     api_manager::ApiManager,
     event_handler::EventHandler,
-    options::{NivaActivationPolicy, NivaOptions},
+    options::NivaOptions,
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
@@ -89,6 +89,7 @@ impl NivaApp {
 
         #[cfg(target_os = "macos")]
         {
+            use self::options::NivaActivationPolicy;
             use wry::application::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
             if let Some(p) = launch_info.options.activation.clone() {
                 let policy = match p {

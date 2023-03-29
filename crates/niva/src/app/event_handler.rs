@@ -114,15 +114,18 @@ impl EventHandler {
 
             Event::TrayEvent { id, event, .. } => match event {
                 TrayEvent::RightClick => {
-                    log_if_err!(self.main_window
+                    log_if_err!(self
+                        .main_window
                         .send_ipc_event("tray.rightClicked", json!(id.0)));
                 }
                 TrayEvent::LeftClick => {
-                    log_if_err!(self.main_window
+                    log_if_err!(self
+                        .main_window
                         .send_ipc_event("tray.leftClicked", json!(id.0)));
                 }
                 TrayEvent::DoubleClick => {
-                    log_if_err!(self.main_window
+                    log_if_err!(self
+                        .main_window
                         .send_ipc_event("tray.doubleClicked", json!(id.0)));
                 }
                 _ => (),
@@ -136,13 +139,19 @@ impl EventHandler {
                 match result {
                     Ok(_) => (),
                     Err(err) => {
-                        log_if_err!(self.main_window
+                        log_if_err!(self
+                            .main_window
                             .send_ipc_event("ipc.error", err.to_string()));
                     }
                 }
             }
 
             _ => (),
+        }
+
+        #[cfg(target_os = "windows")]
+        if *control_flow == ControlFlow::Exit {
+            log_if_err!(self.app.tray().and_then(|mut m| m.destroy_all()));
         }
     }
 }

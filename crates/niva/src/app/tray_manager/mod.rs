@@ -74,7 +74,7 @@ impl NivaTrayManager {
             .ok_or(anyhow!("Tray with id {} not found", id))?;
 
         #[cfg(target_os = "windows")]
-        tray.take();
+        drop(lock!(_tray));
 
         Ok(())
     }
@@ -82,7 +82,7 @@ impl NivaTrayManager {
     pub fn destroy_all(&mut self) -> Result<()> {
         #[cfg(target_os = "windows")]
         for tray in self.trays.values() {
-            tray.take();
+            drop(lock!(tray));
         }
         self.trays.clear();
         Ok(())
@@ -117,7 +117,6 @@ impl NivaTrayManager {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
     fn build_tray(
         &self,
         id: u16,

@@ -12,7 +12,8 @@
         const cursorPosition = await window.cursorPosition();
         console.log("cursor position:", cursorPosition);
 
-        const currentMonitor = await monitor.fromPoint(cursorPosition.x, cursorPosition.y);
+        const currentMonitor = await monitor.fromPoint(cursorPosition.x, cursorPosition.y)
+          || await monitor.current();
         console.log("current monitor:", currentMonitor);
 
         const {
@@ -30,16 +31,15 @@
 
         const [isVisible, isFocused] = await Promise.all([window.isVisible(), window.isFocused()]);
         if (isVisible && isFocused) {
-          window.setFocus(false);
           window.setVisible(false);
           setTimeout(() => {
             document.getElementById('testinput').focus()
           }, 300)
         } else if (isVisible && !isFocused) {
-          window.setFocus(true);
+          window.setFocus();
         } else {
           window.setVisible(true);
-          window.setFocus(true);
+          window.setFocus();
           setTimeout(() => {
             document.getElementById('testinput').focus()
           }, 300)

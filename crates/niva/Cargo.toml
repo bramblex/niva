@@ -16,7 +16,7 @@ wry = { version = "0.27.0", default-features = false, features = [
 	"fullscreen",
 	"file-drop",
 	"protocol",
-	"tray"
+	"tray",
 ] }
 tao = { version = "0.18.3", features = ["tray"] }
 ureq = { version = "2.6.2", default-features = false, features = [

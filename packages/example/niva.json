@@ -9,6 +9,7 @@
 		"visible": false,
 		"alwaysOnTop": true,
 		"visibleOnAllWorkspaces": true,
+		"decorations": false,
 		"icon": "icon.png",
 		"size": {
 			"width": 800,
