@@ -14,7 +14,7 @@ export function ProjectApp() {
 
 	useEffect(() => {
 		tryOrAlert(async () => {
-			const { process } = TauriLite.api;
+			const { process } = Niva.api;
 			const args = parseArgs(await process.args());
 			if (args.project) {
 				const projectPath = await resolvePath(args.project);

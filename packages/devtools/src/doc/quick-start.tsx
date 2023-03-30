@@ -9,7 +9,7 @@ export function QuickStart() {
 	return <div className='quick-start'>
 		<p>
 			<p>
-				<b>1. 新建或者打开一个 TauriLite 项目</b>
+				<b>1. 新建或者打开一个 Niva 项目</b>
 			</p>
 			<p>
 				<img alt={quickStart1} src={quickStart1} />

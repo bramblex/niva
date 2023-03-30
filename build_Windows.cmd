@@ -16,9 +16,9 @@ cd ..\..
 rd /s /q target\release
 cargo build --release
 
-target\release\tauri_lite.exe ^
+target\release\niva.exe ^
 	--resource-dir=packages\devtools\build ^
 	--project=packages\devtools\build ^
-	--build=dist\TauriLiteDevTools.exe
+	--build=dist\NivaDevTools.exe
 
-powershell Compress-Archive -Path dist\TauriLiteDevTools.exe -DestinationPath dist\TauriLiteDevTools_%VERSION%_Windows.zip
+powershell Compress-Archive -Path dist\NivaDevTools.exe -DestinationPath dist\NivaDevTools_%VERSION%_Windows.zip

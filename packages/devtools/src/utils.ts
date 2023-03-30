@@ -58,7 +58,7 @@ export async function tryOrAlertAsync<T>(p: () => Promise<T>) {
 }
 
 let sep: string | null = null;
-TauriLite.api.os.sep().then((s: string) => (sep = s));
+Niva.api.os.sep().then((s: string) => (sep = s));
 
 export function pathJoin(...paths: string[]) {
   return paths.join(sep!);
@@ -69,7 +69,7 @@ export function dirname(path: string) {
 }
 
 let dirs: { temp: string; home: string } | null = null;
-TauriLite.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
+Niva.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
 
 export function tempWith(...paths: string[]) {
   return pathJoin(dirs!.temp, ...paths);
@@ -80,7 +80,7 @@ export function getHome() {
 }
 
 let currentDir: string | null = null;
-TauriLite.api.process.currentDir().then((dir: string) => (currentDir = dir));
+Niva.api.process.currentDir().then((dir: string) => (currentDir = dir));
 
 export function getCurrentDir() {
   return currentDir!;
@@ -131,7 +131,7 @@ export function concatArrayBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
 }
 
 export async function packageResource(projectResourcePath: string) {
-  const { fs } = TauriLite.api;
+  const { fs } = Niva.api;
   let buffer = new ArrayBuffer(0);
   const fileIndexes: Record<string, [number, number]> = {};
   for (const name of await fs.readDirAll(projectResourcePath)) {
@@ -160,7 +160,7 @@ export function isAbsolutePath(path: string) {
 }
 
 export async function resolvePath(path: string) {
-  const { process } = TauriLite.api;
+  const { process } = Niva.api;
   return isAbsolutePath(path)
     ? path
     : pathJoin(await process.currentDir(), path);

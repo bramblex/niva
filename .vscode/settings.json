@@ -5,11 +5,13 @@
 		"fullscreen",
 		"maximizable",
 		"minimizable",
+		"Niva",
 		"pako",
 		"Tauri",
 		"ureq"
 	],
 	"cSpell.enableFiletypes": [
 		"shellscript"
-	]
+	],
+	"svg.preview.background": "editor"
 }

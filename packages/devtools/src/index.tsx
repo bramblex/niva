@@ -7,7 +7,7 @@ import ReactDOM from 'react-dom/client';
 import { App } from './app';
 import { Modal } from './modal';
 
-TauriLite.addEventListener('*', (event, data) => {
+Niva.addEventListener('*', (event, data) => {
   console.log(event, data);
 });
 

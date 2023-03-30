@@ -49,7 +49,7 @@ function parseVersion(versionString: string): number[] {
 }
 
 export function versionInfoTemplate(config: any) {
-  const numberVersion = parseVersion(config.version).join(",");
+  const numberVersion = parseVersion(config.version || "").join(",");
 
   return `
 1 VERSIONINFO
@@ -65,9 +65,9 @@ BLOCK "StringFileInfo"
     VALUE "CompanyName", ${JSON.stringify(config.companyName || "")}
     VALUE "FileDescription", ${JSON.stringify(config.description || "")}
     VALUE "FileVersion", ${JSON.stringify(config.version)}
-    VALUE "InternalName", "tauri_lite.exe"
+    VALUE "InternalName", "niva.exe"
     VALUE "LegalCopyright", ${JSON.stringify(config.copyright || "")}
-    VALUE "OriginalFilename", "tauri_lite.exe"
+    VALUE "OriginalFilename", "niva.exe"
     VALUE "ProductName", ${JSON.stringify(config.name)}
     VALUE "ProductVersion", ${JSON.stringify(config.version)}
     VALUE "SquirrelAwareVersion", "1"

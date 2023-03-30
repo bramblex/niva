@@ -18,7 +18,7 @@ import { modal } from "../modal";
 import { OptionsEditor } from "./options-editor";
 import pako from "pako";
 
-const { os, fs, process, dialog, resource } = TauriLite.api;
+const { os, fs, process, dialog, resource } = Niva.api;
 
 interface ProjectState {
   name: string;
@@ -46,8 +46,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         return;
       }
 
-      // check tauri_lite.json exists, if not create it
-      const configPath = pathJoin(path, "tauri_lite.json");
+      // check niva.json exists, if not create it
+      const configPath = pathJoin(path, "niva.json");
       const config = await this.loadOrCreateConfig(configPath);
 
       this.setState({
@@ -68,12 +68,12 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       );
       if (ok) {
         const defaultConfig = {
-          name: "tauri_lite_project",
+          name: "niva_project",
           uuid: uuid(),
         };
         await withCtxP(
           fs.write(configPath, JSON.stringify(defaultConfig, null, 2)),
-          '创建项目配置文件 "tauri_lite.json" 失败'
+          '创建项目配置文件 "niva.json" 失败'
         );
       } else {
         throw new Error("未找到项目配置文件");
@@ -124,8 +124,8 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       process.exec(
         exe,
         [
-          `--resource-dir=${projectPath}`,
-          "--devtools=true",
+          `--debug-resource=${projectPath}`,
+          "--debug-devtools=true",
           ...(debugEntry ? [`--debug-entry=${debugEntry}`] : []),
         ],
         { detached: true }

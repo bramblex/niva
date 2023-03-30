@@ -1,0 +1,40 @@
+{
+	"name": "example",
+	"uuid": "d35b4408-b64e-4978-9b56-a80ff4b152d8",
+	"visible": false,
+	"icon": "icon.png",
+	"activation": "accessory",
+
+	"window": {
+		"visible": false,
+		"alwaysOnTop": true,
+		"visibleOnAllWorkspaces": true,
+		"decorations": false,
+		"icon": "icon.png",
+		"size": {
+			"width": 800,
+			"height": 800
+		},
+		"menu": [
+			["sub_menu", [
+				["world", 456],
+				"---",
+				["Quit", 789]
+			]]
+		]
+	},
+
+	"tray": {
+		"icon": "icon.png",
+		"menu": [
+			["hello", 123],
+			["world", 456],
+			"---",
+			["Quit", 789]
+		]
+	},
+
+	"shortcuts": [
+		["COMMANDORCONTROL+SHIFT+Backslash", 1]
+	]
+}

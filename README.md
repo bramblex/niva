@@ -1,4 +1,4 @@
-# Tauri Lite
+# Niva
 
 一个基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
@@ -13,7 +13,7 @@
   - 不依赖 NodeJS 、Chromium 或 Webkit 等庞然大物，仅依赖系统原生 Webview。
 - 极易用
   - 不需要学习 NodeJS、Electron 或者 Rust 等复杂的框架和技术，只需要最基本的前端技术即可开发出跨端桌面应用。
-  - 不需要使用命令行。TauriLite 提供您图形化开发工具，调试构建只需要点一下按钮。
+  - 不需要使用命令行。Niva 提供您图形化开发工具，调试构建只需要点一下按钮。
 - 跨平台
   - 支持 MacOS 和 Windows，双端只需一套代码。
 
@@ -45,14 +45,14 @@
 
 ## 快速开始
 
-1. 在 [Release 页面](https://github.com/bramblex/tauri_lite/releases) 中下载对应系统的开发者工具(Devtools)。
+1. 在 [Release 页面](https://github.com/bramblex/niva/releases) 中下载对应系统的开发者工具(Devtools)。
 2. 打开开发者工具(Devtools)，导入或者新建项目。如果有已经有的前端项目，可以通过「选择项目」index.html 文件所得目录。如果没有项目则可以直接通过「新建项目」新建一个 Tauri 项目。
    - ![quick-start-1](screenshots/quick-start-1.png)
-3. 项目打开或者新建以后，会进入项目页面，可以直接通过启动调试打开 TauriLite 窗口，也可以点击构建将项目打包成一个可执行文件。
+3. 项目打开或者新建以后，会进入项目页面，可以直接通过启动调试打开 Niva 窗口，也可以点击构建将项目打包成一个可执行文件。
    - ![quick-start-2](screenshots/quick-start-2.png)
 4. 在开发中如果遇到问题，可以直接在开发者工具(Devtools)中查看文档。
    - ![quick-start-3](screenshots/quick-start-3.png)
-5. 如果你用的是 React 或者 Vue，可以使用项目的 public 文件夹作为项目根目录，并且通过配置 `debugEntry` 选项让 TauriLite 窗口用开发链接作为入口。
+5. 如果你用的是 React 或者 Vue，可以使用项目的 public 文件夹作为项目根目录，并且通过配置 `debugEntry` 选项让 Niva 窗口用开发链接作为入口。
    - ![quick-start-4](screenshots/quick-start-4.png)
    - ![quick-start-5](screenshots/quick-start-5.png)
 

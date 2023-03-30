@@ -1,5 +1,5 @@
 declare global {
-  var TauriLite: {
+  var Niva: {
     addEventListener(
       event: string,
       callback: (event: string, data: any) => any
