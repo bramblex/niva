@@ -1,50 +1,45 @@
-use crate::{app::api_manager::ApiManager, args_match};
-use anyhow::{Ok, Result};
+use crate::{app::api_manager::ApiManager, opts_match};
+
+use serde_json::json;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     #[cfg(target_os = "macos")]
     {
-        use std::process::Command;
-        api_manager.register_async_api("extra.getActiveWindowId", |_, _, _| -> Result<u32> {
-            let script = r#"
-        tell application "System Events"
-            set frontApp to first application process whose frontmost is true
-            set frontWindow to first window of frontApp
-            set windowID to id of frontWindow
-            return windowID
-        end tell
-        "#;
+        use active_win_pos_rs::get_active_window;
+        use cocoa::appkit::NSApplicationActivateIgnoringOtherApps;
 
-            let output = Command::new("osascript").arg("-e").arg(script).output()?;
+        use cocoa::base::nil;
+        use objc::class;
+        use objc::msg_send;
+        use objc::runtime::Object;
+        use objc::{sel, sel_impl};
 
-            if output.status.success() {
-                let window_id_str = std::str::from_utf8(&output.stdout)?.trim();
-                let window_id = window_id_str.parse::<u32>()?;
-                Ok(window_id)
-            } else {
-                Err(anyhow!("Failed to get active window ID"))
-            }
+        api_manager.register_api("extra.getActiveProcessId", |_, _, _| {
+            Ok(match get_active_window() {
+                Ok(window) => json!(window.process_id),
+                Err(_) => json!(null),
+            })
         });
 
-        api_manager.register_async_api("extra.focusWindowById", |_, _, request| -> Result<()> {
-            let window_id = request.args().single::<u32>()?;
-            let window_id_str = window_id.to_string();
+        api_manager.register_api("extra.focusByProcessId", |_, _, request| {
+            opts_match!(request, process_id: i32);
+            unsafe {
+                let app_class = class!(NSRunningApplication);
+                let app_with_process_id: *mut Object = msg_send![
+                    app_class,
+                    runningApplicationWithProcessIdentifier: process_id as i64
+                ];
+                if app_with_process_id != nil {
+                    let success: bool = msg_send![
+                        app_with_process_id,
+                        activateWithOptions: NSApplicationActivateIgnoringOtherApps
+                    ];
 
-            let script = format!(
-                r#"
-            tell application "System Events"
-                set frontmost of (first window whose id is {}) to true
-            end tell
-            "#,
-                window_id_str
-            );
-
-            let output = Command::new("osascript").arg("-e").arg(&script).output()?;
-
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(anyhow!("Failed to focus window by ID"))
+                    if !success {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
         });
     }

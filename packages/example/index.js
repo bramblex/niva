@@ -1,48 +1,65 @@
 
 (function () {
-  console.log('Hello World!')
   Niva.api.window.current().then(id => console.log(`Current window id: ${id}`));
-  Niva.addEventListener('*', console.log);
 
-  const { window, monitor, webview } = Niva.api;
+
+  const { window, monitor, webview, extra } = Niva.api;
+
+  async function setWindowToCurrentMonitorCenter() {
+    const cursorPosition = await window.cursorPosition();
+    const currentMonitor = await monitor.fromPoint(cursorPosition.x, cursorPosition.y)
+      || await monitor.current();
+    const { position, size, } = currentMonitor;
+
+    const outerSize = await window.outerSize();
+    await window.setOuterPosition({
+      x: position.x + (size.width / 2) - (outerSize.width / 2),
+      y: position.y + (size.height / 2) - (outerSize.height / 2),
+    });
+  }
+
+  let lastActiveProcessId = null;
+
+  async function recordActiveProcess() {
+    lastActiveProcessId = await extra.getActiveProcessId();
+  }
+
+  function backToLastActiveProcess() {
+    if (lastActiveProcessId) {
+      extra.focusByProcessId(lastActiveProcessId);
+    }
+  }
+
+  function showWindow() {
+    window.setFocus();
+    window.setVisible(true);
+    setTimeout(() => {
+      document.getElementById('testinput').focus()
+    }, 300)
+  }
+
+  function hideWindow() {
+    window.setVisible(false);
+  }
 
   Niva.addEventListener('shortcut.emit', (_, id) => {
     if (id === 1) {
       (async () => {
-        const cursorPosition = await window.cursorPosition();
-        console.log("cursor position:", cursorPosition);
 
-        const currentMonitor = await monitor.fromPoint(cursorPosition.x, cursorPosition.y)
-          || await monitor.current();
-        console.log("current monitor:", currentMonitor);
-
-        const {
-          position,
-          size,
-        } = currentMonitor;
-
-        const outerSize = await window.outerSize();
-
-        await window.setOuterPosition({
-          x: position.x + (size.width / 2) - (outerSize.width / 2),
-          y: position.y + (size.height / 2) - (outerSize.height / 2),
-        });
-
-
+        // const currentActiveWindow = await Niva.api.extra.getActiveWindow();
+        // console.log("currentActiveWindow:", currentActiveWindow);
         const [isVisible, isFocused] = await Promise.all([window.isVisible(), window.isFocused()]);
+
         if (isVisible && isFocused) {
-          window.setVisible(false);
-          setTimeout(() => {
-            document.getElementById('testinput').focus()
-          }, 300)
+          hideWindow();
+          backToLastActiveProcess();
         } else if (isVisible && !isFocused) {
-          window.setFocus();
+          await recordActiveProcess();
+          showWindow();
         } else {
-          window.setVisible(true);
-          window.setFocus();
-          setTimeout(() => {
-            document.getElementById('testinput').focus()
-          }, 300)
+          await recordActiveProcess();
+          setWindowToCurrentMonitorCenter();
+          showWindow();
         }
       })();
     }
