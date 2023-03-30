@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
+use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use wry::application::window::Window;
@@ -26,9 +27,9 @@ enum MessageLevel {
     Error,
 }
 
-fn show_message(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(request, title: String, content: Option<String>, level: Option<MessageLevel>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn show_message(title: String, content: Option<String>, level: Option<MessageLevel>) -> Result<()> {
+    let parent = window.webview.window();
     let content = content.unwrap_or_default();
     let level = level.unwrap_or(MessageLevel::Info);
 
@@ -64,9 +65,9 @@ fn _create_dialog(
     dialog.set_parent(parent)
 }
 
-fn pick_file(_app: Arc<NivaApp>,parent: Arc<NivaWindow>,   request: ApiRequest) -> Result<Value> {
-    opts_match!(request, filters: Option<Vec<String>>, start_dir: Option<String>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn pick_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
+    let parent = window.webview.window();
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.pick_file() {

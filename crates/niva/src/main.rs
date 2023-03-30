@@ -5,8 +5,7 @@
 )]
 
 mod app;
-
-use anyhow::{Result};
+use anyhow::Result;
 use app::{NivaApp, NivaEventLoop};
 
 fn main() -> Result<()> {
