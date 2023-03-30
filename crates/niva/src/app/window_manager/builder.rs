@@ -4,7 +4,7 @@ use crate::{
         options::{MenuItemOptions, MenuOptions},
         NivaApp, NivaId, NivaWindowTarget,
     },
-    set_property, set_property_some, log_if_err, log_err,
+    log_err, log_if_err, set_property, set_property_some,
 };
 use anyhow::Result;
 use serde_json::json;
@@ -197,11 +197,9 @@ impl NivaBuilder {
         set_property!(builder, with_initialization_script, INITIALIZE_SCRIPT);
         set_property!(builder, with_accept_first_mouse, true);
         set_property!(builder, with_clipboard, true);
+        set_property!(builder, with_background_color, (255, 255, 255, 0));
         set_property_some!(builder, with_devtools, options.devtools);
         set_property_some!(builder, with_transparent, options.transparent);
-        if options.transparent.unwrap_or(false) {
-            set_property!(builder, with_background_color, (255, 255, 255, 0));
-        }
 
         let prefix = base_url;
         set_property!(builder, with_navigation_handler, move |url| url

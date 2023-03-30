@@ -21,12 +21,12 @@
   let lastActiveProcessId = null;
 
   async function recordActiveProcess() {
-    lastActiveProcessId = await extra.getActiveProcessId();
+    lastActiveProcessId = await extra.getActiveWindowId();
   }
 
   function backToLastActiveProcess() {
     if (lastActiveProcessId) {
-      extra.focusByProcessId(lastActiveProcessId);
+      extra.focusByWindowId(lastActiveProcessId);
     }
   }
 
@@ -55,10 +55,11 @@
           backToLastActiveProcess();
         } else if (isVisible && !isFocused) {
           await recordActiveProcess();
+          await setWindowToCurrentMonitorCenter();
           showWindow();
         } else {
           await recordActiveProcess();
-          setWindowToCurrentMonitorCenter();
+          await setWindowToCurrentMonitorCenter();
           showWindow();
         }
       })();
