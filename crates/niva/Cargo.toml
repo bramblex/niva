@@ -42,7 +42,10 @@ anyhow = "1.0.69"
 flate2 = "1.0.25"
 png = "0.17.7"
 
+[target.'cfg(windows)'.dependencies]
 winapi = "0.3.9"
+
+[target.'cfg(macos)'.dependencies]
 cocoa = { version = "0.24.1" }
 objc = "0.2.7"
 active-win-pos-rs = "0.7.1"
