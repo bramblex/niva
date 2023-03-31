@@ -1,9 +1,19 @@
 use serde::Deserialize;
 use tao::dpi::{LogicalSize, LogicalPosition};
-use crate::app::options::MenuOptions;
+
+use crate::app::menu::options::MenuOptions;
 
 pub type NivaSize = LogicalSize<f64>;
 pub type NivaPosition = LogicalPosition<f64>;
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct WindowRootMenu {
+    pub label: String,
+    pub enabled: Option<bool>,
+    pub children: MenuOptions
+}
+
+pub type WindowMenuOptions = Vec<WindowRootMenu>;
 
 
 #[derive(Deserialize, Clone, Debug)]
@@ -11,7 +21,6 @@ pub type NivaPosition = LogicalPosition<f64>;
 #[derive(Default)]
 pub struct NivaWindowOptions {
     pub entry: Option<String>,
-    pub parent: Option<u32>,
     pub devtools: Option<bool>,
 
     pub title: Option<String>,
@@ -42,7 +51,7 @@ pub struct NivaWindowOptions {
     pub content_protection: Option<bool>,
 
     // merge background_color options to transparent
-    pub menu: Option<MenuOptions>,
+    pub menu: Option<WindowMenuOptions>,
 }
 
 

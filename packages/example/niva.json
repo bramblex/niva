@@ -6,7 +6,7 @@
 	"activation": "accessory",
 
 	"window": {
-		"visible": false,
+		"visible": true,
 		"alwaysOnTop": false,
 		"visibleOnAllWorkspaces": false,
 		"decorations": true,
@@ -16,21 +16,29 @@
 			"height": 800
 		},
 		"menu": [
-			["sub_menu", [
-				["world", 456],
-				"---",
-				["Quit", 789]
-			]]
+			{ "label": "hello", "children": [
+				{"type": "item", "id": 1, "label": "你好", "selected": true },
+				{"type": "menu", "label": "你好", "children": [
+					{"type": "item", "id": 2, "label": "你好2", "icon": "icon.png"}
+				]}
+			]},
+			{ "label": "world", "children": [], "enabled": false },
+			{ "label": "fuck", "children": []}
 		]
 	},
 
 	"tray": {
 		"icon": "icon.png",
 		"menu": [
-			["hello", 123],
-			["world", 456],
-			"---",
-			["Quit", 789]
+			{ "type": "menu", "label": "hello", "children": [
+				{"type": "item", "id": 1, "label": "你好", "selected": true },
+				{"type": "menu", "label": "你好", "children": [
+					{"type": "item", "id": 2, "label": "你好2", "icon": "icon.png"}
+				]}
+			]},
+			{ "type": "menu", "label": "world", "children": [], "enabled": false },
+			{ "type": "menu", "label": "fuck", "children": []},
+			{"type": "item", "id": 2, "label": "你好2", "icon": "icon.png"}
 		]
 	},
 

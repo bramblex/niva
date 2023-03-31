@@ -32,14 +32,3 @@ pub enum NivaActivationPolicy {
     #[serde(rename = "prohibited")]
     Prohibited,
 }
-
-#[derive(Deserialize, Clone, Debug)]
-#[serde(untagged)]
-pub enum MenuItemOptions {
-    NativeItem(String),
-    MenuItem(String, u16),
-    SubMenu(String, Vec<MenuItemOptions>),
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct MenuOptions(pub Vec<MenuItemOptions>);

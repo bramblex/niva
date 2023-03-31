@@ -9,8 +9,7 @@ use tao::{
 use crate::{
     app::{
         api_manager::ApiManager,
-        options::MenuOptions,
-        window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions},
+        window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
         NivaId,
     },
     args_match, logical, logical_try, opts_match,
@@ -26,9 +25,10 @@ macro_rules! match_window {
 }
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
-    api_manager.register_api("window.current", |_app, window, _request| -> Result<NivaId> {
-        Ok(window.id)
-    });
+    api_manager.register_api(
+        "window.current",
+        |_app, window, _request| -> Result<NivaId> { Ok(window.id) },
+    );
 
     api_manager.register_event_api(
         "window.open",
@@ -84,9 +84,9 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setMenu", |app, window, request| -> Result<()> {
-        opts_match!(request, options: Option<MenuOptions>, id: Option<NivaId>);
+        opts_match!(request, options: Option<WindowMenuOptions>, id: Option<NivaId>);
         match_window!(app, window, id);
-        window.set_menu(&options);
+        // window.set_menu(&options);
         Ok(())
     });
 
@@ -468,7 +468,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setIgnoreCursorEvents", |app, window, request| {
-        opts_match!(request, ignore : bool, id: Option<NivaId>);
+        opts_match!(request, ignore: bool, id: Option<NivaId>);
         match_window!(app, window, id);
         window.set_ignore_cursor_events(ignore)?;
         Ok(())

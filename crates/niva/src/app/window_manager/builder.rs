@@ -1,17 +1,20 @@
 use super::{options::NivaWindowOptions, window::NivaWindow};
+use super::options::WindowMenuOptions;
+use super::options::WindowRootMenu;
+use crate::app::menu::build_native_item;
+use crate::app::menu::options::MenuItemOption;
+use crate::app::menu::options::MenuOptions;
 use crate::{
-    app::{
-        options::{MenuItemOptions, MenuOptions},
-        NivaApp, NivaId, NivaWindowTarget,
-    },
+    app::{NivaApp, NivaId, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
 };
 use anyhow::Result;
 use serde_json::json;
+use std::str::FromStr;
 use std::{borrow::Cow, sync::Arc};
+use tao::accelerator::Accelerator;
 use tao::{
     menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
-    platform::macos::WindowBuilderExtMacOS,
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 use wry::{
@@ -27,24 +30,10 @@ impl NivaBuilder {
     pub fn build_window(
         app: &Arc<NivaApp>,
         _id: NivaId,
-        parent: Option<Arc<NivaWindow>>,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Window> {
         let mut builder = WindowBuilder::new();
-
-        #[cfg(target_os = "macos")]
-        if let Some(parent) = parent {
-            use tao::platform::macos::WindowExtMacOS;
-            set_property!(builder, with_parent_window, parent.ns_window());
-        }
-
-        #[cfg(target_os = "windows")]
-        if let Some(parent) = parent {
-            use tao::platform::windows::WindowExtWindows;
-            use windows::Win32::Foundation::HWND;
-            set_property!(builder, with_parent_window, HWND(main_window.hwnd() as _));
-        }
 
         set_property_some!(
             builder,
@@ -56,10 +45,10 @@ impl NivaBuilder {
         set_property_some!(
             builder,
             with_window_icon,
-            options.icon.clone().map(move |icon_path| app
-                .resource()
-                .load_icon(icon_path)
-                .ok())
+            options
+                .icon
+                .clone()
+                .map(move |icon_path| app.resource().load_icon(&icon_path).ok())
         );
 
         set_property_some!(
@@ -109,80 +98,11 @@ impl NivaBuilder {
         set_property_some!(builder, with_focused, options.focused);
         set_property_some!(builder, with_content_protection, options.content_protection);
 
-        if let Some(menu) = Self::build_menu(&options.menu) {
+        if let Some(menu) = Self::build_menu(app, &options.menu) {
             set_property!(builder, with_menu, menu);
         }
 
         Ok(builder.build(target)?)
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn build_menu(menu_options: &Option<MenuOptions>) -> Option<MenuBar> {
-        let menu_options = menu_options.clone().unwrap_or(MenuOptions(vec![]));
-        let mut menu = MenuBar::new();
-        let (native_menu_name, native_menu) = Self::build_default_menu();
-        menu.add_submenu(&native_menu_name, true, native_menu);
-        Self::build_custom_menu(&mut menu, &menu_options.0);
-        Some(menu)
-    }
-
-    #[cfg(target_os = "windows")]
-    pub fn build_menu(menu_options: &Option<MenuOptions>) -> Option<MenuBar> {
-        if let Some(menu_options) = menu_options {
-            let mut menu = MenuBar::new();
-            Self::build_custom_menu(&mut menu, &menu_options.0);
-            return Some(menu);
-        }
-        None
-    }
-
-    fn build_custom_menu(menu: &mut MenuBar, menu_item_options_list: &Vec<MenuItemOptions>) {
-        for options in menu_item_options_list {
-            match options {
-                MenuItemOptions::NativeItem(label) => {
-                    Self::build_native_item(menu, label);
-                }
-                MenuItemOptions::MenuItem(label, id) => {
-                    menu.add_item(MenuItemAttributes::new(label).with_id(MenuId(*id)));
-                }
-                MenuItemOptions::SubMenu(label, submenu_item_options_list) => {
-                    let mut submenu = MenuBar::new();
-                    Self::build_custom_menu(&mut submenu, submenu_item_options_list);
-                    menu.add_submenu(label, true, submenu);
-                }
-            }
-        }
-    }
-
-    fn build_native_item(menu: &mut MenuBar, label: &str) {
-        match label {
-            "---" => {
-                menu.add_native_item(MenuItem::Separator);
-            }
-            "Separator" => {
-                menu.add_native_item(MenuItem::Separator);
-            }
-            _ => (),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn build_default_menu() -> (String, MenuBar) {
-        let native_menu_name = "File".to_string();
-        let mut native_menu = MenuBar::new();
-
-        native_menu.add_native_item(MenuItem::SelectAll);
-        native_menu.add_native_item(MenuItem::Copy);
-        native_menu.add_native_item(MenuItem::Paste);
-        native_menu.add_native_item(MenuItem::Cut);
-        native_menu.add_native_item(MenuItem::Undo);
-        native_menu.add_native_item(MenuItem::Redo);
-
-        native_menu.add_native_item(MenuItem::Separator);
-
-        native_menu.add_native_item(MenuItem::Quit);
-
-        (native_menu_name, native_menu)
     }
 
     pub fn build_webview(
@@ -230,9 +150,7 @@ impl NivaBuilder {
                 path += "index.html";
             }
             let path = path.strip_prefix('/').unwrap_or("index.html");
-            let result = custom_protocol_app
-                .resource()
-                .load(path.to_string());
+            let result = custom_protocol_app.resource().load(&path.to_string());
 
             match result {
                 Err(err) => Ok(Response::builder()
@@ -305,4 +223,96 @@ impl NivaBuilder {
 
         Ok(builder.with_url(&entry_url)?.build()?)
     }
+
+    // #[cfg(target_os = "macos")]
+    // pub fn build_menu(menu_options: &Option<MenuOptions>) -> Option<MenuBar> {
+    //     let menu_options = menu_options.clone().unwrap_or(MenuOptions(vec![]));
+    //     let mut menu = MenuBar::new();
+    //     let (native_menu_name, native_menu) = Self::build_default_menu();
+    //     menu.add_submenu(&native_menu_name, true, native_menu);
+    //     Self::build_custom_menu(&mut menu, &menu_options.0);
+    //     Some(menu)
+    // }
+
+    #[cfg(target_os = "windows")]
+    pub fn build_menu(app: &Arc<NivaApp>, menu_options: &Option<WindowMenuOptions>) -> Option<MenuBar> {
+        if let Some(window_menu_options) = menu_options {
+            let mut menu = MenuBar::new();
+            for WindowRootMenu {
+                label,
+                enabled,
+                children,
+            } in window_menu_options
+            {
+                let mut root_menu = MenuBar::new();
+                Self::build_custom_menu(app, &mut root_menu, children);
+                menu.add_submenu(&label, enabled.unwrap_or(true), root_menu);
+            }
+            return Some(menu);
+        }
+        None
+    }
+
+    fn build_custom_menu(app: &Arc<NivaApp>, menu: &mut MenuBar, options: &MenuOptions) {
+        for option in options {
+            match option {
+                MenuItemOption::Native { label } => {
+                    menu.add_native_item(build_native_item(label));
+                }
+                MenuItemOption::Item {
+                    label,
+                    id,
+                    enabled,
+                    selected,
+                    icon,
+                    accelerator,
+                } => {
+                    let mut attr = MenuItemAttributes::new(label).with_id(MenuId(*id));
+                    set_property_some!(attr, with_enabled, enabled);
+                    set_property_some!(attr, with_selected, selected);
+
+                    #[cfg(target_os = "macos")]
+                    if let Some(accelerator) = accelerator {
+                        if let Ok(accelerator) = Accelerator::from_str(accelerator) {
+                            set_property!(attr, with_accelerators, &accelerator);
+                        }
+                    }
+                    
+                    let mut item = menu.add_item(attr);
+
+                    #[cfg(target_os = "macos")]
+                    if let Some(icon) = icon {
+                        let icon = app.resource().load_icon(icon);
+                        if let Ok(icon) = icon {
+                            item.set_icon(icon);
+                        }
+                    }
+                }
+                MenuItemOption::Menu {
+                    label,
+                    enabled,
+                    children,
+                } => {
+                    let mut submenu = MenuBar::new();
+                    Self::build_custom_menu(app, &mut submenu, children);
+                    menu.add_submenu(label, enabled.unwrap_or(true), submenu);
+                }
+            }
+        }
+    }
+
+    // #[cfg(target_os = "macos")]
+    // fn build_default_menu() -> (String, MenuBar) {
+    //     let native_menu_name = "File".to_string();
+    //     let mut native_menu = MenuBar::new();
+    //     native_menu.add_native_item(MenuItem::SelectAll);
+    //     native_menu.add_native_item(MenuItem::Copy);
+    //     native_menu.add_native_item(MenuItem::Paste);
+    //     native_menu.add_native_item(MenuItem::Cut);
+    //     native_menu.add_native_item(MenuItem::Undo);
+    //     native_menu.add_native_item(MenuItem::Redo);
+    //     native_menu.add_native_item(MenuItem::Separator);
+    //     native_menu.add_native_item(MenuItem::Quit);
+    //     (native_menu_name, native_menu)
+    // }
 }

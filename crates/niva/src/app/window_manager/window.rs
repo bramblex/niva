@@ -1,9 +1,9 @@
-use crate::lock_force;
+use crate::{app::menu::options::MenuOptions, lock_force};
 
 use anyhow::{anyhow, Result};
 use std::{ops::Deref, sync::Arc};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tao::{
     event_loop::ControlFlow,
@@ -13,20 +13,22 @@ use wry::webview::{WebContext, WebView};
 
 use crate::{
     app::{
-        options::MenuOptions,
         utils::{arc, arc_mut, ArcMut},
         NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget,
     },
     unsafe_impl_sync_send,
 };
 
-use super::{builder::NivaBuilder, options::NivaWindowOptions};
+use super::{
+    builder::NivaBuilder,
+    options::{NivaWindowOptions, WindowMenuOptions},
+};
 
 pub struct NivaWindow {
     pub id: NivaId,
     pub window_id: WindowId,
     pub webview: WebView,
-    pub menu_options: ArcMut<Option<MenuOptions>>,
+    pub menu_options: ArcMut<Option<WindowMenuOptions>>,
     event_loop_proxy: NivaEventLoopProxy,
 }
 
@@ -42,12 +44,11 @@ impl NivaWindow {
     pub fn new(
         app: Arc<NivaApp>,
         id: NivaId,
-        parent: Option<Arc<NivaWindow>>,
         options: &NivaWindowOptions,
         web_context: &mut WebContext,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
-        let window = NivaBuilder::build_window(&app, id, parent, options, target)?;
+        let window = NivaBuilder::build_window(&app, id, options, target)?;
         let webview = NivaBuilder::build_webview(&app, options, window, web_context)?;
 
         Ok(arc(Self {
@@ -67,15 +68,15 @@ impl NivaWindow {
             .set_menu(NivaBuilder::build_menu(&menu_options));
     }
 
-    pub fn set_menu(self: &Arc<Self>, options: &Option<MenuOptions>) {
-        let mut menu_options = lock_force!(self.menu_options);
-        *menu_options = options.clone();
-        if self.is_focused() && self.is_menu_visible() {
-            self.webview
-                .window()
-                .set_menu(NivaBuilder::build_menu(&menu_options));
-        }
-    }
+    // pub fn set_menu(self: &Arc<Self>, options: &Option<WindowMenuOptions>) {
+    //     let mut menu_options = lock_force!(self.menu_options);
+    //     *menu_options = options.clone();
+    //     if self.is_focused() && self.is_menu_visible() {
+    //         self.webview
+    //             .window()
+    //             .set_menu(NivaBuilder::build_menu(&menu_options));
+    //     }
+    // }
 
     pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(
         self: &Arc<Self>,

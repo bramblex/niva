@@ -7,6 +7,7 @@ mod shortcut_manager;
 mod tray_manager;
 mod utils;
 mod window_manager;
+mod menu;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -230,7 +231,7 @@ impl NivaLaunchInfo {
         arguments: NivaArguments,
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
-        let content = resource_manager.load("niva.json".to_string())?;
+        let content = resource_manager.load(&"niva.json".to_string())?;
         let options: NivaOptions = serde_json::from_slice(&content)?;
 
         let name = options.name.clone();

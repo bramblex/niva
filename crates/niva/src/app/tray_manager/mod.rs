@@ -1,10 +1,13 @@
 use crate::lock;
 use crate::set_property;
+use crate::set_property_some;
 use crate::unsafe_impl_sync_send;
 
+use super::menu::build_native_item;
+use super::menu::options::MenuItemOption;
+use super::menu::options::MenuOptions;
 use super::utils::Counter;
 use super::{
-    options::{MenuItemOptions, MenuOptions},
     utils::{arc_mut, ArcMut},
     NivaApp, NivaWindowTarget,
 };
@@ -105,7 +108,7 @@ impl NivaTrayManager {
                 .clone()
                 .ok_or(anyhow!("App not bound to tray manager"))?
                 .resource()
-                .load_icon(icon)?;
+                .load_icon(&icon)?;
             tray.set_icon(icon);
         }
 
@@ -128,11 +131,12 @@ impl NivaTrayManager {
             .clone()
             .ok_or(anyhow!("App not bound to tray manager"))?;
 
-        let icon = app.resource().load_icon(options.icon.clone())?;
+        let icon = app.resource().load_icon(&options.icon)?;
 
-        let menu = options.menu.as_ref().map(Self::build_menu);
-
+        let menu = options.menu.as_ref()
+        .map(|m| Self::build_menu(&app, m ));
         let mut builder = SystemTrayBuilder::new(icon, menu);
+
         set_property!(builder, with_id, TrayId(id));
 
         #[cfg(target_os = "macos")]
@@ -147,39 +151,58 @@ impl NivaTrayManager {
         Ok(arc_mut(builder.build(target)?))
     }
 
-    fn build_menu(menu_options: &MenuOptions) -> ContextMenu {
+    fn build_menu(app: &Arc<NivaApp>, menu_options: &MenuOptions) -> ContextMenu {
         let mut menu = ContextMenu::new();
-        Self::build_custom_menu(&mut menu, &menu_options.0);
+        Self::build_custom_menu(app, &mut menu, &menu_options);
         menu
     }
 
-    fn build_custom_menu(menu: &mut ContextMenu, menu_item_options_list: &Vec<MenuItemOptions>) {
-        for options in menu_item_options_list {
-            match options {
-                MenuItemOptions::NativeItem(label) => {
-                    Self::build_native_item(menu, label);
+    fn build_custom_menu(app: &Arc<NivaApp>, menu: &mut ContextMenu, options: &MenuOptions) {
+        for option in options {
+            match option {
+                MenuItemOption::Native { label } => {
+                    menu.add_native_item(build_native_item(label));
                 }
-                MenuItemOptions::MenuItem(label, id) => {
-                    menu.add_item(MenuItemAttributes::new(label).with_id(MenuId(*id)));
+                MenuItemOption::Item {
+                    label,
+                    id,
+                    enabled,
+                    selected,
+                    icon,
+                    accelerator,
+                } => {
+                    let mut attr = MenuItemAttributes::new(label).with_id(MenuId(*id));
+                    set_property_some!(attr, with_enabled, enabled);
+                    set_property_some!(attr, with_selected, selected);
+
+                    #[cfg(target_os = "macos")]
+                    if let Some(accelerator) = accelerator {
+                        if let Ok(accelerator) = Accelerator::from_str(accelerator) {
+                            set_property!(attr, with_accelerators, &accelerator);
+                        }
+                    }
+                    
+                    let mut item = menu.add_item(attr);
+
+                    #[cfg(target_os = "macos")]
+                    if let Some(icon) = icon {
+                        let icon = app.resource().load_icon(icon);
+                        if let Ok(icon) = icon {
+                            item.set_icon(icon);
+                        }
+                    }
                 }
-                MenuItemOptions::SubMenu(label, submenu_item_options_list) => {
+                MenuItemOption::Menu {
+                    label,
+                    enabled,
+                    children,
+                } => {
                     let mut submenu = ContextMenu::new();
-                    Self::build_custom_menu(&mut submenu, submenu_item_options_list);
-                    menu.add_submenu(label, true, submenu);
+                    Self::build_custom_menu(app, &mut submenu, children);
+                    menu.add_submenu(label, enabled.unwrap_or(true), submenu);
                 }
             }
         }
     }
 
-    fn build_native_item(menu: &mut ContextMenu, label: &str) {
-        match label {
-            "---" => {
-                menu.add_native_item(MenuItem::Separator);
-            }
-            "Separator" => {
-                menu.add_native_item(MenuItem::Separator);
-            }
-            _ => (),
-        }
-    }
 }
