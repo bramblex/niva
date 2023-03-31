@@ -31,7 +31,7 @@ use self::{
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
-    utils::{arc, ArcMut},
+    utils::{arc, arc_mut, ArcMut},
     window_manager::{options::NivaWindowOptions, WindowManager},
 };
 
@@ -67,7 +67,7 @@ impl Deref for NivaEvent {
 pub struct NivaApp {
     launch_info: NivaLaunchInfo, // NivaApp launch info, contains this command line arguments and niva.json project options.
 
-    resource: Arc<dyn ResourceManager>,
+    _resource: Arc<dyn ResourceManager>,
     _window: ArcMut<WindowManager>, // Window manager.
     _api: ArcMut<ApiManager>,
     _shortcut: ArcMut<NivaShortcutManager>,
@@ -81,8 +81,8 @@ impl NivaApp {
         let arguments = NivaArguments::new();
 
         let resource_manager: Arc<dyn ResourceManager> = match &arguments.debug_resource {
-            Some(dir) => arc(FileSystemResource::new(dir)?),
-            None => arc(AppResourceManager::new()?),
+            Some(dir) => FileSystemResource::new(dir)?,
+            None => AppResourceManager::new()?,
         };
 
         let launch_info = NivaLaunchInfo::new(arguments, resource_manager.clone())?;
@@ -104,7 +104,7 @@ impl NivaApp {
         // create api manager and register api instances
         let api_manager = ApiManager::new(&launch_info.options);
         {
-            let mut api_manager = lock!(api_manager);
+            let mut api_manager = lock!(api_manager)?;
             register_api_instances(&mut api_manager);
         }
 
@@ -118,8 +118,7 @@ impl NivaApp {
         let app = Arc::new(NivaApp {
             launch_info,
 
-            resource: resource_manager,
-
+            _resource: resource_manager,
             _window: window_manager.clone(),
             _api: api_manager.clone(),
             _shortcut: shortcut_manager,
@@ -129,27 +128,31 @@ impl NivaApp {
         });
 
         // bind app to window manager
-        lock!(window_manager).bind_app(app.clone());
-        lock!(api_manager).bind_app(app.clone());
-        lock!(tray_manager).bind_app(app.clone());
+        lock!(window_manager)?.bind_app(app.clone());
+        lock!(api_manager)?.bind_app(app.clone());
+        lock!(tray_manager)?.bind_app(app.clone());
 
         Ok(app)
     }
 
+    pub fn resource<'a>(self: &'a Arc<Self>) -> Arc<dyn ResourceManager>{
+        self._resource.clone()
+    }
+
     pub fn window<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, WindowManager>> {
-        Ok(lock!(self._window))
+        lock!(self._window)
     }
 
     pub fn api<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, ApiManager>> {
-        Ok(lock!(self._api))
+        lock!(self._api)
     }
 
     pub fn shortcut<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaShortcutManager>> {
-        Ok(lock!(self._shortcut))
+        lock!(self._shortcut)
     }
 
     pub fn tray<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaTrayManager>> {
-        Ok(lock!(self._tray))
+        lock!(self._tray)
     }
 
     pub fn run(self: Arc<NivaApp>, event_loop: NivaEventLoop) -> Result<()> {
@@ -193,6 +196,7 @@ impl NivaArguments {
                 args_map.insert(key.to_string(), value.to_string());
             }
         }
+
 
         let debug_devtools = args_map
             .get("debug-devtools")

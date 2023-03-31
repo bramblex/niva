@@ -26,23 +26,29 @@ fn info(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
 }
 
 fn dirs(app: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
-    let user_dirs = UserDirs::new().unwrap();
+    let user_dirs = UserDirs::new();
 
-    Ok(json!({
-        "temp": app.launch_info.temp_dir,
-        "data": app.launch_info.data_dir,
+    match user_dirs {
+        Some(user_dirs) => Ok(json!({
+            "temp": app.launch_info.temp_dir,
+            "data": app.launch_info.data_dir,
 
-        "home": user_dirs.home_dir(),
-        "audio": user_dirs.audio_dir(),
-        "desktop": user_dirs.desktop_dir(),
-        "document": user_dirs.document_dir(),
-        "download": user_dirs.download_dir(),
-        "font": user_dirs.font_dir(),
-        "picture": user_dirs.picture_dir(),
-        "public": user_dirs.public_dir(),
-        "template": user_dirs.template_dir(),
-        "video": user_dirs.video_dir(),
-    }))
+            "home": user_dirs.home_dir(),
+            "audio": user_dirs.audio_dir(),
+            "desktop": user_dirs.desktop_dir(),
+            "document": user_dirs.document_dir(),
+            "download": user_dirs.download_dir(),
+            "font": user_dirs.font_dir(),
+            "picture": user_dirs.picture_dir(),
+            "public": user_dirs.public_dir(),
+            "template": user_dirs.template_dir(),
+            "video": user_dirs.video_dir(),
+        })),
+        None => Ok(json!({
+            "temp": app.launch_info.temp_dir,
+            "data": app.launch_info.data_dir,
+        })),
+    }
 }
 
 fn sep(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {

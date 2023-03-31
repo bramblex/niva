@@ -158,19 +158,18 @@ impl ApiManager {
 
         let api = self.api_instance.get(&request.1);
 
-        if api.is_none() {
+        if let Some(api_func) = api {
+            let result = api_func(app, window.clone(), request.clone());
+
+            if let Err(err) = result {
+                window.send_ipc_callback(request.err(-1, err.to_string()))?;
+                return Err(err);
+            }
+
+            Ok(())
+        } else {
             window.send_ipc_callback(request.err(-1, "api not found".to_string()))?;
             return Err(anyhow!("api not found"));
         }
-
-        let api_func = api.unwrap();
-        let result = api_func(app, window.clone(), request.clone());
-
-        if let Err(err) = result {
-            window.send_ipc_callback(request.err(-1, err.to_string()))?;
-            return Err(err);
-        }
-
-        Ok(())
     }
 }

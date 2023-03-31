@@ -67,7 +67,7 @@ macro_rules! lock {
     ($value:expr) => {
         $value
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock {}.", stringify!($value)))?
+            .map_err(|_| anyhow::anyhow!("Failed to lock {}.", stringify!($value)))
     };
 }
 

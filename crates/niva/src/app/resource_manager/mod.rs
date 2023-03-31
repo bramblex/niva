@@ -7,43 +7,39 @@ use anyhow::{Ok, Result};
 use std::{
     collections::HashMap,
     io::Read,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, sync::{Mutex, Arc, MutexGuard},
 };
 use tao::window::Icon;
+
+use crate::lock;
+
+use super::utils::{arc_mut, ArcMut, arc};
+
+type IconCache = HashMap<String, Icon>;
 
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
     fn load(&self, path: String) -> Result<Vec<u8>>;
     fn extract(&self, from: String, to: &Path) -> Result<()>;
-
-    fn load_icon(&self, path: String) -> Result<Icon> {
-        let data = self.load(path.clone())?;
-        if path.ends_with("png") {
-            image_utils::png_to_icon(&data)
-        // } else if path.ends_with("jpg") {
-        //     image_utils::jpg_to_icon(&data)
-        // } else if path.ends_with("jpeg") {
-        //     image_utils::jpg_to_icon(&data)
-        } else {
-            Err(anyhow::anyhow!("Unsupported icon format."))
-        }
-    }
+    fn load_icon(&self, path: String) -> Result<Icon>;
 }
 
 #[derive(Debug)]
 pub struct FileSystemResource {
     root_dir: PathBuf,
+    icon_cache: ArcMut<IconCache>,
 }
 
 impl FileSystemResource {
-    pub fn new(root_dir: &Path) -> Result<FileSystemResource> {
+    pub fn new(root_dir: &Path) -> Result<Arc<FileSystemResource>> {
         root_dir
             .exists()
             .then(|| root_dir.is_dir())
             .ok_or(anyhow::anyhow!("Invalid resource directory."))?;
-        Ok(FileSystemResource {
+        Ok(arc(FileSystemResource {
             root_dir: root_dir.to_path_buf(),
-        })
+            icon_cache: arc_mut(HashMap::new()),
+        }))
     }
 }
 
@@ -65,11 +61,30 @@ impl ResourceManager for FileSystemResource {
         )?;
         Ok(())
     }
+
+    fn load_icon(&self, path: String) -> Result<Icon> {
+        let mut cache = lock!(self.icon_cache)?;
+        let icon = cache.get(&path);
+        match icon {
+            Some(icon) => return Ok(icon.clone()),
+            None => {
+                let data = self.load(path.clone())?;
+                if path.ends_with("png") {
+                    let icon = image_utils::png_to_icon(&data)?;
+                    cache.insert(path, icon.clone());
+                    Ok(icon)
+                } else {
+                    Err(anyhow::anyhow!("Unsupported icon format."))
+                }
+            }
+        }
+    }
 }
 
 pub struct AppResourceManager {
     indexes: HashMap<String, (usize, usize)>,
     data: Vec<u8>,
+    icon_cache: Mutex<IconCache>,
 }
 
 impl std::fmt::Debug for AppResourceManager {
@@ -83,7 +98,7 @@ impl std::fmt::Debug for AppResourceManager {
 
 impl AppResourceManager {
     #[cfg(target_os = "macos")]
-    pub fn new() -> Result<AppResourceManager> {
+    pub fn new() -> Result<Arc<AppResourceManager>> {
         let resources_dir = std::env::current_exe()?
             .parent()
             .ok_or(anyhow::anyhow!("Invalid resource directory."))?
@@ -94,11 +109,15 @@ impl AppResourceManager {
         let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
         let mut data = Vec::new();
         decoder.read_to_end(&mut data)?;
-        Ok(AppResourceManager { indexes, data })
+        Ok(arc(AppResourceManager {
+            indexes,
+            data,
+            icon_cache: Mutex::new(HashMap::new()),
+        }))
     }
 
     #[cfg(target_os = "windows")]
-    pub fn new() -> Result<AppResourceManager> {
+    pub fn new() -> Result<Arc<AppResourceManager>> {
         use win_utils::load_resource;
         let indexes_data = load_resource("RESOURCE_INDEXES")?;
         let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
@@ -106,7 +125,11 @@ impl AppResourceManager {
         let mut decoder = flate2::read::DeflateDecoder::new(&compressed_data[..]);
         let mut data = Vec::new();
         decoder.read_to_end(&mut data)?;
-        Ok(AppResourceManager { indexes, data })
+        Ok(arc(AppResourceManager {
+            indexes,
+            data,
+            icon_cache: Mutex::new(HashMap::new()),
+        }))
     }
 }
 
@@ -127,5 +150,23 @@ impl ResourceManager for AppResourceManager {
         let content = self.load(from)?;
         std::fs::write(to, content)?;
         Ok(())
+    }
+
+    fn load_icon(&self, path: String) -> Result<Icon> {
+        let mut cache = lock!(self.icon_cache)?;
+        let icon = cache.get(&path);
+        match icon {
+            Some(icon) => return Ok(icon.clone()),
+            None => {
+                let data = self.load(path.clone())?;
+                if path.ends_with("png") {
+                    let icon = image_utils::png_to_icon(&data)?;
+                    cache.insert(path, icon.clone());
+                    Ok(icon)
+                } else {
+                    Err(anyhow::anyhow!("Unsupported icon format."))
+                }
+            }
+        }
     }
 }
