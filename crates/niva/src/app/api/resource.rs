@@ -16,7 +16,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
 
 fn exists(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<bool> {
     args_match!(request, path: String);
-    Ok(app.resource.exists(path))
+    Ok(app.resource().exists(path))
 }
 
 #[derive(Deserialize)]
@@ -31,7 +31,7 @@ fn read(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<St
     opts_match!(request, path: String, encode: Option<EncodeType>);
 
     let encode = encode.unwrap_or(EncodeType::UTF8);
-    let content = app.resource.load(path)?;
+    let content = app.resource().load(path)?;
     let content = match encode {
         EncodeType::UTF8 => String::from_utf8(content)?,
         EncodeType::BASE64 => base64::encode_config(content, base64::STANDARD),
@@ -43,7 +43,7 @@ fn read(app: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<St
 fn extract(env: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
     args_match!(request, from: String, to: String);
 
-    let content = env.resource.load(from)?;
+    let content = env.resource().load(from)?;
     std::fs::write(to, content)?;
     Ok(())
 }

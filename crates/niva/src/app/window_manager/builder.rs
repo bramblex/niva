@@ -56,10 +56,10 @@ impl NivaBuilder {
         set_property_some!(
             builder,
             with_window_icon,
-            options
-                .icon
-                .clone()
-                .map(move |icon_path| app.resource.load_icon(icon_path).ok())
+            options.icon.clone().map(move |icon_path| app
+                .resource()
+                .load_icon(icon_path)
+                .ok())
         );
 
         set_property_some!(
@@ -212,22 +212,27 @@ impl NivaBuilder {
         set_property!(builder, with_initialization_script, INITIALIZE_SCRIPT);
         set_property!(builder, with_accept_first_mouse, true);
         set_property!(builder, with_clipboard, true);
-        set_property!(builder, with_background_color, (255, 255, 255, 0));
         set_property_some!(builder, with_devtools, options.devtools);
-        set_property_some!(builder, with_transparent, options.transparent);
+
+        if options.transparent.unwrap_or(false) {
+            set_property!(builder, with_background_color, (255, 255, 255, 0));
+            set_property!(builder, with_transparent, true);
+        }
 
         let prefix = base_url;
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 
-        let resource_manager = app.resource.clone();
+        let custom_protocol_app = app.clone();
         builder = builder.with_custom_protocol(protocol.to_string(), move |request| {
             let mut path = request.uri().path().to_string();
             if path.ends_with('/') {
                 path += "index.html";
             }
             let path = path.strip_prefix('/').unwrap_or("index.html");
-            let result = resource_manager.load(path.to_string());
+            let result = custom_protocol_app
+                .resource()
+                .load(path.to_string());
 
             match result {
                 Err(err) => Ok(Response::builder()

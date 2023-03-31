@@ -59,8 +59,9 @@ fn _request(options: RequestOptions) -> Result<Value> {
 
     let mut response_headers = HashMap::new();
     for name in header_names {
-        let value = http_response.header(&name).unwrap();
-        response_headers.insert(name, value.to_string());
+        if let Some(value) = http_response.header(&name) {
+            response_headers.insert(name, value.to_string());
+        }
     }
 
     let body = http_response.into_string()?;

@@ -100,8 +100,8 @@ fn exec(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Valu
 
     Ok(json!({
             "status": output.status.code(),
-            "stdout": String::from_utf8(output.stdout).unwrap(),
-            "stderr": String::from_utf8(output.stderr).unwrap(),
+            "stdout": String::from_utf8(output.stdout)?,
+            "stderr": String::from_utf8(output.stderr)?,
     }))
 }
 
