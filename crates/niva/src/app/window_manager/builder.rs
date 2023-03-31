@@ -1,4 +1,4 @@
-use super::options::NivaWindowOptions;
+use super::{options::NivaWindowOptions, window::NivaWindow};
 use crate::{
     app::{
         options::{MenuItemOptions, MenuOptions},
@@ -11,6 +11,7 @@ use serde_json::json;
 use std::{borrow::Cow, sync::Arc};
 use tao::{
     menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
+    platform::macos::WindowBuilderExtMacOS,
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
 use wry::{
@@ -26,10 +27,24 @@ impl NivaBuilder {
     pub fn build_window(
         app: &Arc<NivaApp>,
         _id: NivaId,
+        parent: Option<Arc<NivaWindow>>,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Window> {
         let mut builder = WindowBuilder::new();
+
+        #[cfg(target_os = "macos")]
+        if let Some(parent) = parent {
+            use tao::platform::macos::WindowExtMacOS;
+            set_property!(builder, with_parent_window, parent.ns_window());
+        }
+
+        #[cfg(target_os = "windows")]
+        if let Some(parent) = parent {
+            use tao::platform::windows::WindowExtWindows;
+            use windows::Win32::Foundation::HWND;
+            set_property!(builder, with_parent_window, HWND(main_window.hwnd() as _));
+        }
 
         set_property_some!(
             builder,

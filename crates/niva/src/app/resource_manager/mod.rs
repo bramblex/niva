@@ -11,6 +11,7 @@ use std::{
 };
 use tao::window::Icon;
 
+
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
     fn exists(&self, path: String) -> bool;
     fn load(&self, path: String) -> Result<Vec<u8>>;
@@ -20,10 +21,6 @@ pub trait ResourceManager: std::fmt::Debug + Send + Sync {
         let data = self.load(path.clone())?;
         if path.ends_with("png") {
             image_utils::png_to_icon(&data)
-        // } else if path.ends_with("jpg") {
-        //     image_utils::jpg_to_icon(&data)
-        // } else if path.ends_with("jpeg") {
-        //     image_utils::jpg_to_icon(&data)
         } else {
             Err(anyhow::anyhow!("Unsupported icon format."))
         }

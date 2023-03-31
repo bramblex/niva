@@ -49,7 +49,22 @@ impl WindowManager {
         let id = self.id_counter.next();
         let app = self.app.clone().ok_or(anyhow!("App not found"))?;
 
-        let niva_window = NivaWindow::new(app, id, options, &mut self.web_context, target)?;
+        let parent = {
+            match options.parent {
+                Some(parent_id) => {
+                    Some(self.get_window(parent_id)?)
+                }
+                None => None
+            }
+        };
+
+        let niva_window = NivaWindow::new(
+            app, 
+            id, 
+            parent,
+            options, 
+            &mut self.web_context, 
+            target)?;
 
         self.id_map.insert(niva_window.window_id, niva_window.id);
         self.windows.insert(niva_window.id, niva_window.clone());

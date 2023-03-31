@@ -1,6 +1,8 @@
 use anyhow::Result;
 use directories::UserDirs;
+use niva_macros::niva_api;
 use serde_json::{json, Value};
+use sys_locale::get_locale;
 use std::sync::Arc;
 
 use crate::app::{
@@ -14,6 +16,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.dirs", dirs);
     api_manager.register_api("os.sep", sep);
     api_manager.register_api("os.eol", eol);
+    api_manager.register_api("os.locale", locale);
 }
 
 fn info(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
@@ -56,4 +59,9 @@ fn eol(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
     let eol = "\n";
 
     Ok(eol.to_string())
+}
+
+#[niva_api]
+fn locale() -> Result<String> {
+     Ok(get_locale().unwrap_or("en-US".to_string()))
 }

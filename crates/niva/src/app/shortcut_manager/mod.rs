@@ -1,4 +1,4 @@
-use crate::{unsafe_impl_sync_send, log_if_err};
+use crate::{log_if_err, unsafe_impl_sync_send};
 
 use super::{
     utils::{arc_mut, ArcMut},
@@ -13,7 +13,12 @@ use tao::{
 };
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct ShortcutsOptions(pub Vec<(String, u16)>);
+pub struct ShortcutOption {
+    pub accelerator: String,
+    pub id: u16,
+}
+
+pub type ShortcutsOptions = Vec<ShortcutOption>;
 
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
@@ -31,9 +36,13 @@ impl NivaShortcutManager {
             shortcuts: HashMap::new(),
         };
 
-        if let Some(ShortcutsOptions(options)) = options.clone() {
-            for (accelerator_str, id) in options {
-                log_if_err!(manager.register(id, accelerator_str));
+        if let Some(options) = options.clone() {
+            for ShortcutOption {
+                accelerator,
+                id,
+            } in options
+            {
+                log_if_err!(manager.register(id, accelerator));
             }
         }
 

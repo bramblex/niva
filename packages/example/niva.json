@@ -7,9 +7,9 @@
 
 	"window": {
 		"visible": false,
-		"alwaysOnTop": true,
-		"visibleOnAllWorkspaces": true,
-		"decorations": false,
+		"alwaysOnTop": false,
+		"visibleOnAllWorkspaces": false,
+		"decorations": true,
 		"icon": "icon.png",
 		"size": {
 			"width": 800,
@@ -35,6 +35,6 @@
 	},
 
 	"shortcuts": [
-		["COMMANDORCONTROL+SHIFT+Backslash", 1]
+		{"id": 1, "accelerator": "CommandOrControl+Shift+Backslash"}
 	]
 }

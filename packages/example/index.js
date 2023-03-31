@@ -5,6 +5,8 @@
 
   const { window, monitor, webview, extra } = Niva.api;
 
+  webview.openDevtools();
+
   async function setWindowToCurrentMonitorCenter() {
     const cursorPosition = await window.cursorPosition();
     const currentMonitor = await monitor.fromPoint(cursorPosition.x, cursorPosition.y)

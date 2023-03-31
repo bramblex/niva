@@ -42,11 +42,12 @@ impl NivaWindow {
     pub fn new(
         app: Arc<NivaApp>,
         id: NivaId,
+        parent: Option<Arc<NivaWindow>>,
         options: &NivaWindowOptions,
         web_context: &mut WebContext,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
-        let window = NivaBuilder::build_window(&app, id, options, target)?;
+        let window = NivaBuilder::build_window(&app, id, parent, options, target)?;
         let webview = NivaBuilder::build_webview(&app, options, window, web_context)?;
 
         Ok(arc(Self {
