@@ -1,7 +1,7 @@
 use super::{options::NivaWindowOptions, window::NivaWindow};
 use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
-use crate::app::menu::build_native_item;
+use crate::app::menu::{build_native_item, self};
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
 };
 use anyhow::Result;
 use serde_json::json;
+use std::default;
 use std::str::FromStr;
 use std::{borrow::Cow, sync::Arc};
 use tao::accelerator::Accelerator;
@@ -224,18 +225,15 @@ impl NivaBuilder {
         Ok(builder.with_url(&entry_url)?.build()?)
     }
 
-    // #[cfg(target_os = "macos")]
-    // pub fn build_menu(menu_options: &Option<MenuOptions>) -> Option<MenuBar> {
-    //     let menu_options = menu_options.clone().unwrap_or(MenuOptions(vec![]));
-    //     let mut menu = MenuBar::new();
-    //     let (native_menu_name, native_menu) = Self::build_default_menu();
-    //     menu.add_submenu(&native_menu_name, true, native_menu);
-    //     Self::build_custom_menu(&mut menu, &menu_options.0);
-    //     Some(menu)
-    // }
-
-    #[cfg(target_os = "windows")]
     pub fn build_menu(app: &Arc<NivaApp>, menu_options: &Option<WindowMenuOptions>) -> Option<MenuBar> {
+        #[cfg(target_os = "macos")]
+        let default_menu = Self::macos_default_menu();
+        #[cfg(target_os = "macos")]
+        let menu_options = match &menu_options {
+            Some(_) => menu_options,
+            None => &default_menu,
+        };
+
         if let Some(window_menu_options) = menu_options {
             let mut menu = MenuBar::new();
             for WindowRootMenu {
@@ -301,18 +299,22 @@ impl NivaBuilder {
         }
     }
 
-    // #[cfg(target_os = "macos")]
-    // fn build_default_menu() -> (String, MenuBar) {
-    //     let native_menu_name = "File".to_string();
-    //     let mut native_menu = MenuBar::new();
-    //     native_menu.add_native_item(MenuItem::SelectAll);
-    //     native_menu.add_native_item(MenuItem::Copy);
-    //     native_menu.add_native_item(MenuItem::Paste);
-    //     native_menu.add_native_item(MenuItem::Cut);
-    //     native_menu.add_native_item(MenuItem::Undo);
-    //     native_menu.add_native_item(MenuItem::Redo);
-    //     native_menu.add_native_item(MenuItem::Separator);
-    //     native_menu.add_native_item(MenuItem::Quit);
-    //     (native_menu_name, native_menu)
-    // }
+    #[cfg(target_os = "macos")]
+    fn macos_default_menu() -> Option<WindowMenuOptions> {
+        use crate::app::menu::options::NativeLabel;
+
+        Some(vec![WindowRootMenu {
+            label: "".to_string(),
+            enabled: None,
+            children: vec![
+                MenuItemOption::Native{label: NativeLabel::SelectAll},
+                MenuItemOption::Native{label: NativeLabel::Copy},
+                MenuItemOption::Native{label: NativeLabel::Paste},
+                MenuItemOption::Native{label: NativeLabel::Cut},
+                MenuItemOption::Native{label: NativeLabel::Undo},
+                MenuItemOption::Native{label: NativeLabel::Separator},
+                MenuItemOption::Native{label: NativeLabel::Quit},
+            ]
+        }])
+     }
 }

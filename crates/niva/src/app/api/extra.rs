@@ -11,11 +11,14 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn get_active_window_id() -> Result<String> {
+fn get_active_window_id() -> Result<Option<String>> {
     use active_win_pos_rs::get_active_window;
 
-    let window = get_active_window()?;
-    Ok(format!("{}_{}", window.process_id, window.window_id))
+    let window = get_active_window();
+    match window {
+        Ok(window) => Ok(Some(format!("{}_{}", window.process_id, window.window_id))),
+        Err(_) => Ok(None),
+    }
 }
 
 #[cfg(target_os = "macos")]

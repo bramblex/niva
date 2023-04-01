@@ -13,8 +13,10 @@ use super::{
 };
 use tao::TrayId;
 
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 use serde::Deserialize;
+use tao::accelerator::Accelerator;
+use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 use tao::system_tray::SystemTray;
 use tao::{
