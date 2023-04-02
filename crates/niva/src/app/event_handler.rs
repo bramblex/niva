@@ -77,14 +77,7 @@ impl EventHandler {
                         ));
                     }
                     WindowEvent::CloseRequested => {
-                        if window.id == 0 {
-                            *control_flow = ControlFlow::Exit;
-                        } else {
-                            log_if_err!(self
-                                .app
-                                .window()
-                                .and_then(|mut w| w.close_window(window.id)));
-                        }
+                        log_if_err!(window.send_ipc_event("window.closeRequested", json!(null)));
                     }
                     _ => (),
                 }

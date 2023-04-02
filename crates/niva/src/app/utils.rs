@@ -1,5 +1,9 @@
 use std::sync::{Arc, Mutex};
 
+use anyhow::{anyhow, Result};
+use url::Url;
+use wry::http::HeaderValue;
+
 pub type ArcMut<T> = Arc<Mutex<T>>;
 
 pub fn arc<T>(t: T) -> Arc<T> {
@@ -157,6 +161,18 @@ macro_rules! args_match {
         let ($id0, $id1, $id2, $id3) = $request.args().get::<($arg0, $arg1, $arg2, $arg3)>()?;
     };
     ($request:expr, $id0:ident: $arg0:ty, $id1:ident: $arg1:ty, $id2:ident: $arg2:ty, $id3:ident: $arg3:ty, $id4:ident: $arg4:ty) => {
-        let ($id0, $id1, $id2, $id3, $id4) = $request.args().get::<($arg0, $arg1, $arg2, $arg3, $arg4)>()?;
+        let ($id0, $id1, $id2, $id3, $id4) = $request
+            .args()
+            .get::<($arg0, $arg1, $arg2, $arg3, $arg4)>()?;
     };
+}
+
+#[cfg(target_os = "windows")]
+pub fn make_base_url(protocol: &str, host: &str) -> String {
+    format!("https://{}.{}", protocol, host)
+}
+
+#[cfg(target_os = "macos")]
+pub fn make_base_url(protocol: &str, host: &str) -> String {
+    format!("{}://{}", protocol, host)
 }

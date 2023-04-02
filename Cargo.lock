@@ -1779,6 +1779,7 @@ dependencies = [
  "sys-locale",
  "tao",
  "ureq",
+ "url",
  "winapi",
  "winres",
  "wry",

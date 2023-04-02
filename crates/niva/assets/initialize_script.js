@@ -29,6 +29,13 @@
     eventListeners[event] = newListeners;
   }
 
+  function removeAllEventListeners(event) {
+    if (!eventListeners[event]) {
+      return;
+    }
+    eventListeners[event] = [];
+  }
+
   function emit(event, data) {
     setTimeout(function () {
       var keys = [event, event.split('.')[0] + '.*', '*'];
@@ -49,6 +56,8 @@
 
   Niva.addEventListener = addEventListener;
   Niva.removeEventListener = removeEventListener;
+  Niva.removeAllEventListeners = removeAllEventListeners;
+  EventListener = removeEventListener;
   Niva.__emit__ = emit;
 
   // === API Call ===
@@ -128,13 +137,20 @@
     Niva.__resolve__(response);
   });
 
+  Niva.addEventListener('window.closeRequested', function () {
+    Niva.api.window.close();
+  });
+
+  delete window.close;
+  delete window.open;
+
   // === Tauri API ===
   window.Niva = Niva;
   console.log('Niva loaded');
 
   (function docReady(func) {
     if (document.readyState === "complete" || document.readyState === "interactive") {
-      setTimeout(func, 1);
+      setTimeout(func);
     } else {
       document.addEventListener("DOMContentLoaded", func);
     }

@@ -1,13 +1,15 @@
-use super::{options::NivaWindowOptions, window::NivaWindow};
 use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
-use crate::app::menu::{build_native_item, self};
+use super::{options::NivaWindowOptions, window::NivaWindow};
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
+use crate::app::menu::{self, build_native_item};
+use crate::app::utils::make_base_url;
 use crate::{
     app::{NivaApp, NivaId, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
 };
+use anyhow::anyhow;
 use anyhow::Result;
 use serde_json::json;
 use std::default;
@@ -18,6 +20,7 @@ use tao::{
     menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
     window::{Fullscreen, Theme, Window, WindowBuilder},
 };
+use wry::http::HeaderValue;
 use wry::{
     http::Response,
     webview::{FileDropEvent, WebContext, WebView, WebViewBuilder},
@@ -116,10 +119,8 @@ impl NivaBuilder {
         let protocol = "niva";
 
         let debug_entry = app.launch_info.arguments.debug_entry.clone();
-        #[cfg(target_os = "macos")]
-        let base_url = debug_entry.unwrap_or(format!("{}://{}", protocol, id_name));
-        #[cfg(target_os = "windows")]
-        let base_url = debug_entry.unwrap_or(format!("https://{}.{}", protocol, id_name));
+
+        let base_url = debug_entry.unwrap_or(make_base_url(protocol, &id_name));
 
         let entry_url = format!(
             "{}/{}",
@@ -140,23 +141,39 @@ impl NivaBuilder {
             set_property!(builder, with_transparent, true);
         }
 
-        let prefix = base_url;
+        let prefix = base_url.clone();
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 
         let custom_protocol_app = app.clone();
         builder = builder.with_custom_protocol(protocol.to_string(), move |request| {
+            let hostname = request.uri().host().unwrap_or(&id_name);
+
             let mut path = request.uri().path().to_string();
+
             if path.ends_with('/') {
                 path += "index.html";
             }
-            let path = path.strip_prefix('/').unwrap_or("index.html");
-            let result = custom_protocol_app.resource().load(&path.to_string());
+
+            let result = (|| -> Result<Vec<u8>> {
+                if hostname == &id_name {
+                    let path = path.strip_prefix('/').unwrap_or("index.html");
+                    custom_protocol_app.resource().load(&path.to_string())
+                } else if hostname == "filesystem" {
+                    #[cfg(target_os = "windows")]
+                    let path = path.strip_prefix('/').unwrap_or("index.html");
+                    Ok(std::fs::read(&path)?)
+                } else {
+                    Err(anyhow!("Invalid hostname: {}", hostname))
+                }
+            })();
 
             match result {
                 Err(err) => Ok(Response::builder()
                     .status(404)
+                    .header("Content-Type", "text/plain; charset=utf-8")
                     .body(Cow::Owned(err.to_string().into_bytes()))?),
+
                 Ok(content) => {
                     let mime_type = mime_guess::from_path(path)
                         .first()
@@ -166,6 +183,7 @@ impl NivaBuilder {
                     Ok(Response::builder()
                         .status(200)
                         .header("Content-Type", mime_type)
+                        .header("Access-Control-Allow-Origin", base_url.clone())
                         .body(Cow::Owned(content))?)
                 }
             }
@@ -225,7 +243,10 @@ impl NivaBuilder {
         Ok(builder.with_url(&entry_url)?.build()?)
     }
 
-    pub fn build_menu(app: &Arc<NivaApp>, menu_options: &Option<WindowMenuOptions>) -> Option<MenuBar> {
+    pub fn build_menu(
+        app: &Arc<NivaApp>,
+        menu_options: &Option<WindowMenuOptions>,
+    ) -> Option<MenuBar> {
         #[cfg(target_os = "macos")]
         let default_menu = Self::macos_default_menu();
         #[cfg(target_os = "macos")]
@@ -275,7 +296,7 @@ impl NivaBuilder {
                             set_property!(attr, with_accelerators, &accelerator);
                         }
                     }
-                    
+
                     let mut item = menu.add_item(attr);
 
                     #[cfg(target_os = "macos")]
@@ -307,14 +328,28 @@ impl NivaBuilder {
             label: "".to_string(),
             enabled: None,
             children: vec![
-                MenuItemOption::Native{label: NativeLabel::SelectAll},
-                MenuItemOption::Native{label: NativeLabel::Copy},
-                MenuItemOption::Native{label: NativeLabel::Paste},
-                MenuItemOption::Native{label: NativeLabel::Cut},
-                MenuItemOption::Native{label: NativeLabel::Undo},
-                MenuItemOption::Native{label: NativeLabel::Separator},
-                MenuItemOption::Native{label: NativeLabel::Quit},
-            ]
+                MenuItemOption::Native {
+                    label: NativeLabel::SelectAll,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Copy,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Paste,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Cut,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Undo,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Separator,
+                },
+                MenuItemOption::Native {
+                    label: NativeLabel::Quit,
+                },
+            ],
         }])
-     }
+    }
 }

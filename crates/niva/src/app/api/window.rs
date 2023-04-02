@@ -86,7 +86,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.setMenu", |app, window, request| -> Result<()> {
         opts_match!(request, options: Option<WindowMenuOptions>, id: Option<NivaId>);
         match_window!(app, window, id);
-        // window.set_menu(&options);
+        window.set_menu(&options);
         Ok(())
     });
 

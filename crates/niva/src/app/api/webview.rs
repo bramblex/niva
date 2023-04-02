@@ -2,19 +2,21 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use niva_macros::niva_api;
 use wry::application::event_loop::ControlFlow;
 
 use crate::app::{
     api_manager::{ApiManager, ApiRequest},
     window_manager::window::NivaWindow,
-    NivaApp, NivaWindowTarget,
+    NivaApp, NivaWindowTarget, utils::make_base_url,
 };
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("webview.isDevtoolsOpen", is_devtools_open);
     api_manager.register_event_api("webview.openDevtools", open_devtools);
     api_manager.register_event_api("webview.closeDevtools", close_devtools);
-    // api_manager.register_event_api("webview.setBackgroundColor", set_background_color);
+    api_manager.register_api("webview.baseUrl", base_url);
+    api_manager.register_api("webview.baseFilesystemUrl", base_filesystem_url);
 }
 
 fn is_devtools_open(
@@ -49,14 +51,12 @@ fn close_devtools(
     Ok(())
 }
 
-// fn set_background_color(
-//     _app: Arc<NivaApp>,
-//     window: Arc<NivaWindow>,
-//     request: ApiRequest,
-//     _target: &NivaWindowTarget,
-//     _control_flow: &mut ControlFlow,
-// ) -> Result<()> {
-//     let color = request.args().single::<(u8, u8, u8, u8)>()?;
-//     window.webview.set_background_color(color)?;
-//     Ok(())
-// }
+#[niva_api]
+fn base_url() -> Result<String> {
+    Ok(make_base_url("niva", &app.launch_info.id_name))
+}
+
+#[niva_api]
+fn base_filesystem_url() -> Result<String> {
+    Ok(make_base_url("niva", "filesystem"))
+}
