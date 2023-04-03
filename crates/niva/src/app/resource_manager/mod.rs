@@ -19,10 +19,10 @@ use super::utils::{arc, arc_mut, ArcMut};
 type IconCache = HashMap<String, Icon>;
 
 pub trait ResourceManager: std::fmt::Debug + Send + Sync {
-    fn exists(&self, path: &String) -> bool;
-    fn load(&self, path: &String) -> Result<Vec<u8>>;
-    fn extract(&self, from: &String, to: &Path) -> Result<()>;
-    fn load_icon(&self, path: &String) -> Result<Icon>;
+    fn exists(&self, path: &str) -> bool;
+    fn load(&self, path: &str) -> Result<Vec<u8>>;
+    fn extract(&self, from: &str, to: &Path) -> Result<()>;
+    fn load_icon(&self, path: &str) -> Result<Icon>;
 }
 
 #[derive(Debug)]
@@ -45,16 +45,16 @@ impl FileSystemResource {
 }
 
 impl ResourceManager for FileSystemResource {
-    fn exists(&self, path: &String) -> bool {
+    fn exists(&self, path: &str) -> bool {
         let path = self.root_dir.join(path);
         path.exists() && path.is_file()
     }
 
-    fn load(&self, path: &String) -> Result<Vec<u8>> {
+    fn load(&self, path: &str) -> Result<Vec<u8>> {
         Ok(std::fs::read(self.root_dir.join(path))?)
     }
 
-    fn extract(&self, from: &String, to: &Path) -> Result<()> {
+    fn extract(&self, from: &str, to: &Path) -> Result<()> {
         fs_extra::file::copy(
             self.root_dir.join(from),
             to,
@@ -63,7 +63,7 @@ impl ResourceManager for FileSystemResource {
         Ok(())
     }
 
-    fn load_icon(&self, path: &String) -> Result<Icon> {
+    fn load_icon(&self, path: &str) -> Result<Icon> {
         let mut cache = lock!(self.icon_cache)?;
         let icon = cache.get(path);
         match icon {
@@ -72,7 +72,7 @@ impl ResourceManager for FileSystemResource {
                 let data = self.load(path)?;
                 if path.ends_with("png") {
                     let icon = image_utils::png_to_icon(&data)?;
-                    cache.insert(path.clone(), icon.clone());
+                    cache.insert(path.to_string(), icon.clone());
                     Ok(icon)
                 } else {
                     Err(anyhow::anyhow!("Unsupported icon format."))
@@ -135,11 +135,11 @@ impl AppResourceManager {
 }
 
 impl ResourceManager for AppResourceManager {
-    fn exists(&self, path: &String) -> bool {
+    fn exists(&self, path: &str) -> bool {
         self.indexes.contains_key(path)
     }
 
-    fn load(&self, path: &String) -> Result<Vec<u8>> {
+    fn load(&self, path: &str) -> Result<Vec<u8>> {
         let (offset, length) = *self
             .indexes
             .get(path)
@@ -147,13 +147,13 @@ impl ResourceManager for AppResourceManager {
         Ok(self.data[offset..(offset + length)].to_vec())
     }
 
-    fn extract(&self, from: &String, to: &Path) -> Result<()> {
+    fn extract(&self, from: &str, to: &Path) -> Result<()> {
         let content = self.load(from)?;
         std::fs::write(to, content)?;
         Ok(())
     }
 
-    fn load_icon(&self, path: &String) -> Result<Icon> {
+    fn load_icon(&self, path: &str) -> Result<Icon> {
         let mut cache = lock!(self.icon_cache)?;
         let icon = cache.get(path);
         match icon {
@@ -162,7 +162,7 @@ impl ResourceManager for AppResourceManager {
                 let data = self.load(path)?;
                 if path.ends_with("png") {
                     let icon = image_utils::png_to_icon(&data)?;
-                    cache.insert(path.clone(), icon.clone());
+                    cache.insert(path.to_string(), icon.clone());
                     Ok(icon)
                 } else {
                     Err(anyhow::anyhow!("Unsupported icon format."))

@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
+use serde_json::Value;
 use url::Url;
 use wry::http::HeaderValue;
 
@@ -180,4 +181,19 @@ pub fn make_base_url(protocol: &str, host: &str) -> String {
 #[cfg(target_os = "macos")]
 pub fn make_base_url(protocol: &str, host: &str) -> String {
     format!("{}://{}", protocol, host)
+}
+
+pub fn merge_values(dest: Value, src: Value) -> Value {
+    match (dest, src) {
+        (Value::Null, src) => src,
+        (dest, Value::Null) => dest,
+        (Value::Object(mut dest_map), Value::Object(src_map)) => {
+            for (key, src_val) in src_map {
+                let dest_val = dest_map.entry(key).or_insert(Value::Null);
+                *dest_val = merge_values(dest_val.take(), src_val);
+            }
+            Value::Object(dest_map)
+        },
+        (_, src) => src,
+    }
 }

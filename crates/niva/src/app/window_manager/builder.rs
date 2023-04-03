@@ -104,10 +104,10 @@ impl NivaBuilder {
         }
 
         #[cfg(target_os = "macos")]
-        if let Some(mac_extra) = &options.mac_extra {
+        if let Some(macos_extra) = &options.macos_extra {
             use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 
-            if let Some(parent) = &mac_extra.parent_window {
+            if let Some(parent) = &macos_extra.parent_window {
                 let parent = manager.get_window(*parent)?;
                 let parent = parent.ns_window();
                 set_property!(builder, with_parent_window, parent);
@@ -116,37 +116,37 @@ impl NivaBuilder {
             set_property_some!(
                 builder,
                 with_movable_by_window_background,
-                mac_extra.movable_by_window_background
+                macos_extra.movable_by_window_background
             );
             set_property_some!(
                 builder,
                 with_titlebar_transparent,
-                mac_extra.titlebar_transparent
+                macos_extra.titlebar_transparent
             );
-            set_property_some!(builder, with_titlebar_hidden, mac_extra.titlebar_hidden);
+            set_property_some!(builder, with_titlebar_hidden, macos_extra.titlebar_hidden);
             set_property_some!(
                 builder,
                 with_titlebar_buttons_hidden,
-                mac_extra.titlebar_buttons_hidden
+                macos_extra.titlebar_buttons_hidden
             );
-            set_property_some!(builder, with_title_hidden, mac_extra.title_hidden);
+            set_property_some!(builder, with_title_hidden, macos_extra.title_hidden);
             set_property_some!(
                 builder,
                 with_fullsize_content_view,
-                mac_extra.fullsize_content_view
+                macos_extra.fullsize_content_view
             );
-            set_property_some!(builder, with_resize_increments, mac_extra.resize_increments);
-            set_property_some!(builder, with_disallow_hidpi, mac_extra.disallow_hidpi);
-            set_property_some!(builder, with_has_shadow, mac_extra.has_shadow);
+            set_property_some!(builder, with_resize_increments, macos_extra.resize_increments);
+            set_property_some!(builder, with_disallow_hidpi, macos_extra.disallow_hidpi);
+            set_property_some!(builder, with_has_shadow, macos_extra.has_shadow);
             set_property_some!(
                 builder,
                 with_automatic_window_tabbing,
-                mac_extra.automatic_window_tabbing
+                macos_extra.automatic_window_tabbing
             );
             set_property_some!(
                 builder,
                 with_tabbing_identifier,
-                &mac_extra.tabbing_identifier
+                &macos_extra.tabbing_identifier
             );
         }
 
@@ -154,19 +154,19 @@ impl NivaBuilder {
         if let Some(win_extra) = &options.win_extra {
             use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 
-            if let Some(parent) = &mac_extra.parent_window {
+            if let Some(parent) = &macos_extra.parent_window {
                 let parent = manager.get_window(*parent)?;
                 let parent = parent.hwnd();
                 set_property!(builder, with_parent_window, parent);
             }
 
-            if let Some(owner) = &mac_extra.parent_window {
+            if let Some(owner) = &macos_extra.parent_window {
                 let owner = manager.get_window(*parent)?;
                 let owner = parent.hwnd();
                 set_property!(builder, with_owner_window, parent);
             }
 
-            if let Some(icon_path) = &mac_extra.taskbar_icon {
+            if let Some(icon_path) = &macos_extra.taskbar_icon {
                 let icon = app.resource().load_icon(icon_path)?;
                 set_property!(builder, with_taskbar_icon, Some(icon));
             }

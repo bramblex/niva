@@ -29,7 +29,7 @@ pub struct NivaOptions {
     pub workers: Option<u32>,
 
     // mac app options
-    pub mac_extra: Option<MacExtraOptions>, 
+    pub macos_extra: Option<MacExtraOptions>, 
 }
 
 #[derive(Deserialize, Clone, Debug)]

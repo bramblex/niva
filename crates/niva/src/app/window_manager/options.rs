@@ -78,9 +78,9 @@ pub struct NivaWindowOptions {
     pub content_protection: Option<bool>,
 
     // windows extra
-    pub mac_extra: Option<MacWindowExtraOptions>,
+    pub macos_extra: Option<MacWindowExtraOptions>,
     // macos extra
-    pub win_extra: Option<WinWindowExtraOptions>,
+    pub windows_extra: Option<WinWindowExtraOptions>,
 
     // merge background_color options to transparent
     pub menu: Option<WindowMenuOptions>,

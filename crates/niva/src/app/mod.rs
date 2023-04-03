@@ -11,6 +11,7 @@ mod window_manager;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
+use serde_json::Value;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -32,7 +33,7 @@ use self::{
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
-    utils::{arc, arc_mut, ArcMut},
+    utils::{arc, arc_mut, merge_values, ArcMut},
     window_manager::{options::NivaWindowOptions, WindowManager},
 };
 
@@ -89,11 +90,11 @@ impl NivaApp {
         let launch_info = NivaLaunchInfo::new(arguments, resource_manager.clone())?;
 
         #[cfg(target_os = "macos")]
-        if let Some(mac_extra) = &launch_info.options.mac_extra {
+        if let Some(macos_extra) = &launch_info.options.macos_extra {
             use self::options::NivaActivationPolicy;
             use wry::application::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 
-            if let Some(p) = mac_extra.activation_policy.clone() {
+            if let Some(p) = macos_extra.activation_policy.clone() {
                 let policy = match p {
                     NivaActivationPolicy::Regular => ActivationPolicy::Regular,
                     NivaActivationPolicy::Accessory => ActivationPolicy::Accessory,
@@ -102,11 +103,11 @@ impl NivaApp {
                 event_loop.set_activation_policy(policy);
             }
 
-            if let Some(enable) = mac_extra.default_menu_creation {
+            if let Some(enable) = macos_extra.default_menu_creation {
                 event_loop.enable_default_menu_creation(enable);
             }
 
-            if let Some(ignore) = mac_extra.activate_ignoring_other_apps {
+            if let Some(ignore) = macos_extra.activate_ignoring_other_apps {
                 event_loop.set_activate_ignoring_other_apps(ignore);
             }
         };
@@ -239,8 +240,24 @@ impl NivaLaunchInfo {
         arguments: NivaArguments,
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
-        let content = resource_manager.load(&"niva.json".to_string())?;
-        let options: NivaOptions = serde_json::from_slice(&content)?;
+        let options = {
+            let base_path = "niva.json";
+            let base_content = resource_manager.load(base_path)?;
+            let base_options: Value = serde_json::from_slice(&base_content)?;
+
+            let platform = std::env::consts::OS;
+            let platform_path = format!("niva.{}.json", platform);
+
+            let options = if resource_manager.exists(&platform_path) {
+                let platform_content = resource_manager.load(&platform_path)?;
+                let platform_options: Value = serde_json::from_slice(&platform_content)?;
+                merge_values(base_options, platform_options)
+            } else {
+                base_options
+            };
+
+            serde_json::from_value::<NivaOptions>(options)?
+        };
 
         let name = options.name.clone();
         let uuid = options.uuid.clone();
