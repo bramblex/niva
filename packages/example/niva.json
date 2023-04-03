@@ -10,7 +10,7 @@
 		"alwaysOnTop": false,
 		"visibleOnAllWorkspaces": false,
 		"decorations": false,
-		"transparent": true,
+		"transparent": false,
 		"icon": "icon.png",
 
 		"size": {

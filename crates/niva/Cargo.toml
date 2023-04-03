@@ -10,7 +10,7 @@ lto = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-niva_macros = {path = "../niva_macros"}
+niva_macros = { path = "../niva_macros" }
 
 wry = { version = "0.27.0", default-features = false, features = [
 	"devtools",
@@ -51,6 +51,7 @@ active-win-pos-rs = "0.7.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = "0.3.9"
+windows = { version = "0.44.0", features = ["Win32_Foundation"] }
 
 
 [build-dependencies]

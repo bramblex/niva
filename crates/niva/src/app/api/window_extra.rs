@@ -46,15 +46,20 @@ fn set_enable(enabled: bool, id: Option<NivaId>) -> Result<()> {
 #[niva_api]
 fn set_taskbar_icon(taskbar_icon: String, id: Option<NivaId>) -> Result<()> {
     match_window!(app, window, id);
-    let taskbar_icon = app.resource()?.get_icon(&taskbar_icon)?;
-    window.set_taskbar_icon(taskbar_icon);
+    let taskbar_icon = app.resource().load_icon(&taskbar_icon)?;
+    window.set_taskbar_icon(Some(taskbar_icon));
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn theme(id: Option<NivaId>) -> Result<NivaTheme> {
+fn theme(id: Option<NivaId>) -> Result<String> {
     match_window!(app, window, id);
+    match window.theme() {
+        Theme::Dark => Ok("dark".to_string()),
+        Theme::Light => Ok("light".to_string()),
+        _ => Ok("system".to_string()),
+    }
 }
 
 #[cfg(target_os = "windows")]

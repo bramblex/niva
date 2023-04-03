@@ -135,7 +135,11 @@ impl NivaBuilder {
                 with_fullsize_content_view,
                 macos_extra.fullsize_content_view
             );
-            set_property_some!(builder, with_resize_increments, macos_extra.resize_increments);
+            set_property_some!(
+                builder,
+                with_resize_increments,
+                macos_extra.resize_increments
+            );
             set_property_some!(builder, with_disallow_hidpi, macos_extra.disallow_hidpi);
             set_property_some!(builder, with_has_shadow, macos_extra.has_shadow);
             set_property_some!(
@@ -151,28 +155,33 @@ impl NivaBuilder {
         }
 
         #[cfg(target_os = "windows")]
-        if let Some(win_extra) = &options.win_extra {
+        if let Some(windows_extra) = &options.windows_extra {
             use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
+            use windows::Win32::Foundation::HWND;
 
-            if let Some(parent) = &macos_extra.parent_window {
+            if let Some(parent) = &windows_extra.parent_window {
                 let parent = manager.get_window(*parent)?;
-                let parent = parent.hwnd();
+                let parent = HWND(parent.hwnd() as _);
                 set_property!(builder, with_parent_window, parent);
             }
 
-            if let Some(owner) = &macos_extra.parent_window {
-                let owner = manager.get_window(*parent)?;
-                let owner = parent.hwnd();
-                set_property!(builder, with_owner_window, parent);
+            if let Some(owner) = &windows_extra.parent_window {
+                let owner = manager.get_window(*owner)?;
+                let owner = HWND(owner.hwnd() as _);
+                set_property!(builder, with_owner_window, owner);
             }
 
-            if let Some(icon_path) = &macos_extra.taskbar_icon {
+            if let Some(icon_path) = &windows_extra.taskbar_icon {
                 let icon = app.resource().load_icon(icon_path)?;
                 set_property!(builder, with_taskbar_icon, Some(icon));
             }
 
-            set_property_some!(builder, with_skip_taskbar, win_extra.skip_taskbar);
-            set_property_some!(builder, with_undecorated_shadow, win_extra.undecorated_shadow);
+            set_property_some!(builder, with_skip_taskbar, windows_extra.skip_taskbar);
+            set_property_some!(
+                builder,
+                with_undecorated_shadow,
+                windows_extra.undecorated_shadow
+            );
         }
 
         Ok(builder.build(target)?)

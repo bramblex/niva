@@ -1781,6 +1781,7 @@ dependencies = [
  "ureq",
  "url",
  "winapi",
+ "windows 0.44.0",
  "winres",
  "wry",
 ]
