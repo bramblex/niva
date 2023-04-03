@@ -2,7 +2,11 @@
 	"name": "NivaDevtools",
 	"uuid": "9bef098a-a44f-40cb-9247-86c902f2c410",
 	"version": "v0.0.4",
-	"debugEntry": "http://localhost:3000",
+
+	"debug": {
+		"entry": "http://localhost:3000"
+	},
+
 	"window": {
 		"title": "Niva Devtools",
 		"icon": "logo.png",
@@ -11,8 +15,9 @@
 			"height": 600
 		},
 		"resizable": false,
-		"decorations": false,
-		"transparent": true,
-		"alwaysOnTop": true
+		"decorations": true,
+		"transparent": false,
+		"alwaysOnTop": false
 	}
+
 }

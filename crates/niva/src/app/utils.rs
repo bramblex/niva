@@ -52,9 +52,14 @@ macro_rules! unsafe_impl_sync_send {
 
 #[macro_export]
 macro_rules! set_property_some {
-    ($builder:ident, $property:ident, $value:expr) => {
-        if let Some(value) = $value.clone() {
+    ($builder:ident, $property:ident, &$value:expr) => {
+        if let Some(value) = &$value {
             $builder = $builder.$property(value);
+        }
+    };
+    ($builder:ident, $property:ident, $value:expr) => {
+        if let Some(value) = $value {
+            $builder = $builder.$property(value.clone());
         }
     };
 }

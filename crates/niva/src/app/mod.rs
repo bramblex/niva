@@ -1,13 +1,13 @@
 mod api;
 mod api_manager;
 mod event_handler;
+mod menu;
 mod options;
 mod resource_manager;
 mod shortcut_manager;
 mod tray_manager;
 mod utils;
 mod window_manager;
-mod menu;
 
 use anyhow::{anyhow, Result};
 use directories::BaseDirs;
@@ -22,7 +22,7 @@ use std::{
 
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
-use crate::lock;
+use crate::{lock, set_property_some};
 
 use self::{
     api::register_api_instances,
@@ -89,10 +89,11 @@ impl NivaApp {
         let launch_info = NivaLaunchInfo::new(arguments, resource_manager.clone())?;
 
         #[cfg(target_os = "macos")]
-        {
+        if let Some(mac_extra) = &launch_info.options.mac_extra {
             use self::options::NivaActivationPolicy;
             use wry::application::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
-            if let Some(p) = launch_info.options.activation.clone() {
+
+            if let Some(p) = mac_extra.activation_policy.clone() {
                 let policy = match p {
                     NivaActivationPolicy::Regular => ActivationPolicy::Regular,
                     NivaActivationPolicy::Accessory => ActivationPolicy::Accessory,
@@ -100,7 +101,15 @@ impl NivaApp {
                 };
                 event_loop.set_activation_policy(policy);
             }
-        }
+
+            if let Some(enable) = mac_extra.default_menu_creation {
+                event_loop.enable_default_menu_creation(enable);
+            }
+
+            if let Some(ignore) = mac_extra.activate_ignoring_other_apps {
+                event_loop.set_activate_ignoring_other_apps(ignore);
+            }
+        };
 
         // create api manager and register api instances
         let api_manager = ApiManager::new(&launch_info.options);
@@ -136,7 +145,7 @@ impl NivaApp {
         Ok(app)
     }
 
-    pub fn resource<'a>(self: &'a Arc<Self>) -> Arc<dyn ResourceManager>{
+    pub fn resource<'a>(self: &'a Arc<Self>) -> Arc<dyn ResourceManager> {
         self._resource.clone()
     }
 
@@ -197,7 +206,6 @@ impl NivaArguments {
                 args_map.insert(key.to_string(), value.to_string());
             }
         }
-
 
         let debug_devtools = args_map
             .get("debug-devtools")

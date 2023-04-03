@@ -51,9 +51,9 @@ impl WindowManager {
 
         let niva_window = NivaWindow::new(
             app, 
+            self,
             id, 
             options, 
-            &mut self.web_context, 
             target)?;
 
         self.id_map.insert(niva_window.window_id, niva_window.id);

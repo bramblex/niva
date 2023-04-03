@@ -22,6 +22,7 @@ use crate::{
 use super::{
     builder::NivaBuilder,
     options::{NivaWindowOptions, WindowMenuOptions},
+    WindowManager,
 };
 
 pub struct NivaWindow {
@@ -44,13 +45,13 @@ impl Deref for NivaWindow {
 impl NivaWindow {
     pub fn new(
         app: Arc<NivaApp>,
+        manager: &mut WindowManager,
         id: NivaId,
         options: &NivaWindowOptions,
-        web_context: &mut WebContext,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
-        let window = NivaBuilder::build_window(&app, id, options, target)?;
-        let webview = NivaBuilder::build_webview(&app, options, window, web_context)?;
+        let window = NivaBuilder::build_window(&app, manager, id, options, target)?;
+        let webview = NivaBuilder::build_webview(&app, options, window, &mut manager.web_context)?;
 
         Ok(arc(Self {
             app: app.clone(),

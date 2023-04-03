@@ -12,7 +12,7 @@ rm -rf build/windows
 cd ../..
 
 rm -rf target/release
-RUSTFLAGS="-l framework=WebKit" cargo build --release
+RUSTFLAGS="-l framework=WebKit" MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --release
 
 target/release/niva \
 	--resource-dir=packages/devtools/build \

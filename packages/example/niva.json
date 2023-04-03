@@ -9,8 +9,10 @@
 		"visible": true,
 		"alwaysOnTop": false,
 		"visibleOnAllWorkspaces": false,
-		"decorations": true,
+		"decorations": false,
+		"transparent": true,
 		"icon": "icon.png",
+
 		"size": {
 			"width": 800,
 			"height": 800

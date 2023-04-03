@@ -2,17 +2,18 @@ use super::api_manager::ApiManager;
 
 mod clipboard;
 mod dialog;
+mod extra;
 mod fs;
 mod http;
+mod monitor;
 mod os;
 mod process;
 mod resource;
 mod shortcut;
+mod tray;
 mod webview;
 mod window;
-mod tray;
-mod monitor;
-mod extra;
+mod window_extra;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);
@@ -28,4 +29,5 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     tray::register_api_instances(api_manager);
     monitor::register_api_instances(api_manager);
     extra::register_api_instances(api_manager);
+    window_extra::register_api_instances(api_manager);
 }

@@ -1,10 +1,18 @@
 use super::{
     shortcut_manager::ShortcutsOptions, tray_manager::NivaTrayOptions,
-    window_manager::options::NivaWindowOptions,
+    window_manager::options::NivaWindowOptions, NivaId,
 };
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MacExtraOptions {
+    pub activation_policy: Option<NivaActivationPolicy>, // (MacOS Only)Activation policy of the application.
+    pub default_menu_creation: Option<bool>,
+    pub activate_ignoring_other_apps: Option<bool>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct NivaOptions {
     // base options
@@ -16,11 +24,12 @@ pub struct NivaOptions {
     #[serde(default)]
     pub window: NivaWindowOptions,
 
-    // app options
-    pub activation: Option<NivaActivationPolicy>, // (MacOS Only)Activation policy of the application.
     pub tray: Option<NivaTrayOptions>,
     pub shortcuts: Option<ShortcutsOptions>,
     pub workers: Option<u32>,
+
+    // mac app options
+    pub mac_extra: Option<MacExtraOptions>, 
 }
 
 #[derive(Deserialize, Clone, Debug)]
