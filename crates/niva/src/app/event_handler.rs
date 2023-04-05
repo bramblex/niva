@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::sync::Arc;
 
 use anyhow::anyhow;
@@ -6,20 +7,22 @@ use tao::{
     accelerator::AcceleratorId,
     event::{Event, TrayEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoopWindowTarget},
+    menu::MenuId,
+    window::WindowId,
+    TrayId,
 };
 
-use crate::log_if_err;
+use crate::{log_if_err, try_or_log_err};
 
 use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
-    main_window: Arc<NivaWindow>,
 }
 
 impl EventHandler {
-    pub fn new(app: Arc<NivaApp>, main_window: Arc<NivaWindow>) -> Self {
-        Self { app, main_window }
+    pub fn new(app: Arc<NivaApp>) -> Self {
+        Self { app }
     }
 
     pub fn handle(
@@ -28,123 +31,114 @@ impl EventHandler {
         target: &EventLoopWindowTarget<NivaEvent>,
         control_flow: &mut ControlFlow,
     ) {
-        *control_flow = ControlFlow::Wait;
-
-        // TODO: Send other events to webview
-        match event {
-            Event::NewEvents(_) => (), //
-
-            Event::WindowEvent {
-                event, window_id, ..
-            } => {
-                let window = self
-                    .app
-                    .window()
-                    .and_then(|w| w.get_window_inner(window_id));
-                if window.is_err() {
-                    return;
+        try_or_log_err!({
+            *control_flow = ControlFlow::Wait;
+            match event {
+                Event::WindowEvent {
+                    event, window_id, ..
+                } => self.handle_window_event(event, window_id)?,
+                Event::UserEvent(callback) => {
+                    self.handle_user_event(callback, target, control_flow)?
                 }
-                let window = window.unwrap();
-
-                match event {
-                    WindowEvent::Focused(focused) => {
-                        #[cfg(target_os = "macos")]
-                        window.switch_menu();
-                        log_if_err!(window.send_ipc_event("window.focused", focused));
-                    }
-                    WindowEvent::ScaleFactorChanged {
-                        scale_factor,
-                        new_inner_size,
-                    } => {
-                        log_if_err!(window.send_ipc_event(
-                            "window.scaleFactorChanged",
-                            json!({
-                                "scaleFactor": scale_factor,
-                                "newInnerSize": new_inner_size
-                            }),
-                        ));
-                    }
-                    WindowEvent::ThemeChanged(theme) => {
-                        log_if_err!(window.send_ipc_event(
-                            "window.themeChanged",
-                            json!({
-                                "theme": match theme {
-                                    tao::window::Theme::Dark => "dark",
-                                    tao::window::Theme::Light => "light",
-                                    _ => "",
-                                }
-                            }),
-                        ));
-                    }
-                    WindowEvent::CloseRequested => {
-                        log_if_err!(window.send_ipc_event("window.closeRequested", json!(null)));
-                    }
-                    _ => (),
-                }
-            }
-
-            Event::MenuEvent {
-                menu_id, window_id, ..
-            } => {
-                let window =
-                    window_id
-                        .ok_or(anyhow!("Window id not founc."))
-                        .and_then(|window_id| {
-                            self.app
-                                .window()
-                                .and_then(|w| w.get_window_inner(window_id))
-                        });
-
-                match window {
-                    Ok(window) => {
-                        log_if_err!(window.send_ipc_event("menu.clicked", menu_id.0));
-                    }
-                    Err(_) => {
-                        log_if_err!(self.main_window.send_ipc_event("menu.clicked", menu_id.0));
-                    }
-                }
-            }
-
-            Event::TrayEvent { id, event, .. } => match event {
-                TrayEvent::RightClick => {
-                    log_if_err!(self
-                        .main_window
-                        .send_ipc_event("tray.rightClicked", json!(id.0)));
-                }
-                TrayEvent::LeftClick => {
-                    log_if_err!(self
-                        .main_window
-                        .send_ipc_event("tray.leftClicked", json!(id.0)));
-                }
-                TrayEvent::DoubleClick => {
-                    log_if_err!(self
-                        .main_window
-                        .send_ipc_event("tray.doubleClicked", json!(id.0)));
-                }
+                Event::MenuEvent {
+                    menu_id, window_id, ..
+                } => self.handle_menu_event(menu_id, window_id)?,
+                Event::TrayEvent { event, id, .. } => self.handle_tray_event(event, id)?,
+                Event::GlobalShortcutEvent(id) => self.handle_shortcut_event(id)?,
                 _ => (),
-            },
-
-            Event::GlobalShortcutEvent(AcceleratorId(id)) => {
-                log_if_err!(self.main_window.send_ipc_event("shortcut.emit", id));
             }
-            Event::UserEvent(callback) => {
-                let result = callback(target, control_flow);
-                match result {
-                    Ok(_) => (),
-                    Err(err) => {
-                        log_if_err!(self
-                            .main_window
-                            .send_ipc_event("ipc.error", err.to_string()));
-                    }
-                }
-            }
+            Ok(())
+        });
+    }
 
+    fn handle_window_event(
+        &self,
+        event: WindowEvent,
+        window_id: WindowId,
+    ) -> Result<()> {
+
+        match event {
+            WindowEvent::Destroyed => {
+                self.app.window()?.close_window_inner(window_id)?;
+            }
+            _ => ()
+        }
+
+        let window = self.app.window()?.get_window_inner(window_id)?;
+        match event {
+            WindowEvent::Focused(focused) => {
+                #[cfg(target_os = "macos")]
+                window.switch_menu();
+                window.send_ipc_event("window.focused", focused)?;
+            }
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                new_inner_size,
+            } => {
+                window.send_ipc_event(
+                    "window.scaleFactorChanged",
+                    json!({
+                        "scaleFactor": scale_factor,
+                        "newInnerSize": new_inner_size
+                    }),
+                )?;
+            }
+            WindowEvent::ThemeChanged(theme) => {
+                window.send_ipc_event(
+                    "window.themeChanged",
+                    json!({
+                        "theme": match theme {
+                            tao::window::Theme::Dark => "dark",
+                            tao::window::Theme::Light => "light",
+                            _ => "",
+                        }
+                    }),
+                )?;
+            }
+            WindowEvent::CloseRequested => {
+                window.send_ipc_event("window.closeRequested", json!(null))?;
+            }
             _ => (),
         }
+        return Ok(());
+    }
 
-        #[cfg(target_os = "windows")]
-        if *control_flow == ControlFlow::Exit {
-            log_if_err!(self.app.tray().and_then(|mut m| m.destroy_all()));
+    fn handle_menu_event(&self, menu_id: MenuId, window_id: Option<WindowId>) -> Result<()> {
+        let window = self
+            .app
+            .window()?
+            .get_window_inner(window_id.ok_or(anyhow!("Window id not found!"))?)?;
+
+        window.send_ipc_event("menu.clicked", menu_id.0)
+    }
+
+    fn handle_tray_event(&self, event: TrayEvent, id: TrayId) -> Result<()> {
+        let id = id.0;
+        let (window_id, _) = self.app.tray()?.get(id)?.clone();
+        let window = self.app.window()?.get_window(window_id)?;
+
+        match event {
+            TrayEvent::RightClick => window.send_ipc_event("tray.rightClicked", json!(id)),
+            TrayEvent::LeftClick => window.send_ipc_event("tray.leftClicked", json!(id)),
+            TrayEvent::DoubleClick => window.send_ipc_event("tray.doubleClicked", json!(id)),
+            _ => Ok(()),
         }
+    }
+
+    fn handle_shortcut_event(&self, id: AcceleratorId) -> Result<()> {
+        let id = id.0;
+        let (window_id, _, _) = self.app.shortcut()?.get(id)?.clone();
+        let window = self.app.window()?.get_window(window_id)?;
+
+        window.send_ipc_event("shortcut.emit", id)
+    }
+
+    fn handle_user_event(
+        &self,
+        callback: NivaEvent,
+        target: &EventLoopWindowTarget<NivaEvent>,
+        control_flow: &mut ControlFlow,
+    ) -> Result<()> {
+        callback(target, control_flow)
     }
 }

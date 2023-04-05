@@ -1,13 +1,17 @@
 use anyhow::Result;
+use niva_macros::niva_event_api;
 
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
-use crate::{app::{
-    api_manager::{ApiManager, ApiRequest},
-    window_manager::window::NivaWindow,
-    NivaApp, NivaWindowTarget,
-}, args_match};
+use crate::{
+    app::{
+        api_manager::{ApiManager, ApiRequest},
+        window_manager::window::NivaWindow,
+        NivaApp, NivaWindowTarget,
+    },
+    args_match,
+};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("shortcut.register", register);
@@ -16,44 +20,24 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("shortcut.list", list);
 }
 
-fn register(
-    app: Arc<NivaApp>,
-    _: Arc<NivaWindow>,
-    request: ApiRequest,
-    _: &NivaWindowTarget,
-    _: &mut ControlFlow,
-) -> Result<()> {
-    args_match!(request, id: u16, accelerator_str: String);
-    app.shortcut()?.register(id, accelerator_str)
+#[niva_event_api]
+fn register(accelerator_str: String, window_id: Option<u16>) -> Result<u16> {
+    app
+        .shortcut()?
+        .register(window_id.unwrap_or(window.id), accelerator_str)
 }
 
-fn unregister(
-    app: Arc<NivaApp>,
-    _: Arc<NivaWindow>,
-    request: ApiRequest,
-    _: &NivaWindowTarget,
-    _: &mut ControlFlow,
-) -> Result<()> {
-    args_match!(request, id: u16);
-    app.shortcut()?.unregister(id)
+#[niva_event_api]
+fn unregister(id: u16, window_id: Option<u16>) -> Result<()> {
+    app.shortcut()?.unregister(window_id.unwrap_or(window.id), id)
 }
 
-fn unregister_all(
-    app: Arc<NivaApp>,
-    _: Arc<NivaWindow>,
-    _: ApiRequest,
-    _: &NivaWindowTarget,
-    _: &mut ControlFlow,
-) -> Result<()> {
-    app.shortcut()?.unregister_all()
+#[niva_event_api]
+fn unregister_all(window_id: Option<u16>) -> Result<()> {
+    app.shortcut()?.unregister_all(window_id.unwrap_or(window.id))
 }
 
-fn list(
-    app: Arc<NivaApp>,
-    _: Arc<NivaWindow>,
-    _: ApiRequest,
-    _: &NivaWindowTarget,
-    _: &mut ControlFlow,
-) -> Result<Vec<(u16, String)>> {
-    app.shortcut()?.list()
+#[niva_event_api]
+fn list(window_id: Option<u16>) -> Result<Vec<(u16, String)>> {
+    app.shortcut()?.list(window_id.unwrap_or(window.id))
 }

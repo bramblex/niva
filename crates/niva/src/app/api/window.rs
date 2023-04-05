@@ -10,7 +10,6 @@ use crate::{
     app::{
         api_manager::ApiManager,
         window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
-        NivaId,
     },
     args_match, logical, logical_try, opts_match,
 };
@@ -25,26 +24,22 @@ macro_rules! match_window {
 }
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
-    api_manager.register_api(
-        "window.current",
-        |_app, window, _request| -> Result<NivaId> { Ok(window.id) },
-    );
+    api_manager.register_api("window.current", |_app, window, _request| -> Result<u16> {
+        Ok(window.id)
+    });
 
-    api_manager.register_event_api(
-        "window.open",
-        |app, _, request, target, _| -> Result<NivaId> {
-            opts_match!(request, options: Option<NivaWindowOptions>);
-            let new_window = app
-                .window()?
-                .open_window(&options.unwrap_or_default(), target)?;
-            Ok(new_window.id)
-        },
-    );
+    api_manager.register_event_api("window.open", |app, _, request, target, _| -> Result<u16> {
+        opts_match!(request, options: Option<NivaWindowOptions>);
+        let new_window = app
+            .window()?
+            .open_window(&options.unwrap_or_default(), target)?;
+        Ok(new_window.id)
+    });
 
     api_manager.register_event_api(
         "window.close",
         |app, window, request, _, control_flow| -> Result<()> {
-            opts_match!(request, id: Option<NivaId>);
+            opts_match!(request, id: Option<u16>);
             let id = id.unwrap_or(window.id);
 
             if id == 0 {
@@ -71,7 +66,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.sendMessage", |app, window, request| -> Result<()> {
-        args_match!(request, message: String, id: NivaId);
+        args_match!(request, message: String, id: u16);
         let remote = app.window()?.get_window(id)?;
         remote.send_ipc_event(
             "window.message",
@@ -84,222 +79,222 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setMenu", |app, window, request| -> Result<()> {
-        opts_match!(request, options: Option<WindowMenuOptions>, id: Option<NivaId>);
+        opts_match!(request, options: Option<WindowMenuOptions>, id: Option<u16>);
         match_window!(app, window, id);
         window.set_menu(&options);
         Ok(())
     });
 
     api_manager.register_api("window.hideMenu", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         window.hide_menu();
         Ok(())
     });
 
     api_manager.register_api("window.showMenu", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         window.hide_menu();
         Ok(())
     });
 
     api_manager.register_api("window.isMenuVisible", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_menu_visible())
     });
 
     api_manager.register_api("window.scaleFactor", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.scale_factor())
     });
 
     api_manager.register_api("window.innerPosition", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(logical_try!(window, inner_position))
     });
 
     api_manager.register_api("window.outerPosition", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(logical_try!(window, outer_position))
     });
 
     api_manager.register_api("window.setOuterPosition", |app, window, request| {
-        opts_match!(request, position: NivaPosition, id: Option<NivaId>);
+        opts_match!(request, position: NivaPosition, id: Option<u16>);
         match_window!(app, window, id);
         window.set_outer_position(position);
         Ok(())
     });
 
     api_manager.register_api("window.innerSize", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(logical!(window, inner_size))
     });
 
     api_manager.register_api("window.setInnerSize", |app, window, request| {
-        opts_match!(request, size: NivaSize, id: Option<NivaId>);
+        opts_match!(request, size: NivaSize, id: Option<u16>);
         match_window!(app, window, id);
         window.set_inner_size(size);
         Ok(())
     });
 
     api_manager.register_api("window.outerSize", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(logical!(window, outer_size))
     });
 
     api_manager.register_api("window.setMinInnerSize", |app, window, request| {
-        opts_match!(request, size: NivaSize, id: Option<NivaId>);
+        opts_match!(request, size: NivaSize, id: Option<u16>);
         match_window!(app, window, id);
         window.set_min_inner_size(Some(size));
         Ok(())
     });
 
     api_manager.register_api("window.setMaxInnerSize", |app, window, request| {
-        opts_match!(request, size: NivaSize, id: Option<NivaId>);
+        opts_match!(request, size: NivaSize, id: Option<u16>);
         match_window!(app, window, id);
         window.set_max_inner_size(Some(size));
         Ok(())
     });
 
     api_manager.register_api("window.setTitle", |app, window, request| {
-        opts_match!(request, title: String, id: Option<NivaId>);
+        opts_match!(request, title: String, id: Option<u16>);
         match_window!(app, window, id);
         window.set_title(&title);
         Ok(())
     });
 
     api_manager.register_api("window.title", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.title())
     });
 
     api_manager.register_api("window.isVisible", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_visible())
     });
 
     api_manager.register_api("window.setVisible", |app, window, request| {
-        opts_match!(request, visible: bool, id: Option<NivaId>);
+        opts_match!(request, visible: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_visible(visible);
         Ok(())
     });
 
     api_manager.register_api("window.isFocused", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_focused())
     });
 
     api_manager.register_api("window.setFocus", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         window.set_focus();
         Ok(())
     });
 
     api_manager.register_api("window.isResizable", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_resizable())
     });
 
     api_manager.register_api("window.setResizable", |app, window, request| {
-        opts_match!(request, resizable: bool, id: Option<NivaId>);
+        opts_match!(request, resizable: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_resizable(resizable);
         Ok(())
     });
 
     api_manager.register_api("window.isMinimizable", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_minimizable())
     });
 
     api_manager.register_api("window.setMinimizable", |app, window, request| {
-        opts_match!(request, minimizable: bool, id: Option<NivaId>);
+        opts_match!(request, minimizable: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_minimizable(minimizable);
         Ok(())
     });
 
     api_manager.register_api("window.isMaximizable", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_maximizable())
     });
 
     api_manager.register_api("window.setMaximizable", |app, window, request| {
-        opts_match!(request, maximizable: bool, id: Option<NivaId>);
+        opts_match!(request, maximizable: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_maximizable(maximizable);
         Ok(())
     });
 
     api_manager.register_api("window.isClosable", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_closable())
     });
 
     api_manager.register_api("window.setClosable", |app, window, request| {
-        opts_match!(request, closable: bool, id: Option<NivaId>);
+        opts_match!(request, closable: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_closable(closable);
         Ok(())
     });
 
     api_manager.register_api("window.isMinimized", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_minimized())
     });
 
     api_manager.register_api("window.setMinimized", |app, window, request| {
-        opts_match!(request, minimized: bool, id: Option<NivaId>);
+        opts_match!(request, minimized: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_minimized(minimized);
         Ok(())
     });
 
     api_manager.register_api("window.isMaximized", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_maximized())
     });
 
     api_manager.register_api("window.setMaximized", |app, window, request| {
-        opts_match!(request, maximized: bool, id: Option<NivaId>);
+        opts_match!(request, maximized: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_maximized(maximized);
         Ok(())
     });
 
     api_manager.register_api("window.Decorated", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.is_decorated())
     });
 
     api_manager.register_api("window.setDecorated", |app, window, request| {
-        opts_match!(request, decorated: bool, id: Option<NivaId>);
+        opts_match!(request, decorated: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_decorations(decorated);
         Ok(())
     });
 
     api_manager.register_api("window.fullscreen", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(window.fullscreen().is_some())
     });
@@ -309,7 +304,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
             request,
             is_fullscreen: bool,
             monitor_name: Option<String>,
-            id: Option<NivaId>
+            id: Option<u16>
         );
         match_window!(app, window, id);
         if !is_fullscreen {
@@ -336,21 +331,21 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setAlwaysOnTop", |app, window, request| {
-        opts_match!(request, always_on_top: bool, id: Option<NivaId>);
+        opts_match!(request, always_on_top: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_always_on_top(always_on_top);
         Ok(())
     });
 
     api_manager.register_api("window.setAlwaysOnBottom", |app, window, request| {
-        opts_match!(request, always_on_bottom: bool, id: Option<NivaId>);
+        opts_match!(request, always_on_bottom: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_always_on_bottom(always_on_bottom);
         Ok(())
     });
 
     api_manager.register_api("window.requestUserAttention", |app, window, request| {
-        opts_match!(request, level: String, id: Option<NivaId>);
+        opts_match!(request, level: String, id: Option<u16>);
         match_window!(app, window, id);
         match level.as_str() {
             "informational" => {
@@ -363,7 +358,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("theme", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(match window.theme() {
             Theme::Light => "light",
@@ -373,7 +368,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.setContentProtection", |app, window, request| {
-        opts_match!(request, enabled: bool, id: Option<NivaId>);
+        opts_match!(request, enabled: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_content_protection(enabled);
         Ok(())
@@ -382,7 +377,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api(
         "window.setVisibleOnAllWorkspaces",
         |app, window, request| {
-            opts_match!(request, visible: bool, id: Option<NivaId>);
+            opts_match!(request, visible: bool, id: Option<u16>);
             match_window!(app, window, id);
             window.set_visible_on_all_workspaces(visible);
             Ok(())
@@ -390,7 +385,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     );
 
     api_manager.register_api("window.setCursorIcon", |app, window, request| {
-        opts_match!(request, icon: String, id: Option<NivaId>);
+        opts_match!(request, icon: String, id: Option<u16>);
         match_window!(app, window, id);
         window.set_cursor_icon(match icon.as_str() {
             "default" => CursorIcon::Default,
@@ -434,41 +429,41 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     });
 
     api_manager.register_api("window.cursorPosition", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         Ok(logical_try!(window, cursor_position))
     });
 
     api_manager.register_api("window.setCursorPosition", |app, window, request| {
-        opts_match!(request, position: NivaPosition, id: Option<NivaId>);
+        opts_match!(request, position: NivaPosition, id: Option<u16>);
         match_window!(app, window, id);
         window.set_cursor_position(position)?;
         Ok(())
     });
 
     api_manager.register_api("window.setCursorGrab", |app, window, request| {
-        opts_match!(request, grab: bool, id: Option<NivaId>);
+        opts_match!(request, grab: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_cursor_grab(grab)?;
         Ok(())
     });
 
     api_manager.register_api("window.setCursorVisible", |app, window, request| {
-        opts_match!(request, visible: bool, id: Option<NivaId>);
+        opts_match!(request, visible: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_cursor_visible(visible);
         Ok(())
     });
 
     api_manager.register_api("window.dragWindow", |app, window, request| {
-        opts_match!(request, id: Option<NivaId>);
+        opts_match!(request, id: Option<u16>);
         match_window!(app, window, id);
         window.drag_window()?;
         Ok(())
     });
 
     api_manager.register_api("window.setIgnoreCursorEvents", |app, window, request| {
-        opts_match!(request, ignore: bool, id: Option<NivaId>);
+        opts_match!(request, ignore: bool, id: Option<u16>);
         match_window!(app, window, id);
         window.set_ignore_cursor_events(ignore)?;
         Ok(())

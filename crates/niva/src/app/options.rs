@@ -1,6 +1,6 @@
 use super::{
     shortcut_manager::ShortcutsOptions, tray_manager::NivaTrayOptions,
-    window_manager::options::NivaWindowOptions, NivaId,
+    window_manager::options::NivaWindowOptions,
 };
 use serde::Deserialize;
 

@@ -6,7 +6,7 @@ use crate::unsafe_impl_sync_send;
 use super::menu::build_native_item;
 use super::menu::options::MenuItemOption;
 use super::menu::options::MenuOptions;
-use super::utils::Counter;
+use super::utils::IdCounter;
 use super::{
     utils::{arc_mut, ArcMut},
     NivaApp, NivaWindowTarget,
@@ -15,9 +15,10 @@ use tao::TrayId;
 
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
-use tao::accelerator::Accelerator;
+use std::any::Any;
 use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
+use tao::accelerator::Accelerator;
 use tao::system_tray::SystemTray;
 use tao::{
     menu::{ContextMenu, MenuId, MenuItem, MenuItemAttributes},
@@ -47,15 +48,15 @@ pub struct NivaTrayUpdateOptions {
 
 unsafe_impl_sync_send!(NivaTrayManager);
 pub struct NivaTrayManager {
-    counter: Counter<u16>,
+    id_counter: IdCounter,
     app: Option<Arc<NivaApp>>,
-    trays: HashMap<u16, ArcMut<SystemTray>>,
+    trays: HashMap<u16, (u16, ArcMut<SystemTray>)>,
 }
 
 impl NivaTrayManager {
     pub fn new() -> ArcMut<NivaTrayManager> {
         arc_mut(NivaTrayManager {
-            counter: Counter::<u16>::new(0),
+            id_counter: IdCounter::new(),
             app: None,
             trays: HashMap::new(),
         })
@@ -65,15 +66,39 @@ impl NivaTrayManager {
         self.app = Some(app);
     }
 
-    pub fn create(&mut self, options: &NivaTrayOptions, target: &NivaWindowTarget) -> Result<u16> {
-        let id = self.counter.next();
+    pub fn create(
+        &mut self,
+        window_id: u16,
+        options: &NivaTrayOptions,
+        target: &NivaWindowTarget,
+    ) -> Result<u16> {
+        let id = self.id_counter.next(&self.trays)?;
         let tray = self.build_tray(id, options, target)?;
-        self.trays.insert(id, tray);
+        self.trays.insert(id, (window_id, tray));
         Ok(id)
     }
 
-    pub fn destroy(&mut self, id: u16) -> Result<()> {
-        let _tray = self
+    pub fn get(&self, id: u16) -> Result<&(u16, ArcMut<SystemTray>)> {
+        self.trays
+            .get(&id)
+            .ok_or(anyhow!("Tray with id {} not found", id))
+    }
+
+    pub fn destroy(&mut self, window_id: u16, id: u16) -> Result<()> {
+        let (owner_id, _tray) = self
+            .trays
+            .get(&id)
+            .ok_or(anyhow!("Tray with id {} not found", id))?;
+
+        if window_id != *owner_id {
+            return Err(anyhow!(
+                "Tray with id {} can only unregister in window {}",
+                id,
+                owner_id
+            ));
+        }
+
+        let (_, _tray) = self
             .trays
             .remove(&id)
             .ok_or(anyhow!("Tray with id {} not found", id))?;
@@ -84,24 +109,47 @@ impl NivaTrayManager {
         Ok(())
     }
 
-    pub fn destroy_all(&mut self) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        for tray in self.trays.values() {
-            drop(lock!(tray));
+    pub fn destroy_all(&mut self, window_id: u16) -> Result<()> {
+        let trays = self
+            .trays
+            .iter()
+            .filter(|(_, (owner_id, _))| *owner_id == window_id)
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>();
+        for id in trays {
+            self.destroy(window_id, id)?;
         }
-        self.trays.clear();
         Ok(())
     }
 
-    pub fn list(&self) -> Result<Vec<u16>> {
-        Ok(self.trays.keys().copied().collect())
+    pub fn list(&self, window_id: u16) -> Result<Vec<u16>> {
+        Ok(self
+            .trays
+            .iter()
+            .filter(|(_, (owner_id, _))| *owner_id == window_id)
+            .map(|(id, _)| *id)
+            .collect())
     }
 
-    pub fn update(&mut self, id: u16, options: &NivaTrayUpdateOptions) -> Result<()> {
-        let tray = self
+    pub fn update(
+        &mut self,
+        window_id: u16,
+        id: u16,
+        options: &NivaTrayUpdateOptions,
+    ) -> Result<()> {
+        let (owner_id, tray) = self
             .trays
             .get(&id)
             .ok_or(anyhow!("Tray with id {} not found", id))?;
+
+        if window_id != *owner_id {
+            return Err(anyhow!(
+                "Tray with id {} can only update in window {}",
+                id,
+                owner_id
+            ));
+        }
+
         let mut tray = lock!(tray)?;
 
         if let Some(icon) = options.icon.clone() {
@@ -135,8 +183,7 @@ impl NivaTrayManager {
 
         let icon = app.resource().load_icon(&options.icon)?;
 
-        let menu = options.menu.as_ref()
-        .map(|m| Self::build_menu(&app, m ));
+        let menu = options.menu.as_ref().map(|m| Self::build_menu(&app, m));
         let mut builder = SystemTrayBuilder::new(icon, menu);
 
         set_property!(builder, with_id, TrayId(id));
@@ -183,7 +230,7 @@ impl NivaTrayManager {
                             set_property!(attr, with_accelerators, &accelerator);
                         }
                     }
-                    
+
                     let mut item = menu.add_item(attr);
 
                     #[cfg(target_os = "macos")]
@@ -206,5 +253,4 @@ impl NivaTrayManager {
             }
         }
     }
-
 }

@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -15,31 +18,25 @@ pub fn arc_mut<T>(t: T) -> ArcMut<T> {
     Arc::new(Mutex::new(t))
 }
 
-pub struct Counter<T> {
-    next_id: T,
+pub struct IdCounter {
+    next_id: u16,
 }
 
-impl Counter<u32> {
-    pub fn new(start: u32) -> Self {
-        Self { next_id: start }
+impl IdCounter {
+    pub fn new() -> Self {
+        Self { next_id: 0 }
     }
 
-    pub fn next(&mut self) -> u32 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
-    }
-}
-
-impl Counter<u16> {
-    pub fn new(start: u16) -> Self {
-        Self { next_id: start }
-    }
-
-    pub fn next(&mut self) -> u16 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+    pub fn next<T>(&mut self, excludes: &HashMap<u16, T>) -> Result<u16> {
+        for _ in 0..u16::MAX {
+            let id = self.next_id;
+            if excludes.contains_key(&id) {
+                self.next_id += 1;
+                continue;
+            }
+            return Ok(id);
+        }
+        Err(anyhow!("Failed to find a valid id."))
     }
 }
 
@@ -193,7 +190,28 @@ pub fn merge_values(dest: Value, src: Value) -> Value {
                 *dest_val = merge_values(dest_val.take(), src_val);
             }
             Value::Object(dest_map)
-        },
+        }
         (_, src) => src,
     }
+}
+
+// pub fn try_or_log_err<F, T>(mut func: F) where F: FnMut() -> Result<T> {
+//     match func() {
+//         Ok(_) => {}
+//         Err(e) => {
+//             log_err!(e);
+//         }
+//     }
+// }
+
+#[macro_export]
+macro_rules! try_or_log_err {
+    ($body:block ) => {
+        match (move || -> anyhow::Result<()> { $body })() {
+            Ok(_) => {}
+            Err(e) => {
+                crate::log_err!(e);
+            }
+        }
+    };
 }

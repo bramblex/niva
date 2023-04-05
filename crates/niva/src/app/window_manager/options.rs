@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use tao::dpi::{LogicalSize, LogicalPosition};
 
-use crate::app::{menu::options::MenuOptions, NivaId};
+use crate::app::{menu::options::MenuOptions};
 
 pub type NivaSize = LogicalSize<f64>;
 pub type NivaPosition = LogicalPosition<f64>;
@@ -18,7 +18,7 @@ pub type WindowMenuOptions = Vec<WindowRootMenu>;
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MacWindowExtraOptions {
-    pub parent_window: Option<NivaId>,
+    pub parent_window: Option<u16>,
     pub movable_by_window_background: Option<bool>,
     pub titlebar_transparent: Option<bool>,
     pub titlebar_hidden: Option<bool>,
@@ -35,8 +35,8 @@ pub struct MacWindowExtraOptions {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WinWindowExtraOptions {
-    pub parent_window: Option<NivaId>,
-    pub owner_window: Option<NivaId>,
+    pub parent_window: Option<u16>,
+    pub owner_window: Option<u16>,
     pub taskbar_icon: Option<String>,
     pub skip_taskbar: Option<bool>,
     pub undecorated_shadow: Option<bool>,

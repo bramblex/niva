@@ -7,7 +7,7 @@ use crate::app::menu::options::MenuOptions;
 use crate::app::menu::{self, build_native_item};
 use crate::app::utils::make_base_url;
 use crate::{
-    app::{NivaApp, NivaId, NivaWindowTarget},
+    app::{NivaApp, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
 };
 use anyhow::anyhow;
@@ -35,7 +35,7 @@ impl NivaBuilder {
     pub fn build_window(
         app: &Arc<NivaApp>,
         manager: &WindowManager,
-        _id: NivaId,
+        _id: u16,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Window> {

@@ -12,25 +12,24 @@ use crate::unsafe_impl_sync_send;
 
 use self::{options::NivaWindowOptions, window::NivaWindow};
 use super::{
-    utils::{arc_mut, ArcMut, Counter},
-    NivaApp, NivaId, NivaLaunchInfo, NivaWindowTarget,
+    utils::{arc_mut, ArcMut, IdCounter},
+    NivaApp, NivaLaunchInfo, NivaWindowTarget,
 };
 
 unsafe_impl_sync_send!(WindowManager);
 pub struct WindowManager {
     app: Option<Arc<NivaApp>>,
-
-    id_counter: Counter<u32>,
+    id_counter: IdCounter,
     web_context: WebContext,
-    windows: HashMap<NivaId, Arc<NivaWindow>>,
-    id_map: HashMap<WindowId, NivaId>,
+    windows: HashMap<u16, Arc<NivaWindow>>,
+    id_map: HashMap<WindowId, u16>,
 }
 
 impl WindowManager {
     pub fn new(launch_info: &NivaLaunchInfo) -> ArcMut<Self> {
         arc_mut(Self {
             app: None,
-            id_counter: Counter::<u32>::new(0),
+            id_counter: IdCounter::new(),
             web_context: WebContext::new(Some(launch_info.data_dir.clone())),
             windows: HashMap::new(),
             id_map: HashMap::new(),
@@ -46,15 +45,10 @@ impl WindowManager {
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
-        let id = self.id_counter.next();
+        let id = self.id_counter.next(&self.windows)?;
         let app = self.app.clone().ok_or(anyhow!("App not found"))?;
 
-        let niva_window = NivaWindow::new(
-            app, 
-            self,
-            id, 
-            options, 
-            target)?;
+        let niva_window = NivaWindow::new(app, self, id, options, target)?;
 
         self.id_map.insert(niva_window.window_id, niva_window.id);
         self.windows.insert(niva_window.id, niva_window.clone());
@@ -62,7 +56,7 @@ impl WindowManager {
         Ok(niva_window)
     }
 
-    pub fn get_window(&self, id: NivaId) -> Result<Arc<NivaWindow>> {
+    pub fn get_window(&self, id: u16) -> Result<Arc<NivaWindow>> {
         self.windows
             .get(&id)
             .cloned()
@@ -78,7 +72,7 @@ impl WindowManager {
         self.get_window(id)
     }
 
-    pub fn close_window(&mut self, id: NivaId) -> Result<()> {
+    pub fn close_window(&mut self, id: u16) -> Result<()> {
         let niva_window = self
             .windows
             .remove(&id)
@@ -87,6 +81,9 @@ impl WindowManager {
             .remove(&niva_window.window_id)
             .ok_or(anyhow!("Window {id} not found"))?;
 
+        let app = self.app.clone().ok_or(anyhow!("App not found"))?;
+        app.shortcut()?.unregister_all(id)?;
+        app.tray()?.destroy_all(id)?;
         Ok(())
     }
 
@@ -94,20 +91,11 @@ impl WindowManager {
         self.windows.values().collect()
     }
 
-    // pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
-    //     let id = self
-    //         .id_map
-    //         .remove(&window_id)
-    //         .ok_or(anyhow!("Window not found"))?;
-    //     self.close_window(id)
-    // }
-
-    // pub fn broadcast<E: Into<String>, P: Serialize>(self: Arc<Self>, event: E, payload: P) {
-    //     let event: String = event.into();
-    //     let payload: Value = serde_json::to_value(payload).unwrap();
-    //     for (_, window) in self.windows.iter() {
-    //         let window = window.clone();
-    //         log_if_err!(window.send_ipc_event(event.clone(), payload.clone()));
-    //     }
-    // }
+    pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
+        let id = self
+            .id_map
+            .remove(&window_id)
+            .ok_or(anyhow!("Window not found"))?;
+        self.close_window(id)
+    }
 }

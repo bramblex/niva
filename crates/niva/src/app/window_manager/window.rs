@@ -14,7 +14,7 @@ use wry::webview::{WebContext, WebView};
 use crate::{
     app::{
         utils::{arc, arc_mut, ArcMut},
-        NivaApp, NivaEvent, NivaEventLoopProxy, NivaId, NivaWindowTarget,
+        NivaApp, NivaEvent, NivaEventLoopProxy, NivaWindowTarget,
     },
     unsafe_impl_sync_send,
 };
@@ -26,7 +26,7 @@ use super::{
 };
 
 pub struct NivaWindow {
-    pub id: NivaId,
+    pub id: u16,
     pub window_id: WindowId,
     pub webview: WebView,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
@@ -46,7 +46,7 @@ impl NivaWindow {
     pub fn new(
         app: Arc<NivaApp>,
         manager: &mut WindowManager,
-        id: NivaId,
+        id: u16,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {

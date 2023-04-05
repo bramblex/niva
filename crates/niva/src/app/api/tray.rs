@@ -1,14 +1,18 @@
 use anyhow::Result;
+use niva_macros::niva_event_api;
 
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
-use crate::{app::{
-    api_manager::{ApiManager, ApiRequest},
-    tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
-    window_manager::window::NivaWindow,
-    NivaApp, NivaWindowTarget,
-}, args_match};
+use crate::{
+    app::{
+        api_manager::{ApiManager, ApiRequest},
+        tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
+        window_manager::window::NivaWindow,
+        NivaApp, NivaWindowTarget,
+    },
+    args_match,
+};
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("tray.create", create);
@@ -18,59 +22,30 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_event_api("tray.update", update);
 }
 
-fn create(
-    app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    request: ApiRequest,
-    target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<u16> {
-    args_match!(request, options: NivaTrayOptions);
-    let id = app.tray()?.create(&options, target)?;
-    Ok(id)
+#[niva_event_api]
+fn create(options: NivaTrayOptions, window_id: Option<u16>) -> Result<u16> {
+    app.tray()?
+        .create(window_id.unwrap_or(window.id), &options, target)
 }
 
-fn destroy(
-    app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<()> {
-    args_match!(request, id: u16);
-    app.tray()?.destroy(id)?;
-    Ok(())
+#[niva_event_api]
+fn destroy(id: u16, window_id: Option<u16>) -> Result<()> {
+    app.tray()?.destroy(window_id.unwrap_or(window.id), id)
 }
 
-fn destroy_all(
-    app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    _request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<()> {
-    app.tray()?.destroy_all()?;
-    Ok(())
+#[niva_event_api]
+fn destroy_all(window_id: Option<u16>) -> Result<()> {
+    app.tray()?.destroy_all(window_id.unwrap_or(window.id))
 }
 
-fn list(
-    app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    _request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<Vec<u16>> {
-    app.tray()?.list()
+#[niva_event_api]
+fn list(window_id: Option<u16>) -> Result<Vec<u16>> {
+    app.tray()?.list(window_id.unwrap_or(window.id))
 }
 
+#[niva_event_api]
 fn update(
-    app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
+id: u16, options: NivaTrayUpdateOptions, window_id: Option<u16>
 ) -> Result<()> {
-    args_match!(request, id: u16, options: NivaTrayUpdateOptions);
-    app.tray()?.update(id, &options)?;
-    Ok(())
+    app.tray()?.update(window_id.unwrap_or(window.id), id, &options)
 }

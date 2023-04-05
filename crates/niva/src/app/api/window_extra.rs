@@ -17,7 +17,6 @@ use crate::{
     app::{
         api_manager::ApiManager,
         window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
-        NivaId,
     },
     args_match, logical, logical_try, opts_match,
 };
@@ -36,7 +35,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {}
 // windows
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn set_enable(enabled: bool, id: Option<NivaId>) -> Result<()> {
+fn set_enable(enabled: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_enable(enabled);
     Ok(())
@@ -44,7 +43,7 @@ fn set_enable(enabled: bool, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn set_taskbar_icon(taskbar_icon: String, id: Option<NivaId>) -> Result<()> {
+fn set_taskbar_icon(taskbar_icon: String, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     let taskbar_icon = app.resource().load_icon(&taskbar_icon)?;
     window.set_taskbar_icon(Some(taskbar_icon));
@@ -53,7 +52,7 @@ fn set_taskbar_icon(taskbar_icon: String, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn theme(id: Option<NivaId>) -> Result<String> {
+fn theme(id: Option<u16>) -> Result<String> {
     match_window!(app, window, id);
     match window.theme() {
         Theme::Dark => Ok("dark".to_string()),
@@ -64,7 +63,7 @@ fn theme(id: Option<NivaId>) -> Result<String> {
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn reset_dead_keys(id: Option<NivaId>) -> Result<()>{
+fn reset_dead_keys(id: Option<u16>) -> Result<()>{
     match_window!(app, window, id);
     window.reset_dead_keys();
     Ok(())
@@ -72,7 +71,7 @@ fn reset_dead_keys(id: Option<NivaId>) -> Result<()>{
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn begin_resize_drag(edge: isize, button: u32, x: i32, y: i32, id: Option<NivaId>) -> Result<()> {
+fn begin_resize_drag(edge: isize, button: u32, x: i32, y: i32, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.begin_resize_drag(edge, button, x, y);
     Ok(())
@@ -80,7 +79,7 @@ fn begin_resize_drag(edge: isize, button: u32, x: i32, y: i32, id: Option<NivaId
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn set_skip_taskbar(skip: bool, id: Option<NivaId>) -> Result<()> {
+fn set_skip_taskbar(skip: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_skip_taskbar(skip);
     Ok(())
@@ -88,7 +87,7 @@ fn set_skip_taskbar(skip: bool, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn set_undecorated_shadow(shadow: bool, id: Option<NivaId>) -> Result<()> {
+fn set_undecorated_shadow(shadow: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_undecorated_shadow(shadow);
     Ok(())
@@ -96,28 +95,28 @@ fn set_undecorated_shadow(shadow: bool, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn simple_fullscreen(id: Option<NivaId>) -> Result<bool> {
+fn simple_fullscreen(id: Option<u16>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.simple_fullscreen())
 }
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn set_simple_fullscreen(fullscreen: bool, id: Option<NivaId>) -> Result<bool> {
+fn set_simple_fullscreen(fullscreen: bool, id: Option<u16>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.set_simple_fullscreen(fullscreen))
 }
 
 #[niva_api]
 #[cfg(target_os = "macos")]
-fn has_shadow(id: Option<NivaId>) -> Result<bool> {
+fn has_shadow(id: Option<u16>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.has_shadow())
 }
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn set_has_shadow(has_shadow: bool, id: Option<NivaId>) -> Result<()> {
+fn set_has_shadow(has_shadow: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_has_shadow(has_shadow);
     Ok(())
@@ -125,7 +124,7 @@ fn set_has_shadow(has_shadow: bool, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn set_is_document_edited(edited: bool, id: Option<NivaId>) -> Result<()> {
+fn set_is_document_edited(edited: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_is_document_edited(edited);
     Ok(())
@@ -133,14 +132,14 @@ fn set_is_document_edited(edited: bool, id: Option<NivaId>) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn is_document_edited(id: Option<NivaId>) -> Result<bool> {
+fn is_document_edited(id: Option<u16>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_document_edited())
 }
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn set_allows_automatic_window_tabbing(enabled: bool, id: Option<NivaId>) -> Result<()> {
+fn set_allows_automatic_window_tabbing(enabled: bool, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_allows_automatic_window_tabbing(enabled);
     Ok(())
@@ -148,14 +147,14 @@ fn set_allows_automatic_window_tabbing(enabled: bool, id: Option<NivaId>) -> Res
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn allows_automatic_window_tabbing(id: Option<NivaId>) -> Result<bool> {
+fn allows_automatic_window_tabbing(id: Option<u16>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.allows_automatic_window_tabbing())
 }
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn set_tabbing_identifier(identifier: String, id: Option<NivaId>) -> Result<()> {
+fn set_tabbing_identifier(identifier: String, id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.set_tabbing_identifier(&identifier);
     Ok(())
@@ -163,7 +162,7 @@ fn set_tabbing_identifier(identifier: String, id: Option<NivaId>) -> Result<()> 
 
 #[cfg(target_os = "macos")]
 #[niva_api]
-fn tabbing_identifier(id: Option<NivaId>) -> Result<String> {
+fn tabbing_identifier(id: Option<u16>) -> Result<String> {
     match_window!(app, window, id);
     Ok(window.tabbing_identifier())
 }

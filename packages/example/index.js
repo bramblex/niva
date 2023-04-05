@@ -2,6 +2,10 @@
 (function () {
   Niva.api.window.current().then(id => console.log(`Current window id: ${id}`));
 
+  Niva.addEventListener('*', (event, data) => {
+    console.log(event, data);
+  })
+
 
   const { window, monitor, webview, extra } = Niva.api;
 

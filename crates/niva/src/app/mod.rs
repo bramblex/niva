@@ -23,7 +23,7 @@ use std::{
 
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
-use crate::{lock, set_property_some};
+use crate::{lock, log_if_err, set_property_some};
 
 use self::{
     api::register_api_instances,
@@ -37,7 +37,6 @@ use self::{
     window_manager::{options::NivaWindowOptions, WindowManager},
 };
 
-pub type NivaId = u32;
 pub type NivaEventLoop = EventLoop<NivaEvent>;
 pub type NivaEventLoopProxy = EventLoopProxy<NivaEvent>;
 pub type NivaWindowTarget = EventLoopWindowTarget<NivaEvent>;
@@ -122,7 +121,7 @@ impl NivaApp {
         let window_manager = WindowManager::new(&launch_info);
 
         // build shortcuts
-        let shortcut_manager = NivaShortcutManager::new(&launch_info.options.shortcuts, event_loop);
+        let shortcut_manager = NivaShortcutManager::new(event_loop);
 
         let tray_manager = NivaTrayManager::new();
 
@@ -173,12 +172,19 @@ impl NivaApp {
             .window()?
             .open_window(main_window_options, &event_loop)?;
 
-        let tray_options = &self.launch_info.options.tray.clone();
-        if let Some(options) = tray_options {
-            let _ = self.tray()?.create(options, &event_loop)?;
+        let shortcuts_options = &self.launch_info.options.shortcuts.clone();
+        if let Some(options) = shortcuts_options {
+            log_if_err!(self
+                .shortcut()?
+                .register_with_options(main_window.id, options));
         }
 
-        let event_handler = EventHandler::new(self, main_window);
+        let tray_options = &self.launch_info.options.tray.clone();
+        if let Some(options) = tray_options {
+            log_if_err!(self.tray()?.create(main_window.id, options, &event_loop));
+        }
+
+        let event_handler = EventHandler::new(self);
         event_loop.run(move |event, target, control_flow| {
             event_handler.handle(event, target, control_flow);
         });
