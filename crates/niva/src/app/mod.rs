@@ -246,22 +246,20 @@ impl NivaLaunchInfo {
         arguments: NivaArguments,
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
+
         let options = {
             let base_path = "niva.json";
             let base_content = resource_manager.load(base_path)?;
             let base_options: Value = serde_json::from_slice(&base_content)?;
 
             let platform = std::env::consts::OS;
-            let platform_path = format!("niva.{}.json", platform);
+            let platform_options = base_options.get(platform).cloned();
 
-            let options = if resource_manager.exists(&platform_path) {
-                let platform_content = resource_manager.load(&platform_path)?;
-                let platform_options: Value = serde_json::from_slice(&platform_content)?;
+            let options = if let Some(platform_options) = platform_options  {
                 merge_values(base_options, platform_options)
             } else {
                 base_options
             };
-
             serde_json::from_value::<NivaOptions>(options)?
         };
 

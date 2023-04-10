@@ -4,6 +4,7 @@ use super::{
 };
 use serde::Deserialize;
 
+#[cfg(target_os = "macos")]
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MacExtraOptions {
@@ -29,7 +30,9 @@ pub struct NivaOptions {
     pub workers: Option<u32>,
 
     // mac app options
-    pub macos_extra: Option<MacExtraOptions>, 
+    #[cfg(target_os = "macos")]
+    #[serde(flatten)]
+    pub macos_extra: Option<MacExtraOptions>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -1,9 +1,0 @@
-{
-	"window": {
-		"title": "Hello MacOS",
-		"windowsExtra": {
-			"undecoratedShadow": true,
-			"taskbarIcon": "test.png"
-		}
-	}
-}

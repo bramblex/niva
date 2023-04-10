@@ -15,6 +15,7 @@ pub struct WindowRootMenu {
 
 pub type WindowMenuOptions = Vec<WindowRootMenu>;
 
+#[cfg(target_os = "macos")]
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MacWindowExtraOptions {
@@ -32,6 +33,7 @@ pub struct MacWindowExtraOptions {
     pub tabbing_identifier: Option<String>,
 }
 
+#[cfg(target_os = "windows")]
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WinWindowExtraOptions {
@@ -77,9 +79,14 @@ pub struct NivaWindowOptions {
     pub focused: Option<bool>,
     pub content_protection: Option<bool>,
 
-    // windows extra
-    pub macos_extra: Option<MacWindowExtraOptions>,
     // macos extra
+    #[cfg(target_os = "macos")]
+    #[serde(flatten)]
+    pub macos_extra: Option<MacWindowExtraOptions>,
+
+    // windows extra
+    #[cfg(target_os = "windows")]
+    #[serde(flatten)]
     pub windows_extra: Option<WinWindowExtraOptions>,
 
     // merge background_color options to transparent

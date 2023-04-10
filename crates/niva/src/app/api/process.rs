@@ -19,9 +19,10 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.args", args);
     api_manager.register_api("process.setCurrentDir", set_current_dir);
     api_manager.register_event_api("process.exit", exit);
+    api_manager.register_api("process.version", version);
+
     api_manager.register_async_api("process.exec", exec);
     api_manager.register_async_api("process.open", open);
-    api_manager.register_api("process.version", version);
 }
 
 fn pid(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<u32> {
