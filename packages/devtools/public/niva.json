@@ -25,8 +25,7 @@
 	"windows": {
 		"window": {
 			"undecoratedShadow": true,
-			"decorations": false,
-			"transparent": true
+			"decorations": false
 		}
 	}
 }
