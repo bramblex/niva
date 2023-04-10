@@ -9,7 +9,7 @@
 		"title": "Niva Devtools",
 		"icon": "logo.png",
 		"size": {
-			"width": 800,
+			"width": 900,
 			"height": 600
 		},
 		"resizable": false
