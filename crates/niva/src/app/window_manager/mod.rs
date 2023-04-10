@@ -1,5 +1,6 @@
 mod builder;
 pub mod options;
+pub mod url;
 pub mod window;
 
 use anyhow::{anyhow, Result};

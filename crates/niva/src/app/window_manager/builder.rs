@@ -5,7 +5,8 @@ use super::{options::NivaWindowOptions, window::NivaWindow};
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
 use crate::app::menu::{self, build_native_item};
-use crate::app::utils::make_base_url;
+use crate::app::window_manager::url::get_host_from_url;
+use crate::app::window_manager::url::make_base_url;
 use crate::{
     app::{NivaApp, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
@@ -219,7 +220,7 @@ impl NivaBuilder {
             set_property!(builder, with_transparent, true);
         }
 
-        let prefix = base_url.clone();
+        let prefix = get_host_from_url(&entry_url).unwrap_or(base_url);
         set_property!(builder, with_navigation_handler, move |url| url
             .starts_with(&prefix));
 
@@ -245,6 +246,8 @@ impl NivaBuilder {
                     Err(anyhow!("Invalid hostname: {}", hostname))
                 }
             })();
+            
+            let origin = get_host_from_url(&request.uri().to_string()).unwrap_or("*".to_string());
 
             match result {
                 Err(err) => Ok(Response::builder()
@@ -261,7 +264,7 @@ impl NivaBuilder {
                     Ok(Response::builder()
                         .status(200)
                         .header("Content-Type", mime_type)
-                        .header("Access-Control-Allow-Origin", base_url.clone())
+                        .header("Access-Control-Allow-Origin", origin)
                         .body(Cow::Owned(content))?)
                 }
             }

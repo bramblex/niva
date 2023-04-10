@@ -170,15 +170,6 @@ macro_rules! args_match {
     };
 }
 
-#[cfg(target_os = "windows")]
-pub fn make_base_url(protocol: &str, host: &str) -> String {
-    format!("https://{}.{}", protocol, host)
-}
-
-#[cfg(target_os = "macos")]
-pub fn make_base_url(protocol: &str, host: &str) -> String {
-    format!("{}://{}", protocol, host)
-}
 
 pub fn merge_values(dest: Value, src: Value) -> Value {
     match (dest, src) {

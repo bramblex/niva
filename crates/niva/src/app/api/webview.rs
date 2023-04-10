@@ -7,8 +7,8 @@ use wry::application::event_loop::ControlFlow;
 
 use crate::app::{
     api_manager::{ApiManager, ApiRequest},
-    window_manager::window::NivaWindow,
-    NivaApp, NivaWindowTarget, utils::make_base_url,
+    window_manager::{window::NivaWindow, url::make_base_url},
+    NivaApp, NivaWindowTarget,
 };
 
 pub fn register_apis(api_manager: &mut ApiManager) {

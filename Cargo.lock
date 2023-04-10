@@ -1766,6 +1766,7 @@ dependencies = [
  "directories",
  "flate2",
  "fs_extra",
+ "glob",
  "mime_guess",
  "native-tls",
  "niva_macros",

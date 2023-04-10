@@ -1,4 +1,5 @@
 use anyhow::Result;
+use glob::Pattern;
 use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -11,7 +12,7 @@ use crate::{
         window_manager::window::NivaWindow,
         NivaApp,
     },
-    opts_match, args_match,
+    args_match, opts_match,
 };
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
@@ -74,7 +75,12 @@ fn read(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Stri
 }
 
 fn write(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(request, path: String, content: String, encode: Option<EncodeType>);
+    opts_match!(
+        request,
+        path: String,
+        content: String,
+        encode: Option<EncodeType>
+    );
     let encode = encode.unwrap_or(EncodeType::UTF8);
 
     match encode {
@@ -88,7 +94,12 @@ fn write(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()>
 }
 
 fn append(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(request, path: String, content: String, encode: Option<EncodeType>);
+    opts_match!(
+        request,
+        path: String,
+        content: String,
+        encode: Option<EncodeType>
+    );
     let encode = encode.unwrap_or(EncodeType::UTF8);
 
     match encode {
@@ -149,7 +160,12 @@ fn _create_dir_copy_options(options: Option<CopyOptions>) -> fs_extra::dir::Copy
 }
 
 fn move_(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(request, from: String, to: String, options: Option<CopyOptions>);
+    opts_match!(
+        request,
+        from: String,
+        to: String,
+        options: Option<CopyOptions>
+    );
     let from = std::path::Path::new(&from);
 
     if from.is_dir() {
@@ -165,7 +181,12 @@ fn move_(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()>
 }
 
 fn copy(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(request, from: String, to: String, options: Option<CopyOptions>);
+    opts_match!(
+        request,
+        from: String,
+        to: String,
+        options: Option<CopyOptions>
+    );
     let from = std::path::Path::new(&from);
 
     if from.is_dir() {
@@ -220,24 +241,50 @@ fn read_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<
     Ok(entries)
 }
 
-fn _visit_dirs(dir: &Path, prefix: &Path, files: &mut Vec<String>) -> Result<()> {
+fn _visit_dirs(
+    dir: &Path,
+    prefix: &Path,
+    files: &mut Vec<String>,
+    excludes: &Vec<Pattern>,
+) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         let rel_path = path.strip_prefix(prefix).unwrap();
+
+        // 检查是否需要排除当前文件或文件夹
+        let skip_entry = excludes.iter().any(|pattern| {
+            let path_str = path.to_str().unwrap();
+            pattern.matches(path_str)
+        });
+
+        if skip_entry {
+            continue;
+        }
+
         if path.is_dir() {
-            _visit_dirs(&path, prefix, files)?;
+            _visit_dirs(&path, prefix, files, excludes)?;
         } else {
             files.push(rel_path.to_str().unwrap().to_string());
         }
     }
+
     Ok(())
 }
 
 fn read_dir_all(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Vec<String>> {
-    args_match!(request, path: String);
+    args_match!(request, path: String, excludes: Option<Vec<String>>);
     let path = Path::new(&path);
     let mut files: Vec<String> = Vec::new();
-    _visit_dirs(path, path, &mut files)?;
+
+    let mut exclude_patterns: Vec<Pattern> = vec![];
+    if let Some(excludes) = excludes {
+        for exclude in excludes {
+            let pattern = Pattern::new(&exclude)?;
+            exclude_patterns.push(pattern);
+        }
+    }
+
+    _visit_dirs(path, path, &mut files, &exclude_patterns)?;
     Ok(files)
 }
