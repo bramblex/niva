@@ -13,12 +13,9 @@ use tao::{
     window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
 };
 
-use crate::{
-    app::{
-        api_manager::ApiManager,
-        window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
-    },
-    args_match, logical, logical_try, opts_match,
+use crate::app::{
+    api_manager::ApiManager,
+    window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
 };
 
 macro_rules! match_window {
@@ -63,7 +60,7 @@ fn theme(id: Option<u16>) -> Result<String> {
 
 #[cfg(target_os = "windows")]
 #[niva_api]
-fn reset_dead_keys(id: Option<u16>) -> Result<()>{
+fn reset_dead_keys(id: Option<u16>) -> Result<()> {
     match_window!(app, window, id);
     window.reset_dead_keys();
     Ok(())

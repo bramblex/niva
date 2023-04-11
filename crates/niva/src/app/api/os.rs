@@ -3,13 +3,8 @@ use directories::UserDirs;
 use niva_macros::niva_api;
 use serde_json::{json, Value};
 use sys_locale::get_locale;
-use std::sync::Arc;
 
-use crate::app::{
-    api_manager::{ApiManager, ApiRequest},
-    window_manager::window::NivaWindow,
-    NivaApp,
-};
+use crate::app::api_manager::ApiManager;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.info", info);
@@ -19,7 +14,8 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.locale", locale);
 }
 
-fn info(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn info() -> Result<Value> {
     let info = os_info::get();
     Ok(json!({
         "os": info.os_type().to_string(),
@@ -28,7 +24,8 @@ fn info(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
     }))
 }
 
-fn dirs(app: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn dirs() -> Result<Value> {
     let user_dirs = UserDirs::new();
 
     match user_dirs {
@@ -54,14 +51,16 @@ fn dirs(app: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
     }
 }
 
-fn sep(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
+#[niva_api]
+fn sep() -> Result<String> {
     Ok(std::path::MAIN_SEPARATOR.to_string())
 }
 
-fn eol(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
+#[niva_api]
+fn eol() -> Result<String> {
     #[cfg(target_os = "windows")]
     let eol = "\r\n";
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     let eol = "\n";
 
     Ok(eol.to_string())
@@ -69,5 +68,5 @@ fn eol(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
 
 #[niva_api]
 fn locale() -> Result<String> {
-     Ok(get_locale().unwrap_or("en-US".to_string()))
+    Ok(get_locale().unwrap_or("en-US".to_string()))
 }

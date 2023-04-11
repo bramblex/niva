@@ -1,14 +1,10 @@
 include!(concat!(env!("OUT_DIR"), "/version.rs"));
 
-use crate::{app::{
-    api_manager::{ApiManager, ApiRequest},
-    window_manager::window::NivaWindow,
-    NivaApp, NivaWindowTarget,
-}, args_match, opts_match};
+use crate::app::api_manager::ApiManager;
 use anyhow::{Ok, Result};
+use niva_macros::{niva_api, niva_event_api};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
@@ -20,46 +16,45 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.setCurrentDir", set_current_dir);
     api_manager.register_event_api("process.exit", exit);
     api_manager.register_api("process.version", version);
-
     api_manager.register_async_api("process.exec", exec);
     api_manager.register_async_api("process.open", open);
 }
 
-fn pid(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<u32> {
+#[niva_api]
+fn pid() -> Result<u32> {
     Ok(std::process::id())
 }
 
-fn current_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn current_dir() -> Result<Value> {
     Ok(json!(std::env::current_dir()?))
 }
 
-fn current_exe(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn current_exe() -> Result<Value> {
     Ok(json!(std::env::current_exe()?))
 }
 
-fn env(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn env() -> Result<Value> {
     let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
     Ok(json!(env))
 }
 
-fn args(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<Value> {
+#[niva_api]
+fn args() -> Result<Value> {
     let args = std::env::args().collect::<Vec<String>>();
     Ok(json!(args))
 }
 
-fn set_current_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    args_match!(request, path: String);
+#[niva_api]
+fn set_current_dir(path: String) -> Result<()> {
     std::env::set_current_dir(path)?;
     Ok(())
 }
 
-fn exit(
-    _: Arc<NivaApp>,
-    _: Arc<NivaWindow>,
-    _: ApiRequest,
-    _: &NivaWindowTarget,
-    control_flow: &mut ControlFlow,
-) -> Result<()> {
+#[niva_event_api]
+fn exit() -> Result<()> {
     *control_flow = ControlFlow::Exit;
     Ok(())
 }
@@ -72,9 +67,8 @@ struct ExecOptions {
     pub detached: Option<bool>,
 }
 
-fn exec(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, cmd: String, args: Option<Vec<String>>, options: Option<ExecOptions>);
-
+#[niva_api]
+fn exec(cmd: String, args: Option<Vec<String>>, options: Option<ExecOptions>) -> Result<Value> {
     let mut cmd = std::process::Command::new(cmd);
 
     if let Some(args) = args {
@@ -106,13 +100,14 @@ fn exec(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Valu
     }))
 }
 
-fn open(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    args_match!(request, uri: String);
+#[niva_api]
+fn open(uri: String) -> Result<()> {
     opener::open(uri)?;
     Ok(())
 }
 
-fn version(_: Arc<NivaApp>, _: Arc<NivaWindow>, _: ApiRequest) -> Result<String> {
+#[niva_api]
+fn version() -> Result<String> {
     if let Some(version) = GIT_BUILD_VERSION {
         Ok(version.to_string())
     } else {
