@@ -1,15 +1,8 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 
-use niva_macros::niva_api;
-use wry::application::event_loop::ControlFlow;
+use niva_macros::{niva_api, niva_event_api};
 
-use crate::app::{
-    api_manager::{ApiManager, ApiRequest},
-    window_manager::{window::NivaWindow, url::make_base_url},
-    NivaApp, NivaWindowTarget,
-};
+use crate::app::{api_manager::ApiManager, window_manager::url::make_base_url};
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("webview.isDevtoolsOpen", is_devtools_open);
@@ -19,34 +12,19 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("webview.baseFilesystemUrl", base_filesystem_url);
 }
 
-fn is_devtools_open(
-    _app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
-    _request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<bool> {
+#[niva_event_api]
+fn is_devtools_open() -> Result<bool> {
     Ok(window.webview.is_devtools_open())
 }
 
-fn open_devtools(
-    _app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
-    _request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<()> {
+#[niva_event_api]
+fn open_devtools() -> Result<()> {
     window.webview.open_devtools();
     Ok(())
 }
 
-fn close_devtools(
-    _app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
-    _request: ApiRequest,
-    _target: &NivaWindowTarget,
-    _control_flow: &mut ControlFlow,
-) -> Result<()> {
+#[niva_event_api]
+fn close_devtools() -> Result<()> {
     window.webview.close_devtools();
     Ok(())
 }

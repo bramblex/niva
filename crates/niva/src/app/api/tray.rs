@@ -1,17 +1,9 @@
 use anyhow::Result;
 use niva_macros::niva_event_api;
 
-use std::sync::Arc;
-use tao::event_loop::ControlFlow;
-
-use crate::{
-    app::{
-        api_manager::{ApiManager, ApiRequest},
-        tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
-        window_manager::window::NivaWindow,
-        NivaApp, NivaWindowTarget,
-    },
-    args_match,
+use crate::app::{
+    api_manager::ApiManager,
+    tray_manager::{NivaTrayOptions, NivaTrayUpdateOptions},
 };
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
@@ -44,8 +36,7 @@ fn list(window_id: Option<u16>) -> Result<Vec<u16>> {
 }
 
 #[niva_event_api]
-fn update(
-id: u16, options: NivaTrayUpdateOptions, window_id: Option<u16>
-) -> Result<()> {
-    app.tray()?.update(window_id.unwrap_or(window.id), id, &options)
+fn update(id: u16, options: NivaTrayUpdateOptions, window_id: Option<u16>) -> Result<()> {
+    app.tray()?
+        .update(window_id.unwrap_or(window.id), id, &options)
 }

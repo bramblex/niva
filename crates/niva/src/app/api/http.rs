@@ -1,16 +1,10 @@
 use anyhow::Result;
+use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{
-    app::{
-        api_manager::{ApiManager, ApiRequest},
-        window_manager::window::NivaWindow,
-        NivaApp,
-    },
-    args_match, opts_match,
-};
+use crate::app::api_manager::ApiManager;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("http.request", request);
@@ -73,13 +67,13 @@ fn _request(options: RequestOptions) -> Result<Value> {
     }))
 }
 
-fn request(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    args_match!(request, options: RequestOptions);
+#[niva_api]
+fn request(options: RequestOptions) -> Result<Value> {
     _request(options)
 }
 
-fn get(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, url: String, headers: Option<Headers>);
+#[niva_api]
+fn get(url: String, headers: Option<Headers>) -> Result<Value> {
     _request(RequestOptions {
         method: "GET".to_string(),
         url,
@@ -89,8 +83,8 @@ fn get(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value
     })
 }
 
-fn post(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, url: String, body: String, headers: Option<Headers>);
+#[niva_api]
+fn post(url: String, body: String, headers: Option<Headers>) -> Result<Value> {
     _request(RequestOptions {
         method: "POST".to_string(),
         url,

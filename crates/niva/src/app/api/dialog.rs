@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use anyhow::{Ok, Result};
 use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use wry::application::window::Window;
 
-use crate::{app::{api_manager::{ApiManager, ApiRequest}, NivaApp, window_manager::window::NivaWindow}, opts_match};
+use crate::app::api_manager::ApiManager;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("dialog.showMessage", show_message);
@@ -76,9 +74,9 @@ fn pick_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<
     }
 }
 
-fn pick_files(_app: Arc<NivaApp>,parent: Arc<NivaWindow>,   request: ApiRequest) -> Result<Value> {
-    opts_match!(request, filters: Option<Vec<String>>, start_dir: Option<String>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn pick_files(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
+    let parent = window.webview.window();
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.pick_files() {
@@ -87,9 +85,9 @@ fn pick_files(_app: Arc<NivaApp>,parent: Arc<NivaWindow>,   request: ApiRequest)
     }
 }
 
-fn pick_dir(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, start_dir: Option<String>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn pick_dir(start_dir: Option<String>) -> Result<Value> {
+    let parent = window.webview.window();
     let dialog = _create_dialog(parent, None, start_dir);
 
     match dialog.pick_folder() {
@@ -98,9 +96,9 @@ fn pick_dir(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) ->
     }
 }
 
-fn pick_dirs(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, start_dir: Option<String>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn pick_dirs(start_dir: Option<String>) -> Result<Value> {
+    let parent = window.webview.window();
     let dialog = _create_dialog(parent, None, start_dir);
 
     match dialog.pick_folders() {
@@ -109,9 +107,9 @@ fn pick_dirs(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) -
     }
 }
 
-fn save_file(_app: Arc<NivaApp>, parent: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    opts_match!(request, filters: Option<Vec<String>>, start_dir: Option<String>);
-    let parent = parent.webview.window();
+#[niva_api]
+fn save_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
+    let parent = window.webview.window();
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.save_file() {

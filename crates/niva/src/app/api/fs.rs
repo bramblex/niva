@@ -4,16 +4,9 @@ use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use std::{io::Write, path::Path, sync::Arc, time::UNIX_EPOCH};
+use std::{io::Write, path::Path, time::UNIX_EPOCH};
 
-use crate::{
-    app::{
-        api_manager::{ApiManager, ApiRequest},
-        window_manager::window::NivaWindow,
-        NivaApp,
-    },
-    args_match, opts_match,
-};
+use crate::app::api_manager::ApiManager;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.stat", stat);
@@ -30,8 +23,8 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("fs.readDirAll", read_dir_all);
 }
 
-fn stat(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
-    args_match!(request, path: String);
+#[niva_api]
+fn stat(path: String) -> Result<Value> {
     let meta = std::fs::metadata(path)?;
 
     Ok(json!({
@@ -45,8 +38,8 @@ fn stat(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Valu
     }))
 }
 
-fn exists(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<bool> {
-    args_match!(request, path: String);
+#[niva_api]
+fn exists(path: String) -> Result<bool> {
     let path = std::path::Path::new(&path);
     Ok(path.exists())
 }
@@ -59,9 +52,8 @@ enum EncodeType {
     BASE64,
 }
 
-fn read(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
-    opts_match!(request, path: String, encode: Option<EncodeType>);
-
+#[niva_api]
+fn read(path: String, encode: Option<EncodeType>) -> Result<String> {
     let encode = encode.unwrap_or(EncodeType::UTF8);
     let content = match encode {
         EncodeType::UTF8 => std::fs::read_to_string(path)?,
@@ -74,13 +66,8 @@ fn read(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Stri
     Ok(content)
 }
 
-fn write(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(
-        request,
-        path: String,
-        content: String,
-        encode: Option<EncodeType>
-    );
+#[niva_api]
+fn write(path: String, content: String, encode: Option<EncodeType>) -> Result<()> {
     let encode = encode.unwrap_or(EncodeType::UTF8);
 
     match encode {
@@ -93,13 +80,8 @@ fn write(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()>
     Ok(())
 }
 
-fn append(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(
-        request,
-        path: String,
-        content: String,
-        encode: Option<EncodeType>
-    );
+#[niva_api]
+fn append(path: String, content: String, encode: Option<EncodeType>) -> Result<()> {
     let encode = encode.unwrap_or(EncodeType::UTF8);
 
     match encode {
@@ -159,13 +141,8 @@ fn _create_dir_copy_options(options: Option<CopyOptions>) -> fs_extra::dir::Copy
     }
 }
 
-fn move_(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(
-        request,
-        from: String,
-        to: String,
-        options: Option<CopyOptions>
-    );
+#[niva_api]
+fn move_(from: String, to: String, options: Option<CopyOptions>) -> Result<()> {
     let from = std::path::Path::new(&from);
 
     if from.is_dir() {
@@ -180,13 +157,8 @@ fn move_(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()>
     Ok(())
 }
 
-fn copy(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    opts_match!(
-        request,
-        from: String,
-        to: String,
-        options: Option<CopyOptions>
-    );
+#[niva_api]
+fn copy(from: String, to: String, options: Option<CopyOptions>) -> Result<()> {
     let from = std::path::Path::new(&from);
 
     if from.is_dir() {
@@ -202,8 +174,8 @@ fn copy(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> 
     Ok(())
 }
 
-fn remove(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    args_match!(request, path: String);
+#[niva_api]
+fn remove(path: String) -> Result<()> {
     let path = std::path::Path::new(&path);
 
     if path.is_dir() {
@@ -215,20 +187,20 @@ fn remove(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()
     Ok(())
 }
 
-fn create_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    args_match!(request, path: String);
+#[niva_api]
+fn create_dir(path: String) -> Result<()> {
     std::fs::create_dir(path)?;
     Ok(())
 }
 
-fn create_dir_all(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    args_match!(request, path: String);
+#[niva_api]
+fn create_dir_all(path: String) -> Result<()> {
     std::fs::create_dir_all(path)?;
     Ok(())
 }
 
-fn read_dir(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Vec<String>> {
-    opts_match!(request, path: Option<String>);
+#[niva_api]
+fn read_dir(path: Option<String>) -> Result<Vec<String>> {
     let path = path.unwrap_or(".".to_string());
 
     let mut entries = Vec::new();
@@ -272,8 +244,8 @@ fn _visit_dirs(
     Ok(())
 }
 
-fn read_dir_all(_: Arc<NivaApp>, _: Arc<NivaWindow>, request: ApiRequest) -> Result<Vec<String>> {
-    args_match!(request, path: String, excludes: Option<Vec<String>>);
+#[niva_api]
+fn read_dir_all(path: String, excludes: Option<Vec<String>>) -> Result<Vec<String>> {
     let path = Path::new(&path);
     let mut files: Vec<String> = Vec::new();
 
