@@ -80,7 +80,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.setCursorVisible", set_cursor_visible);
     api_manager.register_api("window.dragWindow", drag_window);
     api_manager.register_api("window.setIgnoreCursorEvents", set_ignore_cursor_events);
-    api_manager.register_api("theme", theme);
+    api_manager.register_api("window.theme", theme);
 }
 
 #[niva_api]
