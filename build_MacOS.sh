@@ -15,7 +15,7 @@ rm -rf target/release
 RUSTFLAGS="-l framework=WebKit" MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --release
 
 target/release/niva \
-	--resource-dir=packages/devtools/build \
+	--debug-resource=packages/devtools/build \
 	--project=packages/devtools/build \
 	--build=dist/NivaDevTools.app
 

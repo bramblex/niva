@@ -17,7 +17,7 @@ rd /s /q target\release
 cargo build --release
 
 target\release\niva.exe ^
-	--resource-dir=packages\devtools\build ^
+	--debug-resource=packages\devtools\build ^
 	--project=packages\devtools\build ^
 	--build=dist\NivaDevTools.exe
 
