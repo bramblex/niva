@@ -3,6 +3,7 @@ import { useLocalModel, useModelContext } from "@bramblex/state-model-react";
 import { useEffect } from "react";
 import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
+import './import.scss';
 
 const { fs, os, dialog } = Niva.api;
 
@@ -46,7 +47,7 @@ class HistoryMode extends StateModel<string[]> {
 	}
 }
 
-export function ImportPage() {
+export function ImportLoader() {
 	const history = useLocalModel(() => new HistoryMode());
 	const project = useModelContext(ProjectModel);
 
@@ -58,6 +59,41 @@ export function ImportPage() {
 			}
 		} catch (e) {
 			history.removeHistory(path);
+		}
+	}
+
+	async function newProject() {
+		const { home } = await os.dirs();
+		const projectDir = await dialog.saveFile([], home);
+
+		if (!projectDir) {
+			return;
+		}
+
+		const sep = await os.sep();
+
+		const projectName = projectDir.split(sep).pop();
+		fs.createDir(projectDir);
+
+		const files = [
+			["niva.json", JSON.stringify({ name: projectName, uuid: uuid() })],
+			["index.html", "<h1>Hello World!</h1><script src='./index.js'></script>"],
+			["index.js", "console.log('Hello World!')"]
+		];
+
+		for (const [file, content] of files) {
+			await fs.write(pathJoin(projectDir, file), content);
+		}
+
+		await handlePath(projectDir);
+		await project.debug();
+	}
+
+	async function selectProject() {
+		const { home } = await os.dirs();
+		const path = await dialog.pickDir(home);
+		if (path) {
+			handlePath(path);
 		}
 	}
 
@@ -77,53 +113,26 @@ export function ImportPage() {
 		}
 	}, []);
 
-	return <div>
-		<p>未选择项目, 点击下方按钮选择，或将项目拖入程序</p>
-		<button onClick={async () => {
-			const { home } = await os.dirs();
-			const path = await dialog.pickDir(home);
-			if (path) {
-				handlePath(path);
-			}
-		}}>选择项目</button>
+	return <div className="file-uploader">
+		<div className="file-uploader__tips">
+			<i className="icon-md icon-plus"></i>
+			点击或拖拽文件到此处上传
+		</div>
+		<div className="file-uploader__btns">
+			<button className="btn-md btn-primary" onClick={async () => {
+				selectProject()
+			}}><i className="icon-sm icon-folder"></i>选择项目</button>
 
-		<button
-			style={{ marginLeft: "6px" }}
-			onClick={async () => {
-				const { home } = await os.dirs();
-				const projectDir = await dialog.saveFile([], home);
-
-				if (!projectDir) {
-					return;
-				}
-
-				const sep = await os.sep();
-
-				const projectName = projectDir.split(sep).pop();
-				fs.createDir(projectDir);
-
-				const files = [
-					["niva.json", JSON.stringify({ name: projectName, uuid: uuid() })],
-					["index.html", "<h1>Hello World!</h1><script src='./index.js'></script>"],
-					["index.js", "console.log('Hello World!')"]
-				];
-
-				for (const [file, content] of files) {
-					await fs.write(pathJoin(projectDir, file), content);
-				}
-
-				await handlePath(projectDir);
-				await project.debug();
-			}}>新建项目</button>
-
-		{history.state.length > 0 ? <>
-			<hr />
-			历史项目:
-			<ul>
-				{history.state.map((path) => <li className="link" key={path} onClick={() => handlePath(path)}>{path}</li>)}
-			</ul>
-			<button onClick={() => history.clearHistory()}>清除历史</button>
-		</> : null}
+			<button className="btn-md"
+				style={{ marginLeft: "6px" }}
+				onClick={async () => {
+					newProject()
+				}}><i className="icon-sm icon-plus"></i>新建项目</button>
+		</div>
 
 	</div>
+}
+
+export function ImportPage() {
+	return (<div className="import-page"><ImportLoader /></div>)
 }

@@ -1,0 +1,37 @@
+.import-page {
+    $color-default : rgba(0, 0, 0, 0.4);
+    $color-active : #0084FF;
+
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    .file-uploader {
+        width: 50%;
+        height: 180px;
+        border: 1px dashed $color-default;
+        border-radius: 12px;
+        margin-top: 157px;
+        &:hover {
+            border-color: $color-active;
+        }
+        .file-uploader__tips {
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 24px;
+            text-align: -webkit-center;
+            margin-top: 38px;
+            color: $color-default;
+            .icon-plus {
+                display: block;
+                margin-bottom: 12px;
+            }
+        }
+        .file-uploader__btns {
+            margin-top: 16px;
+            .icon-sm {
+                margin-right: 5px;
+                display: inline-block;
+            }
+        }
+    }
+}

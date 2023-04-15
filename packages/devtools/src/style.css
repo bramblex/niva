@@ -6,22 +6,69 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
+  font-family: 'PingFang SC';
+  font-style: normal;
 }
 
 * {
   user-select: none;
   cursor: default;
   min-width: 0;
+  margin: 0;
+  padding: 0;
 }
 
 /* common */
 .link {
-  color: #007bff;
+  /* color: #007bff; */
   cursor: pointer;
 }
 
 .link:hover {
-  text-decoration: underline;
+  /* text-decoration: underline; */
+}
+
+/* icon */ 
+.icon-sm {
+  width: 12px;
+  height: 12px;
+}
+.icon-md {
+  width: 20px;
+  height: 20px;
+}
+.icon-config {
+  background: url(./assets/icon-config.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-coffee {
+  background: url(./assets/icon-coffee.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-plus {
+  background: url(./assets/icon-plus.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-folder {
+  background: url(./assets/icon-folder.png) center center no-repeat;
+  background-size: contain;
+}
+
+/* button */
+.btn-md {
+  padding: 8px 24px;
+  height: 34px;
+
+  background: rgba(5, 15, 35, 0.04);
+  color: #000;
+  border-radius: 4px;
+  border: none;
+
+  font-size: 14px;
+}
+.btn-primary {
+  background: #0084FF;
+  color: #fff;
 }
 
 /* Window */
@@ -37,8 +84,8 @@ body,
 }
 
 .window-icon {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   margin-right: 6px;
 }
 

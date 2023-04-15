@@ -1,0 +1,71 @@
+/* windows */
+.window {
+    .title-bar {
+        display: flex;
+        justify-content: space-between;
+        height: 44px;
+        .title-bar-controls {
+            padding: 16px;
+        }
+        .title-bar-text {
+            display: flex;
+            align-self: center;
+            padding-right: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 16px;
+        }
+    }
+    .window-body {
+        background: #EFF1F2;
+    }
+    .status-bar {
+        position: fixed;
+        bottom: 0;
+        height: 28px;
+        width: 100%;
+        background: #F5F6F7;
+        display: flex;
+        padding: 0 18px;
+        .status-bar-field {
+            font-size: 12px;
+            line-height: 17px;
+            color: rgba(0, 0, 0, 0.5);
+            position: relative;
+            padding-left: 18px;
+            padding-right: 26px;
+            display: flex;
+            align-self: center;
+            .icon-sm {
+                position: absolute;
+                left: 0;
+                top: 2px;
+            }
+            
+            &.flex-end {
+                flex: 1;
+                justify-content: end;
+            }
+        }
+    }
+}
+.os-mac {
+    .title-bar-controls {
+        button {
+            width: 12px;
+            height: 12px;
+            border: none;
+            border-radius: 50%;
+            margin: 0 4px;
+        }
+        button[aria-label=Close] {
+            background-color: #FF5F57;
+        }
+        button[aria-label=Minimize] {
+            background-color: #FEBC2E;
+        }
+        button[aria-label=Fullscreen] {
+            background-color: #28C840;
+        }
+    }
+}

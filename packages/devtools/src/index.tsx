@@ -1,5 +1,5 @@
-import 'normalize.css'
-import '7.css/dist/7.css';
+import 'normalize.css/normalize.css'
+// import '7.css/dist/7.css';
 import './style.css';
 
 import React from 'react';
