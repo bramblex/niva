@@ -1,5 +1,6 @@
 {
-  "label": "Tutorial - Extras",
+  "label": "配置文档",
+  "collapsed": false,
   "position": 3,
   "link": {
     "type": "generated-index"

@@ -7,19 +7,19 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Niva',
-  tagline: 'Niva are cool',
+  tagline: '轻松构建超轻量级跨平台应用，Niva 让开发变得简单！',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://your-docusaurus-test-site.com',
+  url: 'https://bramblex.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/',
+  baseUrl: '/niva/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
-  projectName: 'docusaurus', // Usually your repo name.
+  organizationName: 'bramblex', // Usually your GitHub org/user name.
+  projectName: 'niva', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -29,7 +29,7 @@ const config = {
   // to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: 'zh-CN',
-    locales: ['en', 'zh-CN'],
+    locales: ['zh-CN', 'en'],
   },
 
   presets: [
@@ -41,15 +41,8 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
-        },
-        blog: {
-          showReadingTime: true,
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+          // editUrl:
+          //   'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
@@ -71,19 +64,28 @@ const config = {
         },
         items: [
           {
-            type: 'docSidebar',
-            sidebarId: 'tutorialSidebar',
+            to: '/docs/tutorial/new-project',
             position: 'left',
-            label: 'Tutorial',
+            label: '快速上手',
           },
-          { to: '/blog', label: 'Blog', position: 'left' },
-
           {
-            type: 'localeDropdown',
+            to: '/docs/options/project',
+            position: 'left',
+            label: '配置文档',
+          },
+          {
+            to: '/docs/api/niva',
+            position: 'left',
+            label: 'API 文档',
+          },
+          {
+            href: 'https://github.com/bramblex/niva/releases',
+            label: '下载',
             position: 'right',
           },
+
           {
-            href: 'https://github.com/facebook/docusaurus',
+            href: 'https://github.com/bramblex/niva',
             label: 'GitHub',
             position: 'right',
           },
@@ -93,46 +95,46 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Docs',
+            title: '文档',
             items: [
               {
-                label: 'Tutorial',
-                to: '/docs/intro',
+                label: '快速上手',
+                to: '/docs/tutorial/new-project',
+              },
+              {
+                label: '配置文档',
+                to: '/docs/options/project',
+              },
+              {
+                label: 'API 文档',
+                to: '/docs/api/niva',
               },
             ],
           },
           {
-            title: 'Community',
+            title: '社区',
             items: [
               {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-              },
-              {
-                label: 'Discord',
-                href: 'https://discordapp.com/invite/docusaurus',
-              },
-              {
-                label: 'Twitter',
-                href: 'https://twitter.com/docusaurus',
+                label: 'Issues',
+                href: 'https://github.com/bramblex/niva/issues',
               },
             ],
           },
           {
-            title: 'More',
+            title: '更多',
             items: [
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
               {
                 label: 'GitHub',
-                href: 'https://github.com/facebook/docusaurus',
+                href: 'https://github.com/bramblex/niva',
+              },
+              {
+                label: '下载',
+                href: 'https://github.com/bramblex/niva/releases',
               },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Niva, Inc. Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
