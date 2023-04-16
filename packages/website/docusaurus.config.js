@@ -14,12 +14,14 @@ const config = {
   url: 'https://bramblex.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/niva/',
+  baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'bramblex', // Usually your GitHub org/user name.
   projectName: 'niva', // Usually your repo name.
+  deploymentBranch: 'gh-pages', // Branch that GitHub pages deploys from.
+  trailingSlash: false,
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
