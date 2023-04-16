@@ -55,7 +55,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         uuid: config.uuid,
         path,
         configPath,
-        config,
+        config
       });
     });
   }
@@ -291,6 +291,7 @@ ${this.state!.config.icon ? iconScript : ""}
       await fs.createDir(appIconsetPath);
       await fs.createDir(appMacOSPath);
     });
+
 
     progress.addTask("正在复制可执行文件...", async () => {
       await fs.copy(currentExe, appExecutablePath);

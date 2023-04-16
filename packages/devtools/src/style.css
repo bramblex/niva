@@ -28,6 +28,10 @@ body,
   /* text-decoration: underline; */
 }
 
+input {
+  outline: none;
+}
+
 /* icon */ 
 .icon-sm {
   width: 12px;
@@ -53,11 +57,35 @@ body,
   background: url(./assets/icon-folder.png) center center no-repeat;
   background-size: contain;
 }
+.icon-refresh {
+  background: url(./assets/icon-refresh.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-search {
+  background: url(./assets/icon-search.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-delete {
+  background: url(./assets/icon-delete.png) center center no-repeat;
+  background-size: contain;
+}
+.icon-plus-primary {
+  background: url(./assets/icon-plus-primary.png) center center no-repeat;
+  background-size: contain; 
+}
+.icon-folder-primary {
+  background: url(./assets/icon-folder-primary.png) center center no-repeat;
+  background-size: contain; 
+}
+.icon-close {
+  background: url(./assets/icon-close.png) center center no-repeat;
+  background-size: contain; 
+}
 
 /* button */
-.btn-md {
-  padding: 8px 24px;
-  height: 34px;
+.btn {
+  padding: 5px 40px;
+  height: 24px;
 
   background: rgba(5, 15, 35, 0.04);
   color: #000;
@@ -66,9 +94,26 @@ body,
 
   font-size: 14px;
 }
+.btn-md {
+  padding: 8px 20px;
+  height: 28px;
+  font-weight: 500;
+  font-size: 12px;
+}
+.btn-bg {
+  padding: 8px 24px;
+  height: 34px;
+}
 .btn-primary {
   background: #0084FF;
   color: #fff;
+}
+.btn-info {
+  background: rgba(5, 15, 35, 0.04);
+  color: rgba(0, 0, 0, 0.5);
+}
+.btn, .text-btn {
+  cursor: pointer;
 }
 
 /* Window */
@@ -105,53 +150,6 @@ body,
 
 .tabs-panel {
   flex: 1 1 auto;
-}
-
-.modal-container {
-  position: fixed;
-  z-index: 9998;
-  top: 10px;
-  bottom: 10px;
-  left: 10px;
-  right: 10px;
-  border-radius: 8px;
-}
-
-.modal {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.modal-active {
-  background-color: rgba(0, 0, 0, 0.3);
-  transition: opacity 0.3s ease;
-}
-
-.modal .window {
-  flex: 0 0 auto;
-
-  display: flex;
-  flex-direction: column;
-}
-
-.modal .window .window-body {
-  min-width: 300px;
-  max-width: 500px;
-  overflow: unset;
-  flex: 0 0 auto;
-  word-break: break-all;
-}
-
-.progressbar-animated {
-  transition: width 0.1s ease-in-out;
 }
 
 .img {

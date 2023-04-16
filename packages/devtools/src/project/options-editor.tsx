@@ -11,6 +11,8 @@ import 'ace-builds/src-noconflict/ext-language_tools'
 
 import { tryOrAlertAsync, withCtx, withCtxP } from '../utils';
 
+import './options-editor.scss';
+
 // eslint-disable-next-line import/no-webpack-loader-syntax
 const jsonWorkerUrl = require("file-loader!ace-builds/src-noconflict/worker-json").default;
 ace.config.setModuleUrl("ace/mode/json_worker", jsonWorkerUrl);
@@ -33,22 +35,22 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 		}).catch(close);
 	}, []);
 
-	return <div className="window active">
-		<div className="title-bar">
+	return <div className="options-editor">
+		{/* <div className="title-bar">
 			<div className="title-bar-text" id="dialog-title">编辑配置</div>
 			<div className="title-bar-controls">
 				<button aria-label="Close" onClick={() => {
 					close();
 				}}></button>
 			</div>
-		</div>
+		</div> */}
 
-		<div className="window-body options-editor-body">
+		<div className="options-editor-body">
 			<AceEditor
 				mode="json"
 				theme="github"
 				name="options-editor"
-				height='400px'
+				height='100%'
 				value={value}
 				onChange={setValue}
 				editorProps={{
@@ -58,17 +60,17 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 		</div>
 
 		<footer style={{ textAlign: "right" }}>
-			<button style={{ marginRight: '6px' }} onClick={() => {
-				close();
-			}}>取消</button>
-			<button className="default" onClick={() =>
+			<button className='btn btn-md' style={{ marginRight: '6px' }} onClick={() => {
+				
+			}}>重制</button>
+			<button className="btn btn-md btn-primary" onClick={() =>
 				tryOrAlertAsync(async () => {
 					withCtx(() => JSON.parse(value), '配置文件格式错误');
 					await withCtxP(fs.write(project.state!.configPath, value), '保存配置文件失败');
 					close();
 					project.init(project.state!.path);
 				})
-			}>应用</button>
+			}>确认</button>
 		</footer>
 	</div >
 }

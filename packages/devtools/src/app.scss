@@ -1,9 +1,14 @@
 /* windows */
 .window {
+    background: #EFF1F2;
     .title-bar {
+        position: fixed;
+        top: 0;
+        width: 100%;
+        height: 44px;
         display: flex;
         justify-content: space-between;
-        height: 44px;
+        background: white;
         .title-bar-controls {
             padding: 16px;
         }
@@ -17,7 +22,8 @@
         }
     }
     .window-body {
-        background: #EFF1F2;
+        height: 100%;
+        margin-top: 44px;
     }
     .status-bar {
         position: fixed;
@@ -45,27 +51,28 @@
             &.flex-end {
                 flex: 1;
                 justify-content: end;
+                font-size: 10px;
             }
         }
     }
-}
-.os-mac {
-    .title-bar-controls {
-        button {
-            width: 12px;
-            height: 12px;
-            border: none;
-            border-radius: 50%;
-            margin: 0 4px;
-        }
-        button[aria-label=Close] {
-            background-color: #FF5F57;
-        }
-        button[aria-label=Minimize] {
-            background-color: #FEBC2E;
-        }
-        button[aria-label=Fullscreen] {
-            background-color: #28C840;
+    &.os-mac {
+        .title-bar-controls {
+            button {
+                width: 12px;
+                height: 12px;
+                border: none;
+                border-radius: 50%;
+                margin: 0 4px;
+            }
+            button[aria-label=Close] {
+                background-color: #FF5F57;
+            }
+            button[aria-label=Minimize] {
+                background-color: #FEBC2E;
+            }
+            button[aria-label=Fullscreen] {
+                background-color: #28C840;
+            }
         }
     }
 }

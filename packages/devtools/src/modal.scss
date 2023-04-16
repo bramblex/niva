@@ -1,0 +1,94 @@
+.modal-container {
+    position: fixed;
+    z-index: 9998;
+    top: 0px;
+    bottom: 0px;
+    left: 0px;
+    right: 0px;
+    border-radius: 8px;
+  }
+  
+.modal {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .modal-active {
+    background-color: transparent;
+    /* transition: opacity 0.3s ease; */
+  }
+  
+  .modal .window {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: 340px;
+    background: white;
+    border: 0.5px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    padding: 16px 20px;
+    position: relative;
+    i.icon-close {
+        position: absolute;
+        right: 24px;
+        top: 20px;
+        width: 10px;
+        height: 10px;
+        cursor: pointer;
+    }
+    .window-body {
+        width: 100%;
+        overflow: unset;
+        flex: 1;
+        word-break: break-all;
+        margin-top: 0;
+        h4 {
+            font-weight: 500;
+            font-size: 16px;
+            line-height: 22px;
+        }
+        p {
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 18px;
+            margin-top: 12px;
+        }
+        &.progress {
+            h4, p {
+                text-align: center;
+            }
+            p {
+                color: rgba(0, 0, 0, 0.5);
+            }
+            .progressbar {
+                width: 100%;
+                height: 8px;
+                border-radius: 4px;
+                background: rgba(5, 15, 35, 0.04);
+                margin-top: 16px;
+                padding: 0 4px;
+                .progressbar-animated {
+                    background: #0084FF;
+                    border-radius: 4px;
+                    height: 100%;
+                    transition: width 0.1s ease-in-out;
+                }
+            }
+        }
+    }
+    footer {
+        flex: 0;
+        margin-top: 32px;
+    }
+  }
+  
+  
