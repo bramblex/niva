@@ -5,6 +5,7 @@ use super::{options::NivaWindowOptions, window::NivaWindow};
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
 use crate::app::menu::{self, build_native_item};
+use crate::app::utils::url_join;
 use crate::app::window_manager::url::get_host_from_url;
 use crate::app::window_manager::url::make_base_url;
 use crate::{
@@ -201,10 +202,9 @@ impl NivaBuilder {
 
         let base_url = debug_entry.unwrap_or(make_base_url(protocol, &id_name));
 
-        let entry_url = format!(
-            "{}/{}",
-            base_url,
-            options.entry.clone().unwrap_or("".to_string())
+        let entry_url = url_join(
+            &base_url,
+            &options.entry.clone().unwrap_or_default()
         );
 
         let mut builder = WebViewBuilder::new(window)?;

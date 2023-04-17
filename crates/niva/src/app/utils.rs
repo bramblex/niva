@@ -161,3 +161,13 @@ macro_rules! try_or_log_err {
         }
     };
 }
+
+pub fn url_join(left: &str, right: &str) -> String {
+    if right.is_empty() {
+        left.to_string()
+    } else if left.ends_with("/") {
+        format!("{}{}", left, right)
+    } else {
+        format!("{}/{}", left, right)
+    }
+}

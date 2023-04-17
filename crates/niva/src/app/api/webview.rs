@@ -9,7 +9,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("webview.openDevtools", open_devtools);
     api_manager.register_event_api("webview.closeDevtools", close_devtools);
     api_manager.register_api("webview.baseUrl", base_url);
-    api_manager.register_api("webview.baseFilesystemUrl", base_filesystem_url);
+    api_manager.register_api("webview.baseFileSystemUrl", base_filesystem_url);
 }
 
 #[niva_event_api]
