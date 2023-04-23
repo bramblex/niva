@@ -22,18 +22,6 @@ fn niva_api_args(api_inputs: Punctuated<FnArg, Comma>) -> Option<Stmt> {
 
     if len == 0 {
         None
-    } else if len == 1 {
-        let arg = api_inputs.first().unwrap();
-        match arg {
-            FnArg::Typed(typed) => {
-                let ty = &typed.ty;
-                let pat = &typed.pat;
-                Some(parse_quote! {
-                    let #pat = request.args().single::<#ty>()?;
-                })
-            }
-            _ => None,
-        }
     } else {
         let mut names: Punctuated<Box<Pat>, Comma> = Punctuated::new();
         let mut types: Punctuated<Box<Type>, Comma> = Punctuated::new();
@@ -55,11 +43,11 @@ fn niva_api_args(api_inputs: Punctuated<FnArg, Comma>) -> Option<Stmt> {
 
         if has_option {
             Some(parse_quote! {
-                let (#names) = request.args().optional::<(#types)>(#len)?;
+                let (#names,) = request.args().optional::<(#types,)>(#len)?;
             })
         } else {
             Some(parse_quote! {
-                let (#names) = request.args().get::<(#types)>()?;
+                let (#names,) = request.args().get::<(#types,)>()?;
             })
         }
     }
