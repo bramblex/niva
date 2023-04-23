@@ -5,6 +5,7 @@ import { useState, useEffect, useReducer, useRef } from "react";
 import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
+import { modal } from "../modal";
 import './import.scss';
 
 const { fs, os, dialog } = Niva.api;
@@ -216,7 +217,15 @@ export function ImportLoader(props: ImportLoaderProps) {
 								{item.hlHTML ? <h4 dangerouslySetInnerHTML={{__html: item.hlHTML}}></h4> : <h4>{item.name}</h4>}
 								<span>{item.path}</span>
 							</div>
-							<i className="icon-sm icon-delete" onClick={async () => history.removeHistory(item.path)}></i>
+							<i className="icon-sm icon-delete" onClick={async () => {
+								const ok = await modal.confirm(
+									"提示",
+									"确认删除？"
+								);
+								if (ok) {
+									history.removeHistory(item.path);
+								}
+							}}></i>
 						</div>
 					)}
 				</div> : null}

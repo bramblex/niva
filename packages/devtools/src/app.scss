@@ -8,9 +8,11 @@
         height: 44px;
         display: flex;
         justify-content: space-between;
+        align-items: center;
         background: white;
         .title-bar-controls {
-            padding: 7px 16px;
+            padding: 0 16px;
+            display: flex;
         }
         .title-bar-text {
             display: flex;
@@ -87,6 +89,42 @@
                 svg {
                     opacity: 1;
                 }
+            }
+        }
+    }
+    &.os-win {
+        .title-bar {
+            flex-direction: row-reverse;
+            .title-bar-text {
+                padding-left: 24px;
+            }
+            .title-bar-controls {
+                padding-right: 0;
+                button {
+                    border: none;
+                    background: transparent;
+                    width: 46px;
+                    height: 44px;
+                    
+                    &:hover {
+                        transition: background-color 0.1s;
+                        background-color: #e5e5e5;
+                    }
+                  
+                    &:active {
+                        background-color: #cccccc;
+                    }
+                }
+                // button[aria-label=Close] {
+                //     &:hover {
+                //         transition: background-color 0.1s;
+                //         background-color: #e81123;
+                //     }
+                  
+                //     &:active {
+                //         background-color: #f1707a;
+                //     }
+                // }
             }
         }
     }

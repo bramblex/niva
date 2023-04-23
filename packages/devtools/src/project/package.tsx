@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { pathJoin } from "../utils";
 import { ProjectModel } from "./model";
 import { OptionsEditor } from "./options-editor";
-import { WindowControl } from '../app'
 import { ImportLoader } from "./import";
 import './package.scss';
 
