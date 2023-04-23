@@ -1,5 +1,5 @@
 use super::{
-    shortcut_manager::ShortcutsOptions, tray_manager::NivaTrayOptions,
+    shortcut_manager::NivaShortcutsOptions, tray_manager::NivaTrayOptions,
     window_manager::options::NivaWindowOptions,
 };
 use serde::Deserialize;
@@ -26,7 +26,7 @@ pub struct NivaOptions {
     pub window: NivaWindowOptions,
 
     pub tray: Option<NivaTrayOptions>,
-    pub shortcuts: Option<ShortcutsOptions>,
+    pub shortcuts: Option<NivaShortcutsOptions>,
     pub workers: Option<u32>,
 
     // mac app options

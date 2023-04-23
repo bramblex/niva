@@ -51,17 +51,12 @@ impl EventHandler {
         });
     }
 
-    fn handle_window_event(
-        &self,
-        event: WindowEvent,
-        window_id: WindowId,
-    ) -> Result<()> {
-
+    fn handle_window_event(&self, event: WindowEvent, window_id: WindowId) -> Result<()> {
         match event {
             WindowEvent::Destroyed => {
                 self.app.window()?.close_window_inner(window_id)?;
             }
-            _ => ()
+            _ => (),
         }
 
         let window = self.app.window()?.get_window_inner(window_id)?;
@@ -86,13 +81,11 @@ impl EventHandler {
             WindowEvent::ThemeChanged(theme) => {
                 window.send_ipc_event(
                     "window.themeChanged",
-                    json!({
-                        "theme": match theme {
-                            tao::window::Theme::Dark => "dark",
-                            tao::window::Theme::Light => "light",
-                            _ => "",
-                        }
-                    }),
+                    match theme {
+                        tao::window::Theme::Dark => "dark",
+                        tao::window::Theme::Light => "light",
+                        _ => "system",
+                    },
                 )?;
             }
             WindowEvent::CloseRequested => {

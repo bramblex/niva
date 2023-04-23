@@ -12,20 +12,15 @@ export function current(): Promise<number>;
 
 ## Niva.api.window.open
 
+* 其中窗口选项 `NivaWindowOptions` 详见 [窗口选项](/docs/options/window)。
+
 ```ts
 /**
  * 打开一个新窗口。
  * @param options 可选的窗口选项，包括宽度、高度、坐标、标题和 URL 等。
  * @returns 一个 Promise，在接收成功响应后返回新窗口的 ID。
  */
-export function open(options?: {
-  width?: number;
-  height?: number;
-  x?: number;
-  y?: number;
-  title?: string;
-  url?: string;
-}): Promise<number>;
+export function open(options: NivaWindowOptions): Promise<number>;
 ```
 
 ## Niva.event.window.close

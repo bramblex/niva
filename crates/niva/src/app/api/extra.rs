@@ -7,6 +7,13 @@ use niva_macros::niva_event_api;
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("extra.getActiveWindowId", get_active_window_id);
     api_manager.register_async_api("extra.focusByWindowId", focus_by_window_id);
+
+    #[cfg(target_os = "macos")] {
+        api_manager.register_event_api("extra.hideApplication", hide_application);
+        api_manager.register_event_api("extra.showApplication", show_application);
+        api_manager.register_event_api("extra.hideOtherApplications", hide_other_applications);
+        api_manager.register_event_api("extra.setActivationPolicy", set_activation_policy);
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -27,7 +34,7 @@ fn show_application() -> Result<()> {
 
 #[cfg(target_os = "macos")]
 #[niva_event_api]
-fn hide_other_application() -> Result<()> {
+fn hide_other_applications() -> Result<()> {
     use wry::application::platform::macos::EventLoopWindowTargetExtMacOS;
     target.hide_other_applications();
     Ok(())

@@ -27,7 +27,32 @@ macro_rules! match_window {
     };
 }
 
-pub fn register_api_instances(api_manager: &mut ApiManager) {}
+pub fn register_api_instances(api_manager: &mut ApiManager) {
+    #[cfg(target_os = "windows")]
+    {
+        api_manager.register_api("windowExtra.setEnable", set_enable);
+        api_manager.register_api("windowExtra.setTaskbarIcon", set_taskbar_icon);
+        api_manager.register_api("windowExtra.theme", theme);
+        api_manager.register_api("windowExtra.resetDeadKeys", reset_dead_keys);
+        api_manager.register_api("windowExtra.beginResizeDrag", begin_resize_drag);
+        api_manager.register_api("windowExtra.setSkipTaskbar", set_skip_taskbar);
+        api_manager.register_api("windowExtra.setUndecoratedShadow", set_undecorated_shadow);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        api_manager.register_api("windowExtra.simpleFullscreen", simple_fullscreen);
+        api_manager.register_api("windowExtra.setSimpleFullscreen", set_simple_fullscreen);
+        api_manager.register_api("windowExtra.hasShadow", has_shadow);
+        api_manager.register_api("windowExtra.setHasShadow", set_has_shadow);
+        api_manager.register_api("windowExtra.setIsDocumentEdited", set_is_document_edited);
+        api_manager.register_api("windowExtra.isDocumentEdited", is_document_edited);
+        api_manager.register_api("windowExtra.setAllowsAutomaticWindowTabbing", set_allows_automatic_window_tabbing);
+        api_manager.register_api("windowExtra.allowsAutomaticWindowTabbing", allows_automatic_window_tabbing);
+        api_manager.register_api("windowExtra.setTabbingIdentifier", set_tabbing_identifier);
+        api_manager.register_api("windowExtra.tabbingIdentifier", tabbing_identifier);
+    }
+}
 
 // windows
 #[cfg(target_os = "windows")]

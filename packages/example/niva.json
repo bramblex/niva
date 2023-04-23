@@ -25,7 +25,9 @@
 				]}
 			]},
 			{ "label": "world", "children": [], "enabled": false },
-			{ "label": "fuck", "children": []}
+			{ "label": "fuck", "children": [
+				{ "type": "item", "label": "刷新", "id": 10, "accelerator": "cmd+r" }
+			]}
 		]
 	},
 

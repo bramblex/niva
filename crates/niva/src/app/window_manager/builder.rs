@@ -123,26 +123,26 @@ impl NivaBuilder {
             set_property_some!(
                 builder,
                 with_titlebar_transparent,
-                macos_extra.titlebar_transparent
+                macos_extra.title_bar_transparent
             );
-            set_property_some!(builder, with_titlebar_hidden, macos_extra.titlebar_hidden);
+            set_property_some!(builder, with_titlebar_hidden, macos_extra.title_bar_hidden);
             set_property_some!(
                 builder,
                 with_titlebar_buttons_hidden,
-                macos_extra.titlebar_buttons_hidden
+                macos_extra.title_bar_buttons_hidden
             );
             set_property_some!(builder, with_title_hidden, macos_extra.title_hidden);
             set_property_some!(
                 builder,
                 with_fullsize_content_view,
-                macos_extra.fullsize_content_view
+                macos_extra.full_size_content_view
             );
             set_property_some!(
                 builder,
                 with_resize_increments,
                 macos_extra.resize_increments
             );
-            set_property_some!(builder, with_disallow_hidpi, macos_extra.disallow_hidpi);
+            set_property_some!(builder, with_disallow_hidpi, macos_extra.disallow_hi_dpi);
             set_property_some!(builder, with_has_shadow, macos_extra.has_shadow);
             set_property_some!(
                 builder,
@@ -278,20 +278,22 @@ impl NivaBuilder {
             match window_result {
                 Ok(window) => match event {
                     FileDropEvent::Hovered { paths, position } => {
+                        let position = position.to_logical::<f64>(window.scale_factor());
                         log_if_err!(window.send_ipc_event(
                             "fileDrop.hovered",
                             json!({
                                 "paths": paths,
-                                "position": (position.x, position.y),
+                                "position": position,
                             }),
                         ));
                     }
                     FileDropEvent::Dropped { paths, position } => {
+                        let position = position.to_logical::<f64>(window.scale_factor());
                         log_if_err!(window.send_ipc_event(
                             "fileDrop.dropped",
                             json!({
                                 "paths": paths,
-                                "position": (position.x, position.y),
+                                "position": position,
                             }),
                         ));
                     }

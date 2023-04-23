@@ -60,7 +60,7 @@ function EventExample(props: { event: string, exampleData: any }) {
 	const { event, exampleData } = props;
 	return <div>
 		<p><b>示例代码:</b></p>
-		<pre>Niva.addListener({JSON.stringify(event)}, (event, data) ={'>'} {'{'}...{'}'})</pre>
+		<pre>Niva.addEventListener({JSON.stringify(event)}, (event, data) ={'>'} {'{'}...{'}'})</pre>
 		<p>示例 data 结构</p>
 		<pre>{JSON.stringify(exampleData, null, 2)}</pre>
 	</div>

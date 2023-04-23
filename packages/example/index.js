@@ -6,6 +6,12 @@
     console.log(event, data);
   })
 
+  Niva.addEventListener("menu.clicked", (_, id) => {
+    if (id === 10) {
+      location.reload()
+    }
+  })
+
 
   const { window, monitor, webview, extra } = Niva.api;
 

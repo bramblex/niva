@@ -19,7 +19,7 @@ pub struct ShortcutOption {
     pub id: u16,
 }
 
-pub type ShortcutsOptions = Vec<ShortcutOption>;
+pub type NivaShortcutsOptions = Vec<ShortcutOption>;
 
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
@@ -49,7 +49,7 @@ impl NivaShortcutManager {
     pub fn register_with_options(
         &mut self,
         window_id: u16,
-        options: &ShortcutsOptions,
+        options: &NivaShortcutsOptions,
     ) -> Result<()> {
         for ShortcutOption { accelerator, id } in options {
             self.register_with_id(window_id, *id, accelerator.clone())?;
