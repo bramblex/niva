@@ -1,7 +1,7 @@
-.import-page {
-    $color-default : rgba(0, 0, 0, 0.4);
-    $color-active : #0084FF;
+$color-default : rgba(0, 0, 0, 0.4);
+$color-active : #0084FF;
 
+.import-page {
     text-align: center;
     display: flex;
     justify-content: center;
@@ -126,6 +126,7 @@
         }
         .history-item {
             display: flex;
+            align-items: center;
             padding: 20px 16px;
             cursor: pointer;
             .picon {
@@ -145,16 +146,30 @@
                     line-height: 18px;
                     color: #000;
                     margin-bottom: 2px;
+                    cursor: pointer;
+                    .keyword-match {
+                        display: inline;
+                        color: $color-active;
+                    }
                 }
                 span {
                     text-overflow: ellipsis;
                     white-space: nowrap;
                     overflow: hidden;
                     display: block;
+                    cursor: pointer;
                 }
+            }
+            .icon-delete {
+                opacity: 0;
+                margin-left: 2px;
+                cursor: pointer;
             }
             &:hover {
                 background: rgba(5, 15, 35, 0.03);
+                .icon-delete {
+                    opacity: 1;
+                }
             }
             &.active {
                 background: rgba(0, 132, 255, 0.05);

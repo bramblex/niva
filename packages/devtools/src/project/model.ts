@@ -114,6 +114,14 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     });
   }
 
+  refresh() {
+    const projectPath = this.state!.path;
+    if (!projectPath) {
+      return;
+    }
+    return this.init(this.state!.path);
+  }
+
   debug() {
     const projectPath = this.state!.path;
     const debugEntry = this.state!.config.debugEntry;

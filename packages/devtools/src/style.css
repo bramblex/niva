@@ -140,7 +140,7 @@ input {
 
 .window-body {
   flex: 1 1 auto;
-  overflow-y: auto;
+  /* overflow-y: auto; */
 }
 
 .tabs {

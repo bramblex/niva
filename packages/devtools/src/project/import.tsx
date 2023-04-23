@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import { StateModel } from "@bramblex/state-model";
 import { useLocalModel, useModelContext } from "@bramblex/state-model-react";
-import { useEffect, useReducer, useRef } from "react";
+import { useState, useEffect, useReducer, useRef } from "react";
 import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
@@ -9,7 +9,23 @@ import './import.scss';
 
 const { fs, os, dialog } = Niva.api;
 
-class HistoryMode extends StateModel<string[]> {
+interface ImportLoaderProps { 
+    type: string;
+}
+
+interface FileState {
+	isHover: boolean;
+	error: string;
+}
+
+interface HistoryState {
+	path: string;
+	name: string;
+	icon: string;
+	hlHTML?: string;
+}
+
+class HistoryMode extends StateModel<HistoryState[]> {
 	private historyFilePath!: string;
 
 	constructor() {
@@ -22,16 +38,16 @@ class HistoryMode extends StateModel<string[]> {
 		this.readHistory();
 	}
 
-	async writeHistory(path: string) {
+	async writeHistory(historyData: HistoryState) {
 		this.setState([
-			path,
+			historyData,
 			...this.state,
-		].filter((item, index, array) => array.indexOf(item) === index).slice(0, 10));
+		].filter((item, index, array) => array.findIndex(i => i.path === item.path) === index).slice(0, 10));
 		await fs.write(this.historyFilePath, JSON.stringify(this.state));
 	}
 
 	async removeHistory(path: string) {
-		this.setState(this.state.filter(item => item !== path));
+		this.setState(this.state.filter(item => item.path !== path));
 		await fs.write(this.historyFilePath, JSON.stringify(this.state));
 	}
 
@@ -43,8 +59,19 @@ class HistoryMode extends StateModel<string[]> {
 		this.setState(content);
 	}
 
-	search() {
-		
+	searchHistory(keyword: string) {
+		if (!keyword) {
+			return this.state.map(item => {
+				item.hlHTML = '';
+				return item;
+			})
+		}
+		return this.state
+			.filter(item => item.name.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()))
+			.map(item => {
+				item.hlHTML = item.name.replace(new RegExp(`(${keyword})`, 'ig'), `<span class="keyword-match">$1</span>`);
+				return item;
+			})
 	}
 
 	clearHistory() {
@@ -53,20 +80,13 @@ class HistoryMode extends StateModel<string[]> {
 	}
 }
 
-interface ImportLoaderProps { 
-    type: string;
-}
-
-interface FileState {
-	isHover: boolean;
-	error: string;
-}
-
 export function ImportLoader(props: ImportLoaderProps) {
 	const history = useLocalModel(() => new HistoryMode());
 	const project = useModelContext(ProjectModel);
+
+	const fileUploaderRef = useRef<HTMLDivElement|null>(null);
+	const [keyword, setKeyword] = useState('');
 	const { type } = props;
-	let fileUploaderRef = useRef<HTMLDivElement|null>(null);
 
 	const reducer = (state: FileState, newState: FileState) => {
 		return {...state, ...newState}
@@ -85,7 +105,11 @@ export function ImportLoader(props: ImportLoaderProps) {
 				return
 			}
 			if (project.state) {
-				history.writeHistory(project.state.path)
+				history.writeHistory({
+					path: project.state.path,
+					name: project.state.name,
+					icon: project.state?.config?.icon || ""
+				})
 			}
 		} catch (e) {
 			history.removeHistory(path);
@@ -168,16 +192,12 @@ export function ImportLoader(props: ImportLoaderProps) {
 		</div>
 	</div>
 
-	const historyRenderList = ['xxxxx', 'xxx2'].map(i => ({
-		name: 'Niva',
-		icon: 'icon.png',
-		path: i // "/Users/karenlin/workspace/niva/packages/example"
-	})) // TODO: 搜索的时候换搜索结果列表
+	const historyList = history.searchHistory(keyword)
 
 	const directoryImport = <div className="file-uploader-dir">
 		<div className="search-bar">
 			<div className="search-input">
-				<input placeholder="搜索项目"></input>
+				<input placeholder="搜索项目" onChange={async (e) => setKeyword(e.target.value)}></input>
 				<i className="icon-sm icon-search"></i>
 			</div>
 			<div className="btn-containers">
@@ -187,15 +207,16 @@ export function ImportLoader(props: ImportLoaderProps) {
 		</div>
 		<div className="history">
 			<span className="text-btn clear-history" onClick={async () => history.clearHistory()}>浏览历史<i className="icon-sm icon-delete"></i></span>
-			{historyRenderList.length > 0 ? 
+			{historyList.length > 0 ? 
 				<div className="history-list">
-					{historyRenderList.map((item) => 
-						<div className={classNames("history-item", {active: item.path === project?.state?.path})} key={item.path} onClick={() => handlePath(item.path)}>
-							<div className="picon">{item.icon ? <Icon /> : null}</div>
-							<div className="pinfo">
-								<h4>{item.name}</h4>
+					{historyList.map((item) => 
+						<div className={classNames("history-item", {active: item.path === project?.state?.path})} key={item.path}>
+							<div className="picon">{item.icon ? <Icon showError={false}/> : null}</div>
+							<div className="pinfo" onClick={() => handlePath(item.path)}>
+								{item.hlHTML ? <h4 dangerouslySetInnerHTML={{__html: item.hlHTML}}></h4> : <h4>{item.name}</h4>}
 								<span>{item.path}</span>
 							</div>
+							<i className="icon-sm icon-delete" onClick={async () => history.removeHistory(item.path)}></i>
 						</div>
 					)}
 				</div> : null}

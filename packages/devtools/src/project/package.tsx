@@ -7,7 +7,7 @@ import { WindowControl } from '../app'
 import { ImportLoader } from "./import";
 import './package.scss';
 
-export function Icon() {
+export function Icon( {showError = true} ) {
 	const { state } = useModel(useModelContext(ProjectModel));
 
 	const [iconSrc, setIconSrc] = useState("");
@@ -22,8 +22,8 @@ export function Icon() {
 	}, [state]);
 
 	return <div>
-		{iconSrc ? <img style={{ height: '100%', width: '100%' }} alt="" src={iconSrc} /> : <p>图标读取中...</p>}
-		{err ? <p>{err}</p> : null}
+		{iconSrc ? <img style={{ height: '100%', width: '100%' }} alt="" src={iconSrc} /> : (showError ? <p>图标读取中...</p> : null)}
+		{showError && err ? <p>{err}</p> : null}
 	</div>
 }
 
@@ -52,7 +52,7 @@ function ProjectDetails() {
 				</div>
 			</div>
 			<div className="pd-rt">
-				<button className="btn btn-md btn-info" onClick={async () => {}}><i className="icon-sm icon-refresh"></i>刷新</button>
+				<button className="btn btn-md btn-info" onClick={async () => {project.refresh()}}><i className="icon-sm icon-refresh"></i>刷新</button>
 			</div>
 		</section>
 		<section className="pd-more">

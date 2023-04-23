@@ -51,6 +51,7 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 				theme="github"
 				name="options-editor"
 				height='100%'
+				width='100%'
 				value={value}
 				onChange={setValue}
 				editorProps={{

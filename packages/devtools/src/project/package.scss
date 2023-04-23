@@ -5,11 +5,13 @@
     .directory {
         width: 240px;
         height: 100%;
-        border-right: solid 0.5px rgba(5, 15, 35, 0.12);
         padding-top: 4px;
     }
     .project-info {
         flex: 1;
+        border-left: solid 0.5px rgba(5, 15, 35, 0.12);
+        margin-top: -44px;
+        z-index: 9;
         .tabs {
             height: 100%;
             .tabs-menu {
