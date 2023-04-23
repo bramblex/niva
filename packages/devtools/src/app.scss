@@ -10,7 +10,7 @@
         justify-content: space-between;
         background: white;
         .title-bar-controls {
-            padding: 16px;
+            padding: 7px 16px;
         }
         .title-bar-text {
             display: flex;
@@ -63,6 +63,13 @@
                 border: none;
                 border-radius: 50%;
                 margin: 0 4px;
+                position: relative;
+                svg {
+                    position: absolute;
+                    left: 1px;
+                    top: 1px;
+                    opacity: 0;
+                }
             }
             button[aria-label=Close] {
                 background-color: #FF5F57;
@@ -72,6 +79,14 @@
             }
             button[aria-label=Fullscreen] {
                 background-color: #28C840;
+                svg {
+                    transform: rotateY(180deg);
+                }
+            }
+            &:hover, &:active {
+                svg {
+                    opacity: 1;
+                }
             }
         }
     }

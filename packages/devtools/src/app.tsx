@@ -6,10 +6,22 @@ import './app.scss';
 
 /** 窗口控制操作区 */
 export function WindowControl() {
+  const [isMaximized, setMaximized] = useState(false)
+
+  const closeIcon = <svg x="0px" y="0px" width="10px" height="10px" viewBox="0 0 20 20"><polygon fill="#4d0000" points="15.9,5.2 14.8,4.1 10,8.9 5.2,4.1 4.1,5.2 8.9,10 4.1,14.8 5.2,15.9 10,11.1 14.8,15.9 15.9,14.8 11.1,10 "/></svg>
+  const minimizeIcon = <svg x="0px" y="0px" width="10px" height="10px" viewBox="0 0 20 20"><rect fill="#995700" x="2.4" y="9" width="15.1" height="2"/></svg>
+  const maximizeIcon = <svg x="0px" y="0px" width="10px" height="10px" viewBox="0 0 20 20" data-radium="true"><path fill="#006400" d="M5.3,16H13L4,7v7.7C4.6,14.7,5.3,15.4,5.3,16z"></path><path fill="#006400" d="M14.7,4H7l9,9V5.3C15.4,5.3,14.7,4.6,14.7,4z"></path></svg>
+  const restoreMaximizeIcon = <svg x="0px" y="0px" width="10px" height="10px" viewBox="0 0 10 10"><path fill="#006400" d="M5,10c0,0 0,-2.744 0,-4.167c0,-0.221 -0.088,-0.433 -0.244,-0.589c-0.156,-0.156 -0.368,-0.244 -0.589,-0.244c-1.423,0 -4.167,0 -4.167,0l5,5Z" /><path fill="#006400" d="M5,0c0,0 0,2.744 0,4.167c0,0.221 0.088,0.433 0.244,0.589c0.156,0.156 0.368,0.244 0.589,0.244c1.423,0 4.167,0 4.167,0l-5,-5Z" /></svg>
+  
   return     <div className="title-bar-controls">
-    <button aria-label="Close" onClick={() => Niva.api.process.exit()}></button>
-    <button aria-label="Minimize" onClick={() => {console.log('Minimize click'); /** Niva.api.window.setMinimized(true) */}}></button>
-    <button aria-label="Fullscreen" onClick={() => Niva.api.process.exit()}></button>
+    <button aria-label="Close" onClick={() => Niva.api.process.exit()}>{ closeIcon }</button>
+    <button aria-label="Minimize" onClick={() => Niva.api.window.setMinimized(true) }>{ minimizeIcon }</button>
+    <button aria-label="Fullscreen" onClick={() => { 
+      setMaximized(!isMaximized)
+      // Niva.api.window.setMaximized(!isMaximized)
+    }}>
+      {isMaximized ? restoreMaximizeIcon : maximizeIcon}
+    </button>
   </div>
 }
 
@@ -73,18 +85,6 @@ export function App() {
   // const [tab, setTab] = useState(0);
 
   return <WindowFrame>
-    {/* <section className="tabs">
-      <menu className="tabs-menu" role="tablist" aria-label="App Tabs">
-        <button role="tab" aria-controls="project-tab" aria-selected={tab === 0} onClick={() => setTab(0)}>项目构建</button>
-        <button role="tab" aria-controls="doc-tab" aria-selected={tab === 1} onClick={() => setTab(1)}>文档示例</button>
-      </menu>
-      <article className='tabs-panel' role="tabpanel" id="project-tab" hidden={tab !== 0}>
-        <ProjectTab />
-      </article>
-      <article className='tabs-panel' role="tabpanel" id="doc-tab" hidden={tab !== 1}>
-        <DocTab />
-      </article>
-    </section> */}
     <ProjectTab />
   </WindowFrame>
 }

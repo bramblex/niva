@@ -42,8 +42,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       const { isDir } = await tryOrP(fs.stat(path), { isDir: false });
 
       if (!isDir) {
-        modal.alert("错误", `'${path}' 不是一个目录, 请选择一个目录`);
-        return;
+        return "文件格式错误";
       }
 
       // check niva.json exists, if not create it

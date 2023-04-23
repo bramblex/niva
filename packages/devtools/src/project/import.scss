@@ -12,9 +12,6 @@
         border: 1px dashed $color-default;
         border-radius: 12px;
         margin-top: 157px;
-        &:hover {
-            border-color: $color-active;
-        }
         .file-uploader__tips {
             font-weight: 600;
             font-size: 16px;
@@ -32,6 +29,22 @@
             .icon-sm {
                 margin-right: 5px;
                 display: inline-block;
+            }
+        }
+        &.active {
+            border-color: $color-active;
+            background: linear-gradient(0deg, rgba(0, 132, 255, 0.08), rgba(0, 132, 255, 0.08));
+            .file-uploader__tips {
+                color: $color-active;
+                .icon-plus {
+                    background: url(../assets/icon-plus-primary.png) center center no-repeat;
+                    background-size: contain;
+                }
+            }
+        }
+        &.active, &.error {
+            .file-uploader__btns {
+                opacity: .5;
             }
         }
     }

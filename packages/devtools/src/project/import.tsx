@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import { StateModel } from "@bramblex/state-model";
 import { useLocalModel, useModelContext } from "@bramblex/state-model-react";
-import { useEffect } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
@@ -57,14 +57,33 @@ interface ImportLoaderProps {
     type: string;
 }
 
+interface FileState {
+	isHover: boolean;
+	error: string;
+}
+
 export function ImportLoader(props: ImportLoaderProps) {
 	const history = useLocalModel(() => new HistoryMode());
 	const project = useModelContext(ProjectModel);
 	const { type } = props;
+	let fileUploaderRef = useRef<HTMLDivElement|null>(null);
+
+	const reducer = (state: FileState, newState: FileState) => {
+		return {...state, ...newState}
+	}
+	const fileState: FileState = {
+		isHover: false,
+		error: ''
+	}
+	const [{ isHover, error }, fileDispatch] = useReducer(reducer, fileState)
 
 	async function handlePath(path: string) {
 		try {
-			await project.init(path);
+			const error = await project.init(path);
+			if (error) {
+				fileDispatch({error, isHover: false})
+				return
+			}
 			if (project.state) {
 				history.writeHistory(project.state.path)
 			}
@@ -109,7 +128,10 @@ export function ImportLoader(props: ImportLoaderProps) {
 	}
 
 	useEffect(() => {
-		const handleDrop = (_: string, { paths }: { paths: string[] }) => {
+		const handleDrop = (_: string, { paths, position }: { paths: string[], position: number[] }) => {
+			if (!isHover) {
+				return
+			}
 			const path = paths[0];
 			if (path) {
 				handlePath(path)
@@ -124,10 +146,14 @@ export function ImportLoader(props: ImportLoaderProps) {
 		}
 	}, []);
 
-	const pageImport = <div className="file-uploader">
+	const pageImport = <div className={classNames("file-uploader", {active: isHover, error: !isHover && !!error})}
+			ref={fileUploaderRef}
+			onDragEnter={async () => { fileDispatch({ isHover: true, error: '' }) }}
+			onDragOver={async () => { fileDispatch({ isHover: true, error: '' }) }}
+			onDragLeave={async () => { fileDispatch({ isHover: false, error: '' }) }}>
 		<div className="file-uploader__tips">
 			<i className="icon-md icon-plus"></i>
-			点击或拖拽文件到此处上传
+			{error || "点击或拖拽文件到此处上传"}
 		</div>
 		<div className="file-uploader__btns">
 			<button className="btn btn-bg btn-primary" onClick={async () => {
@@ -138,7 +164,7 @@ export function ImportLoader(props: ImportLoaderProps) {
 				style={{ marginLeft: "6px" }}
 				onClick={async () => {
 					newProject()
-				}}><i className="icon-sm icon-plus"></i>新建项目</button>
+				}}><i className="icon-sm icon-plus-black"></i>新建项目</button>
 		</div>
 	</div>
 

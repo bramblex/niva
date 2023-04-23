@@ -53,6 +53,10 @@ input {
   background: url(./assets/icon-plus.png) center center no-repeat;
   background-size: contain;
 }
+.icon-plus-black {
+  background: url(./assets/icon-plus-black.png) center center no-repeat;
+  background-size: contain;
+}
 .icon-folder {
   background: url(./assets/icon-folder.png) center center no-repeat;
   background-size: contain;
