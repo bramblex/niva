@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DialogComponentProps } from "../modal";
 import { ProjectModel } from "./model";
 
@@ -35,16 +35,23 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 		}).catch(close);
 	}, []);
 
-	return <div className="options-editor">
-		{/* <div className="title-bar">
-			<div className="title-bar-text" id="dialog-title">编辑配置</div>
-			<div className="title-bar-controls">
-				<button aria-label="Close" onClick={() => {
-					close();
-				}}></button>
-			</div>
-		</div> */}
+	const saveDoc = () => {
+		tryOrAlertAsync(async () => {
+			withCtx(() => JSON.parse(value), '配置文件格式错误');
+			await withCtxP(fs.write(project.state!.configPath, value), '保存配置文件失败');
+			close();
+			project.init(project.state!.path);
+		})
+	}
+	
+	const handleKeyDown = (event: React.KeyboardEvent) => {
+		console.log('handleKeyDown')
+		if (event.key === "s" && (event.ctrlKey || event.metaKey)) {
+			saveDoc()
+		}
+	};
 
+	return <div className="options-editor" onKeyDown={handleKeyDown}>
 		<div className="options-editor-body">
 			<AceEditor
 				mode="json"
@@ -62,16 +69,9 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 
 		<footer style={{ textAlign: "right" }}>
 			<button className='btn btn-md' style={{ marginRight: '6px' }} onClick={() => {
-				
+				setValue(JSON.stringify({ name: project.state!.name, uuid: project.state?.config?.uuid }))
 			}}>重制</button>
-			<button className="btn btn-md btn-primary" onClick={() =>
-				tryOrAlertAsync(async () => {
-					withCtx(() => JSON.parse(value), '配置文件格式错误');
-					await withCtxP(fs.write(project.state!.configPath, value), '保存配置文件失败');
-					close();
-					project.init(project.state!.path);
-				})
-			}>确认</button>
+			<button className="btn btn-md btn-primary" onClick={saveDoc}>确认</button>
 		</footer>
 	</div >
 }
