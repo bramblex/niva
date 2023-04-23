@@ -2,8 +2,6 @@ import { StateModel } from "@bramblex/state-model";
 import { plistTemplate, versionInfoTemplate } from "./template";
 import {
   arrayBufferToBase64,
-  base64ToArrayBuffer,
-  concatArrayBuffers,
   dirname,
   packageResource,
   pathJoin,
@@ -359,3 +357,4 @@ ${this.state!.config.icon ? iconScript : ""}
     return appPath;
   }
 }
+

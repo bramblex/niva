@@ -6,6 +6,7 @@ import { pathJoin, uuid } from "../utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
 import { modal } from "../modal";
+import { useTranslation } from 'react-i18next'
 import './import.scss';
 
 const { fs, os, dialog } = Niva.api;
@@ -82,6 +83,7 @@ class HistoryMode extends StateModel<HistoryState[]> {
 }
 
 export function ImportLoader(props: ImportLoaderProps) {
+	const { t } = useTranslation()
 	const history = useLocalModel(() => new HistoryMode());
 	const project = useModelContext(ProjectModel);
 
@@ -178,18 +180,18 @@ export function ImportLoader(props: ImportLoaderProps) {
 			onDragLeave={async () => { fileDispatch({ isHover: false, error: '' }) }}>
 		<div className="file-uploader__tips">
 			<i className="icon-md icon-plus"></i>
-			{error || "点击或拖拽文件到此处上传"}
+			{error || t('uploadtips')}
 		</div>
 		<div className="file-uploader__btns">
 			<button className="btn btn-bg btn-primary" onClick={async () => {
 				selectProject()
-			}}><i className="icon-sm icon-folder"></i>选择项目</button>
+			}}><i className="icon-sm icon-folder"></i>{t('openproject')}</button>
 
 			<button className="btn btn-bg"
 				style={{ marginLeft: "6px" }}
 				onClick={async () => {
 					newProject()
-				}}><i className="icon-sm icon-plus-black"></i>新建项目</button>
+				}}><i className="icon-sm icon-plus-black"></i>{t('newproject')}</button>
 		</div>
 	</div>
 
@@ -198,16 +200,16 @@ export function ImportLoader(props: ImportLoaderProps) {
 	const directoryImport = <div className="file-uploader-dir">
 		<div className="search-bar">
 			<div className="search-input">
-				<input placeholder="搜索项目" onChange={async (e) => setKeyword(e.target.value)}></input>
+				<input placeholder={t('search') as string} onChange={async (e) => setKeyword(e.target.value)}></input>
 				<i className="icon-sm icon-search"></i>
 			</div>
 			<div className="btn-containers">
-				<div><span className="text-btn" onClick={async () => newProject()}><i className="icon-sm icon-plus-primary"></i>新建项目</span></div>
-				<div><span className="text-btn"  onClick={async () => selectProject()}><i className="icon-sm icon-folder-primary"></i>打开项目</span></div>
+				<div><span className="text-btn" onClick={async () => newProject()}><i className="icon-sm icon-plus-primary"></i>{t('newproject')}</span></div>
+				<div><span className="text-btn"  onClick={async () => selectProject()}><i className="icon-sm icon-folder-primary"></i>{t('openproject')}</span></div>
 			</div>
 		</div>
 		<div className="history">
-			<span className="text-btn clear-history" onClick={async () => history.clearHistory()}>浏览历史<i className="icon-sm icon-delete"></i></span>
+			<span className="text-btn clear-history" onClick={async () => history.clearHistory()}>{t('history')}<i className="icon-sm icon-delete"></i></span>
 			{historyList.length > 0 ? 
 				<div className="history-list">
 					{historyList.map((item) => 
@@ -219,8 +221,8 @@ export function ImportLoader(props: ImportLoaderProps) {
 							</div>
 							<i className="icon-sm icon-delete" onClick={async () => {
 								const ok = await modal.confirm(
-									"提示",
-									"确认删除？"
+									t('tips'),
+									t('deleteconfirm')
 								);
 								if (ok) {
 									history.removeHistory(item.path);

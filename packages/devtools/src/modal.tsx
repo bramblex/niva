@@ -4,6 +4,7 @@ import { useModel } from '@bramblex/state-model-react'
 import classNames from 'classnames';
 import { ComponentType } from 'react';
 import { createPromise, uuid } from './utils';
+import { Trans } from 'react-i18next';
 import './modal.scss';
 
 export class ProgressModel extends StateModel<{ text: string, progress: number, error: boolean }> {
@@ -45,7 +46,6 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 	constructor() {
 		super([]);
 	}
-
 	show<Props extends {}>(Component: ComponentType<Props & DialogComponentProps>, props: Props) {
 		const id = uuid();
 		const close = () => {
@@ -59,6 +59,7 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 
 
 	alert(title: string, message: string): Promise<void> {
+
 		const promise = createPromise<void>();
 
 		function Alert({ close }: DialogComponentProps) {
@@ -75,7 +76,7 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 					<button className="btn btn-md btn-primary" onClick={() => {
 						close();
 						promise.resolve();
-					}}>确认</button>
+					}}><Trans>confirm</Trans></button>
 				</footer>
 			</div>
 		}
@@ -101,11 +102,11 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 					<button className="btn btn-md" style={{ marginRight: '6px' }} onClick={() => {
 						close();
 						promise.resolve(false);
-					}}>取消</button>
+					}}><Trans>cancel</Trans></button>
 					<button className="btn btn-md btn-primary" onClick={() => {
 						close();
 						promise.resolve(true);
-					}}>确认</button>
+					}}><Trans>confirm</Trans></button>
 				</footer>
 			</div>
 		}

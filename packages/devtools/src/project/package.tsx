@@ -4,9 +4,11 @@ import { pathJoin } from "../utils";
 import { ProjectModel } from "./model";
 import { OptionsEditor } from "./options-editor";
 import { ImportLoader } from "./import";
+import { useTranslation } from 'react-i18next'
 import './package.scss';
 
 export function Icon( {showError = true} ) {
+	const { t } = useTranslation()
 	const { state } = useModel(useModelContext(ProjectModel));
 
 	const [iconSrc, setIconSrc] = useState("");
@@ -17,16 +19,17 @@ export function Icon( {showError = true} ) {
 		const iconPath = pathJoin(state!.path, state!.config.icon);
 		fs.read(iconPath, 'base64')
 			.then((data: string) => setIconSrc(`data:image/png;base64,${data}`))
-			.catch(() => setErr(`❌图标读取失败 "${iconPath})"`));
+			.catch(() => setErr(`❌${t('iconfail')} "${iconPath})"`));
 	}, [state]);
 
 	return <div>
-		{iconSrc ? <img style={{ height: '100%', width: '100%' }} alt="" src={iconSrc} /> : (showError ? <p>图标读取中...</p> : null)}
+		{iconSrc ? <img style={{ height: '100%', width: '100%' }} alt="" src={iconSrc} /> : (showError ? <p>{t('iconloading')}...</p> : null)}
 		{showError && err ? <p>{err}</p> : null}
 	</div>
 }
 
 function ProjectDetails() {
+	const { t } = useTranslation()
 	const project = useModelContext(ProjectModel);
 	const { state } = useModel(project);
 
@@ -41,24 +44,24 @@ function ProjectDetails() {
 					<span>{state.config.icon ? <Icon /> : null}</span>
 					<div className="info-container">
 						<h3>{state.name}</h3>
-						<p>文件位置: {state.path}</p>
-						<p>上次编辑: {"0000-000-000-00"}</p>
+						<p>{t('projectpath')}: {state.path}</p>
+						<p>{t('lastedit')}: {"0000-000-000-00"}</p>
 					</div>
 				</div>
 				<div>
-					<button className="btn btn-primary" onClick={async () => {project.debug()}}>调试</button>
-					<button className="btn" onClick={() => project.build()}>构建</button>
+					<button className="btn btn-primary" onClick={async () => {project.debug()}}>{t('debug')}</button>
+					<button className="btn" onClick={() => project.build()}>{t('build')}</button>
 				</div>
 			</div>
 			<div className="pd-rt">
-				<button className="btn btn-md btn-info" onClick={async () => {project.refresh()}}><i className="icon-sm icon-refresh"></i>刷新</button>
+				<button className="btn btn-md btn-info" onClick={async () => {project.refresh()}}><i className="icon-sm icon-refresh"></i>{t('refresh')}</button>
 			</div>
 		</section>
 		<section className="pd-more">
 			<div className="fields-section">
-				<h4>基本信息</h4>
+				<h4>{t('basic')}</h4>
 				<div className="field-item">
-					<span>项目名称</span>
+					<span>{t('projectname')}</span>
 					<span>{state.name}</span>
 				</div>
 				<div className="field-item">
@@ -67,9 +70,9 @@ function ProjectDetails() {
 				</div>
 			</div>
 			<div className="fields-section">
-				<h4>调试信息</h4>
+				<h4>{t('debuginfo')}</h4>
 				<div className="field-item">
-					<span className="field-name">项目名称</span>
+					<span className="field-name">{t('projectname')}</span>
 					<span>{state.name}</span>
 				</div>
 			</div>
@@ -95,6 +98,7 @@ export function Directory() {
 }
 
 export function ProjectPage() {
+	const { t } = useTranslation()
 	const project = useModelContext(ProjectModel);
 	const { state } = useModel(project);
 	const [tab, setTab] = useState(0);
@@ -102,13 +106,6 @@ export function ProjectPage() {
 	if (!state) {
 		return null;
 	}
-
-	// const operations = [
-	// 	['打开项目', () => project.open()],
-	// 	['编辑配置', () => project.edit()],
-	// 	['启动调试', () => project.debug()],
-	// 	['关闭项目', () => project.close()],
-	// ] as const;
 
 	return <div className="project-page">
 			<div className="directory">
@@ -118,8 +115,8 @@ export function ProjectPage() {
 			<div className="project-info">
 				<section className="tabs">
       				<menu className="tabs-menu" role="tablist" aria-label="Project Tabs">
-        				<button role="tab" aria-controls="detail-tab" aria-selected={tab === 0} onClick={() => setTab(0)}>项目信息</button>
-        				<button role="tab" aria-controls="config-tab" aria-selected={tab === 1} onClick={() => setTab(1)}>项目配置</button>
+        				<button role="tab" aria-controls="detail-tab" aria-selected={tab === 0} onClick={() => setTab(0)}>{t('projectinfo')}</button>
+        				<button role="tab" aria-controls="config-tab" aria-selected={tab === 1} onClick={() => setTab(1)}>{t('projectcfg')}</button>
       				</menu>
       				<article className='tabs-panel' role="tabpanel" id="detail-tab" hidden={tab !== 0}>
         				<ProjectDetails />
@@ -129,19 +126,5 @@ export function ProjectPage() {
       				</article>
     			</section>
 			</div>
-
-		{/* <fieldset>
-			<legend>调试信息</legend>
-			<ul>
-				<li>调试入口(debugEntry): {state.config.debugEntry || '（无）'}</li>
-			</ul>
-		</fieldset> */}
-
-		{/* <div style={{ display: 'flex' }}>
-			{operations.map(([text, onClick]) =>
-				<button key={text} onClick={onClick} style={{ marginRight: "6px" }}>{text}</button>
-			)}
-			<button className="default" style={{ marginLeft: 'auto' }} onClick={() => project.build()}>构建项目</button>
-		</div> */}
 	</div>
 }

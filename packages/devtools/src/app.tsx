@@ -3,6 +3,7 @@ import { PropsWithChildren, useEffect, useState } from 'react';
 // import { DocTab } from './doc';
 import { ProjectTab } from './project';
 import './app.scss';
+import { useTranslation } from 'react-i18next'
 
 /** 窗口控制操作区 */
 export function WindowControl(props : { os: string}) {
@@ -68,6 +69,8 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     };
   }, []);
 
+  const { t } = useTranslation()
+
   return (<div className={classNames("window", { active }, `os-${platform}`)}>
     <Titlebar os={systemInfo.os}></Titlebar>
     <div className="window-body has-space">
@@ -77,12 +80,12 @@ function WindowFrame(props: PropsWithChildren<{}>) {
       <span className="status-bar-field" onClick={() => {
           Niva.api.process.open('https://github.com/bramblex/niva');
         }}>
-        <i className="icon-sm icon-config"></i>设置
+        <i className="icon-sm icon-config"></i>{t('setting')}
       </span>
       <span className="status-bar-field" onClick={() => {
           Niva.api.process.open('https://github.com/bramblex/niva');
         }}>
-        <i className="icon-sm icon-coffee"></i>请作者喝咖啡
+        <i className="icon-sm icon-coffee"></i>{t('buycoffee')}
       </span>
       <p className="status-bar-field flex-end">
         System: {systemInfo.os} {version}

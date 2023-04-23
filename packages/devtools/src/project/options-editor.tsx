@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next'
 import { DialogComponentProps } from "../modal";
 import { ProjectModel } from "./model";
 
@@ -25,27 +26,27 @@ interface OptionsEditorProps extends DialogComponentProps {
 }
 
 export function OptionsEditor({ close, project }: OptionsEditorProps) {
+	const { t } = useTranslation()
 	const [value, setValue] = useState('');
 
 	useEffect(() => {
 		tryOrAlertAsync(async () => {
 			const configPath = project.state!.configPath;
-			const content = await withCtxP(fs.read(configPath), '读取配置文件失败');
+			const content = await withCtxP(fs.read(configPath), t('failreadcfg'));
 			setValue(content as string);
 		}).catch(close);
 	}, []);
 
 	const saveDoc = () => {
 		tryOrAlertAsync(async () => {
-			withCtx(() => JSON.parse(value), '配置文件格式错误');
-			await withCtxP(fs.write(project.state!.configPath, value), '保存配置文件失败');
+			withCtx(() => JSON.parse(value), t('errorformat'));
+			await withCtxP(fs.write(project.state!.configPath, value), t('failsave'));
 			close();
 			project.init(project.state!.path);
 		})
 	}
 	
 	const handleKeyDown = (event: React.KeyboardEvent) => {
-		console.log('handleKeyDown')
 		if (event.key === "s" && (event.ctrlKey || event.metaKey)) {
 			saveDoc()
 		}
@@ -70,8 +71,8 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 		<footer style={{ textAlign: "right" }}>
 			<button className='btn btn-md' style={{ marginRight: '6px' }} onClick={() => {
 				setValue(JSON.stringify({ name: project.state!.name, uuid: project.state?.config?.uuid }))
-			}}>重制</button>
-			<button className="btn btn-md btn-primary" onClick={saveDoc}>确认</button>
+			}}>{t('reset')}</button>
+			<button className="btn btn-md btn-primary" onClick={saveDoc}>{t('save')}</button>
 		</footer>
 	</div >
 }
