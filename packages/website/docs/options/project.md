@@ -27,5 +27,9 @@ interface NivaOptions {
   activationPolicy?: "regular" | "accessory" | "prohibited"; // 应用程序的激活策略，可选
   defaultMenuCreation?: boolean; // 是否使用默认菜单创建方式，可选
   activateIgnoringOtherApps?: boolean; // 是否忽略其他应用程序的激活状态而强制激活应用程序，可选
+
+  // 为不同平台单独配置
+  macos: NivaOptions,
+  windows: NivaOptions
 }
 ```

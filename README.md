@@ -1,335 +1,70 @@
-# Niva
 
-一个基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
+# ![Niva](theme/logo_24x24.png) Niva
 
-![screenshot](screenshots/main.png)
+基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
-（这个窗口只是看着像 Win7，但整个窗口都是用 html 和 css 绘制而成）
+[图片]
+
+- 下载： [https://github.com/bramblex/niva/releases](https://github.com/bramblex/niva/releases)
+- 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
+- 快速上手： [https://bramblex.github.io/niva/docs/tutorial/new-project](https://bramblex.github.io/niva/docs/tutorial/new-project)
 
 ## 目标
 
 - 超轻量
-  - 可执行文件只有 3MB （Mac OS 3.3MB，Windows 2.5MB），zip 后只有 1MB 上下。
-  - 不依赖 NodeJS 、Chromium 或 Webkit 等庞然大物，仅依赖系统原生 Webview。
+  - 构建的桌面应用最小只有 3MB，仅有 Electron 的 1/10。
+  - Niva 仅依赖系统原生的 Webview，不依赖 Chromium 或者 Node.js，极致的轻量。
 - 极易用
-  - 不需要学习 NodeJS、Electron 或者 Rust 等复杂的框架和技术，只需要最基本的前端技术即可开发出跨端桌面应用。
-  - 不需要使用命令行。Niva 提供您图形化开发工具，调试构建只需要点一下按钮。
+  - 仅使用前端技术，不需要学习复杂的 Node.js 和 Electron API 也不需要复杂的配置，即可构建出一个桌面应用。
+  - 构建单可执行文件，无需安装，点击即用。
+- 图形化
+  - Niva 提供图形化界面的开发工具，一键点击构建桌面应用，无需复杂的命令行操作，也无需安装 Node 环境。
 - 跨平台
-  - 支持 MacOS 和 Windows，双端只需一套代码。
+  - 同时支持 Windows、macOS，无需额外的配置，即可构建出跨平台的桌面应用。
 
-## TODO
+## 亮点
 
-- [x] 单窗口模式
-- [x] 应用构建
-  - [x] MacOS 构建
-  - [x] Windows 构建
-  - [ ] Windows APP Icon 和窗口 Icon 自定义
-  - [ ] 构建时在可执行文件中加入 Meta 信息
-- [x] API
-  - [x] fs
-  - [x] http
-  - [x] dialog
-  - [x] os
-  - [x] process
-  - [x] window
-  - [x] webview
-- [x] 开发者工具
-  - [x] 调试窗口
-  - [x] Api 文档与示例
-  - [x] 项目配置编辑器
-- [ ] 多窗口模式
-  - [ ] 打开多窗口
-  - [ ] 多窗口间通讯
-- [ ] 全局快捷键
-- [ ] 系统 Tray
+### 极低的上手难度
 
-## 快速开始
+简单项目（没有使用 webpack 等构建工具的简单签单项目），还是常见的 Vue 项目或者 React 项目，无需额外配置，一键拖入，一键构建。
 
-1. 在 [Release 页面](https://github.com/bramblex/niva/releases) 中下载对应系统的开发者工具(Devtools)。
-2. 打开开发者工具(Devtools)，导入或者新建项目。如果有已经有的前端项目，可以通过「选择项目」index.html 文件所得目录。如果没有项目则可以直接通过「新建项目」新建一个 Tauri 项目。
-   - ![quick-start-1](screenshots/quick-start-1.png)
-3. 项目打开或者新建以后，会进入项目页面，可以直接通过启动调试打开 Niva 窗口，也可以点击构建将项目打包成一个可执行文件。
-   - ![quick-start-2](screenshots/quick-start-2.png)
-4. 在开发中如果遇到问题，可以直接在开发者工具(Devtools)中查看文档。
-   - ![quick-start-3](screenshots/quick-start-3.png)
-5. 如果你用的是 React 或者 Vue，可以使用项目的 public 文件夹作为项目根目录，并且通过配置 `debugEntry` 选项让 Niva 窗口用开发链接作为入口。
-   - ![quick-start-4](screenshots/quick-start-4.png)
-   - ![quick-start-5](screenshots/quick-start-5.png)
+[图片]
 
-## 项目配置
+### 灵活的功能
 
-### 基本选项
+支持单窗口、多窗口、浮窗、窗口后台运行等多种场景。
 
-- name: 项目名
-- uuid: 项目 UUID 由开发者工具(Devtools)自动生成，不建议修改。
+[图片]
 
-### 调试选项
+### 丰富的配置
 
-- debugEntry: 调试入口, vue / react 等项目调试时使用，如 http://localhost:3000
+丰富的配置，窗口大小、窗口标题、窗口图标、窗口菜单、窗口是否可缩放、窗口是否可拖动、窗口是否可关闭、窗口是否可最大化、窗口是否可最小化等等都可以配置。全局快捷键、系统托盘图标等等也可以进行配置。详细选项文档 [选项文档](https://bramblex.github.io/niva/docs/options/project) 。
 
-### 项目选项（仅构建时用）
+[图片]
 
-- icon: 图标
-- version: 版本
-- author: 作者
-- description: 描述
-- copyright: 版权
-- license: 许可证
-- website: 网站
+### 完善的 API
 
-### 窗口选项
+Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os, process, resource, shortcut, tray, webview, window, window_extra 等 API。详见 [API 文档](https://bramblex.github.io/niva/docs/api/niva)。
 
-- entry: 入口文件, 不填则默认为 index.html
-- backgroundColor: 背景颜色 RGBA, 例如 [255, 255, 255, 1]
-- devtools: 是否启用开发者工具
-- title: 窗口标题
-- theme: 窗口主题
-- size: 窗口大小, 不填则默认为 [800, 600]
-- minSize: 窗口最小大小
-- maxSize: 窗口最大大小
-- position: 窗口位置
-- resizable: 是否可调整窗口大小
-- minimizable: 是否可最小化窗口
-- maximizable: 是否可最大化窗口
-- closable: 是否可关闭窗口
-- fullscreen: 是否全屏显示
-- maximized: 是否最大化窗口
-- visible: 是否可见
-- transparent: 是否透明
-- decorations: 是否显示窗口装饰
-- alwaysOnTop: 是否总在最前面
-- alwaysOnBottom: 是否总在最后面
-- visibleOnAllWorkspaces: 是否在所有工作区可见
-- focused: 是否聚焦于窗口
-- contentProtection: 是否启用内容保护
-- menu: 窗口菜单选项, 详见下方
+[图片]
 
-### 菜单选项
+## Todo
 
-```ts
-type MenuOptions = [string, number] | [string, MenuOptions] | "---";
-```
+- [ ] Niva 1.0
 
-例子：
+  - [ ] Niva API TypeScript 类型声明。
+  - [ ] 应用程序签名
+    - [ ] MacOS
+    - [ ] Windows
+  - [ ] 支持 Node.js 调用，作为 NodeJS 应用程序的 UI 窗口。
+  - [ ] 支持系统通知 Notification。
 
-```json
-{
-  "menu": [
-    [
-      "menu1",
-      [["world", 123], "---", ["hello", 456], ["submenu", [["item", 789]]]],
-      "menu2",
-      []
-    ]
-  ]
-}
-```
+- [ ] Niva 2.0
+  - [ ] 对 Window10 低版本增加 [miniblink](https://github.com/weolar/miniblink49) 支持，解决低版本 Windows 对 Webview2 支持不完善的问题。
 
-## API
+## Contributors
 
-### fs
-
-```ts
-function stat(path: string): Promise<Stat>;
-function exists(path: string): Promise<boolean>;
-function read(path: string, encode?: "utf8" | "base64"): Promise<string>;
-function write(
-  path: string,
-  content: string?,
-  encode?: "utf8" | "base64"
-): Promise<void>;
-function copy(
-  from: string,
-  to: string,
-  copyOptions?: CopyOptions
-): Promise<void>;
-function move(
-  from: string,
-  to: string,
-  copyOptions?: CopyOptions
-): Promise<void>;
-function remove(path: string): Promise<void>;
-function createDir(path: string): Promise<void>;
-function createDirAll(path: string): Promise<void>;
-function readDir(path: string): Promise<ReadDirItem[]>;
-
-interface ReadDirItem {
-  name: string;
-  type: "file" | "dir";
-}
-
-interface Stat {
-  isDir: boolean;
-  isFile: boolean;
-  isSymlink: boolean;
-  size: number;
-  modified: number;
-  accessed: number;
-  created: number;
-}
-
-interface CopyOptions {
-  overwrite?: boolean;
-  skipExist?: boolean;
-  bufferSize?: number;
-  copyInode?: boolean;
-  contentOnly?: boolean;
-  depth?: number;
-}
-```
-
-### http
-
-```ts
-function request(options: RequestOptions): Promise<Response>;
-function get(url: string, headers?: Headers): Promise<Response>;
-function post(url: string, body: string, headers?: Headers): Promise<Response>;
-
-interface Headers {
-  [key: string]: string;
-}
-
-interface RequestOptions {
-  method: string;
-  url: string;
-  headers?: Headers;
-  body?: string;
-}
-
-interface Response {
-  status: number;
-  headers: Headers;
-  body: string;
-}
-```
-
-### dialog
-
-```ts
-function showMessage(
-  title: string,
-  message?: string,
-  level?: "info" | "warning" | "error"
-): Promise<void>;
-function pickFile(extensions?: string[], startDir?: string): Promise<string>;
-function pickFiles(extensions?: string[], startDir?: string): Promise<string[]>;
-function pickDir(startDir?: string): Promise<string>;
-function pickDirs(startDir?: string): Promise<string[]>;
-function saveFile(extensions?: string[], startDir?: string): Promise<string>;
-```
-
-### os
-
-```ts
-function info(): Promise<OsInfo>;
-function dirs(): Promise<Dirs>;
-function sep(): Promise<string>;
-function eol(): Promise<string>;
-
-interface OsInfo {
-  os: string;
-  arch: string;
-  version: string;
-}
-
-interface Dirs {
-  work: string;
-  temp: string;
-  data: string;
-  home: string;
-  audio: string;
-  desktop: string;
-  document: string;
-  download: string;
-  font: string;
-  picture: string;
-  public: string;
-  template: string;
-  video: string;
-}
-```
-
-### process
-
-```ts
-function pid(): Promise<number>;
-function currentDir(): Promise<string>;
-function currentExe(): Promise<string>;
-function env(): Promise<Record<string, string>>;
-function setCurrentDir(path: string): Promise<void>;
-function exit(): Promise<void>;
-function exec(
-  cmd: string,
-  args: string[],
-  options: ExecOptions
-): Promise<ExecResult>;
-function open(uri: string): Promise<void>;
-function version(): Promise<string>;
-
-interface ExecOptions {
-  env?: Record<string, string>;
-  currentDir?: string;
-  detached?: boolean;
-}
-
-interface ExecResult {
-  status: number;
-  stdout: string;
-  stderr: string;
-}
-```
-
-### webview
-
-- isDevtoolsOpen
-- openDevtools
-- closeDevtools
-- setBackgroundColor
-
-### window
-
-- scaleFactor
-- innerPosition
-- outerPosition
-- setOuterPosition
-- innerSize
-- setInnerSize
-- outerSize
-- setMinInnerSize
-- setMaxInnerSize
-- setTitle
-- title
-- isVisible
-- setVisible
-- isFocused
-- setFocus
-- isResizable
-- setResizable
-- isMinimizable
-- setMinimizable
-- isMaximizable
-- setMaximizable
-- isClosable
-- setClosable
-- isMinimized
-- setMinimized
-- isMaximized
-- setMaximized
-- Decorated
-- setDecorated
-- fullscreen
-- setFullscreen
-- setAlwaysOnTop
-- setAlwaysOnBottom
-- requestUserAttention
-- setContentProtection
-- setVisibleOnAllWorkspaces
-- setCursorIcon
-- setCursorPosition
-- setCursorGrab
-- setCursorVisible
-- dragWindow
-- setIgnoreCursorEvents
+![Contributors](https://contrib.rocks/image?repo=bramblex/niva)
 
 ## License
 
