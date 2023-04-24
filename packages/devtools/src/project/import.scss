@@ -19,9 +19,11 @@ $color-active : #0084FF;
             text-align: -webkit-center;
             margin-top: 38px;
             color: $color-default;
+            cursor: pointer;
             .icon-plus {
                 display: block;
                 margin-bottom: 12px;
+                cursor: pointer;
             }
         }
         .file-uploader__btns {
@@ -31,9 +33,10 @@ $color-active : #0084FF;
                 display: inline-block;
             }
         }
-        &.active {
+        &.active, &:hover {
             border-color: $color-active;
             background: linear-gradient(0deg, rgba(0, 132, 255, 0.08), rgba(0, 132, 255, 0.08));
+            cursor: pointer;
             .file-uploader__tips {
                 color: $color-active;
                 .icon-plus {
@@ -67,6 +70,7 @@ $color-active : #0084FF;
                 color:  rgba(0, 0, 0, 0.3);
                 caret-color: rgba(0, 0, 0, 0.3);
                 font-size: 14px;
+                cursor: text;
                 &::-webkit-input-placeholder{
                     color: rgba(0, 0, 0, 0.3);
                     font-size: 14px;
@@ -99,6 +103,7 @@ $color-active : #0084FF;
                     position: absolute;
                     left: 0;
                     top: 2px;
+                    cursor: pointer;
                 }
             }
         }

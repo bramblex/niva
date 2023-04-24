@@ -156,9 +156,6 @@ export function ImportLoader(props: ImportLoaderProps) {
 
 	useEffect(() => {
 		const handleDrop = (_: string, { paths, position }: { paths: string[], position: number[] }) => {
-			if (!isHover) {
-				return
-			}
 			const path = paths[0];
 			if (path) {
 				handlePath(path)
@@ -175,10 +172,10 @@ export function ImportLoader(props: ImportLoaderProps) {
 
 	const pageImport = <div className={classNames("file-uploader", {active: isHover, error: !isHover && !!error})}
 			ref={fileUploaderRef}
-			onDragEnter={async () => { fileDispatch({ isHover: true, error: '' }) }}
-			onDragOver={async () => { fileDispatch({ isHover: true, error: '' }) }}
-			onDragLeave={async () => { fileDispatch({ isHover: false, error: '' }) }}>
-		<div className="file-uploader__tips">
+			onDragEnter={async () => {fileDispatch({ isHover: true, error: '' }) }}
+			onDragOver={async () => {fileDispatch({ isHover: true, error: '' }) }}
+			onDragLeave={async () => {fileDispatch({ isHover: false, error: '' }) }}>
+		<div className="file-uploader__tips" onClick={async () => selectProject()}>
 			<i className="icon-md icon-plus"></i>
 			{error || t('uploadtips')}
 		</div>

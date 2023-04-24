@@ -44,6 +44,7 @@
             padding-right: 26px;
             display: flex;
             align-self: center;
+            cursor: pointer;
             .icon-sm {
                 position: absolute;
                 left: 0;
@@ -54,6 +55,8 @@
                 flex: 1;
                 justify-content: end;
                 font-size: 10px;
+                cursor: initial;
+                user-select: text;
             }
         }
     }

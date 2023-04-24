@@ -72,13 +72,13 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   const { t } = useTranslation()
 
   return (<div className={classNames("window", { active }, `os-${platform}`)}>
-    <Titlebar os={systemInfo.os}></Titlebar>
+    <Titlebar os={platform}></Titlebar>
     <div className="window-body has-space">
       {props.children}
     </div>
     <div className="status-bar">
       <span className="status-bar-field" onClick={() => {
-          Niva.api.process.open('https://github.com/bramblex/niva');
+          Niva.api.process.open('https://bramblex.github.io/niva/en/docs/intro');
         }}>
         <i className="icon-sm icon-config"></i>{t('setting')}
       </span>
