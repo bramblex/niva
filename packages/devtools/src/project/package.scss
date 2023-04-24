@@ -3,7 +3,9 @@
     height: calc(100% - 28px);
     background: white;
     .directory {
-        width: 240px;
+        // width: 240px;
+        width: 28%;
+        min-width: 240px;
         height: 100%;
         padding-top: 4px;
     }
@@ -12,6 +14,7 @@
         border-left: solid 0.5px rgba(5, 15, 35, 0.12);
         margin-top: -44px;
         z-index: 9;
+        min-width: 550px;
         .tabs {
             height: 100%;
             .tabs-menu {

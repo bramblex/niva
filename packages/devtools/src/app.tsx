@@ -64,6 +64,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     Niva.addEventListener('window.focused', handler);
     Niva.api.os.info().then(setSystemInfo);
     Niva.api.process.version().then(setVersion);
+    Niva.api.window.setResizable(true);
     return () => {
       Niva.removeEventListener('window.focused', handler);
     };
