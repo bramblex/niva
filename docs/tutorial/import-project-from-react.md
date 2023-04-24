@@ -42,7 +42,7 @@ npx create-react-app my-react-app
 
 如果是您是使用 Create React App 工具创创建的 React 项目，并且没有改动基础配置，那么这个配置文件也不需要修改可以直接使用。如果修改过 `public` 文件夹或者 `build` 文件夹以及项目调试端口等则需要对应修改配置。
 
-更多配置可以参考 [配置文档](/docs/options/project)。
+更多配置可以参考 [选项文档](/docs/options/project)。
 
 
 ## 打开调试窗口

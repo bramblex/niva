@@ -73,7 +73,7 @@ const config = {
           {
             to: '/docs/options/project',
             position: 'left',
-            label: '配置文档',
+            label: '选项文档',
           },
           {
             to: '/docs/api/niva',
@@ -108,7 +108,7 @@ const config = {
                 to: '/docs/tutorial/new-project',
               },
               {
-                label: '配置文档',
+                label: '选项文档',
                 to: '/docs/options/project',
               },
               {

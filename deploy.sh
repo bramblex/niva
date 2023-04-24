@@ -2,7 +2,6 @@
 
 GIT_HASH=$(git rev-parse HEAD)
 
-yarn build
 rm -rf /tmp/niva-gh-pages
 git clone --depth 1 --branch gh-pages https://github.com/bramblex/niva.git /tmp/niva-gh-pages
 
