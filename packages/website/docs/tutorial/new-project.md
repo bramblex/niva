@@ -32,7 +32,7 @@ hello-niva
 	- logo.png // Niva 项目默认 logo
 ```
 
-其中 `niva.json` 是 Niva 项目的配置文件，如果需要对项目进行配置，可以参考 [配置文档](/docs/options/project)。 `index.html` 是 Niva 项目的入口文件，Niva 的主窗口将会将 index.html 作为入口。`index.js` 是 `index.html` 文件引入的 index.js。，这时候我们就可以以这个项目作为模板进行开发我们的基础开发工作。
+其中 `niva.json` 是 Niva 项目的配置文件，如果需要对项目进行配置，可以参考 [选项文档](/docs/options/project)。 `index.html` 是 Niva 项目的入口文件，Niva 的主窗口将会将 index.html 作为入口。`index.js` 是 `index.html` 文件引入的 index.js。，这时候我们就可以以这个项目作为模板进行开发我们的基础开发工作。
 
 ## 打开调试窗口
 
