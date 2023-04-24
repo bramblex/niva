@@ -1,23 +1,31 @@
 {
 	"name": "NivaDevtools",
 	"uuid": "9bef098a-a44f-40cb-9247-86c902f2c410",
-	"version": "v0.0.4",
-
+	"version": "v0.0.5",
 	"debug": {
 		"entry": "http://localhost:3000"
 	},
-
 	"window": {
 		"title": "Niva Devtools",
 		"icon": "logo.png",
 		"size": {
-			"width": 800,
+			"width": 900,
 			"height": 600
 		},
-		"resizable": false,
-		"decorations": true,
-		"transparent": false,
-		"alwaysOnTop": false
+		"resizable": false
+	},
+	"macos": {
+		"window": {
+			"titleBarTransparent": true,
+			"titleBarButtonsHidden": true,
+			"titleHidden": true,
+			"fullSizeContentView": true
+		}
+	},
+	"windows": {
+		"window": {
+			"undecoratedShadow": true,
+			"decorations": false
+		}
 	}
-
 }

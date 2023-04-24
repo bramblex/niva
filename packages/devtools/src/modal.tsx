@@ -4,6 +4,8 @@ import { useModel } from '@bramblex/state-model-react'
 import classNames from 'classnames';
 import { ComponentType } from 'react';
 import { createPromise, uuid } from './utils';
+import { Trans } from 'react-i18next';
+import './modal.scss';
 
 export class ProgressModel extends StateModel<{ text: string, progress: number, error: boolean }> {
 	private tasks: [string, () => Promise<void>][] = [];
@@ -44,7 +46,6 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 	constructor() {
 		super([]);
 	}
-
 	show<Props extends {}>(Component: ComponentType<Props & DialogComponentProps>, props: Props) {
 		const id = uuid();
 		const close = () => {
@@ -58,27 +59,24 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 
 
 	alert(title: string, message: string): Promise<void> {
+
 		const promise = createPromise<void>();
 
 		function Alert({ close }: DialogComponentProps) {
 			return <div className="window active is-bright">
-				<div className="title-bar">
-					<div className="title-bar-text" id="dialog-title">{title}</div>
-					<div className="title-bar-controls">
-						<button aria-label="Close" onClick={() => {
-							close();
-							promise.resolve();
-						}}></button>
-					</div>
-				</div>
+				<i className='icon-close' onClick={() => {
+						close();
+						promise.resolve();
+					}}></i>
 				<div className="window-body has-space">
+					<h4>{title}</h4>
 					<p>{message}</p>
 				</div>
 				<footer style={{ textAlign: "right" }}>
-					<button onClick={() => {
+					<button className="btn btn-md btn-primary" onClick={() => {
 						close();
 						promise.resolve();
-					}}>确认</button>
+					}}><Trans>confirm</Trans></button>
 				</footer>
 			</div>
 		}
@@ -92,27 +90,23 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 
 		function Confirm({ close }: DialogComponentProps) {
 			return <div className="window active is-bright">
-				<div className="title-bar">
-					<div className="title-bar-text" id="dialog-title">{title}</div>
-					<div className="title-bar-controls">
-						<button aria-label="Close" onClick={() => {
-							close();
-							promise.resolve(false);
-						}}></button>
-					</div>
-				</div>
+				<i className='icon-close' onClick={() => {
+						close();
+						promise.resolve(false);
+					}}></i>
 				<div className="window-body has-space">
+					<h4>{title}</h4>
 					<p>{message}</p>
 				</div>
 				<footer style={{ textAlign: "right" }}>
-					<button style={{ marginRight: '6px' }} onClick={() => {
+					<button className="btn btn-md" style={{ marginRight: '6px' }} onClick={() => {
 						close();
 						promise.resolve(false);
-					}}>取消</button>
-					<button className="default" onClick={() => {
+					}}><Trans>cancel</Trans></button>
+					<button className="btn btn-md btn-primary" onClick={() => {
 						close();
 						promise.resolve(true);
-					}}>确认</button>
+					}}><Trans>confirm</Trans></button>
 				</footer>
 			</div>
 		}
@@ -126,29 +120,24 @@ class ModelModel extends StateModel<[string, ComponentType][]> {
 		function Progress({ close }: DialogComponentProps) {
 			useModel(progress);
 			const { state } = progress;
-
 			return (
 				<div className="window active is-bright">
-					<div className="title-bar">
-						<div className="title-bar-text" id="dialog-title">{title}</div>
-					</div>
-					<div className="window-body has-space">
-						<h2 className="instruction instruction-primary">{message}</h2>
-
-						{state.progress > 0 ?
-							<div role={classNames("progressbar", { error: state.error })} className="animate">
+					<div className="window-body has-space progress">
+						<h4 className="instruction instruction-primary">{message}</h4>
+						
+						{state.progress > 0 ?<>
+							<p>已完成{Math.floor(state.progress * 100) + '%'}</p> 
+							<div role={classNames("progressbar", { error: state.error })} className="progressbar">
 								<div
 									style={{ width: state.progress * 100 + '%' }}
 									className="progressbar-animated"
 								></div>
-							</div>
+							</div></>
 							: <div role="progressbar" className="marquee"></div>}
-
-
 						<p>{state.text}</p>
 					</div>
 					{state.error ? <footer style={{ textAlign: "right" }}>
-						<button className="default" onClick={() => {
+						<button className="btn btn-md btn-primary"  onClick={() => {
 							close();
 						}}>确认</button>
 					</footer> : null}

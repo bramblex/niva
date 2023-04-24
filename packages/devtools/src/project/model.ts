@@ -2,8 +2,6 @@ import { StateModel } from "@bramblex/state-model";
 import { plistTemplate, versionInfoTemplate } from "./template";
 import {
   arrayBufferToBase64,
-  base64ToArrayBuffer,
-  concatArrayBuffers,
   dirname,
   packageResource,
   pathJoin,
@@ -42,8 +40,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
       const { isDir } = await tryOrP(fs.stat(path), { isDir: false });
 
       if (!isDir) {
-        modal.alert("错误", `'${path}' 不是一个目录, 请选择一个目录`);
-        return;
+        return "文件格式错误";
       }
 
       // check niva.json exists, if not create it
@@ -55,7 +52,7 @@ export class ProjectModel extends StateModel<ProjectState | null> {
         uuid: config.uuid,
         path,
         configPath,
-        config,
+        config
       });
     });
   }
@@ -113,6 +110,14 @@ export class ProjectModel extends StateModel<ProjectState | null> {
     return tryOrAlertAsync(async () => {
       modal.show(OptionsEditor, { project: this });
     });
+  }
+
+  refresh() {
+    const projectPath = this.state!.path;
+    if (!projectPath) {
+      return;
+    }
+    return this.init(this.state!.path);
   }
 
   debug() {
@@ -292,6 +297,7 @@ ${this.state!.config.icon ? iconScript : ""}
       await fs.createDir(appMacOSPath);
     });
 
+
     progress.addTask("正在复制可执行文件...", async () => {
       await fs.copy(currentExe, appExecutablePath);
     });
@@ -351,3 +357,4 @@ ${this.state!.config.icon ? iconScript : ""}
     return appPath;
   }
 }
+

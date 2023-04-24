@@ -1,12 +1,9 @@
-import './style.css'
-
-import { useLocalModel, useModel, useModelContext, useModelProvider } from "@bramblex/state-model-react";
+import { useEffect } from 'react';
+import { useLocalModel, useModelProvider } from "@bramblex/state-model-react";
 import { ImportPage } from "./import";
 import { ProjectModel } from "./model";
 import { ProjectPage } from "./package";
-import { useEffect } from 'react';
-import { modal } from '../modal';
-import { isAbsolutePath, parseArgs, pathJoin, resolvePath, tryOrAlert } from '../utils';
+import { parseArgs, resolvePath, tryOrAlert } from '../utils';
 
 export function ProjectApp() {
 	const project = useLocalModel(() => new ProjectModel());

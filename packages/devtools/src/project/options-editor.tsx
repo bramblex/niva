@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next'
 import { DialogComponentProps } from "../modal";
 import { ProjectModel } from "./model";
 
@@ -10,6 +11,8 @@ import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/ext-language_tools'
 
 import { tryOrAlertAsync, withCtx, withCtxP } from '../utils';
+
+import './options-editor.scss';
 
 // eslint-disable-next-line import/no-webpack-loader-syntax
 const jsonWorkerUrl = require("file-loader!ace-builds/src-noconflict/worker-json").default;
@@ -23,32 +26,40 @@ interface OptionsEditorProps extends DialogComponentProps {
 }
 
 export function OptionsEditor({ close, project }: OptionsEditorProps) {
+	const { t } = useTranslation()
 	const [value, setValue] = useState('');
 
 	useEffect(() => {
 		tryOrAlertAsync(async () => {
 			const configPath = project.state!.configPath;
-			const content = await withCtxP(fs.read(configPath), '读取配置文件失败');
+			const content = await withCtxP(fs.read(configPath), t('failreadcfg'));
 			setValue(content as string);
 		}).catch(close);
 	}, []);
 
-	return <div className="window active">
-		<div className="title-bar">
-			<div className="title-bar-text" id="dialog-title">编辑配置</div>
-			<div className="title-bar-controls">
-				<button aria-label="Close" onClick={() => {
-					close();
-				}}></button>
-			</div>
-		</div>
+	const saveDoc = () => {
+		tryOrAlertAsync(async () => {
+			withCtx(() => JSON.parse(value), t('errorformat'));
+			await withCtxP(fs.write(project.state!.configPath, value), t('failsave'));
+			close();
+			project.init(project.state!.path);
+		})
+	}
+	
+	const handleKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key === "s" && (event.ctrlKey || event.metaKey)) {
+			saveDoc()
+		}
+	};
 
-		<div className="window-body options-editor-body">
+	return <div className="options-editor" onKeyDown={handleKeyDown}>
+		<div className="options-editor-body">
 			<AceEditor
 				mode="json"
 				theme="github"
 				name="options-editor"
-				height='400px'
+				height='100%'
+				width='100%'
 				value={value}
 				onChange={setValue}
 				editorProps={{
@@ -58,17 +69,10 @@ export function OptionsEditor({ close, project }: OptionsEditorProps) {
 		</div>
 
 		<footer style={{ textAlign: "right" }}>
-			<button style={{ marginRight: '6px' }} onClick={() => {
-				close();
-			}}>取消</button>
-			<button className="default" onClick={() =>
-				tryOrAlertAsync(async () => {
-					withCtx(() => JSON.parse(value), '配置文件格式错误');
-					await withCtxP(fs.write(project.state!.configPath, value), '保存配置文件失败');
-					close();
-					project.init(project.state!.path);
-				})
-			}>应用</button>
+			<button className='btn btn-md' style={{ marginRight: '6px' }} onClick={() => {
+				setValue(JSON.stringify({ name: project.state!.name, uuid: project.state?.config?.uuid }))
+			}}>{t('reset')}</button>
+			<button className="btn btn-md btn-primary" onClick={saveDoc}>{t('save')}</button>
 		</footer>
 	</div >
 }
