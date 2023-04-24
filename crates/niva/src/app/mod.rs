@@ -194,6 +194,7 @@ impl NivaApp {
 #[derive(Debug)]
 pub struct NivaArguments {
     pub debug_devtools: bool,
+    pub debug_config: Option<PathBuf>,
     pub debug_resource: Option<PathBuf>,
     pub debug_entry: Option<String>,
 }
@@ -220,9 +221,11 @@ impl NivaArguments {
             .unwrap_or(false);
         let debug_resource = args_map.get("debug-resource").map(PathBuf::from);
         let debug_entry = args_map.get("debug-entry").map(|v| v.to_string());
+        let debug_config = args_map.get("debug-config").map(PathBuf::from);
 
         Self {
             debug_devtools,
+            debug_config,
             debug_resource,
             debug_entry,
         }
@@ -248,8 +251,13 @@ impl NivaLaunchInfo {
     ) -> Result<NivaLaunchInfo> {
 
         let options = {
-            let base_path = "niva.json";
-            let base_content = resource_manager.load(base_path)?;
+            let base_content = if let Some(debug_config) = &arguments.debug_config {
+                std::fs::read(debug_config)?
+            } else {
+                let base_path = "niva.json";
+                resource_manager.load(base_path)?
+            };
+
             let base_options: Value = serde_json::from_slice(&base_content)?;
 
             let platform = std::env::consts::OS;

@@ -9,11 +9,7 @@
       "request": "launch",
       "name": "Run Example(Debug)",
       "cargo": {
-        "args": [
-          "build",
-          "--bin=niva",
-          "--package=niva",
-        ],
+        "args": ["build", "--bin=niva", "--package=niva"],
         "filter": {
           "name": "niva",
           "kind": "bin"
@@ -22,10 +18,7 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": [
-        "--debug-resource=packages/example",
-        "--debug-devtools=true"
-      ],
+      "args": ["--debug-resource=packages/example", "--debug-devtools=true"],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -43,8 +36,9 @@
         }
       },
       "args": [
-        "--debug-resource=packages/devtools/public",
         "--debug-entry=http://127.0.0.1:3000",
+        "--debug-resource=packages/devtools/public",
+        "--debug-config=packages/devtools/niva.json",
         "--debug-devtools=true"
       ],
       "cwd": "${workspaceFolder}"
@@ -55,12 +49,7 @@
       "name": "Run Devtools(Release)",
       "preLaunchTask": "build:devtools",
       "cargo": {
-        "args": [
-          "build",
-          "--bin=niva",
-          "--package=niva",
-          "--release"
-        ],
+        "args": ["build", "--bin=niva", "--package=niva", "--release"],
         "filter": {
           "name": "niva",
           "kind": "bin"
@@ -71,8 +60,9 @@
       },
       "args": [
         "--debug-resource=packages/devtools/build",
+        "--debug-config=packages/devtools/niva.json"
       ],
       "cwd": "${workspaceFolder}"
-    },
+    }
   ]
 }
