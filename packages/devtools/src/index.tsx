@@ -1,6 +1,5 @@
 import 'normalize.css/normalize.css'
-// import '7.css/dist/7.css';
-import './style.css';
+import './common.scss';
 import './i18n/index';
 
 import React from 'react';

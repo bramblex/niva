@@ -105,6 +105,9 @@ $color-active : #0084FF;
                     top: 2px;
                     cursor: pointer;
                 }
+                &:hover, &:active {
+                    opacity: .8;
+                }
             }
         }
     }

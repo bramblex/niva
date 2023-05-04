@@ -114,7 +114,12 @@ export function ProjectPage() {
 			</div>
 			<div className="project-info">
 				<section className="tabs">
-      				<menu className="tabs-menu" role="tablist" aria-label="Project Tabs">
+      				<menu className="tabs-menu" role="tablist" aria-label="Project Tabs" onMouseDownCapture={(ev) => {
+    					const t = ev.target as HTMLElement;
+    					if (t.tagName !== 'BUTTON') {
+      						Niva.api.window.dragWindow();
+    					}
+  					}}>
         				<button role="tab" aria-controls="detail-tab" aria-selected={tab === 0} onClick={() => setTab(0)}>{t('projectinfo')}</button>
         				<button role="tab" aria-controls="config-tab" aria-selected={tab === 1} onClick={() => setTab(1)}>{t('projectcfg')}</button>
       				</menu>
