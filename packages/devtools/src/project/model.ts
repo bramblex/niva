@@ -12,7 +12,7 @@ import {
   withCtx,
   withCtxP,
 } from "../common/utils";
-import { modal } from "../modal";
+import { modal } from "../modals";
 import { OptionsEditor } from "./options-editor";
 import pako from "pako";
 

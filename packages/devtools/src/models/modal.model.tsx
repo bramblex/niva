@@ -4,23 +4,23 @@ import { uuid } from "../common/utils";
 import { AppModel } from "./app.model";
 
 
-export interface DialogComponentProps {
+export interface ModalComponentProps {
 	close: () => any;
 }
 
-type DialogItem = {
+type ModalItem = {
 	id: string,
 	Component: ComponentType
 }
 
-export type DialogModelState = DialogItem[];
+export type ModalModelState = ModalItem[];
 
-export class DialogModel extends StateModel<DialogModelState> {
+export class ModalModel extends StateModel<ModalModelState> {
 	constructor(public readonly app: AppModel) {
 		super([])
 	}
 
-	show<Props extends {}>(Component: ComponentType<Props & DialogComponentProps>, props: Props) {
+	show<Props extends {}>(Component: ComponentType<Props & ModalComponentProps>, props: Props) {
 		const id = uuid();
 		const close = () => {
 			this.setState(this.state.filter(({ id: _id }) => _id !== id));

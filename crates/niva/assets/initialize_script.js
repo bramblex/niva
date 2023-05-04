@@ -117,7 +117,7 @@
         return new Proxy({}, {
           get: function (_, method) {
             return function () {
-              return call(namespace + '.' + method, Array.prototype.slice.call(arguments))
+              return Niva.call(namespace + '.' + method, Array.prototype.slice.call(arguments))
             }
           }
         })
@@ -127,10 +127,7 @@
     console.log('Proxy not supported, please use Niva.call instead');
   }
 
-  Niva.call = function (_method, data) {
-    var r = _method.split('.');
-    return call(r[0], r[1], data);
-  };
+  Niva.call = call;
   Niva.__resolve__ = resolve;
 
   Niva.addEventListener('ipc.callback', function (event, response) {

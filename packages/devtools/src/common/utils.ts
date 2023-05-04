@@ -1,5 +1,5 @@
 import { Result } from "neverthrow";
-import { modal } from "../modal";
+import { modal } from "../modals";
 
 export function uuid() {
   let dt = new Date().getTime();
@@ -169,9 +169,20 @@ export async function resolvePath(path: string) {
 
 
 export function importAll<T>(resolve: any) {
-	const resources: Record<string, T> = {};
-	for (const filePath of resolve.keys()) {
-		resources[filePath] = resolve(filePath);
-	}
-	return resources
+  const resources: Record<string, T> = {};
+  for (const filePath of resolve.keys()) {
+    resources[filePath] = resolve(filePath);
+  }
+  return resources
+}
+
+export function parseVersion(versionString: string): number[] {
+  const versionDigits = versionString
+    .replace(/[^0-9.]/g, "")
+    .split(".")
+    .map(Number);
+  while (versionDigits.length < 4) {
+    versionDigits.push(0);
+  }
+  return versionDigits.slice(0, 4);
 }

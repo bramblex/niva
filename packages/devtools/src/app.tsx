@@ -5,7 +5,8 @@ import { ProjectTab } from './project';
 import './app.scss';
 import { useTranslation } from 'react-i18next'
 import { useLocalModel, useModelProvider } from '@bramblex/state-model-react';
-import { AppModel } from './model/app.model';
+import { AppModel } from './models/app.model';
+import { Modal } from './modals';
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
@@ -112,11 +113,11 @@ export function App() {
     return _app;
   });
   const AppProvider = useModelProvider(AppModel);
-  // const [tab, setTab] = useState(0);
 
   return <AppProvider value={app} >
     <WindowFrame>
       <ProjectTab />
     </WindowFrame>
+    <Modal />
   </AppProvider>
 }

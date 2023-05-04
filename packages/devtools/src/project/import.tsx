@@ -5,14 +5,14 @@ import { useState, useEffect, useReducer, useRef } from "react";
 import { pathJoin, uuid } from "../common/utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
-import { modal } from "../modal";
+import { modal } from "../modals";
 import { useTranslation } from 'react-i18next'
 import './import.scss';
 
 const { fs, os, dialog } = Niva.api;
 
-interface ImportLoaderProps { 
-    type: string;
+interface ImportLoaderProps {
+	type: string;
 }
 
 interface FileState {
@@ -87,12 +87,12 @@ export function ImportLoader(props: ImportLoaderProps) {
 	const history = useLocalModel(() => new HistoryMode());
 	const project = useModelContext(ProjectModel);
 
-	const fileUploaderRef = useRef<HTMLDivElement|null>(null);
+	const fileUploaderRef = useRef<HTMLDivElement | null>(null);
 	const [keyword, setKeyword] = useState('');
 	const { type } = props;
 
 	const reducer = (state: FileState, newState: FileState) => {
-		return {...state, ...newState}
+		return { ...state, ...newState }
 	}
 	const fileState: FileState = {
 		isHover: false,
@@ -104,7 +104,7 @@ export function ImportLoader(props: ImportLoaderProps) {
 		try {
 			const error = await project.init(path);
 			if (error) {
-				fileDispatch({error, isHover: false})
+				fileDispatch({ error, isHover: false })
 				return
 			}
 			if (project.state) {
@@ -170,11 +170,11 @@ export function ImportLoader(props: ImportLoaderProps) {
 		}
 	}, []);
 
-	const pageImport = <div className={classNames("file-uploader", {active: isHover, error: !isHover && !!error})}
-			ref={fileUploaderRef}
-			onDragEnter={async () => {fileDispatch({ isHover: true, error: '' }) }}
-			onDragOver={async () => {fileDispatch({ isHover: true, error: '' }) }}
-			onDragLeave={async () => {fileDispatch({ isHover: false, error: '' }) }}>
+	const pageImport = <div className={classNames("file-uploader", { active: isHover, error: !isHover && !!error })}
+		ref={fileUploaderRef}
+		onDragEnter={async () => { fileDispatch({ isHover: true, error: '' }) }}
+		onDragOver={async () => { fileDispatch({ isHover: true, error: '' }) }}
+		onDragLeave={async () => { fileDispatch({ isHover: false, error: '' }) }}>
 		<div className="file-uploader__tips" onClick={async () => selectProject()}>
 			<i className="icon-md icon-plus"></i>
 			{error || t('uploadtips')}
@@ -202,18 +202,18 @@ export function ImportLoader(props: ImportLoaderProps) {
 			</div>
 			<div className="btn-containers">
 				<div><span className="text-btn" onClick={async () => newProject()}><i className="icon-sm icon-plus-primary"></i>{t('newproject')}</span></div>
-				<div><span className="text-btn"  onClick={async () => selectProject()}><i className="icon-sm icon-folder-primary"></i>{t('openproject')}</span></div>
+				<div><span className="text-btn" onClick={async () => selectProject()}><i className="icon-sm icon-folder-primary"></i>{t('openproject')}</span></div>
 			</div>
 		</div>
 		<div className="history">
 			<span className="text-btn clear-history" onClick={async () => history.clearHistory()}>{t('history')}<i className="icon-sm icon-delete"></i></span>
-			{historyList.length > 0 ? 
+			{historyList.length > 0 ?
 				<div className="history-list">
-					{historyList.map((item) => 
-						<div className={classNames("history-item", {active: item.path === project?.state?.path})} key={item.path}>
-							<div className="picon">{item.icon ? <Icon showError={false}/> : null}</div>
+					{historyList.map((item) =>
+						<div className={classNames("history-item", { active: item.path === project?.state?.path })} key={item.path}>
+							<div className="picon">{item.icon ? <Icon showError={false} /> : null}</div>
 							<div className="pinfo" onClick={() => handlePath(item.path)}>
-								{item.hlHTML ? <h4 dangerouslySetInnerHTML={{__html: item.hlHTML}}></h4> : <h4>{item.name}</h4>}
+								{item.hlHTML ? <h4 dangerouslySetInnerHTML={{ __html: item.hlHTML }}></h4> : <h4>{item.name}</h4>}
 								<span>{item.path}</span>
 							</div>
 							<i className="icon-sm icon-delete" onClick={async () => {
@@ -235,5 +235,5 @@ export function ImportLoader(props: ImportLoaderProps) {
 }
 
 export function ImportPage() {
-	return (<div className="import-page"><ImportLoader type="page"/></div>)
+	return (<div className="import-page"><ImportLoader type="page" /></div>)
 }

@@ -2,7 +2,7 @@ import { StateModel } from "@bramblex/state-model";
 import { HistoryModel } from "./history.model";
 import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { ProjectModel } from "./project.model";
-import { DialogModel } from "./dialog.model";
+import { ModalModel } from "./modal.model";
 import { pathJoin } from "../common/utils";
 import { Err, Ok, AppResult, fromThrowable, fromThrowableAsync } from "../common/result";
 
@@ -17,7 +17,7 @@ const {
 
 export class AppModel extends StateModel<{
 	history: HistoryModel,
-	dialog: DialogModel,
+	dialog: ModalModel,
 	project: ProjectModel | null,
 	locale: LocaleModel,
 }> {
@@ -26,7 +26,7 @@ export class AppModel extends StateModel<{
 		super({} as any);
 		this.setState({
 			history: new HistoryModel(this),
-			dialog: new DialogModel(this),
+			dialog: new ModalModel(this),
 			locale: new LocaleModel(this),
 			project: null
 		})
@@ -41,6 +41,20 @@ export class AppModel extends StateModel<{
 		if (recently) {
 			await this.open(recently);
 		}
+	}
+
+	async openWithPicker(): Promise<AppResult> {
+		const pathResult = await fromThrowableAsync(async () => {
+			return Niva.api.dialog.pickDir();
+		});
+		if (pathResult.isErr()) {
+			return pathResult;
+		}
+		const path = pathResult.value;
+		if (path) {
+			return this.open(path);
+		}
+		return Ok(void 0);
 	}
 
 	async open(path: string): Promise<AppResult> {
@@ -109,7 +123,21 @@ export class AppModel extends StateModel<{
 		return projectInitResult;
 	}
 
-	async create(path: string) {
+	async create(): Promise<AppResult> {
+		const pathResult = await fromThrowableAsync(async () => {
+			return Niva.api.dialog.saveFile();
+		});
+
+		if (pathResult.isErr()) {
+			return pathResult
+		}
+
+		const path = pathResult.value;
+
+		if (!path) {
+			return Ok(void 0)
+		}
+
 		const { project } = this.state;
 		if (project) {
 			await project.dispose()

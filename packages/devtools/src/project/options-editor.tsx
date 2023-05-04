@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next'
-import { DialogComponentProps } from "../modal";
+import { DialogComponentProps } from "../modals";
 import { ProjectModel } from "./model";
 
 import AceEditor from 'react-ace';
