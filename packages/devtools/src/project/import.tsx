@@ -2,7 +2,7 @@ import classNames from 'classnames';
 import { StateModel } from "@bramblex/state-model";
 import { useLocalModel, useModelContext } from "@bramblex/state-model-react";
 import { useState, useEffect, useReducer, useRef } from "react";
-import { pathJoin, uuid } from "../utils";
+import { pathJoin, uuid } from "../common/utils";
 import { ProjectModel } from "./model";
 import { Icon } from './package';
 import { modal } from "../modal";

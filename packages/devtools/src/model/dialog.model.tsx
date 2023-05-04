@@ -1,6 +1,7 @@
 import { StateModel } from "@bramblex/state-model";
 import { ComponentType } from "react";
-import { uuid } from "../utils";
+import { uuid } from "../common/utils";
+import { AppModel } from "./app.model";
 
 
 export interface DialogComponentProps {
@@ -15,7 +16,7 @@ type DialogItem = {
 export type DialogModelState = DialogItem[];
 
 export class DialogModel extends StateModel<DialogModelState> {
-	constructor() {
+	constructor(public readonly app: AppModel) {
 		super([])
 	}
 
@@ -31,5 +32,9 @@ export class DialogModel extends StateModel<DialogModelState> {
 			}]
 		);
 		return close;
+	}
+
+	async confirm(title: string, content: string): Promise<boolean> {
+		return true
 	}
 }

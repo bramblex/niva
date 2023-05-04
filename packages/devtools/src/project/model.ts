@@ -11,7 +11,7 @@ import {
   uuid,
   withCtx,
   withCtxP,
-} from "../utils";
+} from "../common/utils";
 import { modal } from "../modal";
 import { OptionsEditor } from "./options-editor";
 import pako from "pako";

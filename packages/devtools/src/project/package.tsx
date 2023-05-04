@@ -1,6 +1,6 @@
 import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { useEffect, useState } from "react";
-import { pathJoin } from "../utils";
+import { pathJoin } from "../common/utils";
 import { ProjectModel } from "./model";
 import { OptionsEditor } from "./options-editor";
 import { ImportLoader } from "./import";

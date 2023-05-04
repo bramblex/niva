@@ -171,3 +171,4 @@ pub fn url_join(left: &str, right: &str) -> String {
         format!("{}/{}", left, right)
     }
 }
+

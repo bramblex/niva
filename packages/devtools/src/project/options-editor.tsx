@@ -10,7 +10,7 @@ import 'ace-builds/src-noconflict/mode-json';
 import 'ace-builds/src-noconflict/theme-github';
 import 'ace-builds/src-noconflict/ext-language_tools'
 
-import { tryOrAlertAsync, withCtx, withCtxP } from '../utils';
+import { tryOrAlertAsync, withCtx, withCtxP } from '../common/utils';
 
 import './options-editor.scss';
 

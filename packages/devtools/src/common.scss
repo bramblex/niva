@@ -12,7 +12,9 @@ body,
 
 * {
   user-select: none;
+  -webkit-user-select: none;
   cursor: default;
+
   min-width: 0;
   margin: 0;
   padding: 0;

@@ -3,7 +3,7 @@ import { useLocalModel, useModelProvider } from "@bramblex/state-model-react";
 import { ImportPage } from "./import";
 import { ProjectModel } from "./model";
 import { ProjectPage } from "./package";
-import { parseArgs, resolvePath, tryOrAlert } from '../utils';
+import { parseArgs, resolvePath, tryOrAlert } from '../common/utils';
 
 export function ProjectApp() {
 	const project = useLocalModel(() => new ProjectModel());

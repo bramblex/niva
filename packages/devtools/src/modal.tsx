@@ -3,7 +3,7 @@ import { StateModel } from '@bramblex/state-model'
 import { useModel } from '@bramblex/state-model-react'
 import classNames from 'classnames';
 import { ComponentType } from 'react';
-import { createPromise, uuid } from './utils';
+import { createPromise, uuid } from './common/utils';
 import { Trans } from 'react-i18next';
 import './modal.scss';
 

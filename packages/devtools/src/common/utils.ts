@@ -1,4 +1,5 @@
-import { modal } from "./modal";
+import { Result } from "neverthrow";
+import { modal } from "../modal";
 
 export function uuid() {
   let dt = new Date().getTime();
@@ -91,7 +92,7 @@ type XPromise<T> = Promise<T> & {
 };
 
 export function createPromise<T>(): XPromise<T> {
-  let resolve: (value: T) => void = (v: T) => {};
+  let resolve: (value: T) => void = (v: T) => { };
   let promise = new Promise<T>(
     (_resolve) => (resolve = _resolve)
   ) as XPromise<T>;
@@ -164,4 +165,13 @@ export async function resolvePath(path: string) {
   return isAbsolutePath(path)
     ? path
     : pathJoin(await process.currentDir(), path);
+}
+
+
+export function importAll<T>(resolve: any) {
+	const resources: Record<string, T> = {};
+	for (const filePath of resolve.keys()) {
+		resources[filePath] = resolve(filePath);
+	}
+	return resources
 }

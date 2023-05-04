@@ -26,5 +26,6 @@
     "failsave": "Fail to save the config",
     "save": "Save",
     "reset": "Reset",
-    "search": "input to search"
+    "search": "input to search",
+    "unsaved": "Project has unsaved changes, are you sure to save?"
 }
