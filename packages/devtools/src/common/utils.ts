@@ -1,5 +1,9 @@
-import { Result } from "neverthrow";
-import { modal } from "../modals";
+// import { ModalModel } from "../models/modal.model";
+// import { AppModel } from "../models/app.model";
+// import { AppResult } from "./result";
+
+import { AppModel } from "../models/app.model";
+import { AppResult } from "./result";
 
 export function uuid() {
   let dt = new Date().getTime();
@@ -14,55 +18,96 @@ export function uuid() {
   return uuid;
 }
 
-export function tryOrP<T>(p: Promise<T>, defaultValue: T): Promise<T> {
-  return p.catch(() => defaultValue);
-}
-
-export function tryOr<T>(p: () => T, defaultValue: T): T {
+export async function tryOrAlert<T>(app: AppModel, r: Promise<AppResult<T>>) {
+  const { locale, modal } = app.state;
   try {
-    return p();
-  } catch (e) {
-    return defaultValue;
+    const result = await r;
+    if (result.isErr()) {
+      modal.alert(
+        locale.getTranslation("ERROR"),
+        result.error.toLocaleMessage(app)
+      );
+    }
+  } catch (err) {
+    modal.alert(
+      locale.getTranslation("ERROR"),
+      `[UNKNOWN ERROR] ${(err as Error).toString()}`
+    );
   }
 }
 
-export function withCtxP<T>(p: Promise<T>, context: string): Promise<T> {
-  return p.catch((e) =>
-    Promise.reject(new Error(context + ": " + e.toString()))
-  );
-}
-
-export function withCtx<T>(p: () => T, context: string): T {
-  try {
-    return p();
-  } catch (e) {
-    throw new Error(context + ": " + (e as any).toString());
+export function limitString(str: string, limit: number) {
+  if (str.length > limit) {
+    const remainingChars = limit - 3;
+    return `...${str.slice(-remainingChars)}`;
+  } else {
+    return str;
   }
 }
 
-export function tryOrAlert<T>(p: () => T) {
-  try {
-    return p();
-  } catch (e) {
-    modal.alert("错误", (e as any).toString());
-    throw e;
-  }
-}
+// export function tryOrP<T>(p: Promise<T>, defaultValue: T): Promise<T> {
+//   return p.catch(() => defaultValue);
+// }
 
-export async function tryOrAlertAsync<T>(p: () => Promise<T>) {
-  try {
-    return await p();
-  } catch (e) {
-    modal.alert("错误", (e as any).toString());
-    throw e;
-  }
+// export function tryOr<T>(p: () => T, defaultValue: T): T {
+//   try {
+//     return p();
+//   } catch (e) {
+//     return defaultValue;
+//   }
+// }
+
+// export function withCtxP<T>(p: Promise<T>, context: string): Promise<T> {
+//   return p.catch((e) =>
+//     Promise.reject(new Error(context + ": " + e.toString()))
+//   );
+// }
+
+// export function withCtx<T>(p: () => T, context: string): T {
+//   try {
+//     return p();
+//   } catch (e) {
+//     throw new Error(context + ": " + (e as any).toString());
+//   }
+// }
+
+// export function tryOrAlert<T>(app: AppModel, p: () => T) {
+//   const {locale, modal} = app.state;
+//   try {
+//     return p();
+//   } catch (e) {
+//     modal.alert(locale.getText('ERROR'), (e as any).toString());
+//     throw e;
+//   }
+// }
+
+// export async function tryOrAlertAsync<T>(app: AppModel, p: () => Promise<T>) {
+//   const {locale, modal} = app.state;
+//   try {
+//     return await p();
+//   } catch (e) {
+//     modal.alert(locale.getText('ERROR'), (e as any).toString());
+//     throw e;
+//   }
+// }
+let baseFileSystemUrl: string | null = null;
+Niva.api.webview
+  .baseFileSystemUrl()
+  .then((s: string) => (baseFileSystemUrl = s));
+
+export function fileSystemUrl(path: string) {
+  return (baseFileSystemUrl + path).replace(/\\/g, "/");
 }
 
 let sep: string | null = null;
 Niva.api.os.sep().then((s: string) => (sep = s));
 
 export function pathJoin(...paths: string[]) {
-  return paths.join(sep!);
+  return paths.filter((s) => s).join(sep!);
+}
+
+export function pathSplit(path: string): string[] {
+  return path.split(sep!);
 }
 
 export function dirname(path: string) {
@@ -87,12 +132,12 @@ export function getCurrentDir() {
   return currentDir!;
 }
 
-type XPromise<T> = Promise<T> & {
+export type XPromise<T> = Promise<T> & {
   resolve: (value: T) => void;
 };
 
 export function createPromise<T>(): XPromise<T> {
-  let resolve: (value: T) => void = (v: T) => { };
+  let resolve: (value: T) => void = (v: T) => {};
   let promise = new Promise<T>(
     (_resolve) => (resolve = _resolve)
   ) as XPromise<T>;
@@ -167,13 +212,12 @@ export async function resolvePath(path: string) {
     : pathJoin(await process.currentDir(), path);
 }
 
-
 export function importAll<T>(resolve: any) {
   const resources: Record<string, T> = {};
   for (const filePath of resolve.keys()) {
     resources[filePath] = resolve(filePath);
   }
-  return resources
+  return resources;
 }
 
 export function parseVersion(versionString: string): number[] {

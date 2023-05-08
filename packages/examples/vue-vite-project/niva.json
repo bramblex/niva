@@ -1,0 +1,11 @@
+{
+  "name": "vue-vite-project",
+  "uuid": "957a5a22-9ce3-43c7-9b4f-a45aa6f56993",
+  "debug": {
+    "entry": "http://127.0.0.1:5173",
+    "resource": "public"
+  },
+  "build": {
+    "resource": "dist"
+  }
+}

@@ -22,8 +22,10 @@
   }
   
   .modal-active {
-    background-color: transparent;
-    /* transition: opacity 0.3s ease; */
+    background-color: rgba(0, 0, 0, 0.3);
+    // background-color: transparent;
+    // background-color: ;
+    // transition: opacity 0.3s ease;
   }
   
   .modal .window {

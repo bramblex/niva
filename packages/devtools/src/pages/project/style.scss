@@ -1,0 +1,159 @@
+.project-page {
+    display: flex;
+    height: calc(100% - 28px);
+    background: white;
+
+    .directory {
+        // width: 240px;
+        width: 28%;
+        min-width: 240px;
+        height: 100%;
+        padding-top: 4px;
+    }
+
+    .project-info {
+        flex: 1;
+        border-left: solid 0.5px rgba(5, 15, 35, 0.12);
+        margin-top: -44px;
+        z-index: 9;
+        min-width: 550px;
+
+        .tabs {
+            height: 100%;
+
+            .tabs-menu {
+                height: 44px;
+                border-bottom: solid 0.5px rgba(5, 15, 35, 0.12);
+                padding: 0 24px;
+
+                button {
+                    margin: 0;
+                    border: 0;
+                    background: transparent;
+                    color: rgba(0, 0, 0, 0.5);
+                    line-height: 44px;
+                    cursor: pointer;
+
+                    &+button {
+                        margin-left: 36px;
+                    }
+                }
+
+                button[aria-selected=true] {
+                    color: #000;
+
+                    &::after {
+                        content: "";
+                        height: 2px;
+                        background: #0084FF;
+                        display: block;
+                        margin-top: -2px;
+                    }
+                }
+            }
+
+            article.tabs-panel {
+                padding: 24px;
+
+                .project-detail {
+                    section {
+                        &:not(:last-child) {
+                            border-bottom: solid 0.5px rgba(5, 15, 35, 0.12);
+                        }
+
+                        &.pd-base {
+                            display: flex;
+                            padding-bottom: 24px;
+
+                            .pd-lf {
+                                flex: 1;
+
+                                .pd-lf__info-container {
+                                    display: flex;
+
+                                    &>span {
+                                        width: 60px;
+                                        height: 60px;
+                                        margin-right: 12px;
+                                    }
+
+                                    .info-container {
+                                        flex: 1;
+                                        margin-bottom: 24px;
+
+                                        h3 {
+                                            font-size: 18px;
+                                            line-height: 18px;
+                                            color: #000;
+                                            margin-bottom: 6px;
+                                        }
+
+                                        p {
+                                            color: rgba(0, 0, 0, 0.5);
+                                            font-size: 12px;
+                                            line-height: 16px;
+                                            margin-bottom: 4px;
+                                        }
+                                    }
+                                }
+
+                                button+button {
+                                    margin-left: 12px;
+                                }
+                            }
+
+                            .pd-rt {
+                                margin-top: 16px;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+
+                                button {
+                                    padding: 0;
+                                    width: 100px;
+                                    margin-bottom: 6px;
+                                    position: relative;
+                                }
+                            }
+                        }
+
+                        &.pd-more {
+                            padding: 24px 0;
+
+                            .fields-section {
+                                h4 {
+                                    font-weight: 500;
+                                    font-size: 14px;
+                                    line-height: 16px;
+                                    color: #000;
+                                }
+
+                                .field-item {
+                                    display: flex;
+                                    font-weight: 400;
+                                    font-size: 14px;
+                                    line-height: 16px;
+                                    margin-top: 12px;
+
+                                    span:first-child {
+                                        width: 80px;
+                                        color: rgba(0, 0, 0, 0.5);
+                                    }
+                                }
+
+                                &+.fields-section {
+                                    margin-top: 28px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            article#config-tab {
+                padding: 0;
+                background: #EFF1F2;
+            }
+        }
+    }
+}

@@ -1,7 +1,10 @@
+import { AppModel } from "../models/app.model";
+
 export enum ErrorCode {
 	UNKNOWN,
 
 	PROJECT_PATH_NOT_EXISTS,
+	PROJECT_PATH_IS_NOT_DIR,
 	PROJECT_CONFIG_NOT_EXISTS,
 	PROJECT_CONFIG_CRATE_FAILED,
 	PROJECT_CREATE_FAILED,
@@ -23,7 +26,8 @@ export class AppError extends Error {
 		this.extra = extra;
 	}
 
-	toLocaleMessage(): string {
+	toLocaleMessage(app: AppModel): string {
+		// const { locale } = app.state;
 		// @TODO: 补全本地化逻辑逻辑
 		return this.message;
 	}
