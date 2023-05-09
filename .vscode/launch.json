@@ -36,7 +36,7 @@
         }
       },
       "args": [
-        "--debug-entry=http://127.0.0.1:3000",
+        "--debug-entry=http://localhost:3000",
         "--debug-resource=packages/devtools/public",
         "--debug-config=packages/devtools/niva.json",
         "--debug-devtools=true"

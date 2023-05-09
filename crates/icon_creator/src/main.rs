@@ -14,7 +14,6 @@ fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<String>>();
     let source = Path::new(&args[1]);
     let target = Path::new(&args[2]);
-    let target_bitmap = Path::new(&args[3]);
 
     let img = image::open(source)?;
     let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
@@ -28,9 +27,6 @@ fn main() -> Result<()> {
         let icon = ico::IconDirEntry::encode(&icon_img)?;
         icon_dir.add_entry(icon);
     }
-
-    let bitmap_img = img.resize_exact(32, 32, FilterType::Lanczos3).to_rgba8().to_vec();
-    std::fs::write(target_bitmap, bitmap_img)?;
 
     let target = std::fs::File::create(target)?;
     icon_dir.write(target)?;

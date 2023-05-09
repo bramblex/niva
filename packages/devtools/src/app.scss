@@ -1,134 +1,140 @@
 /* windows */
 .window {
-    background: #EFF1F2;
+  background: #eff1f2;
+  .title-bar {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    height: 44px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    .title-bar-controls {
+      padding: 0 16px;
+      display: flex;
+    }
+    .title-bar-text {
+      display: flex;
+      align-self: center;
+      padding-right: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 16px;
+    }
+  }
+  .window-body {
+    height: 100%;
+    margin-top: 44px;
+  }
+  .status-bar {
+    position: fixed;
+    bottom: 0;
+    height: 28px;
+    width: 100%;
+    background: #f5f6f7;
+    display: flex;
+    align-items: center;
+
+    .status-bar-field {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.5);
+      position: relative;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+
+      &:hover {
+        color: #0084FF;
+      }
+
+      .icon-sm {
+        font-size: 14px;
+        width: 14px;
+        height: 14px;
+        margin-right: 6px;
+      }
+
+      &.flex-end {
+        margin-left: auto;
+        font-size: 10px;
+        .icon-sm {
+          font-size: 12px;
+        }
+      }
+    }
+  }
+  &.os-mac {
+    .title-bar-controls {
+      button {
+        width: 12px;
+        height: 12px;
+        border: none;
+        border-radius: 50%;
+        margin: 0 4px;
+        position: relative;
+        svg {
+          position: absolute;
+          left: 1px;
+          top: 1px;
+          opacity: 0;
+        }
+      }
+      button[aria-label="Close"] {
+        background-color: #ff5f57;
+      }
+      button[aria-label="Minimize"] {
+        background-color: #febc2e;
+      }
+      button[aria-label="Fullscreen"] {
+        background-color: #28c840;
+        svg {
+          transform: rotateY(180deg);
+        }
+      }
+      &:hover,
+      &:active {
+        svg {
+          opacity: 1;
+        }
+      }
+    }
+  }
+  &.os-win {
     .title-bar {
-        position: fixed;
-        top: 0;
-        width: 100%;
-        height: 44px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: white;
-        .title-bar-controls {
-            padding: 0 16px;
-            display: flex;
+      flex-direction: row-reverse;
+      .title-bar-text {
+        padding-left: 24px;
+      }
+      .title-bar-controls {
+        padding-right: 0;
+        button {
+          border: none;
+          background: transparent;
+          width: 46px;
+          height: 44px;
+
+          &:hover {
+            transition: background-color 0.1s;
+            background-color: #e5e5e5;
+          }
+
+          &:active {
+            background-color: #cccccc;
+          }
         }
-        .title-bar-text {
-            display: flex;
-            align-self: center;
-            padding-right: 20px;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 16px;
-        }
+        // button[aria-label=Close] {
+        //     &:hover {
+        //         transition: background-color 0.1s;
+        //         background-color: #e81123;
+        //     }
+
+        //     &:active {
+        //         background-color: #f1707a;
+        //     }
+        // }
+      }
     }
-    .window-body {
-        height: 100%;
-        margin-top: 44px;
-    }
-    .status-bar {
-        position: fixed;
-        bottom: 0;
-        height: 28px;
-        width: 100%;
-        background: #F5F6F7;
-        display: flex;
-        padding: 0 18px;
-        .status-bar-field {
-            font-size: 12px;
-            line-height: 17px;
-            color: rgba(0, 0, 0, 0.5);
-            position: relative;
-            padding-left: 18px;
-            padding-right: 26px;
-            display: flex;
-            align-self: center;
-            cursor: pointer;
-            .icon-sm {
-                position: absolute;
-                left: 0;
-                top: 2px;
-            }
-            
-            &.flex-end {
-                flex: 1;
-                justify-content: end;
-                font-size: 10px;
-                cursor: initial;
-                user-select: text;
-            }
-        }
-    }
-    &.os-mac {
-        .title-bar-controls {
-            button {
-                width: 12px;
-                height: 12px;
-                border: none;
-                border-radius: 50%;
-                margin: 0 4px;
-                position: relative;
-                svg {
-                    position: absolute;
-                    left: 1px;
-                    top: 1px;
-                    opacity: 0;
-                }
-            }
-            button[aria-label=Close] {
-                background-color: #FF5F57;
-            }
-            button[aria-label=Minimize] {
-                background-color: #FEBC2E;
-            }
-            button[aria-label=Fullscreen] {
-                background-color: #28C840;
-                svg {
-                    transform: rotateY(180deg);
-                }
-            }
-            &:hover, &:active {
-                svg {
-                    opacity: 1;
-                }
-            }
-        }
-    }
-    &.os-win {
-        .title-bar {
-            flex-direction: row-reverse;
-            .title-bar-text {
-                padding-left: 24px;
-            }
-            .title-bar-controls {
-                padding-right: 0;
-                button {
-                    border: none;
-                    background: transparent;
-                    width: 46px;
-                    height: 44px;
-                    
-                    &:hover {
-                        transition: background-color 0.1s;
-                        background-color: #e5e5e5;
-                    }
-                  
-                    &:active {
-                        background-color: #cccccc;
-                    }
-                }
-                // button[aria-label=Close] {
-                //     &:hover {
-                //         transition: background-color 0.1s;
-                //         background-color: #e81123;
-                //     }
-                  
-                //     &:active {
-                //         background-color: #f1707a;
-                //     }
-                // }
-            }
-        }
-    }
+  }
 }

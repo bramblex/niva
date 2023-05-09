@@ -2,6 +2,7 @@ use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
 use super::WindowManager;
 use super::{options::NivaWindowOptions, window::NivaWindow};
+use crate::app::assets::INITIALIZE_SCRIPT;
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
 use crate::app::menu::{self, build_native_item};
@@ -28,8 +29,6 @@ use wry::{
     http::Response,
     webview::{FileDropEvent, WebContext, WebView, WebViewBuilder},
 };
-
-static INITIALIZE_SCRIPT: &str = include_str!("../../../assets/initialize_script.js");
 
 pub struct NivaBuilder {}
 

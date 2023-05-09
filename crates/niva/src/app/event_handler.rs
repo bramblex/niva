@@ -12,7 +12,7 @@ use tao::{
     TrayId,
 };
 
-use crate::{log_if_err, try_or_log_err};
+use crate::{lock, log_if_err, try_or_log_err};
 
 use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
 
@@ -36,7 +36,7 @@ impl EventHandler {
             match event {
                 Event::WindowEvent {
                     event, window_id, ..
-                } => self.handle_window_event(event, window_id)?,
+                } => self.handle_window_event(event, window_id, control_flow)?,
                 Event::UserEvent(callback) => {
                     self.handle_user_event(callback, target, control_flow)?
                 }
@@ -51,7 +51,12 @@ impl EventHandler {
         });
     }
 
-    fn handle_window_event(&self, event: WindowEvent, window_id: WindowId) -> Result<()> {
+    fn handle_window_event(
+        &self,
+        event: WindowEvent,
+        window_id: WindowId,
+        control_flow: &mut ControlFlow,
+    ) -> Result<()> {
         match event {
             WindowEvent::Destroyed => {
                 self.app.window()?.close_window_inner(window_id)?;
@@ -89,7 +94,15 @@ impl EventHandler {
                 )?;
             }
             WindowEvent::CloseRequested => {
-                window.send_ipc_event("window.closeRequested", json!(null))?;
+                let is_block_closed_requested = { lock!(window.state)?.is_block_closed_requested };
+                if is_block_closed_requested {
+                    window.send_ipc_event("window.closeRequested", json!(null))?;
+                } else {
+                    self.app.window()?.close_window_inner(window_id)?;
+                    if window.id == 0 {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                }
             }
             _ => (),
         }

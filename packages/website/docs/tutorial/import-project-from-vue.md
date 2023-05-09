@@ -31,7 +31,7 @@ npm init vue@latest
 
 	"debug": {
 		"resource": "public",
-		"entry": "http://127.0.0.1:5137/",
+		"entry": "http://localhost:5137/",
 	},
 
 	"build": {

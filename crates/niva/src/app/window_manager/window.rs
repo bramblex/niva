@@ -1,7 +1,10 @@
 use crate::{app::menu::options::MenuOptions, lock_force};
 
 use anyhow::{anyhow, Result};
-use std::{ops::Deref, sync::Arc};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -25,6 +28,10 @@ use super::{
     WindowManager,
 };
 
+pub struct NivaWindowState {
+    pub is_block_closed_requested: bool,
+}
+
 pub struct NivaWindow {
     pub id: u16,
     pub window_id: WindowId,
@@ -32,6 +39,8 @@ pub struct NivaWindow {
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
     app: Arc<NivaApp>,
     event_loop_proxy: NivaEventLoopProxy,
+
+    pub state: Mutex<NivaWindowState>,
 }
 
 unsafe_impl_sync_send!(NivaWindow);
@@ -60,6 +69,10 @@ impl NivaWindow {
             webview,
             menu_options: arc_mut(options.menu.clone()),
             event_loop_proxy: app.event_loop_proxy.clone(),
+
+            state: Mutex::new(NivaWindowState {
+                is_block_closed_requested: false,
+            }),
         }))
     }
 
