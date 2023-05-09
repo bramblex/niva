@@ -1,3 +1,4 @@
+import { trimEnd, trimStart } from "lodash";
 import { AppModel } from "../models/app.model";
 import { AppResult } from "./result";
 
@@ -60,8 +61,16 @@ export function limitString(str: string, limit: number) {
   }
 }
 
+export function urlJoin(...paths: string[]) {
+  return paths.reduce((l, r) => {
+    const left = trimEnd(l, '/');
+    const right = trimStart(r, '/');
+    return left + '/' + right
+  })
+}
+
 export function fileSystemUrl(path: string) {
-  return (baseFileSystemUrl + path).replace(/\\/g, "/");
+  return urlJoin(baseFileSystemUrl!, path.replace('\\', '/'));
 }
 
 export function pathJoin(...paths: string[]) {
