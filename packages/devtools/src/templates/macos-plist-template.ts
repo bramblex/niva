@@ -1,5 +1,9 @@
+import { parseVersion } from "../common/utils";
+
 export function plistTemplate(config: any) {
+  const version = parseVersion(config.meta?.version || "").join(".");
   return `
+
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -21,9 +25,9 @@ export function plistTemplate(config: any) {
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${config.version || "0.0.0.0"}</string>
+    <string>${version}</string>
     <key>CFBundleVersion</key>
-    <string>${config.version || "0.0.0.0"}</string>
+    <string>${version}</string>
     <key>CSResourcesFileMapped</key>
     <true />
     <key>LSRequiresCarbon</key>
@@ -31,7 +35,7 @@ export function plistTemplate(config: any) {
     <key>NSHighResolutionCapable</key>
     <true />
     <key>NSHumanReadableCopyright</key>
-    <string>${config.copyright || ""}</string>
+    <string>${config.meta?.copyright || ""}</string>
   </dict>
 </plist>
 `;

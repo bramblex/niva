@@ -1,0 +1,50 @@
+{
+  "niva.json": [
+    0,
+    615
+  ],
+  "index.html": [
+    615,
+    516
+  ],
+  "248eb68ed402043437964daf1081fe8b.js": [
+    1131,
+    23427
+  ],
+  "asset-manifest.json": [
+    24558,
+    431
+  ],
+  "logo.png": [
+    24989,
+    18081
+  ],
+  "static/css/main.e0794eda.css": [
+    43070,
+    22380
+  ],
+  "static/css/main.e0794eda.css.map": [
+    65450,
+    30910
+  ],
+  "static/js/main.8aaa6f9c.js.map": [
+    96360,
+    2751816
+  ],
+  "static/js/main.8aaa6f9c.js.LICENSE.txt": [
+    2848176,
+    3234
+  ],
+  "static/js/main.8aaa6f9c.js": [
+    2851410,
+    797894
+  ],
+  "windows/ResourceHacker.exe": [
+    3649304,
+    5680128
+  ],
+  "windows/icon_creator.exe": [
+    9329432,
+    2084864
+  ]
+}

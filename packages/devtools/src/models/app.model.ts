@@ -3,7 +3,7 @@ import { HistoryModel } from "./history.model";
 import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { ProjectModel } from "./project.model";
 import { ModalModel } from "./modal.model";
-import { pathJoin, pathSplit } from "../common/utils";
+import { pathJoin, pathSplit, tryOrAlert } from "../common/utils";
 import { Err, Ok, AppResult, fromThrowableAsync } from "../common/result";
 
 import { ErrorCode } from "../common/error";
@@ -30,11 +30,13 @@ export class AppModel extends StateModel<{
   }
 
   async init() {
-    Niva.addEventListener("window.closeRequested", () => this.exit());
+    Niva.addEventListener("window.closeRequested", () =>
+      tryOrAlert(this, this.exit())
+    );
     const { history, locale } = this.state;
     await Promise.all([history.init(), locale.init()]);
 
-    const recently = history.recently();
+    let recently = history.recently();
     if (recently) {
       await this.open(recently);
     }
@@ -53,7 +55,12 @@ export class AppModel extends StateModel<{
   }
 
   async open(path: string): Promise<AppResult> {
-    const { modal, locale } = this.state;
+    const { modal, locale, project: lastProject } = this.state;
+
+    const result = await this.close();
+    if (result.isErr()) {
+      return result;
+    }
 
     // first check if the path is a valid project path
     const configPath = pathJoin(path, "niva.json");
@@ -76,8 +83,8 @@ export class AppModel extends StateModel<{
     if (!isConfigExists) {
       if (
         !(await modal.confirm(
-          locale.getTranslation("WARNING"),
-          locale.getTranslation("PROJECT_CREATE_CONFIG_WHERE_NOT_FOUND")
+          locale.t("WARNING"),
+          locale.t("PROJECT_CREATE_CONFIG_WHERE_NOT_FOUND")
         ))
       ) {
         return Err(ErrorCode.PROJECT_CONFIG_NOT_EXISTS, { configPath });
@@ -127,7 +134,23 @@ export class AppModel extends StateModel<{
       project,
     });
 
+    this.state.history.record(project);
     return projectInitResult;
+  }
+
+  async close(): Promise<AppResult> {
+    const { project } = this.state;
+    if (project) {
+      const result = await project.dispose();
+      if (result.isErr()) {
+        return result;
+      }
+      this.setState({
+        ...this.state,
+        project: null,
+      });
+    }
+    return Ok(void 0);
   }
 
   async create(): Promise<AppResult> {
@@ -138,11 +161,6 @@ export class AppModel extends StateModel<{
 
     if (!path) {
       return Ok(void 0);
-    }
-
-    const { project } = this.state;
-    if (project) {
-      await project.dispose();
     }
 
     const newProjectResult = await fromThrowableAsync(async () => {
@@ -165,17 +183,15 @@ export class AppModel extends StateModel<{
   }
 
   async exit(): Promise<AppResult> {
-    const { project, modal } = this.state;
+    const { modal } = this.state;
 
     if (modal.state.length > 0) {
       return Err(ErrorCode.APP_EXIT_PREVENTED_BY_DIALOG);
     }
 
-    if (project) {
-      const projectDisposeResult = await project.dispose();
-      if (projectDisposeResult.isErr()) {
-        return projectDisposeResult;
-      }
+    const result = await this.close();
+    if (result.isErr()) {
+      return result;
     }
 
     Niva.api.window.close();

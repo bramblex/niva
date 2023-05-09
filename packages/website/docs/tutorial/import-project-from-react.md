@@ -31,7 +31,7 @@ npx create-react-app my-react-app
 
 	"debug": {
 		"resource": "public",
-		"entry": "http://127.0.0.1:3000/",
+		"entry": "http://localhost:3000/",
 	},
 
 	"build": {

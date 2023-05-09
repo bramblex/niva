@@ -41,7 +41,7 @@ export function AlertModal(
             promise.resolve();
           }}
         >
-          {locale.getTranslation("CONFIRM")}
+          {locale.t("CONFIRM")}
         </button>
       </footer>
     </div>
@@ -79,7 +79,7 @@ export function ConfirmModal(
             promise.resolve(false);
           }}
         >
-          {locale.getTranslation("CANCEL")}
+          {locale.t("CANCEL")}
         </button>
         <button
           className="btn btn-md btn-primary"
@@ -88,7 +88,7 @@ export function ConfirmModal(
             promise.resolve(true);
           }}
         >
-          {locale.getTranslation("CONFIRM")}
+          {locale.t("CONFIRM")}
         </button>
       </footer>
     </div>

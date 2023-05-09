@@ -44,6 +44,25 @@ export const en_US = {
   RESOURCE_PATH: "Resource",
   ENTRY: "Entry",
   DEFAULT: "Default",
+  NONE: "(None)",
   ICON: "icon",
-  CONFIG_FILE_PATH: "Config"
+  CONFIG_FILE_PATH: "Config",
+
+  UNSELECTED_APP_FILE: "No APP selected",
+  CREATING_APP_STRUCTURE: "Creating app directory structure",
+  COPYING_EXECUTABLE_FILE: "Copying executable file",
+  PACKAGING_RESOURCES: "Packaging resources",
+  COMPRESSING_RESOURCES: "Compressing resources",
+  GENERATING_ICON: "Generating icon",
+  GENERATING_INFO_PLIST: "Generating Info.plist configuration file",
+  BUILDING_APP: "Building app",
+  UNSELECTED_EXE_FILE: "File is not selected",
+  PREPARE_BUILD_ENVIRONMENT: "Prepare build environment",
+  BUILD_EXECUTABLE_FILE: "Build executable file",
+  CLEAN_BUILD_ENVIRONMENT: "Clean build environment",
+
+  UNSUPPORTED_OS: "Unsupported operating system",
+  BUILD_SUCCESS: "Build success",
+  BUILD_SUCCESS_MESSAGE: "The application has been built successfully.",
 };
+

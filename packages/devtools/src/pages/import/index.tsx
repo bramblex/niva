@@ -38,7 +38,7 @@ export function ImportPage() {
       <div className={classNames("file-uploader", { active: isHover })}>
         <div className="file-uploader__tips">
           <Plus size={36} />
-          {locale.getTranslation("UPLOAD_TIPS")}
+          {locale.t("UPLOAD_TIPS")}
         </div>
         <div className="file-uploader__btns">
           <button
@@ -46,7 +46,7 @@ export function ImportPage() {
             onClick={() => tryOrAlert(app, app.openWithPicker())}
           >
             <i className="icon-sm icon-folder"></i>
-            {locale.getTranslation("OPEN_PROJECT")}
+            {locale.t("OPEN_PROJECT")}
           </button>
 
           <button
@@ -55,7 +55,7 @@ export function ImportPage() {
             onClick={() => tryOrAlert(app, app.create())}
           >
             <i className="icon-sm icon-plus-black"></i>
-            {locale.getTranslation("NEW_PROJECT")}
+            {locale.t("NEW_PROJECT")}
           </button>
         </div>
       </div>

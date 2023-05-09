@@ -34,7 +34,7 @@ export class LocaleModel extends StateModel<LocaleModelState> {
     });
   }
 
-  getTranslation(key: TranslateKey) {
+  t(key: TranslateKey) {
     return this.state.translations[key] || `[${key.toUpperCase()}]`;
   }
 }

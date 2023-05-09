@@ -1,10 +1,18 @@
 import { StateModel } from "@bramblex/state-model";
 import { AppModel } from "./app.model";
-import { fileSystemUrl, pathJoin } from "../common/utils";
-import { AppResult, Err, Ok, fromThrowableAsync } from "../common/result";
+import { dirname, fileSystemUrl, pathJoin } from "../common/utils";
+import {
+  AppResult,
+  Err,
+  Ok,
+  fromThrowable,
+  fromThrowableAsync,
+} from "../common/result";
 import { ErrorCode } from "../common/error";
+import { buildMacOsApp } from "../build-scripts/build-macos";
+import { buildWindowsApp } from "../build-scripts/build-windows";
 
-const { fs } = Niva.api;
+const { fs, process, os } = Niva.api;
 
 interface ProjectEditorModelState {
   content: string;
@@ -22,7 +30,7 @@ export class ProjectEditorModel extends StateModel<ProjectEditorModelState> {
   setContent(content: string) {
     this.setState({
       content,
-      isEdit: false,
+      isEdit: true,
     });
   }
 }
@@ -72,7 +80,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       });
     }
 
-    const validateResult = this.validateConfig(loadResult.value);
+    const validateResult = ProjectModel.validateConfig(loadResult.value);
 
     if (validateResult.isErr()) {
       return validateResult;
@@ -101,39 +109,99 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     const { isEdit } = this.state.editor.state;
     if (isEdit) {
       if (
-        (await modal.confirm(
-          locale.getTranslation("WARNING"),
-          locale.getTranslation("UNSAVED")
-        )) === false
+        (await modal.confirm(locale.t("WARNING"), locale.t("UNSAVED"))) === true
       ) {
         return this.save();
       }
-      return Err(ErrorCode.PROJECT_HAS_UNSAVED_CHANGE, {
-        path: this.state.path,
-      });
     }
     return Ok(void 0);
   }
 
-  async save(): Promise<AppResult> {
-    // @TODO:
-    const result = fromThrowableAsync(async () => {});
+  async refresh() {
+    const result = await this.dispose();
+    if (result.isErr()) {
+      return result;
+    }
+    await this.app.state.history.record(this);
     return this.init();
   }
 
-  async build(): Promise<AppResult> {
-    return Ok(void 0);
+  async save(): Promise<AppResult> {
+    const { isEdit, content } = this.state.editor.state;
+    if (!isEdit) {
+      return Ok(void 0);
+    }
+    const validateResult = ProjectModel.validateConfig(content);
+    if (validateResult.isErr()) {
+      return Err(ErrorCode.SAVE_CONFIG_VALIDATE_FAILED, { content });
+    }
+    const saveResult = await fromThrowableAsync(async () =>
+      fs.write(this.state.configPath, content)
+    );
+    if (saveResult.isErr()) {
+      return Err(ErrorCode.SAVE_CONFIG_FAILED, {
+        reason: saveResult.error,
+      });
+    }
+
+    return this.refresh();
+  }
+
+  async build(target?: string): Promise<AppResult> {
+    const { modal, locale } = this.app.state;
+
+    return await fromThrowableAsync(async () => {
+      const { os: osType } = await os.info();
+
+      let appPath: string;
+      if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
+        appPath = await buildMacOsApp(this, target);
+      } else if (osType.toLowerCase() === "windows") {
+        appPath = await buildWindowsApp(this, target);
+      } else {
+        throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
+      }
+
+      modal
+        .confirm(locale.t("BUILD_SUCCESS"), locale.t("BUILD_SUCCESS_MESSAGE"))
+        .then((ok) => ok && process.open(dirname(appPath)));
+    });
   }
 
   async debug(): Promise<AppResult> {
-    return Ok(void 0);
+    const { path, configPath, config } = this.state;
+    const resource = pathJoin(path, config?.debug?.resource);
+    const entry = config?.debug?.entry || "";
+
+    return fromThrowableAsync(async () => {
+      const exe = await process.currentExe();
+      process.exec(
+        exe,
+        [
+          `--debug-config=${configPath}`,
+          `--debug-resource=${resource}`,
+          "--debug-devtools=true",
+          ...(entry ? [`--debug-entry=${entry}`] : []),
+        ],
+        { detached: true }
+      );
+    });
   }
 
   open(): Promise<AppResult> {
-    return fromThrowableAsync(() => Niva.api.process.open(this.state.path));
+    return fromThrowableAsync(() => process.open(this.state.path));
   }
 
-  private validateConfig(config: any): AppResult<any> {
+  private static validateConfig(rawConfig: any): AppResult<any> {
+    let config = rawConfig;
+    if (typeof config === "string") {
+      const configResult = fromThrowable(() => JSON.parse(config));
+      if (configResult.isErr()) {
+        return Err(ErrorCode.PROJECT_CONFIG_VALIDATE_FAILED);
+      }
+      config = configResult.value;
+    }
+
     if (config && config.name && config.uuid) {
       return Ok(config);
     }

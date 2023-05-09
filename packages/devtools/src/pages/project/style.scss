@@ -126,6 +126,7 @@
                                     font-size: 14px;
                                     line-height: 16px;
                                     color: #000;
+                                    display: flex;
                                 }
 
                                 .field-item {
@@ -156,4 +157,37 @@
             }
         }
     }
+}
+
+.project-page-uploader {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    background-color: rgba(236, 244, 244, 0.6);
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.project-page-uploader-content {
+    width: 600px;
+    height: 300px;
+    background: rgba(0, 132, 255, 0.08);
+    border: 3px dashed #0084FF;
+    border-radius: 12px;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+
+
+    color: #0084FF;
+    font-size: 32px;
+    font-weight: bold;
 }

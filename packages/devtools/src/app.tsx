@@ -2,7 +2,11 @@ import "./app.scss";
 
 import classNames from "classnames";
 import { PropsWithChildren, useEffect, useRef, useState } from "react";
-import { useLocalModel, useModelProvider } from "@bramblex/state-model-react";
+import {
+  useLocalModel,
+  useModel,
+  useModelProvider,
+} from "@bramblex/state-model-react";
 import { AppModel, useApp, useLocale } from "./models/app.model";
 import { Modal } from "./modals";
 
@@ -15,6 +19,7 @@ import {
 } from "@icon-park/react";
 import { ImportPage } from "./pages/import";
 import { ProjectPage } from "./pages/project";
+import { tryOrAlert } from "./common/utils";
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
@@ -109,7 +114,10 @@ export function WindowControl(props: { os: string }) {
     <div className="title-bar-controls">
       {os === "mac" ? (
         <>
-          <button aria-label="Close" onClick={() => app.exit()}>
+          <button
+            aria-label="Close"
+            onClick={() => tryOrAlert(app, app.exit())}
+          >
             {closeIcon}
           </button>
           <button
@@ -145,7 +153,10 @@ export function WindowControl(props: { os: string }) {
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}
           </button>
-          <button aria-label="Close" onClick={() => app.exit()}>
+          <button
+            aria-label="Close"
+            onClick={() => tryOrAlert(app, app.exit())}
+          >
             {closeIcon}
           </button>
         </>
@@ -199,8 +210,6 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     Niva.addEventListener("window.focused", handler);
     Niva.api.os.info().then(setSystemInfo);
     Niva.api.process.version().then(setVersion);
-    Niva.api.window.setResizable(true);
-    Niva.api.window.setMinInnerSize({ width: 800, height: 500 });
 
     return () => {
       Niva.removeEventListener("window.focused", handler);
@@ -225,7 +234,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           }}
         >
           <Translate className="icon-sm" />
-          {locale.getTranslation("LOCALE")}
+          {locale.t("LOCALE")}
         </span>
 
         <span
@@ -237,7 +246,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           }}
         >
           <BookOne className="icon-sm" />
-          {locale.getTranslation("DOCUMENTS")}
+          {locale.t("DOCUMENTS")}
         </span>
 
         <span
@@ -256,6 +265,10 @@ function WindowFrame(props: PropsWithChildren<{}>) {
             Niva.api.clipboard.write(
               `${systemInfo.os} ${systemInfo.arch} ${systemInfo.version} | ${version}`
             );
+          }}
+          onDoubleClick={() => {
+            Niva.api.webview.openDevtools();
+            Niva.api.window.setResizable(true);
           }}
         >
           {
@@ -276,6 +289,7 @@ export function App() {
     () => (window as any).app || new AppModel()
   );
   const AppProvider = useModelProvider(AppModel);
+  const history = useModel(app.state.history);
 
   useEffect(() => {
     if (!(window as any).app) {
@@ -287,7 +301,7 @@ export function App() {
   return (
     <AppProvider value={app}>
       <WindowFrame>
-        {app.state.project ? <ProjectPage /> : <ImportPage />}
+        {history.state.history.length > 0 ? <ProjectPage /> : <ImportPage />}
       </WindowFrame>
       <Modal />
     </AppProvider>

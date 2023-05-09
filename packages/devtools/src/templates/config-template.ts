@@ -15,7 +15,7 @@ export function generateConfig(type: ConfigType, name: string) {
 			uuid: uuid(),
 
 			debug: {
-				entry: "http://127.0.0.1:5173",
+				entry: "http://localhost:5173",
 				resource: "public",
 			},
 
@@ -29,7 +29,7 @@ export function generateConfig(type: ConfigType, name: string) {
 			uuid: uuid(),
 
 			debug: {
-				entry: "http://127.0.0.1:8080",
+				entry: "http://localhost:8080",
 				resource: "public",
 			},
 
@@ -43,7 +43,7 @@ export function generateConfig(type: ConfigType, name: string) {
 			uuid: uuid(),
 
 			debug: {
-				entry: "http://127.0.0.1:3000",
+				entry: "http://localhost:3000",
 				resource: "public",
 			},
 

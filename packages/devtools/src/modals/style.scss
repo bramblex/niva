@@ -1,7 +1,8 @@
 .modal-container {
     position: fixed;
     z-index: 9998;
-    top: 44px;
+    // top: 44px;
+    top: 0px;
     bottom: 0px;
     left: 0px;
     right: 0px;
@@ -23,9 +24,6 @@
   
   .modal-active {
     background-color: rgba(0, 0, 0, 0.3);
-    // background-color: transparent;
-    // background-color: ;
-    // transition: opacity 0.3s ease;
   }
   
   .modal .window {

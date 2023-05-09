@@ -24,13 +24,13 @@ export async function tryOrAlert<T>(app: AppModel, r: Promise<AppResult<T>>) {
     const result = await r;
     if (result.isErr()) {
       modal.alert(
-        locale.getTranslation("ERROR"),
+        locale.t("ERROR"),
         result.error.toLocaleMessage(app)
       );
     }
   } catch (err) {
     modal.alert(
-      locale.getTranslation("ERROR"),
+      locale.t("ERROR"),
       `[UNKNOWN ERROR] ${(err as Error).toString()}`
     );
   }
@@ -114,11 +114,15 @@ export function dirname(path: string) {
   return path.split(sep!).slice(0, -1).join(sep!);
 }
 
-let dirs: { temp: string; home: string } | null = null;
+let dirs: { temp: string; home: string; data: string } | null = null;
 Niva.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
 
-export function tempWith(...paths: string[]) {
+export function tempDirWith(...paths: string[]) {
   return pathJoin(dirs!.temp, ...paths);
+}
+
+export function dataDirWith(...paths: string[]) {
+  return pathJoin(dirs!.data, ...paths);
 }
 
 export function getHome() {
@@ -145,50 +149,6 @@ export function createPromise<T>(): XPromise<T> {
   return promise;
 }
 
-export function base64ToArrayBuffer(base64: string) {
-  const binary_string = window.atob(base64);
-  const len = binary_string.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary_string.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-export function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return window.btoa(binary);
-}
-
-export function concatArrayBuffers(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
-  const newBuffer = new ArrayBuffer(buffer1.byteLength + buffer2.byteLength);
-  // copy the contents of buffer1 into the new buffer
-  new Uint8Array(newBuffer, 0, buffer1.byteLength).set(new Uint8Array(buffer1));
-  // copy the contents of buffer2 into the new buffer, starting at the end of buffer1
-  new Uint8Array(newBuffer, buffer1.byteLength, buffer2.byteLength).set(
-    new Uint8Array(buffer2)
-  );
-  return newBuffer;
-}
-
-export async function packageResource(projectResourcePath: string) {
-  const { fs } = Niva.api;
-  let buffer = new ArrayBuffer(0);
-  const fileIndexes: Record<string, [number, number]> = {};
-  for (const name of await fs.readDirAll(projectResourcePath)) {
-    const filePath = pathJoin(projectResourcePath, name);
-    const fileKey = name.replace(/\\/g, "/");
-    const fileBuffer = base64ToArrayBuffer(await fs.read(filePath, "base64"));
-    fileIndexes[fileKey] = [buffer.byteLength, fileBuffer.byteLength];
-    buffer = concatArrayBuffers(buffer, fileBuffer);
-  }
-  return [fileIndexes, buffer] as const;
-}
 
 export function parseArgs(args: string[]) {
   const result: Record<string, string> = {};

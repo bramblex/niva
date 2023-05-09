@@ -134,10 +134,6 @@
     Niva.__resolve__(response);
   });
 
-  Niva.addEventListener('window.closeRequested', function () {
-    Niva.api.window.close();
-  });
-
   delete window.close;
   delete window.open;
 

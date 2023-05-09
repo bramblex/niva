@@ -2,7 +2,7 @@
   "name": "vue-project",
   "uuid": "dc53e554-739e-4767-b2e6-00eca27413f8",
   "debug": {
-    "entry": "http://127.0.0.1:8080",
+    "entry": "http://localhost:8080",
     "resource": "public"
   },
   "build": {

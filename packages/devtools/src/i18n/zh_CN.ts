@@ -45,7 +45,25 @@ export const zh_CN: typeof en_US = {
 
   RESOURCE_PATH: "资源目录",
   ENTRY: "入口",
-  DEFAULT: "默认",
+  DEFAULT: "(默认)",
+  NONE: "(无)",
   ICON: "图标",
   CONFIG_FILE_PATH: "配置文件",
+
+  UNSELECTED_APP_FILE: "未选择 APP",
+  CREATING_APP_STRUCTURE: "创建 APP 目录结构",
+  COPYING_EXECUTABLE_FILE: "复制可执行文件",
+  PACKAGING_RESOURCES: "打包资源文件",
+  COMPRESSING_RESOURCES: "压缩资源文件",
+  GENERATING_ICON: "生成图标",
+  GENERATING_INFO_PLIST: "生成 Info.plist 配置文件",
+  BUILDING_APP: "正在构建应用",
+  UNSELECTED_EXE_FILE: "未选择 EXE 文件",
+  PREPARE_BUILD_ENVIRONMENT: "准备构建环境",
+  BUILD_EXECUTABLE_FILE: "构建可执行文件",
+  CLEAN_BUILD_ENVIRONMENT: "清理构建环境",
+
+  UNSUPPORTED_OS: "不支持当前操作系统",
+  BUILD_SUCCESS: "构建成功",
+  BUILD_SUCCESS_MESSAGE: "应用已成功构建",
 };

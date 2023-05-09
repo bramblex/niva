@@ -95,8 +95,8 @@ impl WindowManager {
     pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
         let id = self
             .id_map
-            .remove(&window_id)
+            .get(&window_id)
             .ok_or(anyhow!("Window not found"))?;
-        self.close_window(id)
+        self.close_window(*id)
     }
 }

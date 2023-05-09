@@ -12,7 +12,7 @@ use crate::{
         api_manager::ApiManager,
         window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
     },
-    logical, logical_try,
+    logical, logical_try, lock,
 };
 
 macro_rules! match_window {
@@ -81,6 +81,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.dragWindow", drag_window);
     api_manager.register_api("window.setIgnoreCursorEvents", set_ignore_cursor_events);
     api_manager.register_api("window.theme", theme);
+    api_manager.register_api("window.blockCloseRequested", block_close_requested);
 }
 
 #[niva_api]
@@ -507,4 +508,12 @@ fn theme(id: Option<u16>) -> Result<String> {
         Theme::Dark => "dark",
         _ => "system",
     }))
+}
+
+#[niva_api]
+fn block_close_requested(blocked: bool, id: Option<u16>) -> Result<()> {
+    match_window!(app, window, id);
+    let mut state = lock!(window.state)?;
+    state.is_block_closed_requested = blocked;
+    Ok(())
 }

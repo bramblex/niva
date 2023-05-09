@@ -15,6 +15,7 @@ import "ace-builds/src-noconflict/ext-language_tools";
 import "./style.scss";
 import { useApp, useLocale, useProject } from "../../../models/app.model";
 import { useModel } from "@bramblex/state-model-react";
+import { tryOrAlert } from "../../../common/utils";
 
 // eslint-disable-next-line import/no-webpack-loader-syntax
 const jsonWorkerUrl =
@@ -22,43 +23,19 @@ const jsonWorkerUrl =
   require("file-loader!ace-builds/src-noconflict/worker-json").default;
 ace.config.setModuleUrl("ace/mode/json_worker", jsonWorkerUrl);
 
-const { fs } = Niva.api;
-
 // interface OptionsEditorProps extends DialogComponentProps {
 // 	project: ProjectModel;
 // }
 
 export function ConfigEditor() {
+  const app = useApp();
   const locale = useLocale();
   const project = useProject();
-
   const editor = useModel(project.state.editor);
-  const { content, isEdit } = editor.state;
-
-  // const project = useProject();
-  // const { t } = useTranslation()
-  // const [value, setValue] = useState("");
-
-  // useEffect(() => {
-  // 	tryOrAlertAsync(async () => {
-  // 		const configPath = project.state!.configPath;
-  // 		const content = await withCtxP(fs.read(configPath), t('failreadcfg'));
-  // 		setValue(content as string);
-  // 	}).catch(close);
-  // }, []);
-
-  // const saveDoc = () => {
-  // 	tryOrAlertAsync(async () => {
-  // 		withCtx(() => JSON.parse(value), t('errorformat'));
-  // 		await withCtxP(fs.write(project.state!.configPath, value), t('failsave'));
-  // 		close();
-  // 		project.init(project.state!.path);
-  // 	})
-  // }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "s" && (event.ctrlKey || event.metaKey)) {
-      project.save();
+      tryOrAlert(app, project.save());
     }
   };
 
@@ -71,7 +48,7 @@ export function ConfigEditor() {
           name="options-editor"
           height="100%"
           width="100%"
-          value={content}
+          value={editor.state.content}
           onChange={(c) => editor.setContent(c)}
           editorProps={{
             $blockScrolling: true,
@@ -84,13 +61,15 @@ export function ConfigEditor() {
           className="btn btn-md"
           style={{ marginRight: "6px" }}
           onClick={() => {
-            // setValue(JSON.stringify({ name: project.state!.name, uuid: project.state?.config?.uuid }))
+            tryOrAlert(app, project.init());
           }}
         >
-          {locale.getTranslation("RESET")}
+          {locale.t("RESET")}
         </button>
-        <button className="btn btn-md btn-primary">
-          {locale.getTranslation("SAVE")}
+        <button className="btn btn-md btn-primary" onClick={() => {
+          tryOrAlert(app, project.save());
+        }}>
+          {locale.t("SAVE")}
         </button>
       </footer>
     </div>

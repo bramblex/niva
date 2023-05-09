@@ -2,10 +2,13 @@
   "name": "react-project",
   "uuid": "831d172d-1ab3-4021-b006-d9af8f931909",
   "debug": {
-    "entry": "http://127.0.0.1:3000",
+    "entry": "http://localhost:3000",
     "resource": "public"
   },
   "build": {
     "resource": "build"
+  },
+  "window": {
+      "title": "hello world"
   }
 }
