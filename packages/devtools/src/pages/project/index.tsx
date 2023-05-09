@@ -33,7 +33,7 @@ export function ProjectPage() {
       }
     };
 
-    const handleHovered = () => setHover(true);
+    const handleHovered = (_: string, { paths }: { paths: string[] }) => paths.length > 0 ? setHover(true) : void 0;
     const handleCancelled = () => setHover(false);
 
     Niva.addEventListener("fileDrop.dropped", handleDropped);
