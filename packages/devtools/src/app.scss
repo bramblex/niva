@@ -46,7 +46,7 @@
       cursor: pointer;
 
       &:hover {
-        color: #0084FF;
+        color: #0084ff;
       }
 
       .icon-sm {
@@ -101,7 +101,7 @@
       }
     }
   }
-  &.os-win {
+  &.os-windows {
     .title-bar {
       flex-direction: row-reverse;
       .title-bar-text {
@@ -124,16 +124,16 @@
             background-color: #cccccc;
           }
         }
-        // button[aria-label=Close] {
-        //     &:hover {
-        //         transition: background-color 0.1s;
-        //         background-color: #e81123;
-        //     }
+        button[aria-label="Close"] {
+          &:hover {
+            background-color: #e81123;
+            color: #fff;
+          }
 
-        //     &:active {
-        //         background-color: #f1707a;
-        //     }
-        // }
+          &:active {
+            background-color: #f1707a;
+          }
+        }
       }
     }
   }

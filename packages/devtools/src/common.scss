@@ -6,7 +6,8 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: 'PingFang SC';
+  font-family: "PingFang SC", "Microsoft YaHei", 微软雅黑, "MicrosoftJhengHei",
+    华文细黑, STHeiti, MingLiu;
   font-style: normal;
 }
 
@@ -37,7 +38,7 @@ input {
   outline: none;
 }
 
-/* icon */ 
+/* icon */
 .icon-sm {
   width: 12px;
   height: 12px;
@@ -80,15 +81,15 @@ input {
 }
 .icon-plus-primary {
   background: url(./assets/icon-plus-primary.png) center center no-repeat;
-  background-size: contain; 
+  background-size: contain;
 }
 .icon-folder-primary {
   background: url(./assets/icon-folder-primary.png) center center no-repeat;
-  background-size: contain; 
+  background-size: contain;
 }
 .icon-close {
   background: url(./assets/icon-close.png) center center no-repeat;
-  background-size: contain; 
+  background-size: contain;
 }
 
 /* button */
@@ -104,10 +105,10 @@ input {
 
   font-size: 14px;
   &:hover {
-    opacity: .8;
+    opacity: 0.8;
   }
   &:active {
-    opacity: .8;
+    opacity: 0.8;
   }
 }
 .btn-md {
@@ -121,14 +122,15 @@ input {
   height: 34px;
 }
 .btn-primary {
-  background: #0084FF;
+  background: #0084ff;
   color: #fff;
 }
 .btn-info {
   background: rgba(5, 15, 35, 0.04);
   color: rgba(0, 0, 0, 0.5);
 }
-.btn, .text-btn {
+.btn,
+.text-btn {
   cursor: pointer;
 }
 

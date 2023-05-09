@@ -1,9 +1,23 @@
-// import { ModalModel } from "../models/modal.model";
-// import { AppModel } from "../models/app.model";
-// import { AppResult } from "./result";
-
 import { AppModel } from "../models/app.model";
 import { AppResult } from "./result";
+
+let baseFileSystemUrl: string | null = null;
+let sep: string | null = null;
+let dirs: { temp: string; home: string; data: string } | null = null;
+let currentDir: string | null = null;
+
+const readPromise = Promise.all([
+  Niva.api.webview
+    .baseFileSystemUrl()
+    .then((s: string) => (baseFileSystemUrl = s)),
+  Niva.api.os.sep().then((s: string) => (sep = s)),
+  Niva.api.os.dirs().then((_dirs: any) => (dirs = _dirs)),
+  Niva.api.process.currentDir().then((dir: string) => (currentDir = dir)),
+]);
+
+export function envReady(callback: () => any) {
+  readPromise.then(callback)
+}
 
 export function uuid() {
   let dt = new Date().getTime();
@@ -23,6 +37,7 @@ export async function tryOrAlert<T>(app: AppModel, r: Promise<AppResult<T>>) {
   try {
     const result = await r;
     if (result.isErr()) {
+      debugger;
       modal.alert(
         locale.t("ERROR"),
         result.error.toLocaleMessage(app)
@@ -45,62 +60,9 @@ export function limitString(str: string, limit: number) {
   }
 }
 
-// export function tryOrP<T>(p: Promise<T>, defaultValue: T): Promise<T> {
-//   return p.catch(() => defaultValue);
-// }
-
-// export function tryOr<T>(p: () => T, defaultValue: T): T {
-//   try {
-//     return p();
-//   } catch (e) {
-//     return defaultValue;
-//   }
-// }
-
-// export function withCtxP<T>(p: Promise<T>, context: string): Promise<T> {
-//   return p.catch((e) =>
-//     Promise.reject(new Error(context + ": " + e.toString()))
-//   );
-// }
-
-// export function withCtx<T>(p: () => T, context: string): T {
-//   try {
-//     return p();
-//   } catch (e) {
-//     throw new Error(context + ": " + (e as any).toString());
-//   }
-// }
-
-// export function tryOrAlert<T>(app: AppModel, p: () => T) {
-//   const {locale, modal} = app.state;
-//   try {
-//     return p();
-//   } catch (e) {
-//     modal.alert(locale.getText('ERROR'), (e as any).toString());
-//     throw e;
-//   }
-// }
-
-// export async function tryOrAlertAsync<T>(app: AppModel, p: () => Promise<T>) {
-//   const {locale, modal} = app.state;
-//   try {
-//     return await p();
-//   } catch (e) {
-//     modal.alert(locale.getText('ERROR'), (e as any).toString());
-//     throw e;
-//   }
-// }
-let baseFileSystemUrl: string | null = null;
-Niva.api.webview
-  .baseFileSystemUrl()
-  .then((s: string) => (baseFileSystemUrl = s));
-
 export function fileSystemUrl(path: string) {
   return (baseFileSystemUrl + path).replace(/\\/g, "/");
 }
-
-let sep: string | null = null;
-Niva.api.os.sep().then((s: string) => (sep = s));
 
 export function pathJoin(...paths: string[]) {
   return paths.filter((s) => s).join(sep!);
@@ -114,9 +76,6 @@ export function dirname(path: string) {
   return path.split(sep!).slice(0, -1).join(sep!);
 }
 
-let dirs: { temp: string; home: string; data: string } | null = null;
-Niva.api.os.dirs().then((_dirs: any) => (dirs = _dirs));
-
 export function tempDirWith(...paths: string[]) {
   return pathJoin(dirs!.temp, ...paths);
 }
@@ -129,9 +88,6 @@ export function getHome() {
   return dirs!.home;
 }
 
-let currentDir: string | null = null;
-Niva.api.process.currentDir().then((dir: string) => (currentDir = dir));
-
 export function getCurrentDir() {
   return currentDir!;
 }
@@ -141,7 +97,7 @@ export type XPromise<T> = Promise<T> & {
 };
 
 export function createPromise<T>(): XPromise<T> {
-  let resolve: (value: T) => void = (v: T) => {};
+  let resolve: (value: T) => void = (v: T) => { };
   let promise = new Promise<T>(
     (_resolve) => (resolve = _resolve)
   ) as XPromise<T>;

@@ -5,6 +5,7 @@ import './i18n/index';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app';
+import { envReady } from './common/utils';
 
 window.addEventListener("contextmenu", (e) => {
   e.preventDefault();
@@ -26,4 +27,4 @@ const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement
 );
 
-root.render(<App />);
+envReady(() => root.render(<App />));

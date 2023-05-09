@@ -130,7 +130,7 @@ export function WindowControl(props: { os: string }) {
             aria-label="Fullscreen"
             onClick={() => {
               setMaximized(!isMaximized);
-              Niva.api.window.setMaximized();
+              Niva.api.window.setMaximized(!true);
             }}
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}
@@ -148,7 +148,7 @@ export function WindowControl(props: { os: string }) {
             aria-label="Fullscreen"
             onClick={() => {
               setMaximized(!isMaximized);
-              Niva.api.window.setMaximized();
+              Niva.api.window.setMaximized(!isMaximized);
             }}
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}

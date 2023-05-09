@@ -1,6 +1,7 @@
 import { Result as _Result } from "neverthrow";
 
 declare global {
+  type NivaApiFunction = (...args: any[]) => Promise<any>
   var Niva: {
     addEventListener(
       event: string,
@@ -15,20 +16,20 @@ declare global {
     call(method: string, data: any): Promise<any>;
 
     api: {
-      clipboard: { [method: string]: Function },
-      dialog: { [method: string]: Function },
-      extra: { [method: string]: Function },
-      fs: { [method: string]: Function },
-      http: { [method: string]: Function },
-      monitor: { [method: string]: Function },
-      os: { [method: string]: Function },
-      process: { [method: string]: Function },
-      resource: { [method: string]: Function },
-      short: { [method: string]: Function },
-      tray: { [method: string]: Function },
-      webview: { [method: string]: Function },
-      window: { [method: string]: Function },
-      windowExtra: { [method: string]: Function },
+      clipboard: { [method: string]: NivaApiFunction },
+      dialog: { [method: string]: NivaApiFunction },
+      extra: { [method: string]: NivaApiFunction },
+      fs: { [method: string]: NivaApiFunction },
+      http: { [method: string]: NivaApiFunction },
+      monitor: { [method: string]: NivaApiFunction },
+      os: { [method: string]: NivaApiFunction },
+      process: { [method: string]: NivaApiFunction },
+      resource: { [method: string]: NivaApiFunction },
+      short: { [method: string]: NivaApiFunction },
+      tray: { [method: string]: NivaApiFunction },
+      webview: { [method: string]: NivaApiFunction },
+      window: { [method: string]: NivaApiFunction },
+      windowExtra: { [method: string]: NivaApiFunction },
     };
   };
 }

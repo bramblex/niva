@@ -3,8 +3,7 @@ extern crate winres;
 
 #[cfg(target_os = "windows")]
 fn main() {
-    let res = winres::WindowsResource::new();
-    res.set_icon("src/assets/icon.ico");
+    let mut res = winres::WindowsResource::new();
     res.compile().unwrap();
     build_version::write_version_file().expect("Failed to write version.rs file");
 }
