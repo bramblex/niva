@@ -3,6 +3,7 @@ import { useApp, useHistory, useLocale } from "../../models/app.model";
 import { Logo } from "./logo";
 import classNames from "classnames";
 import { tryOrAlert } from "../../common/utils";
+import { HistoryItem } from "../../models/history.model";
 
 function Highlighter({ text, highlight }: { text: string; highlight: string }) {
   const parts = highlight
@@ -35,9 +36,11 @@ export function ProjectList() {
 
   const [keyword, setKeyword] = useState("");
 
-  const historyList = history.state.history.filter((p) =>
-    p.name.toLowerCase().includes(keyword.toLowerCase())
-  );
+  // const historyList = history.state.history.filter((p) =>
+  //   p.name.toLowerCase().includes(keyword.toLowerCase())
+  // );
+
+  const historyList = Array.from({ length: 20 }).fill(history.state.history[0]) as HistoryItem[];
 
   return (
     <div className="file-uploader-dir">

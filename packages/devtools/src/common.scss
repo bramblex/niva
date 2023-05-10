@@ -173,3 +173,17 @@ input {
 .img {
   pointer-events: none;
 }
+
+
+/* 设置滚动条的样式 */
+::-webkit-scrollbar {
+  width: 3px; /* 设置滚动条的宽度 */
+  background-color: #f5f5f5; /* 滚动条的默认背景色 */
+  border-radius: 2px; /* 设置滚动条的边框圆角 */
+}
+ 
+/* 设置滚动条的滑块的样式 */
+::-webkit-scrollbar-thumb {
+  background-color: #0084FF; /* 设置滑块的背景色 */
+  border-radius: 5px; /* 设置滑块的圆角 */
+}

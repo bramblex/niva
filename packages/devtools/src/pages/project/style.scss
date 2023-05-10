@@ -1,40 +1,58 @@
 .project-page {
   display: flex;
-  height: calc(100% - 28px);
+  flex: 1 1 auto;
   background: white;
 
   .directory {
-    // width: 240px;
     width: 28%;
     min-width: 240px;
+    flex: 0 0 auto;
     height: 100%;
     padding-top: 4px;
+
+    display: flex;
+    overflow: hidden;
   }
 
   .project-info {
-    flex: 1;
-    border-left: solid 0.5px rgba(5, 15, 35, 0.12);
-    // margin-top: -44px;
+    position: relative;
+    flex: 1 1 auto;
+    border-top: solid 0.5px rgba(5, 15, 35, 0.12);
     z-index: 9;
     min-width: 550px;
 
+    &::before {
+      content: " ";
+      position: absolute;
+      width: 0.5px;
+      background-color: rgba(5, 15, 35, 0.12);
+      top: 0;
+      left: 0;
+      bottom: 0;
+    }
+
+
     .tabs {
+      position: relative;
       height: 100%;
 
-      .tabs-line {
-        margin-top: -1px;
-        height: 1px;
-        border-bottom: solid 0.5px rgba(5, 15, 35, 0.12);
-      }
-
       .tabs-menu {
+        position: fixed;
         height: 44px;
         margin-top: -44px;
-        margin-left: -1px;
-        border-left: solid 0.5px rgba(5, 15, 35, 0.12);
         width: 400px;
 
         padding: 0 24px;
+
+        &::before {
+          content: " ";
+          position: absolute;
+          width: 0.5px;
+          background-color: rgba(5, 15, 35, 0.12);
+          top: 0;
+          left: 0;
+          bottom: 0;
+        }
 
         button {
           margin: 0;
@@ -44,7 +62,7 @@
           line-height: 44px;
           cursor: pointer;
 
-          & + button {
+          &+button {
             margin-left: 36px;
           }
         }
@@ -81,7 +99,7 @@
                 .pd-lf__info-container {
                   display: flex;
 
-                  & > span {
+                  &>span {
                     width: 60px;
                     height: 60px;
                     margin-right: 12px;
@@ -107,7 +125,7 @@
                   }
                 }
 
-                button + button {
+                button+button {
                   margin-left: 12px;
                 }
               }
@@ -152,7 +170,7 @@
                   }
                 }
 
-                & + .fields-section {
+                &+.fields-section {
                   margin-top: 28px;
                 }
               }

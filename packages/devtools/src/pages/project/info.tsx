@@ -51,7 +51,6 @@ export function ProjectInfo() {
           )}
         </button>
       </menu>
-      <div className="tabs-line"></div>
       <article
         className="tabs-panel"
         role="tabpanel"

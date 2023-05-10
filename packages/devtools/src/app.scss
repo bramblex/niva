@@ -1,19 +1,20 @@
 /* windows */
 .window {
   background: #eff1f2;
+
   .title-bar {
-    position: fixed;
-    top: 0;
-    width: 100%;
+    flex: 0 0 auto;
     height: 44px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     background: white;
+
     .title-bar-controls {
       padding: 0 16px;
       display: flex;
     }
+
     .title-bar-text {
       display: flex;
       align-self: center;
@@ -23,13 +24,15 @@
       line-height: 16px;
     }
   }
+
   .window-body {
-    height: 100%;
-    margin-top: 44px;
+    flex: 1 1 auto;
+    display: flex;
+    overflow: hidden;
   }
+
   .status-bar {
-    position: fixed;
-    bottom: 0;
+    flex: 0 0 auto;
     height: 28px;
     width: 100%;
     background: #f5f6f7;
@@ -59,12 +62,14 @@
       &.flex-end {
         margin-left: auto;
         font-size: 10px;
+
         .icon-sm {
           font-size: 12px;
         }
       }
     }
   }
+
   &.os-mac {
     .title-bar-controls {
       button {
@@ -74,6 +79,7 @@
         border-radius: 50%;
         margin: 0 4px;
         position: relative;
+
         svg {
           position: absolute;
           left: 1px;
@@ -81,18 +87,23 @@
           opacity: 0;
         }
       }
+
       button[aria-label="Close"] {
         background-color: #ff5f57;
       }
+
       button[aria-label="Minimize"] {
         background-color: #febc2e;
       }
+
       button[aria-label="Fullscreen"] {
         background-color: #28c840;
+
         svg {
           transform: rotateY(180deg);
         }
       }
+
       &:hover,
       &:active {
         svg {
@@ -101,14 +112,18 @@
       }
     }
   }
+
   &.os-windows {
     .title-bar {
       flex-direction: row-reverse;
+
       .title-bar-text {
         padding-left: 24px;
       }
+
       .title-bar-controls {
         padding-right: 0;
+
         button {
           border: none;
           background: transparent;
@@ -124,6 +139,7 @@
             background-color: #cccccc;
           }
         }
+
         button[aria-label="Close"] {
           &:hover {
             background-color: #e81123;
