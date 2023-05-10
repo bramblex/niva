@@ -18,7 +18,8 @@ cargo build --release
 
 target\release\niva.exe ^
 	--debug-resource=packages\devtools\build ^
-	--project=packages\devtools\build ^
+	--debug-config=packages\devtools\niva.json ^
+	--project=packages\devtools ^
 	--build=dist\NivaDevTools.exe
 
 powershell Compress-Archive -Path dist\NivaDevTools.exe -DestinationPath dist\NivaDevTools_%VERSION%_Windows.zip

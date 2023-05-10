@@ -3,12 +3,14 @@ import { AppModel } from "./app.model";
 import { dataDirWith, tryOrAlert } from "../common/utils";
 import { ProjectModel } from "./project.model";
 import { fromThrowable, fromThrowableAsync } from "../common/result";
+import { maxBy } from "lodash";
 
 export interface HistoryItem {
   name: string;
   uuid: string;
   path: string;
   icon: string | null;
+  lastAccessed: number;
 }
 
 interface HistoryModelState {
@@ -60,6 +62,7 @@ export class HistoryModel extends StateModel<HistoryModelState> {
           uuid: project.state.uuid,
           path: project.state.path,
           icon: project.state.icon,
+          lastAccessed: Date.now(),
         };
       }
       return p;
@@ -71,6 +74,7 @@ export class HistoryModel extends StateModel<HistoryModelState> {
         uuid: project.state.uuid,
         path: project.state.path,
         icon: project.state.icon,
+        lastAccessed: Date.now(),
       });
     }
 
@@ -90,6 +94,6 @@ export class HistoryModel extends StateModel<HistoryModelState> {
   }
 
   recently(): string | null {
-    return this.state.history[0]?.path || null;
+    return maxBy(this.state.history, "lastAccessed")?.path || null;
   }
 }

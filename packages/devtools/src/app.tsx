@@ -19,7 +19,9 @@ import {
 } from "@icon-park/react";
 import { ImportPage } from "./pages/import";
 import { ProjectPage } from "./pages/project";
-import { tryOrAlert } from "./common/utils";
+import { parseArgs, tryOrAlert } from "./common/utils";
+import { pathJoin } from "./common/utils";
+import { getCurrentDir } from "./common/utils";
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
@@ -293,10 +295,36 @@ export function App() {
 
   useEffect(() => {
     if (!(window as any).app) {
-      app.init();
-      (window as any).app = app;
+      (async () => {
+        const args = parseArgs(await Niva.api.process.args());
+
+        await app.init();
+
+        if (args.project) {
+          await tryOrAlert(
+            app,
+            app.open(pathJoin(getCurrentDir(), args.project))
+          );
+        } else {
+          let recently = history.recently();
+          if (recently) {
+            await tryOrAlert(app, app.open(recently));
+          }
+        }
+
+        if (args.build || app.state.project) {
+          const { project } = app.state;
+          await tryOrAlert(
+            app,
+            project!.build(pathJoin(getCurrentDir(), args.build))
+          );
+          Niva.api.window.close();
+        }
+
+        (window as any).app = app;
+      })();
     }
-  });
+  }, []);
 
   return (
     <AppProvider value={app}>

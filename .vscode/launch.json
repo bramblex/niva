@@ -47,7 +47,7 @@
       "type": "lldb",
       "request": "launch",
       "name": "Run Devtools(Release)",
-      "preLaunchTask": "build:devtools",
+      // "preLaunchTask": "build:devtools",
       "cargo": {
         "args": ["build", "--bin=niva", "--package=niva", "--release"],
         "filter": {

@@ -35,11 +35,6 @@ export class AppModel extends StateModel<{
     );
     const { history, locale } = this.state;
     await Promise.all([history.init(), locale.init()]);
-
-    let recently = history.recently();
-    if (recently) {
-      await this.open(recently);
-    }
   }
 
   async openWithPicker(): Promise<AppResult> {
