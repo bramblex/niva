@@ -125,11 +125,11 @@ Niva.addEventListener(
 );
 ```
 
-### fileDrop.canceled
+### fileDrop.cancelled
 文件拖拽取消事件，当用户取消文件拖拽操作时触发。
 ```ts
 Niva.addEventListener(
-  "fileDrop.canceled",
+  "fileDrop.cancelled",
   (payload: null) => {
     // do somethings...
   }

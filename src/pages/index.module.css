@@ -25,3 +25,8 @@
 .buttons > * {
   margin: 0 0.5rem;
 }
+
+.screenshot {
+  margin-top: 2em;
+  box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+}

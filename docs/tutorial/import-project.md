@@ -6,13 +6,13 @@ sidebar_position: 4
 
 开始之前，需要先到[下载页面](https://github.com/bramblex/niva/releases)下载最新版本的 Niva 开发者工具。
 
-如果你有一个现成的前端项目
+如果你有一个现成的前端项目：
 
 ## 导入一个没有编译构建系统的前端项目
 
 跟前面打开项目类似，只需要找到前端项目 index.html 存在的文件夹，然后通过 Niva 开发者工具打开这个目录即可。
 
-[图片]
+![screenshot](@site/static/img/import-project/screenshot1.png)
 
 后面的步骤可以参考 [创建新项目](/docs/tutorial/new-project)。
 
@@ -46,8 +46,6 @@ sidebar_position: 4
 
 配置好以后，就可以启动开发服务。之后再用 Niva 开发者工具启动项目调试窗口。接下来就跟在浏览器中开发调试一样了。
 
-[图片]
-
 ### 构建配置
 
 如果要能够正常用 Niva 构建，需要配置 `niva.json` 里面的 `build` 字段以配置构建信息：
@@ -60,6 +58,4 @@ sidebar_position: 4
 }
 ```
 
-配置好以后，就可以先构建项目，得到构建后的静态项目文件。之后再用 Niva 开发者工具构建可执行文件：
-
-[图片]
+配置好以后，就可以先构建项目，得到构建后的静态项目文件。之后再用 Niva 开发者工具构建可执行文件。
