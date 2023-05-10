@@ -312,7 +312,7 @@ export function App() {
           }
         }
 
-        if (args.build || app.state.project) {
+        if (args.build && app.state.project) {
           const { project } = app.state;
           await tryOrAlert(
             app,
