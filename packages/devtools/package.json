@@ -1,6 +1,6 @@
 {
   "name": "devtools",
-  "version": "0.99.99",
+  "version": "0.9.9",
   "private": true,
   "dependencies": {
     "@bramblex/state-model": "^1.0.3",

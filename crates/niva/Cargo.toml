@@ -1,7 +1,7 @@
 [package]
 name = "niva"
 description = "A lightweight Tauri alternative"
-version = "0.99.99"
+version = "0.9.9"
 edition = "2021"
 
 [profile.release]

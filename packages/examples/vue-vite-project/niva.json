@@ -1,6 +1,6 @@
 {
   "name": "vue-vite-project",
-  "uuid": "957a5a22-9ce3-43c7-9b4f-a45aa6f56993",
+  "uuid": "ec913b58-49e0-4d32-ae9c-a9ccae1b5204",
   "debug": {
     "entry": "http://localhost:5173",
     "resource": "public"

@@ -20,7 +20,7 @@ npm init vue@latest
 
 通过 Niva 开着工具导入我们的 Vue 项目，需要导入的是带有 `package.json` 文件的目录。
 
-[图片]
+![screenshot](@site/static/img/import-project-from-vue/screenshot1.png)
 
 打开 Vue 项目后会询问是否生成一个 `niva.json` 项目文件，确认后生成 `niva.json` 配置如下。
 
@@ -55,7 +55,7 @@ npm run dev
 
 然后再通过 Niva 开发者工具启动调试：
 
-[图片]
+![screenshot](@site/static/img/import-project-from-vue/screenshot2.png)
 
 在 Niva 中启动调试面板，这时候就可以跟正常开发 Vue 应用一样进行开发和调试。
 
@@ -68,8 +68,4 @@ npm run dev
 npm run build
 ```
 
-再通过 Niva 开发者工具的构建按钮进行构建：
-
-[图片]
-
-构建好后可以直接点击可执行文件打开构建好的可执行文件，打开你的应用。
+再通过 Niva 开发者工具的构建按钮进行构建，构建好后可以直接点击可执行文件打开构建好的可执行文件，打开你的应用。

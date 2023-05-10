@@ -3,7 +3,7 @@
 
 基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
-[图片]
+![screenshot](screenshots/screenshot.png)
 
 - 下载： [https://github.com/bramblex/niva/releases](https://github.com/bramblex/niva/releases)
 - 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
@@ -28,25 +28,17 @@
 
 简单项目（没有使用 webpack 等构建工具的简单签单项目），还是常见的 Vue 项目或者 React 项目，无需额外配置，一键拖入，一键构建。
 
-[图片]
-
 ### 灵活的功能
 
 支持单窗口、多窗口、浮窗、窗口后台运行等多种场景。
-
-[图片]
 
 ### 丰富的配置
 
 丰富的配置，窗口大小、窗口标题、窗口图标、窗口菜单、窗口是否可缩放、窗口是否可拖动、窗口是否可关闭、窗口是否可最大化、窗口是否可最小化等等都可以配置。全局快捷键、系统托盘图标等等也可以进行配置。详细选项文档 [选项文档](https://bramblex.github.io/niva/docs/options/project) 。
 
-[图片]
-
 ### 完善的 API
 
 Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os, process, resource, shortcut, tray, webview, window, window_extra 等 API。详见 [API 文档](https://bramblex.github.io/niva/docs/api/niva)。
-
-[图片]
 
 ## Todo
 
