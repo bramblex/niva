@@ -3,7 +3,7 @@
 
 基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
-![screenshot](screenshots/screenshot.png)
+![screenshot](screenshots/screenshot1.png)
 
 - 下载： [https://github.com/bramblex/niva/releases](https://github.com/bramblex/niva/releases)
 - 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
