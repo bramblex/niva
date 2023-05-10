@@ -2,6 +2,7 @@ $color-default : rgba(0, 0, 0, 0.4);
 $color-active : #0084FF;
 
 .import-page {
+  flex: 1 1 auto;
   text-align: center;
   display: flex;
   justify-content: center;
