@@ -251,7 +251,7 @@ impl NivaLaunchInfo {
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
 
-        let options = {
+        let mut options = {
             let base_content = if let Some(debug_config) = &arguments.debug_config {
                 std::fs::read(debug_config)?
             } else {
@@ -271,6 +271,10 @@ impl NivaLaunchInfo {
             };
             serde_json::from_value::<NivaOptions>(options)?
         };
+
+        if arguments.debug_devtools {
+            options.window.devtools = Some(true);
+        }
 
         let name = options.name.clone();
         let uuid = options.uuid.clone();

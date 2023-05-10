@@ -25,5 +25,9 @@ target/x86_64-apple-darwin/release/niva \
 cp -r dist/x86_64 dist/aarch64
 cp -f target/aarch64-apple-darwin/release/niva dist/aarch64/NivaDevtools.app/Contents/MacOS/NivaDevtools
 
-zip -r dist/NivaDevtools_"$VERSION"_MacOS_x86_64.zip dist/x86_64/NivaDevtools.app
-zip -r dist/NivaDevtools_"$VERSION"_MacOS_aarch64.zip dist/aarch64/NivaDevtools.app
+cd dist/x86_64
+zip -r ../NivaDevtools_"$VERSION"_MacOS_x86_64.zip NivaDevtools.app
+cd -
+cd dist/aarch64
+zip -r ../NivaDevtools_"$VERSION"_MacOS_aarch64.zip NivaDevtools.app
+cd -

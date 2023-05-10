@@ -25,3 +25,8 @@
 .buttons > * {
   margin: 0 0.5rem;
 }
+
+.screenshot {
+  width: 68%;
+  height: auto;
+}
