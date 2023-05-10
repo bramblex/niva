@@ -36,11 +36,9 @@ export function ProjectList() {
 
   const [keyword, setKeyword] = useState("");
 
-  // const historyList = history.state.history.filter((p) =>
-  //   p.name.toLowerCase().includes(keyword.toLowerCase())
-  // );
-
-  const historyList = Array.from({ length: 20 }).fill(history.state.history[0]) as HistoryItem[];
+  const historyList = history.state.history.filter((p) =>
+    p.name.toLowerCase().includes(keyword.toLowerCase())
+  );
 
   return (
     <div className="file-uploader-dir">
