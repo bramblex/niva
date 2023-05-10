@@ -274,7 +274,7 @@ impl NivaLaunchInfo {
 
         let name = options.name.clone();
         let uuid = options.uuid.clone();
-        let id_name = format!("{}_{}", name, &uuid[0..8]);
+        let id_name = format!("{}_{}", name.to_lowercase(), &uuid[0..8]);
 
         let base_dirs = BaseDirs::new().ok_or(anyhow!("Failed to get user directories"))?;
         let temp_dir = std::env::temp_dir().join(&id_name);

@@ -38,7 +38,6 @@ export async function tryOrAlert<T>(app: AppModel, r: Promise<AppResult<T>>) {
   try {
     const result = await r;
     if (result.isErr()) {
-      debugger;
       modal.alert(
         locale.t("ERROR"),
         result.error.toLocaleMessage(app)

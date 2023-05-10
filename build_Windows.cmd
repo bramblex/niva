@@ -20,6 +20,6 @@ target\release\niva.exe ^
 	--debug-resource=packages\devtools\build ^
 	--debug-config=packages\devtools\niva.json ^
 	--project=packages\devtools ^
-	--build=dist\NivaDevTools.exe
+	--build=dist\NivaDevtools.exe
 
-powershell Compress-Archive -Path dist\NivaDevTools.exe -DestinationPath dist\NivaDevTools_%VERSION%_Windows.zip
+powershell Compress-Archive -Path dist\NivaDevtools.exe -DestinationPath dist\NivaDevtools_%VERSION%_Windows.zip

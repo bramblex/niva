@@ -11,6 +11,12 @@ window.addEventListener("contextmenu", (e) => {
   e.preventDefault();
 });
 
+window.addEventListener("keydown", (e) => {
+  if (e.key === "r" && e.ctrlKey) {
+    e.preventDefault();
+  }
+})
+
 Niva.addEventListener("*", (event, data) => {
   console.log(`[Event] ${event}`, data);
 });

@@ -67,7 +67,7 @@ export async function buildWindowsApp(
     if (!project.state.config.icon) {
       return;
     }
-    const iconPath = pathJoin(project.state.path, project.state.config.icon);
+    const iconPath = pathJoin(projectResourcePath, project.state.config.icon);
     await resource.extract(
       "windows/icon_creator.exe",
       pathJoin(buildPath, "icon_creator.exe")
