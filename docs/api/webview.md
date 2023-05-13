@@ -9,13 +9,13 @@
 export function isDevToolsOpen(): Promise<boolean>;
 ```
 
-## Niva.api.webview.openDevTools
+## Niva.api.webview.openDevtools
 ```ts
 /**
  * 打开开发工具。
  * @returns 一个 Promise，该 Promise 始终解析。
  */
-export function openDevTools(): Promise<void>;
+export function openDevtools(): Promise<void>;
 ```
 
 
