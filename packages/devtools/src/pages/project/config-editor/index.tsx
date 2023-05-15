@@ -15,7 +15,8 @@ import "ace-builds/src-noconflict/ext-language_tools";
 import "./style.scss";
 import { useApp, useLocale, useProject } from "../../../models/app.model";
 import { useModel } from "@bramblex/state-model-react";
-import { tryOrAlert, classNames } from "../../../common/utils";
+import { tryOrAlert } from "../../../common/utils";
+import classNames from "classnames";
 
 // eslint-disable-next-line import/no-webpack-loader-syntax
 const jsonWorkerUrl =

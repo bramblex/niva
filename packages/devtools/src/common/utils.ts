@@ -154,13 +154,3 @@ export function parseVersion(versionString: string): number[] {
   }
   return versionDigits.slice(0, 4);
 }
-
-export function classNames(classNamesMap: Record<string, boolean>) {
-  let classNames = [];
-  for (const [className, usage] of Object.entries(classNamesMap)) {
-    if (usage) {
-      classNames.push(className);
-    }
-  };
-  return classNames.join(' ');
-};
