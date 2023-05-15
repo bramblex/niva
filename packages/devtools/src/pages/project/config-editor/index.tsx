@@ -16,6 +16,7 @@ import "./style.scss";
 import { useApp, useLocale, useProject } from "../../../models/app.model";
 import { useModel } from "@bramblex/state-model-react";
 import { tryOrAlert } from "../../../common/utils";
+import classNames from "classnames";
 
 // eslint-disable-next-line import/no-webpack-loader-syntax
 const jsonWorkerUrl =
@@ -38,6 +39,13 @@ export function ConfigEditor() {
       tryOrAlert(app, project.save());
     }
   };
+
+  const saveBtnClassnames = classNames({
+    'btn': true,
+    'btn-md': true,
+    'btn-primary': editor.state.isEdit,
+    'btn-disabled': !editor.state.isEdit
+  })
 
   return (
     <div className="options-editor" onKeyDown={handleKeyDown}>
@@ -66,7 +74,7 @@ export function ConfigEditor() {
         >
           {locale.t("RESET")}
         </button>
-        <button className="btn btn-md btn-primary" onClick={() => {
+        <button className={saveBtnClassnames} disabled={!editor.state.isEdit} onClick={() => {
           tryOrAlert(app, project.save());
         }}>
           {locale.t("SAVE")}
