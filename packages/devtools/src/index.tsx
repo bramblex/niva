@@ -7,9 +7,9 @@ import ReactDOM from 'react-dom/client';
 import { App } from './app';
 import { envReady } from './common/utils';
 
-// window.addEventListener("contextmenu", (e) => {
-//   e.preventDefault();
-// });
+window.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "r" && e.ctrlKey) {
