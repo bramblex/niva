@@ -63,6 +63,7 @@ export const en_US = {
 
   UNSUPPORTED_OS: "Unsupported operating system",
   BUILD_SUCCESS: "Build success",
+  BUILD_FAILED: "Build Failed",
   BUILD_SUCCESS_MESSAGE: "The application has been built successfully.",
 };
 

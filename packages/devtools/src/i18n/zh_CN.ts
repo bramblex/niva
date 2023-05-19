@@ -65,5 +65,6 @@ export const zh_CN: typeof en_US = {
 
   UNSUPPORTED_OS: "不支持当前操作系统",
   BUILD_SUCCESS: "构建成功",
+  BUILD_FAILED: "构建成功",
   BUILD_SUCCESS_MESSAGE: "应用已成功构建",
 };

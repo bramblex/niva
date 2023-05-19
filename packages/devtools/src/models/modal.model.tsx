@@ -84,11 +84,12 @@ export class ModalModel extends StateModel<ModalModelState> {
 export class ProgressModel extends StateModel<{
   text: string;
   progress: number;
+  isError: boolean
 }> {
   private tasks: [string, () => Promise<void>][] = [];
 
   constructor() {
-    super({ text: "", progress: 0 });
+    super({ text: "", progress: 0, isError: false });
   }
 
   addTask(text: string, task: () => Promise<void>) {
@@ -110,6 +111,7 @@ export class ProgressModel extends StateModel<{
         this.setState({
           ...this.state,
           text: (e as any).toString(),
+          isError: true
         });
         throw e;
       }
