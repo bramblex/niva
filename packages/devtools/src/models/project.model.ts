@@ -107,6 +107,10 @@ export class ProjectModel extends StateModel<ProjectModelState> {
   async dispose(type: 'refresh' | 'close' | 'save'): Promise<AppResult> {
     const { modal, locale } = this.app.state;
     const { isEdit } = this.state.editor.state;
+    /**
+     * No need for handling "type === save", cuz the config has been saved in
+     * the callee of save, and the callee of refresh will refresh the whole page.
+     */
     if (isEdit && type !== 'save') {
       if (
         (await modal.confirm(locale.t("WARNING"), locale.t("UNSAVED"))) === true
