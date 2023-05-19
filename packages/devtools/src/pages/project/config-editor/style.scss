@@ -23,5 +23,13 @@
                 color: #fff;
             }
         }
+        .btn-disabled {
+          cursor: not-allowed;
+          background-color: rgb(187, 191, 196);
+          color: #FFF;
+            &:hover {
+              opacity: 1;
+            }
+          }
     }
 }

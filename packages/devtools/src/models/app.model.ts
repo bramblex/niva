@@ -136,7 +136,7 @@ export class AppModel extends StateModel<{
   async close(): Promise<AppResult> {
     const { project } = this.state;
     if (project) {
-      const result = await project.dispose();
+      const result = await project.dispose('close');
       if (result.isErr()) {
         return result;
       }

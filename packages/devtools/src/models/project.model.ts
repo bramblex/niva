@@ -104,10 +104,10 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return Ok(void 0);
   }
 
-  async dispose(): Promise<AppResult> {
+  async dispose(type: 'refresh' | 'close' | 'save'): Promise<AppResult> {
     const { modal, locale } = this.app.state;
     const { isEdit } = this.state.editor.state;
-    if (isEdit) {
+    if (isEdit && type !== 'save') {
       if (
         (await modal.confirm(locale.t("WARNING"), locale.t("UNSAVED"))) === true
       ) {
@@ -117,8 +117,8 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return Ok(void 0);
   }
 
-  async refresh() {
-    const result = await this.dispose();
+  async refresh(type: 'save' | 'refresh') {
+    const result = await this.dispose(type);
     if (result.isErr()) {
       return result;
     }
@@ -144,7 +144,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       });
     }
 
-    return this.refresh();
+    return this.refresh('save');
   }
 
   async build(target?: string): Promise<AppResult> {

@@ -129,13 +129,6 @@ input {
   background: rgba(5, 15, 35, 0.04);
   color: rgba(0, 0, 0, 0.5);
 }
-.btn-disabled {
-  cursor: not-allowed !important;
-  color: #fff;
-  &:hover {
-    opacity: 1 !important;
-  }
-}
 .btn,
 .text-btn {
   cursor: pointer;
