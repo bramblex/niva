@@ -219,12 +219,13 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   }, []);
 
   const locale = useLocale();
+  const isDevelop = process.env.NODE_ENV === 'development';
 
   return (
     <div className={classNames("window", { active }, `os-${platform}`)}>
       <Titlebar os={platform}></Titlebar>
       <div className="window-body has-space">{props.children}</div>
-      <div className="status-bar">
+      <div className={classNames({ 'status-bar': true, 'status-bar-dev': isDevelop })}>
         <span
           className="status-bar-field"
           onClick={() => {
