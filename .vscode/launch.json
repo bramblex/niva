@@ -18,7 +18,7 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["--debug-resource=packages/example", "--debug-devtools=true"],
+      "args": ["--debug-resource=packages/examples/simple-project", "--debug-devtools=true"],
       "cwd": "${workspaceFolder}"
     },
     {

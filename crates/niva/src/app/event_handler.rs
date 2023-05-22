@@ -7,14 +7,18 @@ use tao::{
     accelerator::AcceleratorId,
     event::{Event, TrayEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoopWindowTarget},
-    menu::MenuId,
+    menu::{MenuId, MenuType},
     window::WindowId,
     TrayId,
 };
 
 use crate::{lock, log_if_err, try_or_log_err};
 
-use super::{window_manager::window::NivaWindow, NivaApp, NivaEvent};
+use super::{
+    utils::split_id,
+    window_manager::window::{self, NivaWindow},
+    NivaApp, NivaEvent,
+};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
@@ -41,8 +45,9 @@ impl EventHandler {
                     self.handle_user_event(callback, target, control_flow)?
                 }
                 Event::MenuEvent {
-                    menu_id, window_id, ..
-                } => self.handle_menu_event(menu_id, window_id)?,
+                    menu_id,
+                    ..
+                } => self.handle_menu_event(menu_id)?,
                 Event::TrayEvent { event, id, .. } => self.handle_tray_event(event, id)?,
                 Event::GlobalShortcutEvent(id) => self.handle_shortcut_event(id)?,
                 _ => (),
@@ -109,18 +114,17 @@ impl EventHandler {
         return Ok(());
     }
 
-    fn handle_menu_event(&self, menu_id: MenuId, window_id: Option<WindowId>) -> Result<()> {
-        let window = self
-            .app
-            .window()?
-            .get_window_inner(window_id.ok_or(anyhow!("Window id not found!"))?)?;
-
-        window.send_ipc_event("menu.clicked", menu_id.0)
+    fn handle_menu_event(
+        &self,
+        menu_id: MenuId,
+    ) -> Result<()> {
+        let (window_id, id) = split_id(menu_id.0);
+        let window = self.app.window()?.get_window(window_id)?;
+        window.send_ipc_event("menu.clicked", id)
     }
 
     fn handle_tray_event(&self, event: TrayEvent, id: TrayId) -> Result<()> {
-        let id = id.0;
-        let (window_id, _) = self.app.tray()?.get(id)?.clone();
+        let (window_id, id) = split_id(id.0);
         let window = self.app.window()?.get_window(window_id)?;
 
         match event {
@@ -132,10 +136,8 @@ impl EventHandler {
     }
 
     fn handle_shortcut_event(&self, id: AcceleratorId) -> Result<()> {
-        let id = id.0;
-        let (window_id, _, _) = self.app.shortcut()?.get(id)?.clone();
+        let (window_id, id) = split_id(id.0);
         let window = self.app.window()?.get_window(window_id)?;
-
         window.send_ipc_event("shortcut.emit", id)
     }
 

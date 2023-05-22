@@ -35,14 +35,14 @@
 		"icon": "icon.png",
 		"menu": [
 			{ "type": "menu", "label": "hello", "children": [
-				{"type": "item", "id": 1, "label": "你好", "selected": true },
+				{"type": "item", "id": 3, "label": "你好", "selected": true },
 				{"type": "menu", "label": "你好", "children": [
-					{"type": "item", "id": 2, "label": "你好2", "icon": "icon.png"}
+					{"type": "item", "id": 4, "label": "你好2", "icon": "icon.png"}
 				]}
 			]},
 			{ "type": "menu", "label": "world", "children": [], "enabled": false },
 			{ "type": "menu", "label": "fuck", "children": []},
-			{"type": "item", "id": 2, "label": "你好2", "icon": "icon.png"}
+			{"type": "item", "id": 5, "label": "你好2", "icon": "icon.png"}
 		]
 	},
 

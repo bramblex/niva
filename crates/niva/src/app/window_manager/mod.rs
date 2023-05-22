@@ -22,8 +22,8 @@ pub struct WindowManager {
     app: Option<Arc<NivaApp>>,
     id_counter: IdCounter,
     web_context: WebContext,
-    windows: HashMap<u16, Arc<NivaWindow>>,
-    id_map: HashMap<WindowId, u16>,
+    windows: HashMap<u8, Arc<NivaWindow>>,
+    id_map: HashMap<WindowId, u8>,
 }
 
 impl WindowManager {
@@ -57,7 +57,7 @@ impl WindowManager {
         Ok(niva_window)
     }
 
-    pub fn get_window(&self, id: u16) -> Result<Arc<NivaWindow>> {
+    pub fn get_window(&self, id: u8) -> Result<Arc<NivaWindow>> {
         self.windows
             .get(&id)
             .cloned()
@@ -73,7 +73,7 @@ impl WindowManager {
         self.get_window(id)
     }
 
-    pub fn close_window(&mut self, id: u16) -> Result<()> {
+    pub fn close_window(&mut self, id: u8) -> Result<()> {
         let niva_window = self
             .windows
             .remove(&id)

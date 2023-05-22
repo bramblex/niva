@@ -33,7 +33,7 @@ pub struct NivaWindowState {
 }
 
 pub struct NivaWindow {
-    pub id: u16,
+    pub id: u8,
     pub window_id: WindowId,
     pub webview: WebView,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
@@ -55,7 +55,7 @@ impl NivaWindow {
     pub fn new(
         app: Arc<NivaApp>,
         manager: &mut WindowManager,
-        id: u16,
+        id: u8,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
@@ -81,7 +81,7 @@ impl NivaWindow {
         let menu_options = lock_force!(self.menu_options);
         self.webview
             .window()
-            .set_menu(NivaBuilder::build_menu(&self.app, &menu_options));
+            .set_menu(NivaBuilder::build_menu(self.id, &self.app, &menu_options));
     }
 
     pub fn set_menu(self: &Arc<Self>, options: &Option<WindowMenuOptions>) {
@@ -90,7 +90,7 @@ impl NivaWindow {
         if self.is_focused() && self.is_menu_visible() {
             self.webview
                 .window()
-                .set_menu(NivaBuilder::build_menu(&self.app, &menu_options));
+                .set_menu(NivaBuilder::build_menu(self.id, &self.app, &menu_options));
         }
     }
 

@@ -2,7 +2,7 @@ use crate::{log_if_err, unsafe_impl_sync_send};
 
 use super::{
     api::register_api_instances,
-    utils::{arc_mut, ArcMut, IdCounter},
+    utils::{arc_mut, ArcMut, IdCounter, merge_id},
     NivaEventLoop,
 };
 use anyhow::{anyhow, Result};
@@ -16,7 +16,7 @@ use tao::{
 #[derive(Deserialize, Clone, Debug)]
 pub struct ShortcutOption {
     pub accelerator: String,
-    pub id: u16,
+    pub id: u8,
 }
 
 pub type NivaShortcutsOptions = Vec<ShortcutOption>;
@@ -24,7 +24,7 @@ pub type NivaShortcutsOptions = Vec<ShortcutOption>;
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
     manager: ShortcutManager,
-    shortcuts: HashMap<u16, (u16, String, GlobalShortcut)>,
+    shortcuts: HashMap<u8, (u8, String, GlobalShortcut)>,
     id_counter: IdCounter,
 }
 
@@ -40,7 +40,7 @@ impl NivaShortcutManager {
         arc_mut(manager)
     }
 
-    pub fn get(&self, id: u16) -> Result<&(u16, String, GlobalShortcut)> {
+    pub fn get(&self, id: u8) -> Result<&(u8, String, GlobalShortcut)> {
         self.shortcuts
             .get(&id)
             .ok_or(anyhow!("Shortcut with id {} not found", id))
@@ -48,7 +48,7 @@ impl NivaShortcutManager {
 
     pub fn register_with_options(
         &mut self,
-        window_id: u16,
+        window_id: u8,
         options: &NivaShortcutsOptions,
     ) -> Result<()> {
         for ShortcutOption { accelerator, id } in options {
@@ -59,8 +59,8 @@ impl NivaShortcutManager {
 
     pub fn register_with_id(
         &mut self,
-        window_id: u16,
-        id: u16,
+        window_id: u8,
+        id: u8,
         accelerator_str: String,
     ) -> Result<()> {
         if self.shortcuts.contains_key(&id) {
@@ -69,7 +69,7 @@ impl NivaShortcutManager {
 
         let accelerator = Accelerator::from_str(&accelerator_str)
             .map_err(|err| anyhow!("{}", err.to_string()))?
-            .with_id(AcceleratorId(id));
+            .with_id(AcceleratorId(merge_id(window_id, id)));
         let shortcut = self.manager.register(accelerator)?;
 
         self.shortcuts
@@ -77,13 +77,13 @@ impl NivaShortcutManager {
         Ok(())
     }
 
-    pub fn register(&mut self, window_id: u16, accelerator_str: String) -> Result<u16> {
+    pub fn register(&mut self, window_id: u8, accelerator_str: String) -> Result<u8> {
         let id = self.id_counter.next(&self.shortcuts)?;
         self.register_with_id(window_id, id, accelerator_str)?;
         Ok(id)
     }
 
-    pub fn unregister(&mut self, window_id: u16, id: u16) -> Result<()> {
+    pub fn unregister(&mut self, window_id: u8, id: u8) -> Result<()> {
         let (owner_id, _, _) = self
             .shortcuts
             .get(&id)
@@ -103,7 +103,7 @@ impl NivaShortcutManager {
         Ok(())
     }
 
-    pub fn unregister_all(&mut self, window_id: u16) -> Result<()> {
+    pub fn unregister_all(&mut self, window_id: u8) -> Result<()> {
         let shortcuts = self
             .shortcuts
             .iter()
@@ -116,7 +116,7 @@ impl NivaShortcutManager {
         Ok(())
     }
 
-    pub fn list(&self, window_id: u16) -> Result<Vec<(u16, String)>> {
+    pub fn list(&self, window_id: u8) -> Result<Vec<(u8, String)>> {
         Ok(self
             .shortcuts
             .iter()

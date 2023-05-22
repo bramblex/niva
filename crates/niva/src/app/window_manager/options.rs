@@ -19,7 +19,7 @@ pub type WindowMenuOptions = Vec<WindowRootMenu>;
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MacWindowExtraOptions {
-    pub parent_window: Option<u16>,
+    pub parent_window: Option<u8>,
     pub movable_by_window_background: Option<bool>,
     pub title_bar_transparent: Option<bool>,
     pub title_bar_hidden: Option<bool>,
@@ -37,8 +37,8 @@ pub struct MacWindowExtraOptions {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WinWindowExtraOptions {
-    pub parent_window: Option<u16>,
-    pub owner_window: Option<u16>,
+    pub parent_window: Option<u8>,
+    pub owner_window: Option<u8>,
     pub taskbar_icon: Option<String>,
     pub skip_taskbar: Option<bool>,
     pub undecorated_shadow: Option<bool>,
