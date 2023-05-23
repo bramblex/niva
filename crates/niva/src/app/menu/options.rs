@@ -29,7 +29,7 @@ pub enum MenuItemOption {
         label: NativeLabel,
     },
     Item {
-        id: u16,
+        id: u8,
         label: String,
         enabled: Option<bool>,
         selected: Option<bool>,

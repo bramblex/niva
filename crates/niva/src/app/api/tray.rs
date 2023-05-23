@@ -15,28 +15,28 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 }
 
 #[niva_event_api]
-fn create(options: NivaTrayOptions, window_id: Option<u16>) -> Result<u16> {
+fn create(options: NivaTrayOptions, window_id: Option<u8>) -> Result<u8> {
     app.tray()?
         .create(window_id.unwrap_or(window.id), &options, target)
 }
 
 #[niva_event_api]
-fn destroy(id: u16, window_id: Option<u16>) -> Result<()> {
+fn destroy(id: u8, window_id: Option<u8>) -> Result<()> {
     app.tray()?.destroy(window_id.unwrap_or(window.id), id)
 }
 
 #[niva_event_api]
-fn destroy_all(window_id: Option<u16>) -> Result<()> {
+fn destroy_all(window_id: Option<u8>) -> Result<()> {
     app.tray()?.destroy_all(window_id.unwrap_or(window.id))
 }
 
 #[niva_event_api]
-fn list(window_id: Option<u16>) -> Result<Vec<u16>> {
+fn list(window_id: Option<u8>) -> Result<Vec<u8>> {
     app.tray()?.list(window_id.unwrap_or(window.id))
 }
 
 #[niva_event_api]
-fn update(id: u16, options: NivaTrayUpdateOptions, window_id: Option<u16>) -> Result<()> {
+fn update(id: u8, options: NivaTrayUpdateOptions, window_id: Option<u8>) -> Result<()> {
     app.tray()?
         .update(window_id.unwrap_or(window.id), id, &options)
 }

@@ -43,12 +43,12 @@ pub fn load_resource(name: &str) -> Result<Vec<u8>> {
 
 // The following code is from https://github.com/Brooooooklyn/keyring-node/blob/main/src/entry.rs#L343
 #[allow(dead_code)]
-pub fn to_wstr(s: &str) -> Vec<u16> {
+pub fn to_wstr(s: &str) -> Vec<u8> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
 #[allow(dead_code)]
-pub unsafe fn from_wstr(ws: *const u16) -> String {
+pub unsafe fn from_wstr(ws: *const u8) -> String {
     // null pointer case, return empty string
     if ws.is_null() {
         return String::new();

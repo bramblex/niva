@@ -85,12 +85,12 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 }
 
 #[niva_api]
-fn current() -> Result<u16> {
+fn current() -> Result<u8> {
     Ok(window.id)
 }
 
 #[niva_event_api]
-fn open(options: Option<NivaWindowOptions>) -> Result<u16> {
+fn open(options: Option<NivaWindowOptions>) -> Result<u8> {
     let new_window = app
         .window()?
         .open_window(&options.unwrap_or_default(), target)?;
@@ -98,7 +98,7 @@ fn open(options: Option<NivaWindowOptions>) -> Result<u16> {
 }
 
 #[niva_event_api]
-fn close(id: Option<u16>) -> Result<()> {
+fn close(id: Option<u8>) -> Result<()> {
     let id = id.unwrap_or(window.id);
     if id == 0 {
         *control_flow = ControlFlow::Exit;
@@ -118,7 +118,7 @@ fn list() -> Result<Vec<Value>> {
 }
 
 #[niva_api]
-fn send_message(message: String, id: u16) -> Result<()> {
+fn send_message(message: String, id: u8) -> Result<()> {
     let remote = app.window()?.get_window(id)?;
     remote.send_ipc_event(
         "window.message",
@@ -128,222 +128,222 @@ fn send_message(message: String, id: u16) -> Result<()> {
 }
 
 #[niva_api]
-fn set_menu(options: Option<WindowMenuOptions>, id: Option<u16>) -> Result<()> {
+fn set_menu(options: Option<WindowMenuOptions>, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_menu(&options);
     Ok(())
 }
 
 #[niva_api]
-fn hide_menu(id: Option<u16>) -> Result<()> {
+fn hide_menu(id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.hide_menu();
     Ok(())
 }
 
 #[niva_api]
-fn show_menu(id: Option<u16>) -> Result<()> {
+fn show_menu(id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.hide_menu();
     Ok(())
 }
 
 #[niva_api]
-fn is_menu_visible(id: Option<u16>) -> Result<bool> {
+fn is_menu_visible(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_menu_visible())
 }
 
 #[niva_api]
-fn scale_factor(id: Option<u16>) -> Result<f64> {
+fn scale_factor(id: Option<u8>) -> Result<f64> {
     match_window!(app, window, id);
     Ok(window.scale_factor())
 }
 
 #[niva_api]
-fn inner_position(id: Option<u16>) -> Result<NivaPosition> {
+fn inner_position(id: Option<u8>) -> Result<NivaPosition> {
     match_window!(app, window, id);
     Ok(logical_try!(window, inner_position))
 }
 
 #[niva_api]
-fn outer_position(id: Option<u16>) -> Result<NivaPosition> {
+fn outer_position(id: Option<u8>) -> Result<NivaPosition> {
     match_window!(app, window, id);
     Ok(logical_try!(window, outer_position))
 }
 
 #[niva_api]
-fn set_outer_position(position: NivaPosition, id: Option<u16>) -> Result<()> {
+fn set_outer_position(position: NivaPosition, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_outer_position(position);
     Ok(())
 }
 
 #[niva_api]
-fn inner_size(id: Option<u16>) -> Result<NivaSize> {
+fn inner_size(id: Option<u8>) -> Result<NivaSize> {
     match_window!(app, window, id);
     Ok(logical!(window, inner_size))
 }
 
 #[niva_api]
-fn set_inner_size(size: NivaSize, id: Option<u16>) -> Result<()> {
+fn set_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_inner_size(size);
     Ok(())
 }
 
 #[niva_api]
-fn outer_size(id: Option<u16>) -> Result<NivaSize> {
+fn outer_size(id: Option<u8>) -> Result<NivaSize> {
     match_window!(app, window, id);
     Ok(logical!(window, outer_size))
 }
 
 #[niva_api]
-fn set_min_inner_size(size: NivaSize, id: Option<u16>) -> Result<()> {
+fn set_min_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_min_inner_size(Some(size));
     Ok(())
 }
 
 #[niva_api]
-fn set_max_inner_size(size: NivaSize, id: Option<u16>) -> Result<()> {
+fn set_max_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_max_inner_size(Some(size));
     Ok(())
 }
 
 #[niva_api]
-fn set_title(title: String, id: Option<u16>) -> Result<()> {
+fn set_title(title: String, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_title(&title);
     Ok(())
 }
 
 #[niva_api]
-fn title(id: Option<u16>) -> Result<String> {
+fn title(id: Option<u8>) -> Result<String> {
     match_window!(app, window, id);
     Ok(window.title())
 }
 
 #[niva_api]
-fn is_visible(id: Option<u16>) -> Result<bool> {
+fn is_visible(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_visible())
 }
 
 #[niva_api]
-fn set_visible(visible: bool, id: Option<u16>) -> Result<()> {
+fn set_visible(visible: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_visible(visible);
     Ok(())
 }
 
 #[niva_api]
-fn is_focused(id: Option<u16>) -> Result<bool> {
+fn is_focused(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_focused())
 }
 
 #[niva_api]
-fn set_focus(id: Option<u16>) -> Result<()> {
+fn set_focus(id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_focus();
     Ok(())
 }
 
 #[niva_api]
-fn is_resizable(id: Option<u16>) -> Result<bool> {
+fn is_resizable(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_resizable())
 }
 
 #[niva_api]
-fn set_resizable(resizable: bool, id: Option<u16>) -> Result<()> {
+fn set_resizable(resizable: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_resizable(resizable);
     Ok(())
 }
 
 #[niva_api]
-fn is_minimizable(id: Option<u16>) -> Result<bool> {
+fn is_minimizable(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_minimizable())
 }
 
 #[niva_api]
-fn set_minimizable(minimizable: bool, id: Option<u16>) -> Result<()> {
+fn set_minimizable(minimizable: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_minimizable(minimizable);
     Ok(())
 }
 
 #[niva_api]
-fn is_maximizable(id: Option<u16>) -> Result<bool> {
+fn is_maximizable(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_maximizable())
 }
 
 #[niva_api]
-fn set_maximizable(maximizable: bool, id: Option<u16>) -> Result<()> {
+fn set_maximizable(maximizable: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_maximizable(maximizable);
     Ok(())
 }
 
 #[niva_api]
-fn is_closable(id: Option<u16>) -> Result<bool> {
+fn is_closable(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_closable())
 }
 
 #[niva_api]
-fn set_closable(closable: bool, id: Option<u16>) -> Result<()> {
+fn set_closable(closable: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_closable(closable);
     Ok(())
 }
 
 #[niva_api]
-fn is_minimized(id: Option<u16>) -> Result<bool> {
+fn is_minimized(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_minimized())
 }
 
 #[niva_api]
-fn set_minimized(minimized: bool, id: Option<u16>) -> Result<()> {
+fn set_minimized(minimized: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_minimized(minimized);
     Ok(())
 }
 
 #[niva_api]
-fn is_maximized(id: Option<u16>) -> Result<bool> {
+fn is_maximized(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_maximized())
 }
 
 #[niva_api]
-fn set_maximized(maximized: bool, id: Option<u16>) -> Result<()> {
+fn set_maximized(maximized: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_maximized(maximized);
     Ok(())
 }
 
 #[niva_api]
-fn decorated(id: Option<u16>) -> Result<bool> {
+fn decorated(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.is_decorated())
 }
 
 #[niva_api]
-fn set_decorated(decorated: bool, id: Option<u16>) -> Result<()> {
+fn set_decorated(decorated: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_decorations(decorated);
     Ok(())
 }
 
 #[niva_api]
-fn fullscreen(id: Option<u16>) -> Result<bool> {
+fn fullscreen(id: Option<u8>) -> Result<bool> {
     match_window!(app, window, id);
     Ok(window.fullscreen().is_some())
 }
@@ -352,7 +352,7 @@ fn fullscreen(id: Option<u16>) -> Result<bool> {
 fn set_fullscreen(
     is_fullscreen: bool,
     monitor_name: Option<String>,
-    id: Option<u16>,
+    id: Option<u8>,
 ) -> Result<()> {
     match_window!(app, window, id);
     if !is_fullscreen {
@@ -377,21 +377,21 @@ fn set_fullscreen(
 }
 
 #[niva_api]
-fn set_always_on_top(always_on_top: bool, id: Option<u16>) -> Result<()> {
+fn set_always_on_top(always_on_top: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_always_on_top(always_on_top);
     Ok(())
 }
 
 #[niva_api]
-fn set_always_on_bottom(always_on_bottom: bool, id: Option<u16>) -> Result<()> {
+fn set_always_on_bottom(always_on_bottom: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_always_on_bottom(always_on_bottom);
     Ok(())
 }
 
 #[niva_api]
-fn request_user_attention(level: String, id: Option<u16>) -> Result<()> {
+fn request_user_attention(level: String, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     match level.as_str() {
         "informational" => window.request_user_attention(Some(UserAttentionType::Informational)),
@@ -402,21 +402,21 @@ fn request_user_attention(level: String, id: Option<u16>) -> Result<()> {
 }
 
 #[niva_api]
-fn set_content_protection(enabled: bool, id: Option<u16>) -> Result<()> {
+fn set_content_protection(enabled: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_content_protection(enabled);
     Ok(())
 }
 
 #[niva_api]
-fn set_visible_on_all_workspaces(visible: bool, id: Option<u16>) -> Result<()> {
+fn set_visible_on_all_workspaces(visible: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_visible_on_all_workspaces(visible);
     Ok(())
 }
 
 #[niva_api]
-fn set_cursor_icon(icon: String, id: Option<u16>) -> Result<()> {
+fn set_cursor_icon(icon: String, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_cursor_icon(match icon.as_str() {
         "default" => CursorIcon::Default,
@@ -460,48 +460,48 @@ fn set_cursor_icon(icon: String, id: Option<u16>) -> Result<()> {
 }
 
 #[niva_api]
-fn cursor_position(id: Option<u16>) -> Result<NivaPosition> {
+fn cursor_position(id: Option<u8>) -> Result<NivaPosition> {
     match_window!(app, window, id);
     Ok(logical_try!(window, cursor_position))
 }
 
 #[niva_api]
-fn set_cursor_position(position: NivaPosition, id: Option<u16>) -> Result<()> {
+fn set_cursor_position(position: NivaPosition, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_cursor_position(position)?;
     Ok(())
 }
 
 #[niva_api]
-fn set_cursor_grab(grab: bool, id: Option<u16>) -> Result<()> {
+fn set_cursor_grab(grab: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_cursor_grab(grab)?;
     Ok(())
 }
 
 #[niva_api]
-fn set_cursor_visible(visible: bool, id: Option<u16>) -> Result<()> {
+fn set_cursor_visible(visible: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_cursor_visible(visible);
     Ok(())
 }
 
 #[niva_api]
-fn drag_window(id: Option<u16>) -> Result<()> {
+fn drag_window(id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.drag_window()?;
     Ok(())
 }
 
 #[niva_api]
-fn set_ignore_cursor_events(ignore: bool, id: Option<u16>) -> Result<()> {
+fn set_ignore_cursor_events(ignore: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     window.set_ignore_cursor_events(ignore)?;
     Ok(())
 }
 
 #[niva_api]
-fn theme(id: Option<u16>) -> Result<String> {
+fn theme(id: Option<u8>) -> Result<String> {
     match_window!(app, window, id);
     Ok(String::from(match window.theme() {
         Theme::Light => "light",
@@ -511,7 +511,7 @@ fn theme(id: Option<u16>) -> Result<String> {
 }
 
 #[niva_api]
-fn block_close_requested(blocked: bool, id: Option<u16>) -> Result<()> {
+fn block_close_requested(blocked: bool, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     let mut state = lock!(window.state)?;
     state.is_block_closed_requested = blocked;

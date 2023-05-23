@@ -39,7 +39,7 @@ impl ApiArguments {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct ApiRequest(pub u16, pub String, pub ApiArguments);
+pub struct ApiRequest(pub u8, pub String, pub ApiArguments);
 
 impl ApiRequest {
     pub fn err<C: Into<i32>, S: Into<String>>(&self, code: C, msg: S) -> ApiResponse {
@@ -58,7 +58,7 @@ impl ApiRequest {
 pub type Code = i32;
 
 #[derive(Serialize, Clone)]
-pub struct ApiResponse(u16, Code, String, Value);
+pub struct ApiResponse(u8, Code, String, Value);
 
 pub type ApiInstance = Pin<Box<dyn Fn(Arc<NivaApp>, Arc<NivaWindow>, ApiRequest) -> Result<()>>>;
 

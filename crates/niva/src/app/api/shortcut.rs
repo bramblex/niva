@@ -11,24 +11,24 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 }
 
 #[niva_event_api]
-fn register(accelerator_str: String, window_id: Option<u16>) -> Result<u16> {
+fn register(accelerator_str: String, window_id: Option<u8>) -> Result<u8> {
     app.shortcut()?
         .register(window_id.unwrap_or(window.id), accelerator_str)
 }
 
 #[niva_event_api]
-fn unregister(id: u16, window_id: Option<u16>) -> Result<()> {
+fn unregister(id: u8, window_id: Option<u8>) -> Result<()> {
     app.shortcut()?
         .unregister(window_id.unwrap_or(window.id), id)
 }
 
 #[niva_event_api]
-fn unregister_all(window_id: Option<u16>) -> Result<()> {
+fn unregister_all(window_id: Option<u8>) -> Result<()> {
     app.shortcut()?
         .unregister_all(window_id.unwrap_or(window.id))
 }
 
 #[niva_event_api]
-fn list(window_id: Option<u16>) -> Result<Vec<(u16, String)>> {
+fn list(window_id: Option<u8>) -> Result<Vec<(u8, String)>> {
     app.shortcut()?.list(window_id.unwrap_or(window.id))
 }

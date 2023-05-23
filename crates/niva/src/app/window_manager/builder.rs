@@ -6,6 +6,7 @@ use crate::app::assets::INITIALIZE_SCRIPT;
 use crate::app::menu::options::MenuItemOption;
 use crate::app::menu::options::MenuOptions;
 use crate::app::menu::{self, build_native_item};
+use crate::app::utils::merge_id;
 use crate::app::utils::url_join;
 use crate::app::window_manager::url::get_host_from_url;
 use crate::app::window_manager::url::make_base_url;
@@ -36,7 +37,7 @@ impl NivaBuilder {
     pub fn build_window(
         app: &Arc<NivaApp>,
         manager: &WindowManager,
-        _id: u16,
+        _id: u8,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Window> {
@@ -100,7 +101,7 @@ impl NivaBuilder {
         set_property_some!(builder, with_focused, options.focused);
         set_property_some!(builder, with_content_protection, options.content_protection);
 
-        if let Some(menu) = Self::build_menu(app, &options.menu) {
+        if let Some(menu) = Self::build_menu(_id, app, &options.menu) {
             set_property!(builder, with_menu, menu);
         }
 
@@ -201,10 +202,7 @@ impl NivaBuilder {
 
         let base_url = debug_entry.unwrap_or(make_base_url(protocol, &id_name));
 
-        let entry_url = url_join(
-            &base_url,
-            &options.entry.clone().unwrap_or_default()
-        );
+        let entry_url = url_join(&base_url, &options.entry.clone().unwrap_or_default());
 
         let mut builder = WebViewBuilder::new(window)?;
 
@@ -245,7 +243,7 @@ impl NivaBuilder {
                     Err(anyhow!("Invalid hostname: {}", hostname))
                 }
             })();
-            
+
             let origin = get_host_from_url(&request.uri().to_string()).unwrap_or("*".to_string());
 
             match result {
@@ -326,6 +324,7 @@ impl NivaBuilder {
     }
 
     pub fn build_menu(
+        window_id: u8,
         app: &Arc<NivaApp>,
         menu_options: &Option<WindowMenuOptions>,
     ) -> Option<MenuBar> {
@@ -346,7 +345,7 @@ impl NivaBuilder {
             } in window_menu_options
             {
                 let mut root_menu = MenuBar::new();
-                Self::build_custom_menu(app, &mut root_menu, children);
+                Self::build_custom_menu(window_id, app, &mut root_menu, children);
                 menu.add_submenu(&label, enabled.unwrap_or(true), root_menu);
             }
             return Some(menu);
@@ -354,7 +353,12 @@ impl NivaBuilder {
         None
     }
 
-    fn build_custom_menu(app: &Arc<NivaApp>, menu: &mut MenuBar, options: &MenuOptions) {
+    fn build_custom_menu(
+        window_id: u8,
+        app: &Arc<NivaApp>,
+        menu: &mut MenuBar,
+        options: &MenuOptions,
+    ) {
         for option in options {
             match option {
                 MenuItemOption::Native { label } => {
@@ -368,7 +372,8 @@ impl NivaBuilder {
                     icon,
                     accelerator,
                 } => {
-                    let mut attr = MenuItemAttributes::new(label).with_id(MenuId(*id));
+                    let mut attr =
+                        MenuItemAttributes::new(label).with_id(MenuId(merge_id(window_id, *id)));
                     set_property_some!(attr, with_enabled, enabled);
                     set_property_some!(attr, with_selected, selected);
 
@@ -395,7 +400,7 @@ impl NivaBuilder {
                     children,
                 } => {
                     let mut submenu = MenuBar::new();
-                    Self::build_custom_menu(app, &mut submenu, children);
+                    Self::build_custom_menu(window_id, app, &mut submenu, children);
                     menu.add_submenu(label, enabled.unwrap_or(true), submenu);
                 }
             }
