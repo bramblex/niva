@@ -1,6 +1,6 @@
-![Niva](logo/niva-white-title-logo.svg)
-
+![Niva](logo/niva-title-logo-white.png)
 #  Niva
+
 基于 Tauri WRY 跨端 Webview 库的超轻量极易用的跨端应用开发框架。
 
 ![screenshot](screenshots/screenshot1.png)

@@ -1,5 +1,6 @@
 $color-default : rgba(0, 0, 0, 0.4);
-$color-active : #0084FF;
+// $color-active : #0084FF;
+$color-active : #35dd8e;
 
 .import-page {
   flex: 1 1 auto;
@@ -46,7 +47,8 @@ $color-active : #0084FF;
 
     &.active {
       border-color: $color-active;
-      background: linear-gradient(0deg, rgba(0, 132, 255, 0.08), rgba(0, 132, 255, 0.08));
+      // background: linear-gradient(0deg, rgba(0, 132, 255, 0.08), rgba(0, 132, 255, 0.08));
+      background: linear-gradient(0deg, rgba(51, 221, 142, 0.08), rgba(51, 221, 142, 0.08));
 
       .file-uploader__tips {
         color: $color-active;
@@ -65,6 +67,7 @@ $color-active : #0084FF;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 1 1 auto;
 
   .search-bar {
     flex: 0 0 auto;
@@ -116,9 +119,12 @@ $color-active : #0084FF;
         font-weight: 500;
         font-size: 12px;
         line-height: 20px;
-        color: #0084FF;
+        // color: #0084FF;
+        color: #35dd8e;
         position: relative;
         padding-left: 17px;
+
+        display: flex;
 
         i {
           position: absolute;
@@ -221,7 +227,8 @@ $color-active : #0084FF;
       }
 
       &.active {
-        background: rgba(0, 132, 255, 0.05);
+        // background: rgba(0, 132, 255, 0.05);
+        background: rgba(51, 221, 142, 0.05);
       }
 
       &:not(:last-child) {

@@ -4,6 +4,7 @@ import { Logo } from "./logo";
 import classNames from "classnames";
 import { tryOrAlert } from "../../common/utils";
 import { HistoryItem } from "../../models/history.model";
+import { FolderPlus, Plus } from "@icon-park/react";
 
 function Highlighter({ text, highlight }: { text: string; highlight: string }) {
   const parts = highlight
@@ -16,7 +17,8 @@ function Highlighter({ text, highlight }: { text: string; highlight: string }) {
           key={i}
           style={
             part.toLowerCase() === highlight.toLowerCase()
-              ? { color: "#0084FF" }
+              // ? { color: "#0084FF" }
+              ? { color: "#35dd8e" }
               : undefined
           }
         >
@@ -65,7 +67,8 @@ export function ProjectList() {
               className="text-btn"
               onClick={() => tryOrAlert(app, app.create())}
             >
-              <i className="icon-sm icon-plus-primary"></i>
+              {/* <i className="icon-sm icon-plus-primary"></i> */}
+              <Plus theme="outline" size="17"/>
               {locale.t("NEW_PROJECT")}
             </span>
           </div>
@@ -74,7 +77,8 @@ export function ProjectList() {
               className="text-btn"
               onClick={() => tryOrAlert(app, app.openWithPicker())}
             >
-              <i className="icon-sm icon-folder-primary"></i>
+              {/* <i className="icon-sm icon-folder-primary"></i> */}
+              <FolderPlus theme="outline" size="17"/>
               {locale.t("OPEN_PROJECT")}
             </span>
           </div>

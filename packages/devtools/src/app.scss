@@ -1,3 +1,8 @@
+@font-face {
+  font-family: LogoFont;
+  src: url(./assets/nasalization-rg-1.ttf);
+}
+
 /* windows */
 .window {
   background: #eff1f2;
@@ -22,6 +27,7 @@
       font-size: 12px;
       font-weight: 700;
       line-height: 16px;
+      font-family: LogoFont;
     }
   }
 
@@ -49,7 +55,8 @@
       cursor: pointer;
 
       &:hover {
-        color: #0084ff;
+        // color: #0084ff;
+        color: #35dd8e;
       }
 
       .icon-sm {
