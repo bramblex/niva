@@ -1,3 +1,4 @@
+@charset "UTF-8";
 html,
 body,
 #root {
@@ -6,8 +7,7 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: "PingFang SC", "Microsoft YaHei", 微软雅黑, "MicrosoftJhengHei",
-    华文细黑, STHeiti, MingLiu;
+  font-family: "PingFang SC", "Microsoft YaHei", 微软雅黑, "MicrosoftJhengHei", 华文细黑, STHeiti, MingLiu;
   font-style: normal;
 }
 
@@ -43,50 +43,62 @@ input {
   width: 12px;
   height: 12px;
 }
+
 .icon-md {
   width: 20px;
   height: 20px;
 }
+
 .icon-config {
   background: url(./assets/icon-config.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-coffee {
   background: url(./assets/icon-coffee.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-plus {
   background: url(./assets/icon-plus.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-plus-black {
   background: url(./assets/icon-plus-black.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-folder {
   background: url(./assets/icon-folder.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-refresh {
   background: url(./assets/icon-refresh.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-search {
   background: url(./assets/icon-search.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-delete {
   background: url(./assets/icon-delete.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-plus-primary {
   background: url(./assets/icon-plus-primary.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-folder-primary {
   background: url(./assets/icon-folder-primary.png) center center no-repeat;
   background-size: contain;
 }
+
 .icon-close {
   background: url(./assets/icon-close.png) center center no-repeat;
   background-size: contain;
@@ -97,39 +109,52 @@ input {
   padding: 0px 40px;
   height: 24px;
   line-height: 24px;
-
   background: rgba(5, 15, 35, 0.04);
   color: #000;
   border-radius: 4px;
   border: none;
-
   font-size: 14px;
-  &:hover {
-    opacity: 0.8;
-  }
-  &:active {
-    opacity: 0.8;
-  }
 }
+
+.btn:hover {
+  opacity: 0.8;
+}
+
+.btn:active {
+  opacity: 0.8;
+}
+
 .btn-md {
   padding: 0 20px;
   height: 28px;
   font-weight: 500;
   font-size: 12px;
 }
+
 .btn-bg {
   padding: 0 24px;
   height: 34px;
 }
+
 .btn-primary {
-  // background: #0084ff;
-  background: #35dd8e;
+  background: #0084ff;
   color: #fff;
 }
+
 .btn-info {
   background: rgba(5, 15, 35, 0.04);
   color: rgba(0, 0, 0, 0.5);
 }
+
+.btn-disabled {
+  cursor: not-allowed !important;
+  color: #fff;
+}
+
+.btn-disabled:hover {
+  opacity: 1 !important;
+}
+
 .btn,
 .text-btn {
   cursor: pointer;
@@ -142,7 +167,6 @@ input {
 
 .window {
   flex: 1 1 auto;
-
   display: flex;
   flex-direction: column;
 }
@@ -175,17 +199,20 @@ input {
   pointer-events: none;
 }
 
-
 /* 设置滚动条的样式 */
 ::-webkit-scrollbar {
-  width: 3px; /* 设置滚动条的宽度 */
-  background-color: #f5f5f5; /* 滚动条的默认背景色 */
-  border-radius: 2px; /* 设置滚动条的边框圆角 */
+  width: 3px;
+  /* 设置滚动条的宽度 */
+  background-color: #f5f5f5;
+  /* 滚动条的默认背景色 */
+  border-radius: 2px;
+  /* 设置滚动条的边框圆角 */
 }
- 
+
 /* 设置滚动条的滑块的样式 */
 ::-webkit-scrollbar-thumb {
-  // background-color: #0084FF; /* 设置滑块的背景色 */
-  background-color: #35dd8e;
-  border-radius: 5px; /* 设置滑块的圆角 */
+  background-color: #0084FF;
+  /* 设置滑块的背景色 */
+  border-radius: 5px;
+  /* 设置滑块的圆角 */
 }

@@ -77,7 +77,7 @@ export class ModalModel extends StateModel<ModalModelState> {
 
   progress(title: string): [ProgressModel, () => void] {
     const progress = new ProgressModel();
-    return [progress, this.show(ProgressModal, { title, progress})];
+    return [progress, this.show(ProgressModal, { title, progress })];
   }
 }
 
