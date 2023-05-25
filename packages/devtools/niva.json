@@ -1,7 +1,7 @@
 {
 	"name": "NivaDevtools",
 	"uuid": "9bef098a-a44f-40cb-9247-86c902f2c410",
-	"icon": "logo.png",
+	"icon": "icon.png",
 	"version": "0.9.9",
 	"debug": {
 		"entry": "http://localhost:3000",

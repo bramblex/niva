@@ -13,5 +13,5 @@
 	"cSpell.enableFiletypes": [
 		"shellscript"
 	],
-	"svg.preview.background": "transparent"
+	"svg.preview.background": "custom"
 }

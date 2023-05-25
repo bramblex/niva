@@ -8,6 +8,10 @@ import { App } from './app';
 import { envReady } from './common/utils';
 
 window.addEventListener("contextmenu", (e) => {
+  // let node: HTMLElement | null = e.target as HTMLElement;
+  // while (node) {
+  //   node = node.parentElement;
+  // }
   e.preventDefault();
 });
 

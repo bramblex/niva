@@ -73,7 +73,8 @@
           &::after {
             content: "";
             height: 2px;
-            background: #0084ff;
+            // background: #0084ff;
+            background: #35dd8e;
             display: block;
             margin-top: -2px;
           }
@@ -205,8 +206,10 @@
 .project-page-uploader-content {
   width: 600px;
   height: 300px;
-  background: rgba(0, 132, 255, 0.08);
-  border: 3px dashed #0084ff;
+  // background: rgba(0, 132, 255, 0.08);
+  background: rgba(53, 221, 142, 0.08);
+  // border: 3px dashed #0084ff;
+  border: 3px dashed #35dd8e;
   border-radius: 12px;
 
   display: flex;
@@ -214,7 +217,8 @@
   align-items: center;
   flex-direction: column;
 
-  color: #0084ff;
+  // color: #0084ff;
+  color: #35dd8e;
   font-size: 32px;
   font-weight: bold;
 }

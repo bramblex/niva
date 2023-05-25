@@ -122,7 +122,8 @@ input {
   height: 34px;
 }
 .btn-primary {
-  background: #0084ff;
+  // background: #0084ff;
+  background: #35dd8e;
   color: #fff;
 }
 .btn-info {
@@ -191,6 +192,7 @@ input {
  
 /* 设置滚动条的滑块的样式 */
 ::-webkit-scrollbar-thumb {
-  background-color: #0084FF; /* 设置滑块的背景色 */
+  // background-color: #0084FF; /* 设置滑块的背景色 */
+  background-color: #35dd8e;
   border-radius: 5px; /* 设置滑块的圆角 */
 }
