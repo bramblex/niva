@@ -155,12 +155,18 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const { os: osType } = await os.info();
 
       let appPath: string;
-      if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
-        appPath = await buildMacOsApp(this, target);
-      } else if (osType.toLowerCase() === "windows") {
-        appPath = await buildWindowsApp(this, target);
-      } else {
-        throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
+      try {
+        if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
+          appPath = await buildMacOsApp(this, target);
+        } else if (osType.toLowerCase() === "windows") {
+          appPath = await buildWindowsApp(this, target);
+        } else {
+          throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
+        }
+      } catch (error) {
+        modal.setState([]);
+        modal.alert(locale.t("BUILD_FAILED"), (error as any).toString());
+        return;
       }
 
       modal

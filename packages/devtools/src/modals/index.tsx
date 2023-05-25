@@ -103,16 +103,7 @@ export function ProgressModal({
 }: ModalComponentProps & { title: string; progress: ProgressModel }) {
   useModel(progress);
   const { state } = progress;
-  const locale = useLocale();
-  const { isError, text } = progress.state;
-  const modal = useModal()
 
-  useEffect(() => {
-    if(isError){
-      close();
-      modal.alert(locale.t('BUILD_FAILED'), text.toString())
-    }
-  }, [isError])
 
   return (
     <div className="window active is-bright">
