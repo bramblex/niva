@@ -77,9 +77,10 @@
     }
   }
 
-    & .status-bar-dev {
-      background: red;
-    }
+  & .status-bar-dev {
+    background: #ff9999;
+  }
+
   &.os-mac {
     .title-bar-controls {
       button {
