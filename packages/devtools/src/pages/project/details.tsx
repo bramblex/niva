@@ -55,7 +55,7 @@ export function ProjectDetails() {
           <button
             className="btn btn-md btn-info"
             onClick={async () => {
-              tryOrAlert(app, project.refresh('refresh'));
+              tryOrAlert(app, project.refresh());
             }}
           >
             <Refresh /> {locale.t("REFRESH")}

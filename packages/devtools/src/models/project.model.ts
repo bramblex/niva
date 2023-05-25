@@ -104,14 +104,14 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return Ok(void 0);
   }
 
-  async dispose(type: 'refresh' | 'close' | 'save'): Promise<AppResult> {
+  async dispose(): Promise<AppResult> {
     const { modal, locale } = this.app.state;
     const { isEdit } = this.state.editor.state;
     /**
      * No need for handling "type === save", cuz the config has been saved in
      * the callee of save, and the callee of refresh will refresh the whole page.
      */
-    if (isEdit && type !== 'save') {
+    if (isEdit) {
       if (
         (await modal.confirm(locale.t("WARNING"), locale.t("UNSAVED"))) === true
       ) {
@@ -121,8 +121,8 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return Ok(void 0);
   }
 
-  async refresh(type: 'save' | 'refresh') {
-    const result = await this.dispose(type);
+  async refresh() {
+    const result = await this.dispose();
     if (result.isErr()) {
       return result;
     }
@@ -142,13 +142,14 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     const saveResult = await fromThrowableAsync(async () =>
       fs.write(this.state.configPath, content)
     );
+    
     if (saveResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_FAILED, {
         reason: saveResult.error,
       });
     }
-
-    return this.refresh('save');
+    this.state.editor.setState({content, isEdit: false})
+    return this.refresh();
   }
 
   async build(target?: string): Promise<AppResult> {
