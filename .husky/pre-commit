@@ -1,14 +1,16 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
+COLOR_GREEN="\033[0;32m"
+COLOR_RED="\033[31m"
+ESC="\033[0m"
+echo "$COLOR_GREEN [Niva-devtools]Checking TS...$ESC"
+yarn run type-checker || echo "$COLOR_RED TS checkfailed, exiting...$ESC" || exit 1
 
-echo "\033[0;32m[Niva]执行ts检查...\033[0m"
-yarn run type-checker || echo "\033[0;32mTS检查寄了，退出ing...\033[0m" || exit 1
-
-echo "\033[0;32m[Niva]检查当前镜像源...\033[0m"
+echo "$COLOR_GREEN [Niva-devtools]Checking registry... $ESC"
 registry=$(npm config get registry)
 if [ $registry == "https://registry.npmjs.org/" ] || [ $registry == "https://registry.npmmirror.com/" ]; then
     exit 0
 else 
-    echo "\033[31m[Niva]不是taobao或者npm，别作死。退出ing...\033[0m"
+    echo "$COLOR_RED [Niva-devtools]Registry is not npm or taobao, exiting... $ESC"
     exit 1
 fi
