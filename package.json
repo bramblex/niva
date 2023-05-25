@@ -2,5 +2,12 @@
   "private": true,
   "workspaces": [
     "packages/devtools"
-  ]
+  ],
+  "devDependencies": {
+    "husky": "^8.0.0"
+  },
+  "scripts": {
+    "prepare": "husky install",
+    "type-checker": "cd ./packages/devtools && npx tsc --noEmit && cd ../.."
+  }
 }
