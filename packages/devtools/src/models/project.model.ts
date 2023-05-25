@@ -138,12 +138,13 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     const saveResult = await fromThrowableAsync(async () =>
       fs.write(this.state.configPath, content)
     );
+    
     if (saveResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_FAILED, {
         reason: saveResult.error,
       });
     }
-
+    this.state.editor.setState({content, isEdit: false})
     return this.refresh();
   }
 
