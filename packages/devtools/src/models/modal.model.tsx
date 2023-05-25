@@ -1,7 +1,7 @@
 import { StateModel } from "@bramblex/state-model";
 import { ComponentType } from "react";
 import { createPromise, uuid } from "../common/utils";
-import { AppModel, useApp } from "./app.model";
+import { AppModel } from "./app.model";
 import {
   AlertModal,
   ConfirmModal,

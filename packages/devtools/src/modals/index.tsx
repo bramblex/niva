@@ -5,7 +5,7 @@ import { XPromise } from "../common/utils";
 import { ModalComponentProps, ProgressModel } from "../models/modal.model";
 
 import "./style.scss";
-import { useLocale, useModal, useApp } from "../models/app.model";
+import { useLocale, useModal } from "../models/app.model";
 import { useEffect } from "react";
 
 export function NativeModal(_: ModalComponentProps) {
