@@ -164,7 +164,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
           throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
         }
       } catch (error) {
-        modal.setState([]);
+        modal.destroyAll();
         modal.alert(locale.t("BUILD_FAILED"), (error as any).toString());
         return;
       }

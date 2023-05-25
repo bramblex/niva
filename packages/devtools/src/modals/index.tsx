@@ -6,7 +6,6 @@ import { ModalComponentProps, ProgressModel } from "../models/modal.model";
 
 import "./style.scss";
 import { useLocale, useModal } from "../models/app.model";
-import { useEffect } from "react";
 
 export function NativeModal(_: ModalComponentProps) {
   return <></>;
@@ -103,8 +102,6 @@ export function ProgressModal({
 }: ModalComponentProps & { title: string; progress: ProgressModel }) {
   useModel(progress);
   const { state } = progress;
-
-
   return (
     <div className="window active is-bright">
       <div className="window-body has-space progress">
