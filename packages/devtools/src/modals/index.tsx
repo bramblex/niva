@@ -5,7 +5,8 @@ import { XPromise } from "../common/utils";
 import { ModalComponentProps, ProgressModel } from "../models/modal.model";
 
 import "./style.scss";
-import { useLocale, useModal } from "../models/app.model";
+import { useLocale, useModal, useApp } from "../models/app.model";
+import { useEffect } from "react";
 
 export function NativeModal(_: ModalComponentProps) {
   return <></>;
@@ -103,11 +104,20 @@ export function ProgressModal({
   useModel(progress);
   const { state } = progress;
   const locale = useLocale();
-  const { isError } = progress.state
+  const { isError, text } = progress.state;
+  const modal = useModal()
+
+  useEffect(() => {
+    if(isError){
+      close();
+      modal.alert(locale.t('BUILD_FAILED'), text.toString())
+    }
+  }, [isError])
+
   return (
     <div className="window active is-bright">
       <div className="window-body has-space progress">
-        <h4 className="instruction instruction-primary">{isError ? '构建失败' : title}</h4>
+        <h4 className="instruction instruction-primary">{title}</h4>
 
         {state.progress > 0 ? (
           <>
@@ -124,14 +134,6 @@ export function ProgressModal({
         )}
         <p>{state.text}</p>
       </div>
-
-      {
-        isError && <button onClick={close}
-          className="btn btn-bg btn-primary btn-modal"
-        >
-          {locale.t('CANCEL')}
-        </button>
-      }
     </div>
   );
 }

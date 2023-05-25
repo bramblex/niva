@@ -1,7 +1,7 @@
 import { StateModel } from "@bramblex/state-model";
 import { ComponentType } from "react";
 import { createPromise, uuid } from "../common/utils";
-import { AppModel } from "./app.model";
+import { AppModel, useApp } from "./app.model";
 import {
   AlertModal,
   ConfirmModal,
@@ -77,7 +77,7 @@ export class ModalModel extends StateModel<ModalModelState> {
 
   progress(title: string): [ProgressModel, () => void] {
     const progress = new ProgressModel();
-    return [progress, this.show(ProgressModal, { title, progress })];
+    return [progress, this.show(ProgressModal, { title, progress})];
   }
 }
 
