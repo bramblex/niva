@@ -3,13 +3,14 @@ import { HistoryModel } from "./history.model";
 import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { ProjectModel } from "./project.model";
 import { ModalModel } from "./modal.model";
-import { pathJoin, pathSplit, tryOrAlert } from "../common/utils";
+import { checkVersion, pathJoin, pathSplit, tryOrAlert } from "../common/utils";
 import { Err, Ok, AppResult, fromThrowableAsync } from "../common/result";
 
 import { ErrorCode } from "../common/error";
 import { ConfigType, generateConfig } from "../templates/config-template";
 import { LocaleModel } from "./locale.model";
 import { generateNewProject } from "../templates/new-project-template";
+import { initEndPromise } from "../app";
 
 const { fs } = Niva.api;
 
@@ -33,8 +34,11 @@ export class AppModel extends StateModel<{
     Niva.addEventListener("window.closeRequested", () =>
       tryOrAlert(this, this.exit())
     );
-    const { history, locale } = this.state;
-    await Promise.all([history.init(), locale.init()]);
+    const { history, locale, modal } = this.state;
+    await Promise.all([history.init(), locale.init()])
+    initEndPromise.then(() => {
+      checkVersion(modal, locale);
+    })
   }
 
   async openWithPicker(): Promise<AppResult> {
@@ -88,20 +92,20 @@ export class AppModel extends StateModel<{
       let projectName = path.split(/\/|\\/).pop() as string;
       const configType: AppResult<ConfigType> = isPackageJsonExists
         ? await fromThrowableAsync<ConfigType>(async () => {
-            const packageJson = JSON.parse(await fs.read(packageJsonPath));
-            if (packageJson?.name) {
-              projectName = packageJson.name;
-            }
-            if (packageJson.dependencies["react-scripts"]) {
-              return "react";
-            } else if (packageJson.devDependencies["vite"]) {
-              return "vueVite";
-            } else if (packageJson.dependencies["vue"]) {
-              return "vue";
-            } else {
-              return "simple";
-            }
-          })
+          const packageJson = JSON.parse(await fs.read(packageJsonPath));
+          if (packageJson?.name) {
+            projectName = packageJson.name;
+          }
+          if (packageJson.dependencies["react-scripts"]) {
+            return "react";
+          } else if (packageJson.devDependencies["vite"]) {
+            return "vueVite";
+          } else if (packageJson.dependencies["vue"]) {
+            return "vue";
+          } else {
+            return "simple";
+          }
+        })
         : Ok("simple");
 
       const configContent = generateConfig(

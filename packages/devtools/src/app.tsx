@@ -21,7 +21,9 @@ import { ImportPage } from "./pages/import";
 import { ProjectPage } from "./pages/project";
 import { parseArgs, tryOrAlert } from "./common/utils";
 import { pathJoin } from "./common/utils";
-import { getCurrentDir } from "./common/utils";
+import { getCurrentDir, createPromise } from "./common/utils";
+
+export const initEndPromise = createPromise();
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
@@ -323,6 +325,7 @@ export function App() {
         }
 
         (window as any).app = app;
+        initEndPromise.resolve(void 0);
       })();
     }
   }, []);

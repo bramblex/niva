@@ -1,5 +1,7 @@
 import { trimEnd, trimStart } from "lodash";
 import { AppModel } from "../models/app.model";
+import { LocaleModel } from "../models/locale.model";
+import { ModalModel } from "../models/modal.model";
 import { AppResult } from "./result";
 
 let baseFileSystemUrl: string | null = null;
@@ -153,4 +155,37 @@ export function parseVersion(versionString: string): number[] {
     versionDigits.push(0);
   }
   return versionDigits.slice(0, 4);
+}
+
+export const isFirstOpenToday = () => {
+  const timeStamp = global.localStorage.getItem('niva_last_open');
+
+  if (!timeStamp) {
+    global.localStorage.setItem('niva_last_open', String(Date.now()))
+    return true
+  }
+
+  const getDays = (time: number) => Math.floor(time / 1000 / 24 / 3600)
+  
+  global.localStorage.setItem('niva_last_open', String(Date.now()))
+
+  const diff = getDays(Date.now()) - getDays(Number(timeStamp));
+  return diff >= 1
+}
+
+export const checkVersion = (modal: ModalModel, locale: LocaleModel) => {
+  return Niva.api.http.get('https://api.github.com/repos/bramblex/niva/releases/latest')
+    .then(res => {
+      const remoteVersion = JSON.parse(res?.body)?.tag_name;
+      Niva.api.process.version().then(localVersion => {
+        if (remoteVersion && isFirstOpenToday() && localVersion !== remoteVersion) {
+          modal.confirm(locale.t('NEWER_VERSION_TIP'), locale.t('NEWER_VERSION_TEXT', {
+            version: remoteVersion
+          }))
+            .then(ok => {
+              ok && Niva.api.process.open('https://bramblex.github.io/niva/')
+            })
+        }
+      })
+    })
 }
