@@ -68,5 +68,5 @@ export const zh_CN: typeof en_US = {
   BUILD_FAILED: "构建失败",
   BUILD_SUCCESS_MESSAGE: "应用已成功构建",
   NEWER_VERSION_TIP: "有更新的版本~",
-  NEWER_VERSION_TEXT: "请前往https://bramblex.github.io/niva/最新的版本{{version}}"
+  NEWER_VERSION_TEXT: "点击“确认”，将会打开新版本({{version}})的下载页面"
 };

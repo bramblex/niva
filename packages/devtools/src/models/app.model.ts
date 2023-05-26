@@ -3,13 +3,14 @@ import { HistoryModel } from "./history.model";
 import { useModel, useModelContext } from "@bramblex/state-model-react";
 import { ProjectModel } from "./project.model";
 import { ModalModel } from "./modal.model";
-import { pathJoin, pathSplit, tryOrAlert } from "../common/utils";
+import { checkVersion, pathJoin, pathSplit, tryOrAlert } from "../common/utils";
 import { Err, Ok, AppResult, fromThrowableAsync } from "../common/result";
 
 import { ErrorCode } from "../common/error";
 import { ConfigType, generateConfig } from "../templates/config-template";
 import { LocaleModel } from "./locale.model";
 import { generateNewProject } from "../templates/new-project-template";
+import { initEndPromise } from "../app";
 
 const { fs } = Niva.api;
 
@@ -34,18 +35,10 @@ export class AppModel extends StateModel<{
       tryOrAlert(this, this.exit())
     );
     const { history, locale, modal } = this.state;
-    const checkVersion = Niva.api.http.get('https://api.github.com/repos/bramblex/niva/releases/latest')
-      .then(res => {
-        const remoteVersion = JSON.parse(res?.body)?.tag_name;
-        Niva.api.process.version().then(localVersion => {
-          if (remoteVersion && localVersion !== remoteVersion) {
-            modal.alert(locale.t('NEWER_VERSION_TIP'), locale.t('NEWER_VERSION_TEXT', {
-              version: remoteVersion
-            }))
-          }
-        })
-      })
-    await Promise.all([history.init(), locale.init(), checkVersion]);
+    await Promise.all([history.init(), locale.init()])
+    initEndPromise.then(() => {
+      checkVersion(modal, locale);
+    })
   }
 
   async openWithPicker(): Promise<AppResult> {
