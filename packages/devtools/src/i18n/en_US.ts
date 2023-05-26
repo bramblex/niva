@@ -65,5 +65,7 @@ export const en_US = {
   BUILD_SUCCESS: "Build success",
   BUILD_FAILED: "Build Failed",
   BUILD_SUCCESS_MESSAGE: "The application has been built successfully.",
+  NEWER_VERSION_TIP:"Newer version tip~",
+  NEWER_VERSION_TEXT:"Please go to https://bramblex.github.io/niva/ to download the latest version{{version}}"
 };
 

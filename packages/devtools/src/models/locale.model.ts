@@ -34,7 +34,22 @@ export class LocaleModel extends StateModel<LocaleModelState> {
     });
   }
 
-  t(key: TranslateKey) {
-    return this.state.translations[key] || `[${key.toUpperCase()}]`;
+  t(key: TranslateKey, option?: { [key: string]: string }) {
+    if (option) {
+      const translate = this.state.translations[key];
+
+      if (!translate) {
+        return `[${key.toUpperCase()}]`
+      };
+
+      let result: string = translate;
+      Object.entries(option).forEach(([_key, _value]) => {
+        result = result.replaceAll(`{{${_key}}}`, _value);
+        console.log('###res', _key, _value, result)
+      });
+      return result
+    } else {
+      return this.state.translations[key] || `[${key.toUpperCase()}]`;
+    }
   }
 }
