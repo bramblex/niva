@@ -33,8 +33,19 @@ export class AppModel extends StateModel<{
     Niva.addEventListener("window.closeRequested", () =>
       tryOrAlert(this, this.exit())
     );
-    const { history, locale } = this.state;
-    await Promise.all([history.init(), locale.init()]);
+    const { history, locale, modal } = this.state;
+    const checkVersion = Niva.api.http.get('https://api.github.com/repos/bramblex/niva/releases/latest')
+      .then(res => {
+        const remoteVersion = JSON.parse(res?.body)?.tag_name;
+        Niva.api.process.version().then(localVersion => {
+          if (remoteVersion && localVersion !== remoteVersion) {
+            modal.alert(locale.t('NEWER_VERSION_TIP'), locale.t('NEWER_VERSION_TEXT', {
+              version: remoteVersion
+            }))
+          }
+        })
+      })
+    await Promise.all([history.init(), locale.init(), checkVersion]);
   }
 
   async openWithPicker(): Promise<AppResult> {
@@ -88,20 +99,20 @@ export class AppModel extends StateModel<{
       let projectName = path.split(/\/|\\/).pop() as string;
       const configType: AppResult<ConfigType> = isPackageJsonExists
         ? await fromThrowableAsync<ConfigType>(async () => {
-            const packageJson = JSON.parse(await fs.read(packageJsonPath));
-            if (packageJson?.name) {
-              projectName = packageJson.name;
-            }
-            if (packageJson.dependencies["react-scripts"]) {
-              return "react";
-            } else if (packageJson.devDependencies["vite"]) {
-              return "vueVite";
-            } else if (packageJson.dependencies["vue"]) {
-              return "vue";
-            } else {
-              return "simple";
-            }
-          })
+          const packageJson = JSON.parse(await fs.read(packageJsonPath));
+          if (packageJson?.name) {
+            projectName = packageJson.name;
+          }
+          if (packageJson.dependencies["react-scripts"]) {
+            return "react";
+          } else if (packageJson.devDependencies["vite"]) {
+            return "vueVite";
+          } else if (packageJson.dependencies["vue"]) {
+            return "vue";
+          } else {
+            return "simple";
+          }
+        })
         : Ok("simple");
 
       const configContent = generateConfig(

@@ -22,14 +22,12 @@ import { ProjectPage } from "./pages/project";
 import { parseArgs, tryOrAlert } from "./common/utils";
 import { pathJoin } from "./common/utils";
 import { getCurrentDir } from "./common/utils";
-import useCompareRemoteVersion from "./logic/useCompareRemoteVersion";
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
   const { os } = props;
   const [isMaximized, setMaximized] = useState(false);
   const app = useApp();
-  useCompareRemoteVersion();
 
   let closeIcon,
     minimizeIcon,
