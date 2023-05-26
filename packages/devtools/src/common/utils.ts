@@ -176,7 +176,7 @@ export const checkVersion = (modal: ModalModel, locale: LocaleModel) => {
     .then(res => {
       const remoteVersion = JSON.parse(res?.body)?.tag_name;
       Niva.api.process.version().then(localVersion => {
-        if (remoteVersion && isFirstOpenToday() && localVersion === remoteVersion) {
+        if (remoteVersion && isFirstOpenToday() && localVersion !== remoteVersion) {
           modal.confirm(locale.t('NEWER_VERSION_TIP'), locale.t('NEWER_VERSION_TEXT', {
             version: remoteVersion
           }))
