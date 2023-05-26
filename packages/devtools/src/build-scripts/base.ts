@@ -1,7 +1,8 @@
 import { pathJoin } from "../common/utils";
-const { fs } = Niva.api;
 import type { ProgressModel } from "../models/modal.model";
 import type { ProjectModel } from "../models/project.model";
+
+const { fs } = Niva.api;
 
 export const indexesKey = "RESOURCE_INDEXES";
 export const dataKey = "RESOURCE_DATA";
