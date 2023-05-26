@@ -9,13 +9,14 @@ import {
   packageResource,
 } from "./base";
 import { plistTemplate } from "../templates/macos-plist-template";
+import type { BuildParams } from './base';
 
-export async function buildMacOsApp(project: ProjectModel, _target?: string) {
+export async function buildMacOsApp(params: BuildParams) {
+  const { project, file, close, progressModel } = params;
   const { process, dialog, fs } = Niva.api;
-  const { modal, locale } = project.app.state;
+  const { locale } = project.app.state;
 
   const currentExe = await process.currentExe();
-  const file = _target || (await dialog.saveFile(["app"]));
 
   if (!file) {
     throw new Error(locale.t("UNSELECTED_APP_FILE"));
@@ -37,9 +38,9 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
   const indexesPath = pathJoin(appResourcesPath, indexesKey);
   const dataPath = pathJoin(appResourcesPath, dataKey);
 
-  const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
+  // const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
 
-  progress.addTask(locale.t("CREATING_APP_STRUCTURE"), async () => {
+  progressModel.addTask(locale.t("CREATING_APP_STRUCTURE"), async () => {
     // make base structure
     await fs.createDir(appPath);
     await fs.createDir(appContentsPath);
@@ -48,13 +49,13 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
     await fs.createDir(appMacOSPath);
   });
 
-  progress.addTask(locale.t("COPYING_EXECUTABLE_FILE"), async () => {
+  progressModel.addTask(locale.t("COPYING_EXECUTABLE_FILE"), async () => {
     await fs.copy(currentExe, appExecutablePath);
   });
 
   let fileIndexes: Record<string, [number, number]> = {};
   let buffer = new ArrayBuffer(0);
-  progress.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
+  progressModel.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
     const initialResource = await appendResource(
       project.state.configPath,
       "niva.json"
@@ -67,7 +68,7 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
     buffer = _buffer;
   });
 
-  progress.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
+  progressModel.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
     const compressedBuffer = pako.deflateRaw(buffer).buffer;
     await Promise.all([
       fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
@@ -75,7 +76,7 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
     ]);
   });
 
-  progress.addTask(locale.t("GENERATING_ICON"), async () => {
+  progressModel.addTask(locale.t("GENERATING_ICON"), async () => {
     // create icon
     if (!project.state.config.icon) {
       return;
@@ -104,12 +105,12 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
     await fs.remove(appIconsetPath);
   });
 
-  progress.addTask(locale.t("GENERATING_INFO_PLIST"), async () => {
+  progressModel.addTask(locale.t("GENERATING_INFO_PLIST"), async () => {
     // generate Info.plist
     await fs.write(appInfoPlistPath, plistTemplate(project.state.config));
   });
 
-  await progress.run();
+  await progressModel.run();
   close();
 
   return appPath;

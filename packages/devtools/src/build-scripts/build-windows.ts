@@ -9,16 +9,15 @@ import {
   packageResource,
 } from "./base";
 import { versionInfoTemplate } from "../templates/windows-version-info-template";
+import type { BuildParams } from './base';
 
-export async function buildWindowsApp(
-  project: ProjectModel,
-  _target?: string
-): Promise<string> {
+export async function buildWindowsApp(params: BuildParams): Promise<string> {
+  const { project, file, close, progressModel } = params;
   const { process, dialog, fs, resource } = Niva.api;
-  const { modal, locale } = project.app.state;
+  const { locale } = project.app.state;
 
   const currentExe = await process.currentExe();
-  const file = _target || (await dialog.saveFile(["exe"]));
+  // const file = _target || (await dialog.saveFile(["exe"]));
   if (!file) {
     throw new Error(locale.t("UNSELECTED_EXE_FILE"));
   }
@@ -34,15 +33,13 @@ export async function buildWindowsApp(
   const indexesPath = pathJoin(buildPath, indexesKey);
   const dataPath = pathJoin(buildPath, dataKey);
 
-  const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
-
-  progress.addTask(locale.t("PREPARE_BUILD_ENVIRONMENT"), async () => {
+  progressModel.addTask(locale.t("PREPARE_BUILD_ENVIRONMENT"), async () => {
     await fs.createDirAll(buildPath);
   });
 
   let fileIndexes: Record<string, [number, number]> = {};
   let buffer = new ArrayBuffer(0);
-  progress.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
+  progressModel.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
     const initialResource = await appendResource(
       project.state.configPath,
       "niva.json"
@@ -55,7 +52,7 @@ export async function buildWindowsApp(
     buffer = _buffer;
   });
 
-  progress.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
+  progressModel.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
     const compressedBuffer = pako.deflateRaw(buffer).buffer;
     await Promise.all([
       fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
@@ -63,7 +60,7 @@ export async function buildWindowsApp(
     ]);
   });
 
-  progress.addTask(locale.t("GENERATING_ICON"), async () => {
+  progressModel.addTask(locale.t("GENERATING_ICON"), async () => {
     if (!project.state.config.icon) {
       return;
     }
@@ -78,7 +75,7 @@ export async function buildWindowsApp(
     ]);
   });
 
-  progress.addTask(locale.t("BUILD_EXECUTABLE_FILE"), async () => {
+  progressModel.addTask(locale.t("BUILD_EXECUTABLE_FILE"), async () => {
     await resource.extract(
       "windows/ResourceHacker.exe",
       pathJoin(buildPath, "ResourceHacker.exe")
@@ -117,11 +114,11 @@ ${project.state.config.icon ? iconScript : ""}
     ]);
   });
 
-  progress.addTask(locale.t("CLEAN_BUILD_ENVIRONMENT"), async () => {
+  progressModel.addTask(locale.t("CLEAN_BUILD_ENVIRONMENT"), async () => {
     await fs.remove(buildPath);
   });
 
-  await progress.run();
+  await progressModel.run();
   close();
 
   return targetExe;

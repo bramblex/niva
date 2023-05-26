@@ -155,16 +155,25 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const { os: osType } = await os.info();
 
       let appPath: string;
+      const file = target || (await Niva.api.dialog.saveFile(["app"]));
+
+      const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
+      const _p = {
+        project: this,
+        progressModel: progress,
+        file,
+        close
+      }
       try {
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
-          appPath = await buildMacOsApp(this, target);
+          appPath = await buildMacOsApp(_p);
         } else if (osType.toLowerCase() === "windows") {
-          appPath = await buildWindowsApp(this, target);
+          appPath = await buildWindowsApp(_p);
         } else {
           throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
         }
       } catch (error) {
-        modal.destroyAll();
+        close()
         modal.alert(locale.t("BUILD_FAILED"), (error as any).toString());
         return;
       }

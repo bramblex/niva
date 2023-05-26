@@ -1,9 +1,17 @@
 import { pathJoin } from "../common/utils";
 const { fs } = Niva.api;
+import type { ProgressModel } from "../models/modal.model";
+import type { ProjectModel } from "../models/project.model";
 
 export const indexesKey = "RESOURCE_INDEXES";
 export const dataKey = "RESOURCE_DATA";
 type FileIndex = Record<string, [number, number]>;
+export interface BuildParams {
+  project: ProjectModel,
+  progressModel: ProgressModel,
+  close: () => void,
+  file?: any
+}
 
 export async function packageResource(
   projectResourcePath: string,
