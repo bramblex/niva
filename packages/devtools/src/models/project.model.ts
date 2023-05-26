@@ -160,20 +160,23 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
       const _p = {
         project: this,
-        progressModel: progress,
+        progress,
         file,
-        close
       }
       try {
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
           appPath = await buildMacOsApp(_p);
+          await progress.run();
+          close();
         } else if (osType.toLowerCase() === "windows") {
           appPath = await buildWindowsApp(_p);
+          await progress.run();
+          close();
         } else {
           throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
         }
       } catch (error) {
-        close()
+        close();
         modal.alert(locale.t("BUILD_FAILED"), (error as any).toString());
         return;
       }

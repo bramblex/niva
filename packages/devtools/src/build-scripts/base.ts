@@ -9,8 +9,7 @@ export const dataKey = "RESOURCE_DATA";
 type FileIndex = Record<string, [number, number]>;
 export interface BuildParams {
   project: ProjectModel,
-  progressModel: ProgressModel,
-  close: () => void,
+  progress: ProgressModel,
   file?: any
 }
 
