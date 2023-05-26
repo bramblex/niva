@@ -45,7 +45,6 @@ export class LocaleModel extends StateModel<LocaleModelState> {
       let result: string = translate;
       Object.entries(option).forEach(([_key, _value]) => {
         result = result.replaceAll(`{{${_key}}}`, _value);
-        console.log('###res', _key, _value, result)
       });
       return result
     } else {
