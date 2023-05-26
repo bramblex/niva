@@ -155,20 +155,21 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const { os: osType } = await os.info();
 
       let appPath: string;
-      const file = target || (await Niva.api.dialog.saveFile(["app"]));
 
       const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
       const _p = {
         project: this,
         progress,
-        file,
+        file: null
       }
       try {
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
+          _p.file = target || (await Niva.api.dialog.saveFile(["app"]));
           appPath = await buildMacOsApp(_p);
           await progress.run();
           close();
         } else if (osType.toLowerCase() === "windows") {
+          _p.file = target || (await Niva.api.dialog.saveFile(["exe"]));
           appPath = await buildWindowsApp(_p);
           await progress.run();
           close();
