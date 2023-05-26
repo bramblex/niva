@@ -43,6 +43,10 @@ export class ModalModel extends StateModel<ModalModelState> {
     return close;
   }
 
+  destroyAll() {
+    this.setState([]);
+  }
+
   async showNative<T>(callback: () => Promise<T>): Promise<T | null> {
     const close = this.show(NativeModal, {});
     await new Promise((resolve) => setTimeout(resolve, 50));

@@ -1,6 +1,5 @@
 import pako from "pako";
 import { pathJoin } from "../common/utils";
-import { ProjectModel } from "../models/project.model";
 import {
   appendResource,
   arrayBufferToBase64,
@@ -9,13 +8,14 @@ import {
   packageResource,
 } from "./base";
 import { plistTemplate } from "../templates/macos-plist-template";
+import type { BuildParams } from './base';
 
-export async function buildMacOsApp(project: ProjectModel, _target?: string) {
-  const { process, dialog, fs } = Niva.api;
-  const { modal, locale } = project.app.state;
+export async function buildMacOsApp(params: BuildParams) {
+  const { project, file, progress } = params;
+  const { process, fs } = Niva.api;
+  const { locale } = project.app.state;
 
   const currentExe = await process.currentExe();
-  const file = _target || (await dialog.saveFile(["app"]));
 
   if (!file) {
     throw new Error(locale.t("UNSELECTED_APP_FILE"));
@@ -36,8 +36,6 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
   );
   const indexesPath = pathJoin(appResourcesPath, indexesKey);
   const dataPath = pathJoin(appResourcesPath, dataKey);
-
-  const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
 
   progress.addTask(locale.t("CREATING_APP_STRUCTURE"), async () => {
     // make base structure
@@ -108,9 +106,6 @@ export async function buildMacOsApp(project: ProjectModel, _target?: string) {
     // generate Info.plist
     await fs.write(appInfoPlistPath, plistTemplate(project.state.config));
   });
-
-  await progress.run();
-  close();
 
   return appPath;
 }

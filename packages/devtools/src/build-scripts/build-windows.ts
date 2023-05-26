@@ -1,6 +1,5 @@
 import pako from "pako";
 import { pathJoin, tempDirWith } from "../common/utils";
-import { ProjectModel } from "../models/project.model";
 import {
   appendResource,
   arrayBufferToBase64,
@@ -9,16 +8,14 @@ import {
   packageResource,
 } from "./base";
 import { versionInfoTemplate } from "../templates/windows-version-info-template";
+import type { BuildParams } from './base';
 
-export async function buildWindowsApp(
-  project: ProjectModel,
-  _target?: string
-): Promise<string> {
-  const { process, dialog, fs, resource } = Niva.api;
-  const { modal, locale } = project.app.state;
+export async function buildWindowsApp(params: BuildParams): Promise<string> {
+  const { project, file, progress } = params;
+  const { process, fs, resource } = Niva.api;
+  const { locale } = project.app.state;
 
   const currentExe = await process.currentExe();
-  const file = _target || (await dialog.saveFile(["exe"]));
   if (!file) {
     throw new Error(locale.t("UNSELECTED_EXE_FILE"));
   }
@@ -33,8 +30,6 @@ export async function buildWindowsApp(
   );
   const indexesPath = pathJoin(buildPath, indexesKey);
   const dataPath = pathJoin(buildPath, dataKey);
-
-  const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
 
   progress.addTask(locale.t("PREPARE_BUILD_ENVIRONMENT"), async () => {
     await fs.createDirAll(buildPath);
@@ -120,9 +115,6 @@ ${project.state.config.icon ? iconScript : ""}
   progress.addTask(locale.t("CLEAN_BUILD_ENVIRONMENT"), async () => {
     await fs.remove(buildPath);
   });
-
-  await progress.run();
-  close();
 
   return targetExe;
 }
