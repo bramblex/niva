@@ -166,6 +166,8 @@ export const isFirstOpenToday = () => {
   }
 
   const getDays = (time: number) => Math.floor(time / 1000 / 24 / 3600)
+  
+  global.localStorage.setItem('niva_last_open', String(Date.now()))
 
   const diff = getDays(Date.now()) - getDays(Number(timeStamp));
   return diff >= 1
