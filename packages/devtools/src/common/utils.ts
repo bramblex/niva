@@ -166,7 +166,7 @@ export const isFirstOpenToday = () => {
   }
 
   const getDays = (time: number) => Math.floor(time / 1000 / 24 / 3600)
-  
+
   global.localStorage.setItem('niva_last_open', String(Date.now()))
 
   const diff = getDays(Date.now()) - getDays(Number(timeStamp));
@@ -188,4 +188,17 @@ export const checkVersion = (modal: ModalModel, locale: LocaleModel) => {
         }
       })
     })
+}
+
+export async function runCmd(cmd: string, args: string[], options?: unknown) {
+  const { process } = Niva.api;
+  const res = await process.exec(
+    cmd,
+    args,
+    options
+  ) as { status: number, stdout: string, stderr: string }
+  if (res.status !== 0) {
+    throw new Error(`[Cmd Error] ${JSON.stringify(res)}`);
+  }
+  return res.stdout
 }
