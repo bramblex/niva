@@ -1,11 +1,12 @@
-import 'normalize.css/normalize.css'
-import './common.scss';
-import './i18n/index';
+import "normalize.css/normalize.css";
+import "./common.scss";
+import "./i18n/index";
+import "types";
 
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { App } from './app';
-import { envReady } from './common/utils';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { App } from "./app";
+import { envReady } from "./common/utils";
 
 window.addEventListener("contextmenu", (e) => {
   // let node: HTMLElement | null = e.target as HTMLElement;
@@ -19,7 +20,7 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "r" && e.ctrlKey) {
     e.preventDefault();
   }
-})
+});
 
 Niva.addEventListener("*", (event, data) => {
   console.log(`[Event] ${event}`, data);
