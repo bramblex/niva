@@ -3,7 +3,7 @@
 // @ts-nocheck
 export {}
 declare global {
-  /** Niva 运行环境提供的对象，包含了事件监听函数及其api */
+  /** Niva 运行环境扩展对象，包含事件监听器及其api */
   const Niva: NivaObj;
 }
 
@@ -13,13 +13,19 @@ interface NivaObj {
    * @param event 要监听的事件名称，可以用 `*`、`xxxx.*` 等通配符。
    * @param listener 事件被触发时要调用的函数。
    */
-  addEventListener<K extends keyof NivaEventMap>(event: K, listener: NivaEventMap[K]): void;
+  addEventListener<K extends keyof NivaEventMap>(
+    event: K,
+    listener: NivaEventMap[K]
+  ): void;
   /**
    * 移除特定的事件监听器。
    * @param event 要移除的事件名称。
    * @param listener 要移除的监听器函数。
    */
-  removeEventListener<K extends keyof NivaEventMap>(event: K, listener: Function): void;
+  removeEventListener<K extends keyof NivaEventMap>(
+    event: K,
+    listener: Function
+  ): void;
   /**
    * 移除特定事件的所有监听器。
    * @param event 要移除所有监听器的事件名称。
@@ -58,95 +64,165 @@ interface NivaObj {
   };
 }
 
-// Niva应用程序的选项接口
+/** Niva应用程序的选项 */
 interface NivaOptions {
-  name: string; // 应用程序的名称
-  uuid: string; // 应用程序的唯一标识符
-  icon?: string; // 应用程序的图标文件路径，仅支持 png，可选
+  /** 应用名称 */
+  name: string;
+  /** 应用唯一标识符 */
+  uuid: string;
+  /** 应用图标文件路径，仅支持 png */
+  icon?: string;
 
-  window: NivaWindowOptions; // 应用程序窗口的选项
-  tray?: NivaTrayOptions; // 应用程序托盘的选项，可选
-  shortcuts?: NivaShortcutsOptions; // 应用程序全局快捷键的选项，可选
+  /** 应用程序窗口的选项 */
+  window: NivaWindowOptions;
+  /** 应用程序托盘的选项 */
+  tray?: NivaTrayOptions;
+  /** 应用程序全局快捷键的选项 */
+  shortcuts?: NivaShortcutsOptions;
 
-  workers?: number; // 应用程序开启的工作线程数量，可选
+  /** 应用程序开启的工作线程数量 */
+  workers?: number;
 
-  // Mac平台特有选项
-  activationPolicy?: "regular" | "accessory" | "prohibited"; // 应用程序的激活策略，可选
-  defaultMenuCreation?: boolean; // 是否使用默认菜单创建方式，可选
-  activateIgnoringOtherApps?: boolean; // 是否忽略其他应用程序的激活状态而强制激活应用程序，可选
+  /** 应用程序的激活策略,仅Mac */
+  activationPolicy?: "regular" | "accessory" | "prohibited";
+  /** 是否使用默认菜单创建方式,仅Mac */
+  defaultMenuCreation?: boolean;
+  /** 是否忽略其他应用程序的激活状态而强制激活应用程序,仅Mac */
+  activateIgnoringOtherApps?: boolean;
 
-  // 为不同平台单独配置
+  /** 专为Mac单独使用的配置 */
   macos: NivaOptions;
+  /** 专为windows单独使用的配置 */
   windows: NivaOptions;
 }
 
-type NivaSize = { width: number; height: number };
-type NivaPosition = { x: number; y: number };
+/** 尺寸 */
+type NivaSize = {
+  /** 宽 */
+  width: number;
+  /** 高 */
+  height: number;
+};
 
+/** 位置 */
+type NivaPosition = {
+  /** 距离坐标原点横轴距离 */
+  x: number;
+  /** 距离坐标原点纵轴距离 */
+  y: number;
+};
+
+/** 窗口根菜单 */
 interface WindowRootMenu {
-  label: string; // 根菜单项的名称
-  enabled?: boolean; // 是否启用菜单项
-  children: MenuOptions; // 子菜单项
+  /** 菜单项的名称 */
+  label: string;
+  /** 是否启用 */
+  enabled?: boolean;
+  /** 子菜单项 */
+  children: MenuOptions;
 }
 
+/** 窗口根菜单集合 */
 type WindowMenuOptions = Array<WindowRootMenu>;
 
+/** 窗口选项 */
 interface NivaWindowOptions {
-  entry?: string; // 应用程序入口文件路径
-  devtools?: boolean; // 是否启用开发者工具
+  /** 应用程序入口文件路径 */
+  entry?: string;
+  /** 是否启用开发者工具 */
+  devtools?: boolean;
 
-  title?: string; // 窗口标题
-  icon?: string; // 窗口图标
-  theme?: string; // 窗口主题
-  size?: NivaSize; // 窗口大小
-  minSize?: NivaSize; // 窗口最小尺寸
-  maxSize?: NivaSize; // 窗口最大尺寸
+  /** 窗口标题 */
+  title?: string;
+  /** 窗口图标 */
+  icon?: string;
+  /** 窗口主题 */
+  theme?: string;
+  /** 窗口大小 */
+  size?: NivaSize;
+  /** 窗口最小尺寸 */
+  minSize?: NivaSize;
+  /** 窗口最大尺寸 */
+  maxSize?: NivaSize;
 
-  position?: NivaPosition; // 窗口位置
+  /** 窗口位置 */
+  position?: NivaPosition;
 
-  resizable?: boolean; // 是否可调整大小
-  minimizable?: boolean; // 是否可最小化
-  maximizable?: boolean; // 是否可最大化
-  closable?: boolean; // 是否可关闭
+  /** 是否可调整大小 */
+  resizable?: boolean;
+  /** 是否可最小化 */
+  minimizable?: boolean;
+  /** 是否可最大化 */
+  maximizable?: boolean;
+  /** f */
+  closable?: boolean;
 
-  fullscreen?: boolean; // 是否全屏
-  maximized?: boolean; // 是否最大化
-  visible?: boolean; // 是否可见
-  transparent?: boolean; // 是否透明
-  decorations?: boolean; // 是否显示窗口装饰
+  /** 是否全屏 */
+  fullscreen?: boolean;
+  /** 是否最大化 */
+  maximized?: boolean;
+  /** 是否可见 */
+  visible?: boolean;
+  /** 是否透明 */
+  transparent?: boolean;
+  /** 是否显示窗口装饰 */
+  decorations?: boolean;
 
-  alwaysOnTop?: boolean; // 是否始终置顶
-  alwaysOnBottom?: boolean; // 是否始终置底
-  visibleOnAllWorkspaces?: boolean; // 是否在多个工作区显示
+  /** 是否始终置顶 */
+  alwaysOnTop?: boolean;
+  /** 是否始终置底 */
+  alwaysOnBottom?: boolean;
+  /** 是否在多个工作区显示 */
+  visibleOnAllWorkspaces?: boolean;
 
-  focused?: boolean; // 是否聚焦
-  contentProtection?: boolean; // 是否启用内容保护
+  /** 是否聚焦 */
+  focused?: boolean;
+  /** 是否启用内容保护 */
+  contentProtection?: boolean;
 
   // macOS extra
-  parentWindow?: number; // 父窗口 ID
-  movableByWindowBackground?: boolean; // 是否可点击窗口背景移动窗口
-  titleBarTransparent?: boolean; // 标题栏是否透明
-  titleBarHidden?: boolean; // 标题栏是否隐藏
-  titleBarButtonsHidden?: boolean; // 标题栏按钮是否隐藏
-  titleHidden?: boolean; // 标题是否隐藏
-  fullSizeContentView?: boolean; // 是否全尺寸显示内容
-  resizeIncrements?: NivaSize; // 窗口调整尺寸步长
-  disallowHiDpi?: boolean; // 是否禁用高 DPI
-  hasShadow?: boolean; // 是否显示阴影
-  automaticWindowTabbing?: boolean; // 是否支持多个窗口进行选项卡式浏览
-  tabbingIdentifier?: string; // 设置选项卡式浏览的标题
+  /** 父窗口 ID，仅Mac */
+  parentWindow?: number;
+  /** 是否可点击窗口背景移动窗口，仅Mac */
+  movableByWindowBackground?: boolean;
+  /** 标题栏是否透明，仅Mac */
+  titleBarTransparent?: boolean;
+  /** 标题栏是否隐藏，仅Mac */
+  titleBarHidden?: boolean;
+  /** 标题栏按钮是否隐藏，仅Mac*/
+  titleBarButtonsHidden?: boolean;
+  /** 标题是否隐藏，仅Mac */
+  titleHidden?: boolean;
+  /** 是否全尺寸显示内容，仅Mac */
+  fullSizeContentView?: boolean;
+  /** 窗口调整尺寸步长，仅Mac */
+  resizeIncrements?: NivaSize;
+  /** 是否禁用高 DPI，仅Mac */
+  disallowHiDpi?: boolean;
+  /** 是否显示阴影，仅Mac */
+  hasShadow?: boolean;
+  /** 是否支持多个窗口进行选项卡式浏览，仅Mac */
+  automaticWindowTabbing?: boolean;
+  /** 设置选项卡式浏览的标题，仅Mac */
+  tabbingIdentifier?: string;
 
   // windows extra
-  parentWindow?: number; // 父窗口 ID
-  ownerWindow?: number; // 拥有者窗口 ID
-  taskbarIcon?: string; // 任务栏图标
-  skipTaskbar?: boolean; // 在任务栏中是否显示
-  undecoratedShadow?: boolean; // 是否显示窗口阴影
+  /** 父窗口 ID */
+  parentWindow?: number;
+  /** 拥有者窗口 ID */
+  ownerWindow?: number;
+  /** 任务栏图标 */
+  taskbarIcon?: string;
+  /** 在任务栏中是否显示 */
+  skipTaskbar?: boolean;
+  /** 是否显示窗口阴影 */
+  undecoratedShadow?: boolean;
 
-  menu?: WindowMenuOptions; // 窗口菜单选项
+  /** 窗口菜单选项 */
+  menu?: WindowMenuOptions;
 }
 
-// 系统原生菜单项标签枚举类型。
+/** 系统原生菜单项标签枚举类型 */
 enum NativeLabel {
   Hide, // 显示 "Hide"
   Services, // 显示 "Services"
@@ -166,59 +242,88 @@ enum NativeLabel {
   Separator, // 表示一个分隔线
 }
 
-// 菜单项选项枚举类型。
+/** 菜单项选项枚举类型 */
 type MenuItemOption =
-  | { type: "native"; label: NativeLabel } // 本地菜单选项
+  /** 本地菜单选项 */
+  | { type: "native"; label: NativeLabel }
+  /** 自定义菜单选项 */
   | {
       type: "item";
       id: number;
-      label: string; // 显示的文本
-      enabled?: boolean; // 是否启用
-      selected?: boolean; // 是否选中
-      icon?: string; // 图标图片，仅支持 png
-      accelerator?: string; // 快捷键
-    } // 自定义菜单选项
-  | { type: "menu"; label: string; enabled?: boolean; children: MenuOptions }; // 子菜单选项
+      /** 显示的文本 */
+      label: string;
+      /** 是否启用 */
+      enabled?: boolean;
+      /** 是否选中 */
+      selected?: boolean;
+      /** 图标图片，仅支持 png */
+      icon?: string;
+      /** 快捷键 */
+      accelerator?: string;
+    }
+  /** 子菜单选项 */
+  | { type: "menu"; label: string; enabled?: boolean; children: MenuOptions };
 
-// 菜单选项列表。
+/** 菜单选项列表 */
 type MenuOptions = MenuItemOption[];
 
-// NivaTray 的选项。
+/** 托盘选项 */
 interface NivaTrayOptions {
-  icon: string; // 托盘菜单的图标，仅支持 png
-  title?: string; // 托盘菜单的标题
-  tooltip?: string; // 托盘菜单的提示信息
-  menu?: MenuOptions; // 托盘菜单的菜单选项
+  /** 托盘的图标，仅支持 png */
+  icon: string;
+  /** 托盘的标题 */
+  title?: string;
+  /** 托盘的提示信息 */
+  tooltip?: string;
+  /** 托盘菜单的菜单选项 */
+  menu?: MenuOptions;
 }
 
-// NivaTray 的更新选项。
+/** 托盘的更新选项 */
 interface NivaTrayUpdateOptions {
-  icon?: string; // 更新托盘菜单的图标，仅支持 png
-  title?: string; // 更新托盘菜单的标题
-  tooltip?: string; // 更新托盘菜单的提示信息
-  menu?: MenuOptions; // 更新托盘菜单的菜单选项
+  /** 托盘的图标，仅支持 png */
+  icon: string;
+  /** 托盘的标题 */
+  title?: string;
+  /** 托盘的提示信息 */
+  tooltip?: string;
+  /** 托盘菜单的菜单选项 */
+  menu?: MenuOptions;
 }
 
-// 全局快捷键的选项。
+/** 全局快捷键的选项 */
 interface ShortcutOption {
   accelerator: string;
   id: number;
 }
 
-// Niva 全局快捷键的选项。
+/** 全局快捷键的选项集合 */
 type NivaShortcutsOptions = ShortcutOption[];
 
+/** Niva时间集合 */
 interface NivaEventMap {
   /** 窗口焦点事件 */
   "window.focused": (eventName: string, focused: boolean) => void;
   /** 窗口缩放事件 */
-  "window.scaleFactorChanged": (eventName: string, payload: { scaleFactor: number; newInnerSize: { width: number; height: number } }) => void;
+  "window.scaleFactorChanged": (
+    eventName: string,
+    payload: {
+      scaleFactor: number;
+      newInnerSize: { width: number; height: number };
+    }
+  ) => void;
   /** 窗口主题事件 */
-  "window.themeChanged": (eventName: string, theme: "light" | "dark" | "system") => void;
+  "window.themeChanged": (
+    eventName: string,
+    theme: "light" | "dark" | "system"
+  ) => void;
   /** 窗口关闭请求事件 */
   "window.closeRequested": (eventName: string, payload: null) => void;
   /** 窗口消息事件 */
-  "window.message": (eventName: string, payload: { from: number; message: string }) => void;
+  "window.message": (
+    eventName: string,
+    payload: { from: number; message: string }
+  ) => void;
   /** 菜单点击事件 */
   "menu.clicked": (eventName: string, menuId: number) => void;
   /** 托盘图标右键点击事件 */
@@ -230,9 +335,15 @@ interface NivaEventMap {
   /** 全局快捷键事件 */
   "shortcut.emit": (eventName: string, shortcutId: number) => void;
   /** 文件拖拽悬停事件 */
-  "fileDrop.hovered": (eventName: string, payload: { paths: string[]; position: { x: number; y: number } }) => void;
+  "fileDrop.hovered": (
+    eventName: string,
+    payload: { paths: string[]; position: { x: number; y: number } }
+  ) => void;
   /** 文件拖拽放置事件 */
-  "fileDrop.dropped": (eventName: string, payload: { paths: string[]; position: { x: number; y: number } }) => void;
+  "fileDrop.dropped": (
+    eventName: string,
+    payload: { paths: string[]; position: { x: number; y: number } }
+  ) => void;
   /** 文件拖拽取消事件 */
   "fileDrop.cancelled": (eventName: string, payload: null) => void;
 }
@@ -260,7 +371,11 @@ interface NivaDialog {
    * @param level 消息框的级别。
    * @returns 一个 Promise，在消息框关闭时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  showMessage(title: string, content?: string, level?: "info" | "warning" | "error"): Promise<void>;
+  showMessage(
+    title: string,
+    content?: string,
+    level?: "info" | "warning" | "error"
+  ): Promise<void>;
   /**
    * 在文件系统中选择一个文件，支持过滤器和起始目录。
    * @param filters 文件类型筛选器。
@@ -304,7 +419,9 @@ interface NivaExtra {
    * @param policy 要设置的激活策略。
    * @returns 一个 Promise，在激活策略成功设置时解析该 Promise，如果发生错误则拒绝该 Promise。
    */
-  setActivationPolicy(policy: "regular" | "accessory" | "prohibited"): Promise<void>;
+  setActivationPolicy(
+    policy: "regular" | "accessory" | "prohibited"
+  ): Promise<void>;
   /**
    * 获取当前活动窗口的 ID，仅适用于 macOS 和 Windows。
    * 对于 macOS，将返回 `process_id_window_id` 的格式，其中 `process_id` 和 `window_id` 为整数。
@@ -377,7 +494,11 @@ interface NivaFs {
    * @param encode 要使用的编码格式。默认为 UTF-8。
    * @returns 一个 Promise，在写入文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  write(path: string, content: string, encode?: "utf8" | "base64"): Promise<void>;
+  write(
+    path: string,
+    content: string,
+    encode?: "utf8" | "base64"
+  ): Promise<void>;
   /**
    * 将字符串追加到文件的末尾。
    * @param path 要追加的文件路径。
@@ -385,7 +506,11 @@ interface NivaFs {
    * @param encode 要使用的编码格式。默认为 UTF-8。
    * @returns 一个 Promise，在追加字符串到文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  append(path: string, content: string, encode?: "utf8" | "base64"): Promise<void>;
+  append(
+    path: string,
+    content: string,
+    encode?: "utf8" | "base64"
+  ): Promise<void>;
 
   /**
    * 将文件或目录移动到新位置。
@@ -444,7 +569,13 @@ interface NivaHttp {
    * @param options 请求选项，包括方法、URL、请求头、请求体和代理设置。
    * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
    */
-  request(options: { method: string; url: string; headers?: { [key: string]: string }; body?: string; proxy?: string }): Promise<{
+  request(options: {
+    method: string;
+    url: string;
+    headers?: { [key: string]: string };
+    body?: string;
+    proxy?: string;
+  }): Promise<{
     status: number;
     headers: { [key: string]: string };
     body: string;
@@ -727,7 +858,11 @@ interface NivaTray {
    * @param window_id 要更新托盘图标的窗口 ID，默认为当前活动窗口 ID。
    * @returns 一个 Promise，在更新成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  update(id: number, options: NivaTrayUpdateOptions, window_id?: number): Promise<void>;
+  update(
+    id: number,
+    options: NivaTrayUpdateOptions,
+    window_id?: number
+  ): Promise<void>;
 }
 
 interface NivaWebview {
@@ -1006,7 +1141,11 @@ interface NivaWindow {
    * @param id 操作的窗口 ID，如果省略则默认为当前窗口。
    * @returns 一个 Promise，在操作成功后解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  setFullscreen(isFullscreen: boolean, monitorName?: string | null, id?: number): Promise<void>;
+  setFullscreen(
+    isFullscreen: boolean,
+    monitorName?: string | null,
+    id?: number
+  ): Promise<void>;
   /**
    * 设置窗口总在顶部。
    * @param alwaysOnTop 是否总在顶部。
@@ -1027,7 +1166,10 @@ interface NivaWindow {
    * @param id 需要请求关注的窗口 ID，省略则默认为当前窗口。
    * @returns 一个 Promise，在发送请求成功后解析该 Promise，或者在发生错误时拒绝该 Promise。
    */
-  requestUserAttention(level?: "normal" | "informational" | "critical", id?: number): Promise<void>;
+  requestUserAttention(
+    level?: "normal" | "informational" | "critical",
+    id?: number
+  ): Promise<void>;
   /**
    * 设置窗口的内容保护模式。
    * @param enabled 是否开启内容保护模式。
@@ -1133,7 +1275,13 @@ interface NivaWindowExtra {
    * @param id 区别不同窗口的可选 ID。
    * @returns 如果成功则返回 Promise.resolve()，否则返回 Promise.reject()。
    */
-  beginResizeDrag(edge: number, button: number, x: number, y: number, id?: number): Promise<void>;
+  beginResizeDrag(
+    edge: number,
+    button: number,
+    x: number,
+    y: number,
+    id?: number
+  ): Promise<void>;
   /**
    * 设置是否将窗口从任务栏中隐藏或删除。仅适用于 Windows。
    * @param skip 是否从任务栏中隐藏或删除。
