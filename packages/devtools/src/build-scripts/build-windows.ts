@@ -1,5 +1,5 @@
 import pako from "pako";
-import { pathJoin, tempDirWith } from "../common/utils";
+import { pathJoin, runCmd, tempDirWith } from "../common/utils";
 import {
   appendResource,
   arrayBufferToBase64,
@@ -106,10 +106,15 @@ ${project.state.config.icon ? iconScript : ""}
 
     await fs.write(pathJoin(buildPath, "bundle_script.txt"), script);
 
-    await process.exec(pathJoin(buildPath, "ResourceHacker.exe"), [
-      "-script",
-      pathJoin(buildPath, "bundle_script.txt"),
-    ]);
+    try {
+      await runCmd(pathJoin(buildPath, "ResourceHacker.exe"), [
+        "-script",
+        pathJoin(buildPath, "bundle_script.txt"),
+      ]);
+    } catch (err) {
+      await process.open(buildPath);
+      throw err;
+    }
   });
 
   progress.addTask(locale.t("CLEAN_BUILD_ENVIRONMENT"), async () => {
