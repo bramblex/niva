@@ -54,6 +54,10 @@ Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os
 - [ ] Niva 2.0
   - [ ] 对 Window10 低版本增加 [miniblink](https://github.com/weolar/miniblink49) 支持，解决低版本 Windows 对 Webview2 支持不完善的问题。
 
+## Acknowledgments
+
+[@wen-gang(晓港)](https://github.com/wen-gang)  - 感谢晓港帮 Niva 设计了新的 Logo
+
 ## Contributors
 
 ![Contributors](https://contrib.rocks/image?repo=bramblex/niva)
