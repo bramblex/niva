@@ -1,5 +1,6 @@
 {
   "name": "types",
   "version": "0.9.9",
-  "private": true
+  "private": true,
+  "main": "./Niva_zh.d.ts"
 }

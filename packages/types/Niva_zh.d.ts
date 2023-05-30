@@ -31,6 +31,10 @@ interface NivaObj {
    * @param event 要移除所有监听器的事件名称。
    */
   removeAllEventListeners(event: string): void;
+  /**
+   * 内部方法
+   */
+  call(methodName: string, args: any): void;
   /** 接口方法 */
   api: {
     /** 剪切板 */
@@ -346,6 +350,7 @@ interface NivaEventMap {
   ) => void;
   /** 文件拖拽取消事件 */
   "fileDrop.cancelled": (eventName: string, payload: null) => void;
+  [k: string]: (eventName: string, payload: any) => void;
 }
 
 interface NivaClipboard {
@@ -1237,6 +1242,12 @@ interface NivaWindow {
    * @returns 如果成功则返回一个 Promise，Promise 成功时包含当前主题（"light"、"dark" 或 "system"），否则返回 Promise.reject()。
    */
   theme(id?: number): Promise<string>;
+  /**
+   * 设置窗口是否拦截默认的关闭操作，`true`的话会由`window.closeRequested`拦截。
+   * @param blocked 是否开启拦截
+   * @param id 区别不同窗口的可选 ID。
+   */
+  blockCloseRequested(blocked: boolean, id?: number): Promise<void>;
 }
 
 interface NivaWindowExtra {
