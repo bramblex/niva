@@ -1,7 +1,8 @@
 {
   "private": true,
   "workspaces": [
-    "packages/devtools"
+    "packages/devtools",
+    "packages/types"
   ],
   "devDependencies": {
     "husky": "^8.0.0"

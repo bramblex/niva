@@ -209,8 +209,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   const platform = systemInfo.os.toLowerCase().split(" ")[0];
 
   useEffect(() => {
-    const handler = (_: string, { focused }: { focused: boolean }) =>
-      setActive(focused);
+    const handler = (_: string, focused: boolean) => setActive(focused);
     Niva.addEventListener("window.focused", handler);
     Niva.api.os.info().then(setSystemInfo);
     Niva.api.process.version().then(setVersion);
@@ -221,13 +220,18 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   }, []);
 
   const locale = useLocale();
-  const isDevelop = process.env.NODE_ENV === 'development';
+  const isDevelop = process.env.NODE_ENV === "development";
 
   return (
     <div className={classNames("window", { active }, `os-${platform}`)}>
       <Titlebar os={platform}></Titlebar>
       <div className="window-body has-space">{props.children}</div>
-      <div className={classNames({ 'status-bar': true, 'status-bar-dev': isDevelop })}>
+      <div
+        className={classNames({
+          "status-bar": true,
+          "status-bar-dev": isDevelop,
+        })}
+      >
         <span
           className="status-bar-field"
           onClick={() => {
