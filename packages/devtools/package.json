@@ -23,7 +23,7 @@
     "react-dom": "^18.2.0",
     "react-i18next": "^12.2.0",
     "react-scripts": "5.0.1",
-    "types": "0.9.9",
+    "types": "workspace:*",
     "typescript": "^4.4.2"
   },
   "scripts": {
