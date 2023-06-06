@@ -18,7 +18,10 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["--debug-resource=packages/examples/simple-project", "--debug-devtools=true"],
+      "args": [
+        "--debug-resource=packages/examples/simple-project",
+        "--debug-devtools=true"
+      ],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -102,6 +105,28 @@
       "args": [
         "--debug-resource=packages/devtools/build",
         "--debug-config=packages/devtools/niva.json"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Run Debug Alone",
+      "cargo": {
+        "args": ["build", "--bin=niva", "--package=niva"],
+        "filter": {
+          "name": "niva",
+          "kind": "bin"
+        },
+        "env": {
+          "RUST_BACKTRACE": "-l framework=WebKit"
+        }
+      },
+      "args": [
+        "--niva.name=example",
+        "--niva.id=niva.example.1234",
+        "--niva.window.preload=preload.js",
+        "--niva.resource=packages/examples/simple-project"
       ],
       "cwd": "${workspaceFolder}"
     }

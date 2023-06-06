@@ -1,6 +1,6 @@
 [workspace]
+resolver = "2"
+
 members = [
-	"crates/niva",
-	"crates/niva_macros",
-	"crates/icon_creator",
+	"packages/niva", 
 ]

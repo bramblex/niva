@@ -37,6 +37,7 @@ export function uuid() {
 
 export async function tryOrAlert<T>(app: AppModel, r: Promise<AppResult<T>>) {
   const { locale, modal } = app.state;
+
   try {
     const result = await r;
     if (result.isErr()) {
