@@ -1,7 +1,7 @@
 import "normalize.css/normalize.css";
 import "./common.scss";
 import "./i18n/index";
-import "types";
+import "@niva/types";
 
 import React from "react";
 import ReactDOM from "react-dom/client";
