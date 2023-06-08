@@ -6,7 +6,7 @@
 
 mod app;
 use anyhow::Result;
-use app::{NivaArguments, NivaLaunchInfo};
+use app::{NivaApp};
 
 fn main() -> Result<()> {
     // let mut event_loop = NivaEventLoop::with_user_event();
@@ -24,8 +24,8 @@ fn main() -> Result<()> {
     // set_json_value(&mut target, "hello.world.arr.3.test", json!(789))?;
     // println!("{}", serde_json::to_string_pretty(&target)?);
 
-    let info = NivaLaunchInfo::new()?;
-    println!("{:?}", info);
+    let app = NivaApp::new()?;
+    println!("{:?}", app.launch_info);
 
     Ok(())
 }
