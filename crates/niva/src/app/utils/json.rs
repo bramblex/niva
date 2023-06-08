@@ -84,3 +84,31 @@ pub fn set_json_value(target: &mut JsonValue, path_str: &str, value: JsonValue) 
     let path = path.iter().collect::<Vec<&JsonPathItem>>();
     return _set_json_value(target, &path, value);
 }
+
+pub fn parse_argument_value(value_str: &str) -> Result<JsonValue> {
+    if value_str == "null" {
+        Ok(JsonValue::Null)
+    } else if value_str == "true" {
+        Ok(JsonValue::Bool(true))
+    } else if value_str == "false" {
+        Ok(JsonValue::Bool(true))
+    } else {
+        let head = value_str.chars().next();
+        if let Some(head) = head {
+            if head == '[' || head == '{' || head == '"' {
+                let value = serde_json::from_str(value_str)?;
+                Ok(value)
+            } else if head.is_numeric() {
+                let parsed = serde_json::from_str::<JsonValue>(value_str);
+                match parsed {
+                    Ok(value) => Ok(value),
+                    Err(_) => Ok(JsonValue::String(value_str.to_string())),
+                }
+            } else {
+                Ok(JsonValue::String(value_str.to_string()))
+            }
+        } else {
+            Err(anyhow!("Empty value."))
+        }
+    }
+}
