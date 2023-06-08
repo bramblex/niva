@@ -104,6 +104,28 @@
         "--debug-config=packages/devtools/niva.json"
       ],
       "cwd": "${workspaceFolder}"
-    }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Run Debug Alone",
+      "cargo": {
+        "args": ["build", "--bin=niva", "--package=niva"],
+        "filter": {
+          "name": "niva",
+          "kind": "bin"
+        },
+        "env": {
+          "RUST_BACKTRACE": "-l framework=WebKit"
+        }
+      },
+      "args": [
+        "--niva-file=packages/examples/simple-project/niva.json",
+        "--niva={ \"icon\": \"icon.png\" }",
+        "--niva.name=1234",
+        "--niva.id=niva.example.1234"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
   ]
 }
