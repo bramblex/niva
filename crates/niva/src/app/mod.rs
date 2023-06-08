@@ -1,6 +1,8 @@
 pub mod options;
 pub mod utils;
 
+use std::option;
+
 use anyhow::{anyhow, Result};
 use options::NivaOptions;
 use serde_json::{json, Value as JsonValue};
@@ -22,8 +24,8 @@ pub struct NivaLaunchInfo {
 }
 
 impl NivaLaunchInfo {
-    fn parse_options_json(options_str: &str) -> Result<JsonValue> {
-        let mut options_json = serde_json::from_str::<JsonValue>(options_str)?;
+    fn parse_options_json(content: &str) -> Result<JsonValue> {
+        let mut options_json = serde_json::from_str::<JsonValue>(content)?;
 
         let platform = std::env::consts::OS;
         let platform_options = options_json.get(platform).cloned();
@@ -35,8 +37,38 @@ impl NivaLaunchInfo {
         Ok(options_json)
     }
 
+    fn parse_options(content: &str) -> Result<NivaOptions> {
+        let options = Self::parse_options_json(content)?;
+        Ok(serde_json::from_value::<NivaOptions>(options)?)
+    }
+
+    fn load_options_from_file(niva_file: &std::path::Path) -> Result<NivaOptions> {
+        let content = std::fs::read_to_string(niva_file)?;
+        let options = Self::parse_options(&content)?;
+        Ok(options)
+    }
+
     fn load_app_mode_options() -> Result<NivaOptions> {
-        todo!("Load app mode options.")
+        #[cfg(target_os = "macos")]
+        {
+            use utils::mac::get_app_folder;
+            if let Some(app_dir) = get_app_folder() {
+                let niva_file = app_dir.join("Resources").join("niva.json");
+                return Self::load_options_from_file(&niva_file);
+            }
+        };
+
+        #[cfg(target_os = "windows ")]
+        {
+            // todo!("Load app mode options.");
+        };
+
+        if let Some(root_dir) = std::env::current_exe()?.parent() {
+            let niva_file = root_dir.join("niva.json");
+            return Self::load_options_from_file(&niva_file);
+        }
+
+        Err(anyhow!("Cannot find niva.json file."))
     }
 
     fn load_library_mode_options(arguments: NivaArguments) -> Result<NivaOptions> {
