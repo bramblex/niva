@@ -1,3 +1,4 @@
+use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 
 pub fn get_app_folder() -> Option<PathBuf> {
@@ -17,4 +18,14 @@ pub fn get_app_folder() -> Option<PathBuf> {
         }
     }
     None
+}
+
+pub fn load_resource(key: &str) -> Result<Vec<u8>> {
+    if let Some(app_dir) = get_app_folder() {
+        let resource_path = app_dir.join("Resources").join(key);
+        if let Ok(content) = std::fs::read(resource_path) {
+            return Ok(content);
+        }
+    }
+    Err(anyhow!("Cannot find resource `{}`.", key))
 }

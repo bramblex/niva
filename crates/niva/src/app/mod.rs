@@ -1,6 +1,6 @@
 mod options;
-mod utils;
 mod arguments;
+mod resource;
 mod launch_info;
 
 use std::sync::Arc;
@@ -14,6 +14,9 @@ pub struct NivaApp {
 impl NivaApp {
     pub fn new() -> Result<Arc<NivaApp>> {
         let launch_info = NivaLaunchInfo::new()?;
-        todo!("")
+
+        Ok(Arc::new(Self {
+            launch_info
+        }))
     }
 }

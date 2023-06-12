@@ -18,7 +18,10 @@
           "RUST_BACKTRACE": "-l framework=WebKit"
         }
       },
-      "args": ["--debug-resource=packages/examples/simple-project", "--debug-devtools=true"],
+      "args": [
+        "--debug-resource=packages/examples/simple-project",
+        "--debug-devtools=true"
+      ],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -120,12 +123,11 @@
         }
       },
       "args": [
-        "--niva-file=packages/examples/simple-project/niva.json",
-        "--niva={ \"icon\": \"icon.png\" }",
-        "--niva.name=1234",
+        "--niva={ \n\"icon\": \"icon.png\" \n}",
+        "--niva.name=example",
         "--niva.id=niva.example.1234"
       ],
       "cwd": "${workspaceFolder}"
-    },
+    }
   ]
 }

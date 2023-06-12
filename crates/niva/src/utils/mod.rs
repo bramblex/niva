@@ -1,4 +1,5 @@
 pub mod json;
+pub mod path;
 
 #[cfg(target_os = "windows")]
 pub mod win;

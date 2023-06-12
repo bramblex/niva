@@ -5,8 +5,11 @@
 )]
 
 mod app;
+mod utils;
+
 use anyhow::Result;
-use app::{NivaApp};
+use app::NivaApp;
+use utils::path::UniPath;
 
 fn main() -> Result<()> {
     // let mut event_loop = NivaEventLoop::with_user_event();
@@ -24,8 +27,12 @@ fn main() -> Result<()> {
     // set_json_value(&mut target, "hello.world.arr.3.test", json!(789))?;
     // println!("{}", serde_json::to_string_pretty(&target)?);
 
-    let app = NivaApp::new()?;
-    println!("{:?}", app.launch_info);
+    // let app = NivaApp::new()?;
+    // println!("{:?}", app.launch_info);
+
+    let p = UniPath::new("c:/aaa/bbb/ccc");
+
+    println!("{:?}", p.to_path_buf().is_absolute());
 
     Ok(())
 }

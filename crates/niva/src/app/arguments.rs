@@ -3,19 +3,19 @@ use super::*;
 use anyhow::{anyhow, Result};
 use serde_json::Value as JsonValue;
 
-use utils::json::{ parse_argument_value};
+use crate::utils::json::parse_argument_value;
 
 #[derive(Debug)]
 pub struct NivaArguments {
-    pub niva_file: Option<JsonValue>,
-    pub niva_base: Option<JsonValue>,
-    pub niva_options: Vec<(String, JsonValue)>,
+    pub file: Option<JsonValue>,
+    pub base: Option<JsonValue>,
+    pub options: Vec<(String, JsonValue)>,
 }
 
 impl NivaArguments {
     fn parse_argument<'a>(arg: &'a str) -> Result<(&'a str, JsonValue)> {
         let arg = arg.trim_start_matches("--");
-        let mut parts = arg.splitn(1, '=');
+        let mut parts = arg.splitn(2, '=');
 
         let key = parts
             .next()
@@ -40,9 +40,9 @@ impl NivaArguments {
     pub fn new() -> Result<Self> {
         let args = std::env::args().collect::<Vec<String>>();
 
-        let mut niva_options: Vec<(String, JsonValue)> = vec![];
-        let mut niva_file: Option<JsonValue> = None;
-        let mut niva_base: Option<JsonValue> = None;
+        let mut file: Option<JsonValue> = None;
+        let mut base: Option<JsonValue> = None;
+        let mut options: Vec<(String, JsonValue)> = vec![];
 
         for arg in args {
             if !arg.starts_with("--niva") {
@@ -53,17 +53,12 @@ impl NivaArguments {
 
             if key == "niva-file" {
                 match &value {
-                    JsonValue::String(_) => niva_file = Some(value),
-                    _ => {
-                        return Err(anyhow!(
-                            "Unexpected argument `{}`, require file path string.",
-                            arg
-                        ))
-                    }
+                    JsonValue::String(_) => file = Some(value),
+                    _ => return Err(anyhow!("Unexpected argument `{}`, require string.", arg)),
                 }
             } else if key == "niva" {
                 match &value {
-                    JsonValue::Object(_) => niva_base = Some(value),
+                    JsonValue::Object(_) => base = Some(value),
                     _ => {
                         return Err(anyhow!(
                             "Unexpected argument `{}`, require json object.",
@@ -71,19 +66,21 @@ impl NivaArguments {
                         ))
                     }
                 }
+            } else if key.starts_with("niva.") {
+                options.push((key.to_string(), value));
             } else {
-                niva_options.push((key.to_string(), value));
+                return Err(anyhow!("Unexpected niva argument `{}`.", arg));
             }
         }
 
         Ok(Self {
-            niva_file,
-            niva_base,
-            niva_options,
+            file,
+            base,
+            options,
         })
     }
 
     pub fn empty(&self) -> bool {
-        self.niva_base.is_none() && self.niva_file.is_none() && self.niva_options.len() <= 0
+        self.base.is_none() && self.options.len() <= 0
     }
 }
