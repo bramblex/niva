@@ -22,4 +22,4 @@ target\release\niva.exe ^
 	--project=packages\devtools ^
 	--build=dist\NivaDevtools.exe
 
-@REM powershell Compress-Archive -Path dist\NivaDevtools.exe -DestinationPath dist\NivaDevtools_%VERSION%_Windows.zip
+powershell Compress-Archive -Path dist\NivaDevtools.exe -DestinationPath dist\NivaDevtools_%VERSION%_Windows.zip
