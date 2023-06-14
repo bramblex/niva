@@ -3,6 +3,7 @@ import { AppModel } from "../models/app.model";
 import { LocaleModel } from "../models/locale.model";
 import { ModalModel } from "../models/modal.model";
 import { AppResult } from "./result";
+import { ExecOptions } from '../../../types/Niva_zh'
 
 let baseFileSystemUrl: string | null = null;
 let sep: string | null = null;
@@ -190,7 +191,7 @@ export const checkVersion = (modal: ModalModel, locale: LocaleModel) => {
     })
 }
 
-export async function runCmd(cmd: string, args: string[], options?: unknown) {
+export async function runCmd(cmd: string, args: string[], options?: ExecOptions) {
   const { process } = Niva.api;
   const res = await process.exec(
     cmd,

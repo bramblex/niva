@@ -160,7 +160,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const _p = {
         project: this,
         progress,
-        file: null
+        file: null as string | null
       }
       try {
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
@@ -184,7 +184,10 @@ export class ProjectModel extends StateModel<ProjectModelState> {
 
       modal
         .confirm(locale.t("BUILD_SUCCESS"), locale.t("BUILD_SUCCESS_MESSAGE"))
-        .then((ok) => ok && process.open(dirname(appPath)));
+        .then((ok) => {
+          if (!ok) return
+          return process.open(dirname(appPath))
+        });
     });
   }
 
