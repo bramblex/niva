@@ -705,7 +705,7 @@ interface NivaOs {
   locale(): Promise<string>;
 }
 
-interface ExecOptions {
+export interface ExecOptions {
   env?: Record<string, string>;
   current_dir?: string;
   detached?: boolean;

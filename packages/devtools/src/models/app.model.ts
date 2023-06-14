@@ -43,7 +43,7 @@ export class AppModel extends StateModel<{
 
   async openWithPicker(): Promise<AppResult> {
     const { modal } = this.state;
-    const path = await modal.showNative<string>(() =>
+    const path = await modal.showNative<string | null>(() =>
       Niva.api.dialog.pickDir()
     );
 
@@ -154,7 +154,7 @@ export class AppModel extends StateModel<{
 
   async create(): Promise<AppResult> {
     const { modal } = this.state;
-    const path = await modal.showNative<string>(() =>
+    const path = await modal.showNative<string | null>(() =>
       Niva.api.dialog.saveFile()
     );
 
