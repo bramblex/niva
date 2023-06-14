@@ -1,22 +1,50 @@
-mod options;
-mod arguments;
-mod resource;
-mod launch_info;
 
-use std::sync::Arc;
+/*
+
+NivaApp {
+    NivaWindow {
+        SystemTray
+        GlobalShortcut
+        Menu
+        Webview
+        Api
+    }
+
+    NivaAppEventLoop {
+        NivaWindow.handle()
+    }
+}
+
+ */
+
+mod arguments;
+mod launch_info;
+mod options;
+mod resource;
+mod api;
+
 use anyhow::Result;
 use launch_info::NivaLaunchInfo;
+use resource::NivaResourceManager;
+use std::sync::Arc;
 
 pub struct NivaApp {
     pub launch_info: NivaLaunchInfo,
+    pub resource_manager: NivaResourceManager,
+}
+
+unsafe impl Send for NivaApp {
 }
 
 impl NivaApp {
     pub fn new() -> Result<Arc<NivaApp>> {
         let launch_info = NivaLaunchInfo::new()?;
+        let resource_manager =
+            NivaResourceManager::new(&launch_info.workspace, &launch_info.options.resource)?;
 
         Ok(Arc::new(Self {
-            launch_info
+            launch_info,
+            resource_manager,
         }))
     }
 }

@@ -123,9 +123,9 @@
         }
       },
       "args": [
-        "--niva={ \n\"icon\": \"icon.png\" \n}",
         "--niva.name=example",
-        "--niva.id=niva.example.1234"
+        "--niva.id=niva.example.1234",
+        "--niva.resource=packages/examples/simple-project"
       ],
       "cwd": "${workspaceFolder}"
     }

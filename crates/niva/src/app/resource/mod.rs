@@ -13,34 +13,44 @@ use crate::utils::path::UniPath;
 use self::{bin::BinaryResource, fs::FileSystemResource};
 
 #[async_trait]
-pub trait Resource {
-    fn exists(self: Arc<Self>, key: &str) -> bool;
+pub trait NivaResource {
+    fn exists(&self, key: &str) -> bool;
 
-    fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
+    fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
 
-    async fn exists_async(self: Arc<Self>, key: &str) -> bool;
+    fn read_all(&self, key: &str) -> Result<Vec<u8>> {
+        let bytes = self.read(key, 0, 0)?;
+        Ok(bytes)
+    }
 
-    async fn read_async(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
+    fn read_string(&self, key: &str) -> Result<String> {
+        let content = self.read_all(key)?;
+        Ok(std::str::from_utf8(&content)?.to_string())
+    }
 
-    async fn read_all_async(self: Arc<Self>, key: &str) -> Result<Vec<u8>> {
+    async fn exists_async(&self, key: &str) -> bool;
+
+    async fn read_async(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
+
+    async fn read_all_async(&self, key: &str) -> Result<Vec<u8>> {
         let bytes = self.read_async(key, 0, 0).await?;
         Ok(bytes)
     }
 
-    async fn read_string_async(self: Arc<Self>, key: &str) -> Result<String> {
+    async fn read_string_async(&self, key: &str) -> Result<String> {
         let content = self.read_all_async(key).await?;
         Ok(std::str::from_utf8(&content)?.to_string())
     }
 }
 
-pub type ResourceRef = Arc<dyn Resource>;
+pub type NivaResourceRef = Arc<dyn NivaResource>;
 
-pub struct ResourceManager {
-    resources: HashMap<String, ResourceRef>,
+pub struct NivaResourceManager {
+    resources: HashMap<String, NivaResourceRef>,
 }
 
-impl ResourceManager {
-    pub fn get(&self, name: &String) -> Result<ResourceRef> {
+impl NivaResourceManager {
+    pub fn get(&self, name: &str) -> Result<NivaResourceRef> {
         Ok(self
             .resources
             .get(name)
@@ -48,8 +58,8 @@ impl ResourceManager {
             .clone())
     }
 
-    pub fn new(workspace: &Path, options: &ResourceOptions) -> Result<ResourceManager> {
-        let mut resources: HashMap<String, ResourceRef> = HashMap::new();
+    pub fn new(workspace: &Path, options: &ResourceOptions) -> Result<NivaResourceManager> {
+        let mut resources: HashMap<String, NivaResourceRef> = HashMap::new();
         for (name, resource_path) in &options.0 {
             if resource_path.starts_with("$INNER:") {
                 let resource_name = name.trim_start_matches("$INNER:");

@@ -11,7 +11,16 @@ use anyhow::Result;
 use app::NivaApp;
 use utils::path::UniPath;
 
+struct Parent<'a> {
+    pub child: Child<'a>
+}
+
+struct Child<'a> {
+    pub parent: Option<&'a Parent<'a>>
+}
+
 fn main() -> Result<()> {
+
     // let mut event_loop = NivaEventLoop::with_user_event();
     // let app = NivaApp::new(&mut event_loop)?;
     // app.run(event_loop)
@@ -27,12 +36,18 @@ fn main() -> Result<()> {
     // set_json_value(&mut target, "hello.world.arr.3.test", json!(789))?;
     // println!("{}", serde_json::to_string_pretty(&target)?);
 
-    // let app = NivaApp::new()?;
-    // println!("{:?}", app.launch_info);
+    let app = NivaApp::new()?;
 
-    let p = UniPath::new("c:/aaa/bbb/ccc");
+    let base = app.resource_manager.get("base")?;
+    let html =  base.read_string("index.html")?;
 
-    println!("{:?}", p.to_path_buf().is_absolute());
+        // std::thread::spawn(|| {
+        //     smol::block_on()
+        // });
+    // let r = base.exists_async("index.html");
+
+    println!("{:?}", app.launch_info);
+    println!("{:?}", html);
 
     Ok(())
 }

@@ -1,14 +1,12 @@
 use crate::utils::path::UniPath;
 
-use super::Resource;
+use super::NivaResource;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::{
-    fs::OpenOptions,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 pub struct FileSystemResource {
@@ -16,8 +14,8 @@ pub struct FileSystemResource {
 }
 
 #[async_trait]
-impl Resource for FileSystemResource {
-    fn exists(self: Arc<Self>, key: &str) -> bool {
+impl NivaResource for FileSystemResource {
+    fn exists(&self, key: &str) -> bool {
         let path = self.key_to_path(key);
         if let Ok(path) = path {
             path.exists() && path.is_file()
@@ -26,21 +24,32 @@ impl Resource for FileSystemResource {
         }
     }
 
-    fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         let path = self.key_to_path(key)?;
-        let mut file = OpenOptions::new().read(true).open(path)?;
+        let mut file = std::fs::OpenOptions::new().read(true).open(path)?;
         file.seek(SeekFrom::Start(start as u64))?;
-        let mut buffer = vec![0; len];
-        file.read_exact(&mut buffer)?;
+
+        let mut buffer: Vec<u8>;
+        if len == 0 {
+            buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+        } else {
+            buffer = vec![0; len];
+            file.read_exact(&mut buffer)?;
+        }
 
         Ok(buffer)
     }
 
-    async fn exists_async(self: Arc<Self>, key: &str) -> bool {
-        self.exists(key)
+    async fn exists_async(&self, key: &str) -> bool {
+        let metadata_result = async_fs::metadata(key).await;
+        match metadata_result {
+            Ok(metadata) => metadata.is_file(),
+            _ => false,
+        }
     }
 
-    async fn read_async(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    async fn read_async(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         todo!()
     }
 }

@@ -1,4 +1,4 @@
-use super::Resource;
+use super::NivaResource;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -10,16 +10,18 @@ pub struct BinaryResource {
 }
 
 #[async_trait]
-impl Resource for BinaryResource {
-    fn exists(self: Arc<Self>, key: &str) -> bool {
+impl NivaResource for BinaryResource {
+    fn exists(&self, key: &str) -> bool {
         self.index.contains_key(key)
     }
 
-    fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         let (offset, size) = self
             .index
             .get(key)
             .ok_or(anyhow!("Cannot find file in resource, `{}`", key))?;
+
+        let len = if len == 0 { *size } else { len };
 
         let start = std::cmp::min(offset + start, offset + size);
         let len = std::cmp::min(size - start, len);
@@ -28,11 +30,11 @@ impl Resource for BinaryResource {
         Ok(data.to_vec())
     }
 
-    async fn exists_async(self: Arc<Self>, key: &str) -> bool {
+    async fn exists_async(&self, key: &str) -> bool {
         self.exists(key)
     }
 
-    async fn read_async(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    async fn read_async(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         self.read(key, start, len)
     }
 }
