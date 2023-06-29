@@ -50,6 +50,8 @@ enum EncodeType {
     UTF8,
     #[serde(rename = "base64")]
     BASE64,
+    #[serde(rename = "gbk")]
+    GBK
 }
 
 #[niva_api]
@@ -60,6 +62,14 @@ fn read(path: String, encode: Option<EncodeType>) -> Result<String> {
         EncodeType::BASE64 => {
             let content = std::fs::read(path)?;
             base64::encode(content)
+        },
+        EncodeType::GBK => {
+            use encoding_rs::GBK;
+            let content = std::fs::read(path)?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).unwrap();
+            let (decode_str, _, _) = GBK.decode(&buf);
+            let content: String = decode_str.into();
         }
     };
 
