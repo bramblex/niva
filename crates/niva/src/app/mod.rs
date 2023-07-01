@@ -33,9 +33,6 @@ pub struct NivaApp {
     pub resource_manager: NivaResourceManager,
 }
 
-unsafe impl Send for NivaApp {
-}
-
 impl NivaApp {
     pub fn new() -> Result<Arc<NivaApp>> {
         let launch_info = NivaLaunchInfo::new()?;
@@ -46,5 +43,9 @@ impl NivaApp {
             launch_info,
             resource_manager,
         }))
+    }
+
+    pub fn run(&self) -> Result<()> {
+        Ok(())
     }
 }

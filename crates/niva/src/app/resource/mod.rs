@@ -43,7 +43,7 @@ pub trait NivaResource {
     }
 }
 
-pub type NivaResourceRef = Arc<dyn NivaResource>;
+pub type NivaResourceRef = Arc<dyn NivaResource + Sync + Send>;
 
 pub struct NivaResourceManager {
     resources: HashMap<String, NivaResourceRef>,
