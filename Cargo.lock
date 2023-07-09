@@ -1859,7 +1859,6 @@ dependencies = [
  "directories",
  "flate2",
  "fs_extra",
- "glob",
  "libloading 0.8.0",
  "mime_guess",
  "native-tls",
@@ -1874,7 +1873,6 @@ dependencies = [
  "smol",
  "sys-locale",
  "tao",
- "ureq",
  "url",
  "winapi",
  "windows 0.44.0",
@@ -3290,22 +3288,6 @@ name = "unicode-width"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0edd1e5b14653f783770bce4a4dabb4a5108a5370a5f5d8cfe8710c361f6c8b"
-
-[[package]]
-name = "ureq"
-version = "2.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "338b31dd1314f68f3aabf3ed57ab922df95ffcd902476ca7ba3c4ce7b908c46d"
-dependencies = [
- "base64",
- "flate2",
- "log",
- "native-tls",
- "once_cell",
- "serde",
- "serde_json",
- "url",
-]
 
 [[package]]
 name = "url"

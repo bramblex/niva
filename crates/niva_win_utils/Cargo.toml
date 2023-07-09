@@ -1,5 +1,5 @@
 [package]
-name = "icon_creator"
+name = "niva_win_utils"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,3 +9,4 @@ edition = "2021"
 anyhow = "1.0.70"
 ico = "0.3.0"
 image = "0.24.5"
+winres_edit = "0.2.0"

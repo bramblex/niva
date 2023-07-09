@@ -1,6 +1,7 @@
 [workspace]
+
 members = [
 	"crates/niva",
 	"crates/niva_macros",
-	"crates/icon_creator",
+	"crates/niva_win_tuils",
 ]

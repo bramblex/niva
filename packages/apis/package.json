@@ -1,0 +1,12 @@
+{
+  "name": "@niva/apis",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "@swc/cli": "^0.1.62",
+    "@swc/core": "^1.3.68"
+  },
+  "scripts": {
+  }
+}
