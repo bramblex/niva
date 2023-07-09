@@ -4,9 +4,12 @@ use super::NivaResource;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use smol::io::{AsyncReadExt, AsyncSeekExt};
+
 use std::{
-    io::{Read, Seek, SeekFrom},
+    io::SeekFrom,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub struct FileSystemResource {
@@ -15,33 +18,8 @@ pub struct FileSystemResource {
 
 #[async_trait]
 impl NivaResource for FileSystemResource {
-    fn exists(&self, key: &str) -> bool {
-        let path = self.key_to_path(key);
-        if let Ok(path) = path {
-            path.exists() && path.is_file()
-        } else {
-            false
-        }
-    }
 
-    fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
-        let path = self.key_to_path(key)?;
-        let mut file = std::fs::OpenOptions::new().read(true).open(path)?;
-        file.seek(SeekFrom::Start(start as u64))?;
-
-        let mut buffer: Vec<u8>;
-        if len == 0 {
-            buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
-        } else {
-            buffer = vec![0; len];
-            file.read_exact(&mut buffer)?;
-        }
-
-        Ok(buffer)
-    }
-
-    async fn exists_async(&self, key: &str) -> bool {
+    async fn exists(self: Arc<Self>, key: &str) -> bool {
         let metadata_result = async_fs::metadata(key).await;
         match metadata_result {
             Ok(metadata) => metadata.is_file(),
@@ -49,8 +27,21 @@ impl NivaResource for FileSystemResource {
         }
     }
 
-    async fn read_async(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
-        todo!()
+    async fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+        let path = self.key_to_path(key)?;
+        let mut file = async_fs::OpenOptions::new().read(true).open(path).await?;
+        file.seek(SeekFrom::Start(start as u64)).await?;
+
+        let mut buffer: Vec<u8>;
+        if len == 0 {
+            buffer = Vec::new();
+            file.read_to_end(&mut buffer).await?;
+        } else {
+            buffer = vec![0; len];
+            file.read_exact(&mut buffer).await?;
+        }
+
+        Ok(buffer)
     }
 }
 

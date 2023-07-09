@@ -11,11 +11,11 @@ pub struct BinaryResource {
 
 #[async_trait]
 impl NivaResource for BinaryResource {
-    fn exists(&self, key: &str) -> bool {
+    async fn exists(self: Arc<Self>, key: &str) -> bool {
         self.index.contains_key(key)
     }
 
-    fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    async fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         let (offset, size) = self
             .index
             .get(key)
@@ -28,14 +28,6 @@ impl NivaResource for BinaryResource {
         let data = &self.data[start..len];
 
         Ok(data.to_vec())
-    }
-
-    async fn exists_async(&self, key: &str) -> bool {
-        self.exists(key)
-    }
-
-    async fn read_async(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
-        self.read(key, start, len)
     }
 }
 
@@ -58,8 +50,8 @@ impl BinaryResource {
         Ok(Self { index, data })
     }
 
-    pub fn from_file(path: &Path) -> Result<BinaryResource> {
-        let content = std::fs::read(path)?;
+    pub async fn from_file(path: &Path) -> Result<BinaryResource> {
+        let content = async_fs::read(path).await?;
         BinaryResource::new(&content)
     }
 
