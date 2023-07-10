@@ -3,5 +3,5 @@
 members = [
 	"crates/niva",
 	"crates/niva_macros",
-	"crates/niva_win_tuils",
+	"crates/niva_win_utils",
 ]

@@ -1,6 +1,7 @@
 pub mod bin;
 pub mod fs;
 pub mod options;
+pub mod server;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -10,11 +11,9 @@ use std::{
     sync::Arc,
 };
 
-use options::ResourceOptions;
-
+use self::{bin::BinaryResource, fs::FileSystemResource, server::NivaResourceServer};
 use crate::utils::path::UniPath;
-
-use self::{bin::BinaryResource, fs::FileSystemResource};
+use options::ResourceOptions;
 
 #[async_trait]
 pub trait NivaResource {
@@ -34,14 +33,15 @@ pub trait NivaResource {
 }
 
 pub type NivaResourceRef = Arc<dyn NivaResource + Sync + Send>;
+pub type NivaResourceServerRef = Arc<NivaResourceServer>;
 
 pub struct NivaResourceManager {
     workspace: PathBuf,
-    resources: HashMap<String, NivaResourceRef>,
+    resources: HashMap<String, (NivaResourceRef, NivaResourceServerRef)>,
 }
 
 impl NivaResourceManager {
-    pub fn get(&self, name: &str) -> Result<NivaResourceRef> {
+    pub fn get(&self, name: &str) -> Result<(NivaResourceRef, NivaResourceServerRef)> {
         Ok(self
             .resources
             .get(name)
@@ -53,18 +53,31 @@ impl NivaResourceManager {
         if resource_path.starts_with("$INNER:") {
             let resource_name = name.trim_start_matches("$INNER:");
             let resource = Arc::new(BinaryResource::from_inner(resource_name)?);
-            self.resources.insert(name.to_string(), resource);
+            let _resource = resource.clone();
+            self.resources.insert(
+                name.to_string(),
+                (resource, NivaResourceServer::new(_resource).await?),
+            );
         } else {
             let resource_full_path = self
                 .workspace
                 .join(UniPath::new(resource_path).to_path_buf());
 
-            if resource_full_path.is_file() {
+            let metadata = async_fs::metadata(&resource_full_path).await?;
+            if metadata.is_file() {
                 let resource = Arc::new(BinaryResource::from_file(&resource_full_path).await?);
-                self.resources.insert(name.to_string(), resource);
-            } else if resource_full_path.is_dir() {
+                let _resource = resource.clone();
+                self.resources.insert(
+                    name.to_string(),
+                    (resource, NivaResourceServer::new(_resource).await?),
+                );
+            } else if metadata.is_dir() {
                 let resource = Arc::new(FileSystemResource::new(&resource_full_path)?);
-                self.resources.insert(name.to_string(), resource);
+                let _resource = resource.clone();
+                self.resources.insert(
+                    name.to_string(),
+                    (resource, NivaResourceServer::new(_resource).await?),
+                );
             } else {
                 return Err(anyhow!(
                     "Resource load failed `{}`",
