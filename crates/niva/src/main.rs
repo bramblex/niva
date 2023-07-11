@@ -19,8 +19,20 @@ fn main() -> Result<()> {
         let app = NivaApp::new().await?;
 
         let name = "base";
-        let resource = app.resource_manager.lock().await.get(name)?;
+        let rm = app.resource_manager.lock().await;
+        let resource = rm.get(name)?;
         println!("{} {}", name, resource.base_url());
+
+        println!("{}", rm.transfer_url("")?);
+        println!("{}", rm.transfer_url("index.html")?);
+        println!("{}", rm.transfer_url("http://base.resource.niva/index.html")?);
+        println!("{}", rm.transfer_url("http://aaa.bbb.ccc/index.html")?);
+
+        
+
+        // let base_url = url::Url::parse("http://aaa.bb.ccc/")?;
+        // let r = base_url.join("http://ccc.ddd.eee/hello/world")?;
+
 
         // let content = base.read("index.html", 0, 10).await?;
         // println!("{:?}", std::str::from_utf8(&content));

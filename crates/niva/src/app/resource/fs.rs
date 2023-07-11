@@ -5,6 +5,7 @@ use super::{NivaResource, server::{NivaResourceServerRef, NivaResourceServer}};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use smol::io::{AsyncReadExt, AsyncSeekExt};
+use url::Url;
 
 use std::{
     io::SeekFrom,
@@ -20,8 +21,8 @@ pub struct FileSystemResource {
 #[async_trait]
 impl NivaResource for FileSystemResource {
 
-    fn base_url(self: Arc<Self>) -> String {
-        format!("http://localhost:{}", self.server.port)
+    fn base_url(self: Arc<Self>) -> Url {
+        Url::parse(&format!("http://localhost:{}", self.server.port)).unwrap()
     }
 
     async fn exists(self: Arc<Self>, key: &str) -> bool {

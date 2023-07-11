@@ -5,6 +5,7 @@ pub mod server;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use url::Url;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -17,7 +18,7 @@ use options::ResourceOptions;
 
 #[async_trait]
 pub trait NivaResource {
-    fn base_url(self: Arc<Self>) -> String;
+    fn base_url(self: Arc<Self>) -> Url;
 
     async fn exists(self: Arc<Self>, key: &str) -> bool;
 
@@ -50,7 +51,7 @@ impl NivaResourceManager {
             .clone())
     }
 
-    pub async fn register(&mut self, name: &String, resource_path: &String) -> Result<()> {
+    pub async fn register(&mut self, name: &str, resource_path: &str) -> Result<()> {
         if resource_path.starts_with("$INNER:") {
             let resource_name = name.trim_start_matches("$INNER:");
             let resource = BinaryResource::from_inner(resource_name).await?;
@@ -75,6 +76,20 @@ impl NivaResourceManager {
             }
         }
         Ok(())
+    }
+
+    pub fn transfer_url(&self, origin_url: &str) -> Result<Url> {
+        let base_url = self.get("base")?.base_url();
+        let mut target_url = base_url.join(origin_url)?;
+        if let Some(url::Host::Domain(host)) = target_url.host() {
+            let params = host.splitn(2, '.').collect::<Vec<&str>>();
+            if params.len() == 2 && params[1] == "resource.niva" {
+                let resource = self.get(params[0])?;
+                let base_url = resource.base_url();
+                target_url = base_url.join(target_url.path())?;
+            }
+        }
+        Ok(target_url)
     }
 
     pub async fn new(workspace: &Path, options: &ResourceOptions) -> Result<NivaResourceManager> {

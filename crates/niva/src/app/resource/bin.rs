@@ -5,12 +5,8 @@ use super::{
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use std::{
-    collections::HashMap,
-    io::Read,
-    path::Path,
-    sync::{Arc, Weak},
-};
+use url::Url;
+use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
 
 pub struct BinaryResource {
     index: HashMap<String, (usize, usize)>,
@@ -39,8 +35,8 @@ impl NivaResource for BinaryResource {
         Ok(data.to_vec())
     }
 
-    fn base_url(self: Arc<Self>) -> String {
-        format!("http://localhost:{}", self.server.port)
+    fn base_url(self: Arc<Self>) -> Url {
+        Url::parse(&format!("http://localhost:{}", self.server.port)).unwrap()
     }
 }
 
