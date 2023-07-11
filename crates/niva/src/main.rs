@@ -13,11 +13,14 @@ use anyhow::Result;
 use app::NivaApp;
 use async_io::Timer;
 
+
 fn main() -> Result<()> {
     smol::block_on(async {
         let app = NivaApp::new().await?;
 
-        let (base, server) = app.resource_manager.lock().await.get("base")?;
+        let name = "base";
+        let resource = app.resource_manager.lock().await.get(name)?;
+        println!("{} {}", name, resource.base_url());
 
         // let content = base.read("index.html", 0, 10).await?;
         // println!("{:?}", std::str::from_utf8(&content));

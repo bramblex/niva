@@ -1,12 +1,21 @@
-use super::NivaResource;
+use super::{
+    server::{NivaResourceServer, NivaResourceServerRef},
+    NivaResource,
+};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::Path,
+    sync::{Arc, Weak},
+};
 
 pub struct BinaryResource {
     index: HashMap<String, (usize, usize)>,
     data: Vec<u8>,
+    server: NivaResourceServerRef,
 }
 
 #[async_trait]
@@ -29,10 +38,14 @@ impl NivaResource for BinaryResource {
 
         Ok(data.to_vec())
     }
+
+    fn base_url(self: Arc<Self>) -> String {
+        format!("http://localhost:{}", self.server.port)
+    }
 }
 
 impl BinaryResource {
-    pub fn new(buffer: &[u8]) -> Result<BinaryResource> {
+    pub async fn new(buffer: &[u8]) -> Result<Arc<BinaryResource>> {
         let mut parts = buffer.splitn(2, |b| *b == b'\n');
         let index_bytes = parts
             .next()
@@ -47,15 +60,24 @@ impl BinaryResource {
         let mut data = Vec::new();
         data_decoder.read_to_end(&mut data)?;
 
-        Ok(Self { index, data })
+        let resource = Arc::new(Self {
+            index,
+            data,
+            server: NivaResourceServer::new().await?,
+        });
+
+        let server = resource.server.clone();
+        smol::spawn(server.run(resource.clone())).detach();
+
+        Ok(resource)
     }
 
-    pub async fn from_file(path: &Path) -> Result<BinaryResource> {
+    pub async fn from_file(path: &Path) -> Result<Arc<BinaryResource>> {
         let content = async_fs::read(path).await?;
-        BinaryResource::new(&content)
+        BinaryResource::new(&content).await
     }
 
-    pub fn from_inner(resource_name: &str) -> Result<BinaryResource> {
+    pub async fn from_inner(resource_name: &str) -> Result<Arc<BinaryResource>> {
         #[cfg(target_os = "windows")]
         use crate::utils::win::load_resource;
 
@@ -63,8 +85,6 @@ impl BinaryResource {
         use crate::utils::mac::load_resource;
 
         let resource_bytes = load_resource(resource_name)?;
-        let binary_resource = BinaryResource::new(&resource_bytes)?;
-
-        Ok(binary_resource)
+        BinaryResource::new(&resource_bytes).await
     }
 }

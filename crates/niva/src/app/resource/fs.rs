@@ -1,6 +1,6 @@
 use crate::utils::path::UniPath;
 
-use super::NivaResource;
+use super::{NivaResource, server::{NivaResourceServerRef, NivaResourceServer}};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -14,10 +14,15 @@ use std::{
 
 pub struct FileSystemResource {
     root_path: PathBuf,
+    server: NivaResourceServerRef,
 }
 
 #[async_trait]
 impl NivaResource for FileSystemResource {
+
+    fn base_url(self: Arc<Self>) -> String {
+        format!("http://localhost:{}", self.server.port)
+    }
 
     async fn exists(self: Arc<Self>, key: &str) -> bool {
         let metadata_result = async_fs::metadata(key).await;
@@ -46,10 +51,16 @@ impl NivaResource for FileSystemResource {
 }
 
 impl FileSystemResource {
-    pub fn new(root_path: &Path) -> Result<FileSystemResource> {
-        Ok(Self {
+    pub async fn new(root_path: &Path) -> Result<Arc<FileSystemResource>> {
+        let resource = Arc::new(Self {
             root_path: root_path.to_path_buf(),
-        })
+            server: NivaResourceServer::new().await?,
+        });
+
+        let server = resource.server.clone();
+        smol::spawn(server.run(resource.clone())).detach();
+
+        Ok(resource)
     }
 
     pub fn key_to_path(&self, key: &str) -> Result<PathBuf> {
