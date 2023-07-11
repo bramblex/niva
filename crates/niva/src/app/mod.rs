@@ -23,6 +23,7 @@ mod window;
 mod arguments;
 mod launch_info;
 mod options;
+pub mod event;
 
 use anyhow::Result;
 use launch_info::NivaLaunchInfo;
@@ -30,10 +31,14 @@ use resource::NivaResourceManager;
 use smol::lock::Mutex;
 use std::sync::Arc;
 
+use self::event::NivaEventLoop;
+
 pub struct NivaApp {
     pub launch_info: NivaLaunchInfo,
     pub resource_manager: Arc<Mutex<NivaResourceManager>>,
 }
+
+pub type NivaAppRef = Arc<NivaApp>;
 
 impl NivaApp {
     pub async fn new() -> Result<Arc<NivaApp>> {
@@ -48,7 +53,6 @@ impl NivaApp {
         }))
     }
 
-    pub fn run(&self) -> Result<()> {
-        Ok(())
+    pub fn run(self) {
     }
 }
