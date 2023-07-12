@@ -18,7 +18,7 @@ mod api;
 mod resource;
 mod shortcut;
 mod tray;
-mod window;
+pub mod window;
 
 mod arguments;
 mod launch_info;

@@ -13,7 +13,7 @@ use anyhow::Result;
 use app::NivaApp;
 use async_io::Timer;
 
-use crate::app::event::NivaEventLoop;
+use crate::app::{event::NivaEventLoop, window::NivaWindow};
 
 fn main() {
     smol::block_on(async {
@@ -23,7 +23,7 @@ fn main() {
         let name = "base";
         let rm = app.resource_manager.lock().await;
         let resource = rm.get(name).unwrap();
-        println!("{} {}", name, resource.base_url());
+        println!("{} {}", name, resource.clone().base_url());
 
         println!("{}", rm.transfer_url("").unwrap());
         println!("{}", rm.transfer_url("index.html").unwrap());
@@ -36,6 +36,12 @@ fn main() {
             "{}",
             rm.transfer_url("http://aaa.bbb.ccc/index.html").unwrap()
         );
+
+        let window = NivaWindow::new(
+            app.clone(),
+            &event_loop,
+            resource.base_url().to_string(),
+        ).unwrap();
 
         // smol::spawn(async {
         //     let mut i = 0;
