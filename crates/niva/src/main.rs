@@ -15,33 +15,17 @@ use async_io::Timer;
 
 use crate::app::{event::NivaEventLoop, window::NivaWindow};
 
-fn main() {
-    smol::block_on(async {
-        let event_loop = NivaEventLoop::with_user_event();
-        let app = NivaApp::new().await.unwrap();
+fn main() -> Result<()> {
+    let event_loop = NivaEventLoop::with_user_event();
+    let app = NivaApp::new()?;
+    app.run(event_loop)
 
-        let name = "base";
-        let rm = app.resource_manager.lock().await;
-        let resource = rm.get(name).unwrap();
-        println!("{} {}", name, resource.clone().base_url());
-
-        println!("{}", rm.transfer_url("").unwrap());
-        println!("{}", rm.transfer_url("index.html").unwrap());
-        println!(
-            "{}",
-            rm.transfer_url("http://base.resource.niva/index.html")
-                .unwrap()
-        );
-        println!(
-            "{}",
-            rm.transfer_url("http://aaa.bbb.ccc/index.html").unwrap()
-        );
-
-        let window = NivaWindow::new(
-            app.clone(),
-            &event_loop,
-            resource.base_url().to_string(),
-        ).unwrap();
+    // smol::block_on(async {
+        // let window = NivaWindow::new(
+        //     app.clone(),
+        //     &event_loop,
+        //     resource.base_url().to_string(),
+        // ).unwrap();
 
         // smol::spawn(async {
         //     let mut i = 0;
@@ -63,6 +47,5 @@ fn main() {
         // let app = NivaApp::new(&mut event_loop)?;
         // app.run(event_loop);
         // Timer::after(Duration::from_secs(u64::MAX)).await;
-        event_loop.run(|_, _, _| {});
-    });
+    // });
 }

@@ -21,11 +21,11 @@ pub struct FileSystemResource {
 #[async_trait]
 impl NivaResource for FileSystemResource {
 
-    fn base_url(self: Arc<Self>) -> Url {
+    fn base_url(&self) -> Url {
         Url::parse(&format!("http://localhost:{}", self.server.port)).unwrap()
     }
 
-    async fn exists(self: Arc<Self>, key: &str) -> bool {
+    async fn exists(&self, key: &str) -> bool {
         let metadata_result = async_fs::metadata(key).await;
         match metadata_result {
             Ok(metadata) => metadata.is_file(),
@@ -33,7 +33,7 @@ impl NivaResource for FileSystemResource {
         }
     }
 
-    async fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    async fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         let path = self.key_to_path(key)?;
         let mut file = async_fs::OpenOptions::new().read(true).open(path).await?;
         file.seek(SeekFrom::Start(start as u64)).await?;

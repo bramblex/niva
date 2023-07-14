@@ -7,6 +7,8 @@ use wry::webview::{WebView, WebViewBuilder};
 use super::{event::NivaWindowTarget, NivaAppRef};
 
 mod webview;
+mod menu;
+mod options;
 
 pub struct NivaWindow {
     webview: WebView,
@@ -24,3 +26,7 @@ impl NivaWindow {
         Ok(Arc::new(Self { webview }))
     }
 }
+
+pub struct NivaWindowManager {
+}
+

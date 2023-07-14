@@ -5,31 +5,33 @@ pub mod server;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use url::Url;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
+use url::Url;
 
 use self::{bin::BinaryResource, fs::FileSystemResource};
-use crate::utils::path::UniPath;
+use crate::utils::{arc_mut::ArcMut, path::UniPath};
 use options::ResourceOptions;
+
+use super::{NivaAppRef, launch_info::NivaLaunchInfo, manager::{NivaManager, NivaManagerRef}, event::NivaEventLoop};
 
 #[async_trait]
 pub trait NivaResource {
-    fn base_url(self: Arc<Self>) -> Url;
+    fn base_url(&self) -> Url;
 
-    async fn exists(self: Arc<Self>, key: &str) -> bool;
+    async fn exists(&self, key: &str) -> bool;
 
-    async fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
+    async fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>>;
 
-    async fn read_all(self: Arc<Self>, key: &str) -> Result<Vec<u8>> {
+    async fn read_all(&self, key: &str) -> Result<Vec<u8>> {
         let bytes = self.read(key, 0, 0).await?;
         Ok(bytes)
     }
 
-    async fn read_string(self: Arc<Self>, key: &str) -> Result<String> {
+    async fn read_string(&self, key: &str) -> Result<String> {
         let content = self.read_all(key).await?;
         Ok(std::str::from_utf8(&content)?.to_string())
     }
@@ -38,11 +40,37 @@ pub trait NivaResource {
 pub type NivaResourceRef = Arc<dyn NivaResource + Sync + Send>;
 
 pub struct NivaResourceManager {
+    app: Option<NivaAppRef>,
     workspace: PathBuf,
     resources: HashMap<String, NivaResourceRef>,
 }
 
+#[async_trait]
+impl NivaManager for NivaResourceManager {
+    async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
+        self.app = Some(app.clone());
+        let options = &app.launch_info.options.resource;
+        for (name, resource_path) in &options.0 {
+            self.register(name, resource_path).await?;
+        }
+        Ok(())
+    }
+
+    fn start(&mut self, event_loop: &NivaEventLoop) -> Result<()> {
+        Ok(())
+    }
+}
+
 impl NivaResourceManager {
+    pub fn new(launch_info: &NivaLaunchInfo) -> Result<NivaManagerRef> {
+        let manager = Self {
+            app: None,
+            workspace: launch_info.workspace.clone(),
+            resources: HashMap::new(),
+        };
+        Ok(ArcMut::new(Box::new(manager)))
+    }
+
     pub fn get(&self, name: &str) -> Result<NivaResourceRef> {
         Ok(self
             .resources
@@ -90,16 +118,5 @@ impl NivaResourceManager {
             }
         }
         Ok(target_url)
-    }
-
-    pub async fn new(workspace: &Path, options: &ResourceOptions) -> Result<NivaResourceManager> {
-        let mut manager = Self {
-            workspace: workspace.to_path_buf(),
-            resources: HashMap::new(),
-        };
-        for (name, resource_path) in &options.0 {
-            manager.register(name, resource_path).await?;
-        }
-        Ok(manager)
     }
 }

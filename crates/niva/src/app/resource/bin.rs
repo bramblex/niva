@@ -16,11 +16,11 @@ pub struct BinaryResource {
 
 #[async_trait]
 impl NivaResource for BinaryResource {
-    async fn exists(self: Arc<Self>, key: &str) -> bool {
+    async fn exists(&self, key: &str) -> bool {
         self.index.contains_key(key)
     }
 
-    async fn read(self: Arc<Self>, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
+    async fn read(&self, key: &str, start: usize, len: usize) -> Result<Vec<u8>> {
         let (offset, size) = self
             .index
             .get(key)
@@ -35,7 +35,7 @@ impl NivaResource for BinaryResource {
         Ok(data.to_vec())
     }
 
-    fn base_url(self: Arc<Self>) -> Url {
+    fn base_url(&self) -> Url {
         Url::parse(&format!("http://localhost:{}", self.server.port)).unwrap()
     }
 }

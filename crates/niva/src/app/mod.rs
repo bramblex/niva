@@ -21,38 +21,53 @@ mod tray;
 pub mod window;
 
 mod arguments;
-mod launch_info;
-mod options;
 pub mod event;
+mod launch_info;
+mod manager;
+mod options;
 
 use anyhow::Result;
 use launch_info::NivaLaunchInfo;
 use resource::NivaResourceManager;
-use smol::lock::Mutex;
-use std::sync::Arc;
+use std::{collections::HashMap, hash::Hash, sync::Arc};
 
-use self::event::NivaEventLoop;
+use crate::utils::arc_mut::ArcMut;
+
+use self::{
+    event::NivaEventLoop,
+    manager::{NivaManager, NivaManagers},
+    window::NivaWindow,
+};
 
 pub struct NivaApp {
     pub launch_info: NivaLaunchInfo,
-    pub resource_manager: Arc<Mutex<NivaResourceManager>>,
+    managers: NivaManagers, // pub resource_manager: ArcMut<NivaResourceManager>,
 }
 
 pub type NivaAppRef = Arc<NivaApp>;
 
 impl NivaApp {
-    pub async fn new() -> Result<Arc<NivaApp>> {
+    pub fn new() -> Result<Arc<NivaApp>> {
         let launch_info = NivaLaunchInfo::new()?;
-        let resource_manager = Arc::new(Mutex::new(
-            NivaResourceManager::new(&launch_info.workspace, &launch_info.options.resource).await?,
-        ));
+        let mut managers = NivaManagers::new();
+
+        managers.insert("resource", NivaResourceManager::new(&launch_info)?);
+        // let resource_manager = NivaResourceManager::new(&launch_info)?;
 
         Ok(Arc::new(Self {
             launch_info,
-            resource_manager,
+            managers, // resource_manager,
         }))
     }
 
-    pub fn run(self) {
+    async fn init(self: &Arc<Self>) -> Result<()> {
+        // self.resource_manager.lock().await.init(self).await?;
+
+        Ok(())
+    }
+
+    pub fn run(self: &Arc<Self>, event_loop: NivaEventLoop) -> Result<()> {
+        smol::block_on(async { self.init().await })?;
+        event_loop.run(|event, target, control_flow| {});
     }
 }
