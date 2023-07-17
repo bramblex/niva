@@ -8,15 +8,20 @@ use async_trait::async_trait;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex}, any::Any,
 };
 use url::Url;
 
 use self::{bin::BinaryResource, fs::FileSystemResource};
-use crate::utils::{arc_mut::ArcMut, path::UniPath};
+use crate::utils::path::UniPath;
 use options::ResourceOptions;
 
-use super::{NivaAppRef, launch_info::NivaLaunchInfo, manager::{NivaManager, NivaManagerRef}, event::NivaEventLoop};
+use super::{
+    event::NivaEventLoop,
+    launch_info::NivaLaunchInfo,
+    manager::{NivaManager, NivaManagerRef},
+    NivaAppRef,
+};
 
 #[async_trait]
 pub trait NivaResource {
@@ -47,6 +52,10 @@ pub struct NivaResourceManager {
 
 #[async_trait]
 impl NivaManager for NivaResourceManager {
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
     async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
         self.app = Some(app.clone());
         let options = &app.launch_info.options.resource;
@@ -68,7 +77,7 @@ impl NivaResourceManager {
             workspace: launch_info.workspace.clone(),
             resources: HashMap::new(),
         };
-        Ok(ArcMut::new(Box::new(manager)))
+        Ok(Arc::new(Mutex::new(manager)))
     }
 
     pub fn get(&self, name: &str) -> Result<NivaResourceRef> {
