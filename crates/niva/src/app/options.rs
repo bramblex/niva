@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::resource::options::ResourceOptions;
+use super::{resource::options::ResourceOptions, window::options::NivaWindowOptions};
 
 #[derive(Deserialize, Clone, Debug)]
 pub enum NivaActivationPolicy {
@@ -33,8 +33,8 @@ pub struct NivaOptions {
 
     // pub icon: Option<String>,
     // window options
-    // #[serde(default)]
-    // pub window: NivaWindowOptions,
+    #[serde(default)]
+    pub window: NivaWindowOptions,
     // pub tray: Option<NivaTrayOptions>,
     // pub shortcuts: Option<NivaShortcutsOptions>,
 

@@ -1,32 +1,69 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
-use tao::window::WindowBuilder;
+use tao::{event::Event, event_loop::ControlFlow, window::WindowBuilder};
 use wry::webview::{WebView, WebViewBuilder};
 
-use super::{event::NivaWindowTarget, NivaAppRef};
+use crate::utils::arc_mut::ArcMut;
 
+use self::{options::NivaWindowOptions, window::NivaWindowRef};
+
+use super::{
+    event::{NivaEvent, NivaEventLoop, NivaWindowTarget},
+    launch_info::NivaLaunchInfo,
+    NivaAppRef,
+};
+
+pub mod options;
 mod webview;
-mod menu;
-mod options;
+mod window;
 
-pub struct NivaWindow {
-    webview: WebView,
-}
-
-impl NivaWindow {
-    pub fn new(
-        app: NivaAppRef,
-        target: &NivaWindowTarget,
-        entry_url: String,
-    ) -> Result<Arc<NivaWindow>> {
-        let window_builder = WindowBuilder::new();
-        let window = window_builder.build(target)?;
-        let webview = WebViewBuilder::new(window)?.with_url(&entry_url)?.build()?;
-        Ok(Arc::new(Self { webview }))
-    }
+pub struct NivaWindowIpcEvent {
+    window_id: u8,
+    event: String,
+    data: serde_json::Value,
 }
 
 pub struct NivaWindowManager {
+    app: Option<NivaAppRef>,
+    windows: HashMap<u8, NivaWindowRef>,
 }
 
+impl NivaWindowManager {
+    pub fn new(launch_info: &NivaLaunchInfo) -> Result<Arc<Mutex<NivaWindowManager>>> {
+        Ok(Arc::new(Mutex::new(Self {
+            app: None,
+            windows: HashMap::new(),
+        })))
+    }
+
+    pub async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
+        self.app = Some(app.clone());
+        // self.open();
+        Ok(())
+    }
+
+    pub fn start(&mut self, event_loop: &NivaEventLoop) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn run(
+        &mut self,
+        event: &Event<NivaEvent>,
+        target: &NivaWindowTarget,
+        control_flow: &mut ControlFlow,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn open(&mut self, options: &NivaWindowOptions, target: &NivaWindowTarget) {}
+
+    pub fn close(&mut self, id: u8) {}
+
+    pub fn get(&self) {}
+
+    pub fn get_all(&self) {}
+}

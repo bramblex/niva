@@ -1,6 +1,7 @@
 use super::*;
 
 use anyhow::{anyhow, Result};
+use directories::BaseDirs;
 use options::NivaOptions;
 use serde_json::{json, Value as JsonValue};
 use std::path::PathBuf;
@@ -20,7 +21,11 @@ pub struct NivaLaunchInfo {
     pub name: String,         // Name of the project.
     pub id: String, // Identifier of the project. This is used to create data directory, cache directory and temporary directory. Generate by combining name and first eight characters of uuid. e.g. "niva.example.12345677"
     pub options: NivaOptions, // Project options, read from niva.json and command line arguments.
+
     pub workspace: PathBuf, // Workspace directory.
+    pub temp_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub cache_dir: PathBuf,
 }
 
 impl NivaLaunchInfo {
@@ -126,12 +131,20 @@ impl NivaLaunchInfo {
         let name = options.name.clone();
         let id = options.id.clone();
 
+        let base_dirs = BaseDirs::new().ok_or(anyhow!("Failed to get user directories"))?;
+        let temp_dir = std::env::temp_dir().join(&id);
+        let data_dir = base_dirs.data_dir().join(&id);
+        let cache_dir = base_dirs.cache_dir().join(&id);
+
         Ok(Self {
             mode,
             name,
             id,
             options,
             workspace,
+            data_dir,
+            cache_dir,
+            temp_dir,
         })
     }
 }

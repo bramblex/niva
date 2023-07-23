@@ -1,92 +1,119 @@
-/*
-NivaApp {
-    NivaWindow {
-        SystemTray
-        GlobalShortcut
-        Menu
-        Webview
-        Api
-    }
-
-    NivaAppEventLoop {
-        NivaWindow.handle()
-    }
-}
- */
-
 mod api;
 pub mod resource;
 mod shortcut;
 mod tray;
-pub mod window;
+mod window;
 
+mod common;
 mod arguments;
-pub mod event;
+mod event;
 mod launch_info;
-pub mod manager;
 mod options;
 
 use anyhow::Result;
 use launch_info::NivaLaunchInfo;
 use resource::NivaResourceManager;
-use std::{
-    any::TypeId,
-    collections::HashMap,
-    ops::DerefMut,
-    sync::{Arc, MutexGuard},
+use std::sync::Arc;
+
+use crate::{utils::arc_mut::ArcMut, with_lock};
+
+use self::{
+    api::NivaApiManager,
+    event::{NivaEventLoop, NivaEventLoopProxy, NivaEvent},
+    shortcut::NivaShortcutManager,
+    tray::NivaTrayManager,
+    window::NivaWindowManager,
 };
-
-use crate::{app::manager::NivaManager, lock};
-
-use self::{event::NivaEventLoop, manager::NivaManagerRef};
 
 pub struct NivaApp {
     pub launch_info: NivaLaunchInfo,
-    managers: HashMap<TypeId, NivaManagerRef>,
+    pub event_loop: NivaEventLoopProxy,
+
+    pub resource_manager: ArcMut<NivaResourceManager>,
+    pub window_manager: ArcMut<NivaWindowManager>,
+    pub tray_manager: ArcMut<NivaTrayManager>,
+    pub shortcut_manager: ArcMut<NivaShortcutManager>,
+    pub api_manager: ArcMut<NivaApiManager>,
 }
 
 pub type NivaAppRef = Arc<NivaApp>;
 
-impl NivaApp {
-    pub fn new() -> Result<Arc<NivaApp>> {
-        let launch_info = NivaLaunchInfo::new()?;
-        let mut managers = HashMap::new();
+macro_rules! map_manager {
+    ($app:expr, {$($manager_name:ident),+}, $name:ident => $body:block) => {
+        $(with_lock!($name = &$app.$manager_name, $body);)+
+    };
+}
 
-        managers.insert(
-            TypeId::of::<NivaResourceManager>(),
-            NivaResourceManager::new(&launch_info)?,
-        );
+impl NivaApp {
+    pub fn create_event_loop() -> NivaEventLoop {
+        NivaEventLoop::with_user_event()
+    }
+
+    pub fn new(event_loop: &mut NivaEventLoop) -> Result<Arc<NivaApp>> {
+        let launch_info = NivaLaunchInfo::new()?;
+
+        let event_loop = event_loop.create_proxy();
+
+        let resource_manager = NivaResourceManager::new(&launch_info)?;
+        let window_manager = NivaWindowManager::new(&launch_info)?;
+        let tray_manager = NivaTrayManager::new(&launch_info)?;
+        let shortcut_manager = NivaShortcutManager::new(&launch_info)?;
+        let api_manager = NivaApiManager::new(&launch_info)?;
 
         Ok(Arc::new(Self {
             launch_info,
-            managers, // resource_manager,
+            event_loop,
+
+            resource_manager,
+            window_manager,
+            tray_manager,
+            shortcut_manager,
+            api_manager,
         }))
     }
 
-    pub fn get_manager<T: NivaManager + 'static>(&self) -> Option<NivaManagerRef> {
-        let type_id = TypeId::of::<T>();
-        self.managers.get(&type_id).cloned()
-    }
-
     async fn init(self: &Arc<Self>) -> Result<()> {
-        for (_, manager) in &self.managers {
-            lock!(manager, { manager.init(self).await? });
-        }
+        map_manager!(self, {
+            resource_manager,
+            window_manager,
+            tray_manager,
+            shortcut_manager,
+            api_manager
+        }, manager => { manager.init(self).await?; });
         Ok(())
     }
 
     pub fn run(self: &Arc<Self>, event_loop: NivaEventLoop) -> Result<()> {
         smol::block_on(async { self.init().await })?;
-        for (_, manager) in &self.managers {
-            lock!(manager, { manager.start(&event_loop)? });
-        }
+        map_manager!(self, {
+            resource_manager,
+            window_manager,
+            tray_manager,
+            shortcut_manager,
+            api_manager
+        }, manager => { manager.start(&event_loop)?; });
+
         let app = self.clone();
         event_loop.run(move |event, target, control_flow| {
-            for (_, manager) in &app.managers {
-                lock!(manager, {
-                    manager.tick(&event, target, control_flow);
-                });
+            let mut err_list: Vec<anyhow::Error> = Vec::new();
+            map_manager!(&app, {
+                    resource_manager,
+                    window_manager,
+                    tray_manager,
+                    shortcut_manager,
+                    api_manager
+                }, manager => {
+                    if let Err(err) = manager.run(&event, target, control_flow) {
+                        err_list.push(err);
+                    }
+            });
+            for err in err_list {
+                println!("{}", err);
             }
         });
+    }
+
+    pub fn emit(self: &Arc<NivaApp>, event: NivaEvent) -> Result<()>{
+        Ok(self.event_loop.send_event(event)?)
     }
 }

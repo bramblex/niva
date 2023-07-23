@@ -5,6 +5,7 @@ pub mod server;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use tao::{event::Event, event_loop::ControlFlow};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -17,9 +18,8 @@ use crate::utils::path::UniPath;
 use options::ResourceOptions;
 
 use super::{
-    event::NivaEventLoop,
+    event::{NivaEventLoop, NivaEvent, NivaWindowTarget},
     launch_info::NivaLaunchInfo,
-    manager::{NivaManager, NivaManagerRef},
     NivaAppRef,
 };
 
@@ -50,13 +50,17 @@ pub struct NivaResourceManager {
     resources: HashMap<String, NivaResourceRef>,
 }
 
-#[async_trait]
-impl NivaManager for NivaResourceManager {
-    fn as_any(&mut self) -> &mut dyn Any {
-        self
+impl NivaResourceManager {
+    pub fn new(launch_info: &NivaLaunchInfo) -> Result<Arc<Mutex<NivaResourceManager>>> {
+        let manager = Self {
+            app: None,
+            workspace: launch_info.workspace.clone(),
+            resources: HashMap::new(),
+        };
+        Ok(Arc::new(Mutex::new(manager)))
     }
 
-    async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
+    pub async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
         self.app = Some(app.clone());
         let options = &app.launch_info.options.resource;
         for (name, resource_path) in &options.0 {
@@ -65,19 +69,12 @@ impl NivaManager for NivaResourceManager {
         Ok(())
     }
 
-    fn start(&mut self, event_loop: &NivaEventLoop) -> Result<()> {
+    pub fn start(&mut self, event_loop: &NivaEventLoop) -> Result<()> {
         Ok(())
     }
-}
 
-impl NivaResourceManager {
-    pub fn new(launch_info: &NivaLaunchInfo) -> Result<NivaManagerRef> {
-        let manager = Self {
-            app: None,
-            workspace: launch_info.workspace.clone(),
-            resources: HashMap::new(),
-        };
-        Ok(Arc::new(Mutex::new(manager)))
+    pub fn run(&mut self, event: &Event<NivaEvent>, target: &NivaWindowTarget, control_flow: &mut ControlFlow) -> Result<()> {
+        Ok(())
     }
 
     pub fn get(&self, name: &str) -> Result<NivaResourceRef> {
