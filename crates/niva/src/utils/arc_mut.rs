@@ -9,4 +9,12 @@ macro_rules! with_lock {
             $body
         }
     };
+
+    ($($name:ident = $value:expr,)+ $body:block, $alt:expr) => {
+        if let ($(Ok(mut $name),)+) = ($($value.lock(),)+) {
+            $body
+        } else {
+            $alt
+        }
+    };
 }

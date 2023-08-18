@@ -5,20 +5,20 @@ pub mod server;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use tao::{event::Event, event_loop::ControlFlow};
+use objc::runtime::NO;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex}, any::Any,
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
+use tao::{event::Event, event_loop::ControlFlow, window::Icon};
 use url::Url;
 
 use self::{bin::BinaryResource, fs::FileSystemResource};
 use crate::utils::path::UniPath;
-use options::ResourceOptions;
 
 use super::{
-    event::{NivaEventLoop, NivaEvent, NivaWindowTarget},
+    event::{NivaEvent, NivaEventLoop, NivaWindowTarget},
     launch_info::NivaLaunchInfo,
     NivaAppRef,
 };
@@ -73,7 +73,12 @@ impl NivaResourceManager {
         Ok(())
     }
 
-    pub fn run(&mut self, event: &Event<NivaEvent>, target: &NivaWindowTarget, control_flow: &mut ControlFlow) -> Result<()> {
+    pub fn run(
+        &mut self,
+        event: &Event<NivaEvent>,
+        target: &NivaWindowTarget,
+        control_flow: &mut ControlFlow,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -112,17 +117,38 @@ impl NivaResourceManager {
         Ok(())
     }
 
-    pub fn transfer_url(&self, origin_url: &str) -> Result<Url> {
-        let base_url = self.get("base")?.base_url();
-        let mut target_url = base_url.join(origin_url)?;
-        if let Some(url::Host::Domain(host)) = target_url.host() {
-            let params = host.splitn(2, '.').collect::<Vec<&str>>();
-            if params.len() == 2 && params[1] == "resource.niva" {
-                let resource = self.get(params[0])?;
-                let base_url = resource.base_url();
-                target_url = base_url.join(target_url.path())?;
-            }
+    pub fn transform_resource_url(&self, origin_url: &str) -> Result<Url> {
+        if let Some((resource_name, resource_path)) = Self::parse_resource_url(origin_url)? {
+            let resource = self.get(&resource_name)?;
+            return Ok(resource.base_url().join(&resource_path)?);
+        };
+        Ok(Url::parse(origin_url)?)
+    }
+
+    pub async fn load_by_resource_url(&self, origin_url: &str) -> Result<Vec<u8>> {
+        let (resource_name, resource_path) =
+            Self::parse_resource_url(origin_url)?.ok_or(anyhow!("Unexpected Resource uri."))?;
+        self.load(&resource_name, &resource_path).await
+    }
+
+    pub async fn load(&self, resource_name: &str, resource_path: &str) -> Result<Vec<u8>> {
+        let resource = self.get(resource_name)?;
+        resource.read_all(resource_path).await
+    }
+
+    fn parse_resource_url(origin_url: &str) -> Result<Option<(String, String)>> {
+        let base_url = Url::parse("http://base.resource.niva/")?;
+        let target_url = base_url.join(origin_url)?;
+
+        let host = target_url
+            .host()
+            .ok_or(anyhow!("Unexpected url."))?
+            .to_string();
+
+        let params = host.splitn(2, '.').collect::<Vec<&str>>();
+        if params.len() == 2 && params[1] == "resource.niva" {
+            return Ok(Some((params[0].to_string(), target_url.path().to_string())));
         }
-        Ok(target_url)
+        Ok(None)
     }
 }

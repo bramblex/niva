@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 use tao::{event::Event, event_loop::ControlFlow, window::WindowBuilder};
-use wry::webview::{WebView, WebViewBuilder};
+use wry::webview::{WebContext, WebView, WebViewBuilder};
 
 use crate::utils::arc_mut::ArcMut;
 
@@ -30,6 +30,7 @@ pub struct NivaWindowIpcEvent {
 pub struct NivaWindowManager {
     app: Option<NivaAppRef>,
     windows: HashMap<u8, NivaWindowRef>,
+    context: WebContext,
 }
 
 impl NivaWindowManager {
@@ -37,6 +38,7 @@ impl NivaWindowManager {
         Ok(Arc::new(Mutex::new(Self {
             app: None,
             windows: HashMap::new(),
+            context: WebContext::new(Some(launch_info.cache_dir.clone())),
         })))
     }
 
@@ -63,7 +65,9 @@ impl NivaWindowManager {
 
     pub fn close(&mut self, id: u8) {}
 
-    pub fn get(&self) {}
+    pub fn get(&self, id: u8) -> Result<&NivaWindowRef> {
+        todo!()
+    }
 
     pub fn get_all(&self) {}
 }

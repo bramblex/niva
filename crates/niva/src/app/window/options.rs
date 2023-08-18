@@ -41,6 +41,7 @@ pub struct WinWindowExtraOptions {
 pub struct NivaWindowOptions {
     #[serde(default)]
     pub entry: String,
+    pub preload: Option<String>,
     #[serde(default)]
     pub env: serde_json::Value,
     pub custom_close_request: Option<bool>, // block native close request

@@ -42,7 +42,7 @@ impl NivaResource for BinaryResource {
 
 impl BinaryResource {
     pub async fn new(buffer: &[u8]) -> Result<Arc<BinaryResource>> {
-        let mut parts = buffer.splitn(2, |b| *b == b'\n');
+        let mut parts = buffer.splitn(2, |b| *b == b'\0');
         let index_bytes = parts
             .next()
             .ok_or(anyhow!("Unexpected binary resource format."))?;
