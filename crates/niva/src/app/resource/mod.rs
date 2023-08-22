@@ -147,7 +147,11 @@ impl NivaResourceManager {
 
         let params = host.splitn(2, '.').collect::<Vec<&str>>();
         if params.len() == 2 && params[1] == "resource.niva" {
-            return Ok(Some((params[0].to_string(), target_url.path().to_string())));
+            let resource_key = target_url.path().to_string().strip_prefix("/").ok_or(anyhow!(""))?.to_string();
+            return Ok(Some((
+                params[0].to_string(),
+                resource_key,
+            )));
         }
         Ok(None)
     }

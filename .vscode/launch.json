@@ -125,7 +125,8 @@
       "args": [
         "--niva.name=example",
         "--niva.id=niva.example.1234",
-        "--niva.resource=packages/examples/simple-project",
+        "--niva.window.preload=preload.js",
+        "--niva.resource=packages/examples/simple-project"
       ],
       "cwd": "${workspaceFolder}"
     }

@@ -3,16 +3,19 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use tao::{event::Event, event_loop::ControlFlow, window::WindowBuilder};
 use wry::webview::{WebContext, WebView, WebViewBuilder};
 
 use crate::utils::arc_mut::ArcMut;
 
-use self::{options::NivaWindowOptions, window::NivaWindowRef};
+use self::{
+    options::NivaWindowOptions,
+    window::{NivaWindow, NivaWindowRef},
+};
 
 use super::{
-    event::{NivaEvent, NivaEventLoop, NivaWindowTarget},
+    event::{self, NivaEvent, NivaEventLoop, NivaWindowTarget},
     launch_info::NivaLaunchInfo,
     NivaAppRef,
 };
@@ -49,6 +52,11 @@ impl NivaWindowManager {
     }
 
     pub fn start(&mut self, event_loop: &NivaEventLoop) -> Result<()> {
+        let app = self.app.clone().ok_or(anyhow!(""))?;
+        smol::block_on(async {
+            self.open(&app.launch_info.options.window, &event_loop)
+                .await
+        })?;
         Ok(())
     }
 
@@ -61,7 +69,16 @@ impl NivaWindowManager {
         Ok(())
     }
 
-    pub fn open(&mut self, options: &NivaWindowOptions, target: &NivaWindowTarget) {}
+    pub async fn open(
+        &mut self,
+        options: &NivaWindowOptions,
+        target: &NivaWindowTarget,
+    ) -> Result<NivaWindowRef> {
+        let app = self.app.clone().ok_or(anyhow!(""))?;
+        let window = NivaWindow::new(&app, self, target, 0, options).await?;
+        self.windows.insert(0, window.clone());
+        Ok(window)
+    }
 
     pub fn close(&mut self, id: u8) {}
 
