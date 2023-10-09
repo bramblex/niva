@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use anyhow::Result;
-use tao::window::{Fullscreen, Theme, Window, WindowBuilder};
+use tao::window::{Fullscreen, Theme, Window, WindowBuilder, WindowId};
 use wry::webview::{WebView, WebViewBuilder};
 
 use crate::{
@@ -12,7 +12,8 @@ use crate::{
 use super::{options::NivaWindowOptions, webview::NivaWebview, NivaWindowManager};
 
 pub struct NivaWindow {
-    pub id: u8,
+    pub id: u32,
+    pub window_id: WindowId,
     pub webview: NivaWebview,
     pub custom_block_request: bool,
 }
@@ -24,7 +25,7 @@ impl NivaWindow {
         app: &NivaAppRef,
         manager: &mut NivaWindowManager,
         target: &NivaWindowTarget,
-        id: u8,
+        id: u32,
         options: &NivaWindowOptions,
     ) -> Result<NivaWindowRef> {
         let mut builder = WindowBuilder::new();
@@ -95,11 +96,11 @@ impl NivaWindow {
         if let Some(macos_extra) = &options.macos_extra {
             use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 
-            if let Some(parent) = &macos_extra.parent_window {
-                let parent = manager.get(*parent)?;
-                let parent = parent.ns_window();
-                set_property!(builder, with_parent_window, parent);
-            }
+            // if let Some(parent) = &macos_extra.parent_window {
+            //     let parent = manager.get_by_window_id(*parent)?;
+            //     let parent = parent.ns_window();
+            //     set_property!(builder, with_parent_window, parent);
+            // }
 
             set_property_some!(
                 builder,
@@ -173,18 +174,13 @@ impl NivaWindow {
         }
 
         let window = builder.build(target)?;
+        let window_id = window.id();
         let webview = NivaWebview::new(app, manager, window, options).await?;
         Ok(Arc::new(Self {
             id,
+            window_id,
             webview,
             custom_block_request: options.custom_close_request.unwrap_or(false),
         }))
-    }
-}
-
-impl Deref for NivaWindow {
-    type Target = Window;
-    fn deref(&self) -> &Self::Target {
-        &self.webview.window()
     }
 }

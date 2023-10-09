@@ -1,13 +1,14 @@
 use std::{
     collections::HashMap,
+    hash::Hash,
     sync::{Arc, Mutex},
 };
 
 use anyhow::{anyhow, Result};
-use tao::{event::Event, event_loop::ControlFlow, window::WindowBuilder};
-use wry::webview::{WebContext, WebView, WebViewBuilder};
+use tao::{event::Event, event_loop::ControlFlow, window::WindowId};
+use wry::webview::WebContext;
 
-use crate::utils::arc_mut::ArcMut;
+use crate::utils::id_container::IdContainer;
 
 use self::{
     options::NivaWindowOptions,
@@ -15,7 +16,7 @@ use self::{
 };
 
 use super::{
-    event::{self, NivaEvent, NivaEventLoop, NivaWindowTarget},
+    event::{NivaEvent, NivaEventLoop, NivaWindowTarget},
     launch_info::NivaLaunchInfo,
     NivaAppRef,
 };
@@ -25,14 +26,15 @@ mod webview;
 mod window;
 
 pub struct NivaWindowIpcEvent {
-    window_id: u8,
+    window_id: u32,
     event: String,
     data: serde_json::Value,
 }
 
 pub struct NivaWindowManager {
     app: Option<NivaAppRef>,
-    windows: HashMap<u8, NivaWindowRef>,
+    windows: IdContainer<u32, NivaWindowRef>,
+    id_map: HashMap<WindowId, u32>,
     context: WebContext,
 }
 
@@ -40,14 +42,14 @@ impl NivaWindowManager {
     pub fn new(launch_info: &NivaLaunchInfo) -> Result<Arc<Mutex<NivaWindowManager>>> {
         Ok(Arc::new(Mutex::new(Self {
             app: None,
-            windows: HashMap::new(),
             context: WebContext::new(Some(launch_info.cache_dir.clone())),
+            windows: IdContainer::new(0, 1),
+            id_map: HashMap::new(),
         })))
     }
 
     pub async fn init(&mut self, app: &NivaAppRef) -> Result<()> {
         self.app = Some(app.clone());
-        // self.open();
         Ok(())
     }
 
@@ -75,15 +77,32 @@ impl NivaWindowManager {
         target: &NivaWindowTarget,
     ) -> Result<NivaWindowRef> {
         let app = self.app.clone().ok_or(anyhow!(""))?;
-        let window = NivaWindow::new(&app, self, target, 0, options).await?;
-        self.windows.insert(0, window.clone());
+        let id = self.windows.next_id()?;
+        let window = NivaWindow::new(&app, self, target, id, options).await?;
+
+        self.windows.insert_with_id(id, window.clone());
+        self.id_map.insert(window.window_id , window.id);
+
         Ok(window)
     }
 
-    pub fn close(&mut self, id: u8) {}
-
-    pub fn get(&self, id: u8) -> Result<&NivaWindowRef> {
+    pub fn get(&self, id: &u32) -> Result<&NivaWindowRef> {
         todo!()
+    }
+
+    pub fn get_by_window_id(&self, window_id: &WindowId) -> Result<&NivaWindowRef> {
+        let id = self.id_map.get(&window_id).ok_or(anyhow!(""))?;
+        self.get(id)
+    }
+
+    pub fn close(&mut self, id: u32) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn close_by_window_id(&mut self,  window_id: &WindowId) -> Result<()> {
+        let window = self.get_by_window_id(window_id)?;
+        self.close(window.id);
+        Ok(())
     }
 
     pub fn get_all(&self) {}

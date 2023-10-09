@@ -10,7 +10,7 @@ pub type NivaPosition = LogicalPosition<f64>;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MacWindowExtraOptions {
-    pub parent_window: Option<u8>,
+    pub parent_window: Option<u32>,
     pub movable_by_window_background: Option<bool>,
     pub title_bar_transparent: Option<bool>,
     pub title_bar_hidden: Option<bool>,
