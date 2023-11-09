@@ -22,7 +22,7 @@ npx create-react-app my-react-app
 
 ![screenshot](@site/static/img/import-project-from-react/screenshot1.png)
 
-打开 Vue 项目后会询问是否生成一个 `niva.json` 项目文件，确认后生成 `niva.json` 配置如下。
+打开 React 项目后会询问是否生成一个 `niva.json` 项目文件，确认后生成 `niva.json` 配置如下。
 
 ```json
 {
