@@ -6,55 +6,44 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-niva_macros = { path = "../niva_macros" }
 
 wry = { version = "0.57.0", features = ["devtools"] }
-# rwh_05: rfd 0.11 file dialogs need raw-window-handle 0.5 impls
-tao = { version = "0.37.0", features = ["serde", "rwh_05"] }
+tao = { version = "0.37.0", features = ["serde"] }
 muda = "0.20.0"
 tray-icon = "0.25.1"
 global-hotkey = "0.8.0"
 arboard = "3.6.1"
-ureq = { version = "2.6.2", default-features = false, features = [
+ureq = { version = "3.4.2", default-features = false, features = [
 	"native-tls",
+	"native-tls-webpki-roots",
 	"gzip",
-	"json",
 ] }
-base64 = { version = "0.13.1", features = ["alloc"] }
-native-tls = "0.2.11"
-serde = { version = "1.0.152", features = ["derive"] }
-serde_json = "1.0.93"
-mime_guess = "2.0.4"
-os_info = "3.6.0"
-directories = "4.0.1"
-opener = "0.5.2"
-rfd = { version = "0.11.2", default-features = false, features = [
+native-tls = "0.2.18"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+mime_guess = "2.0.5"
+os_info = "3.15.0"
+directories = "6.0.0"
+opener = "0.8.5"
+rfd = { version = "0.17.2", default-features = false, features = [
 	"xdg-portal",
 ] }
-fs_extra = "1.3.0"
-anyhow = "1.0.69"
+anyhow = "1.0.104"
 smol = "2"
 tungstenite = "0.30"
 getrandom = "0.3"
-flate2 = "1.0.25"
-png = "0.17.7"
-sys-locale = "0.2.4"
-url = "2.3.1"
-glob = "0.3.1"
+async-channel = "2"
+flate2 = "1.1.10"
+png = "0.18.1"
+sys-locale = "0.3.2"
+url = "2.5.8"
+glob = "0.3.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = { version = "0.24.1" }
-objc = "0.2.7"
-# TODO: active-win-pos-rs 0.11 pulls appkit-nsworkspace-bindings/bindgen 0.59
-# which fails on current macOS SDK + Rust 1.98. Temporarily disabled;
-# restore with a maintained crate (e.g. x-win) as follow-up.
-# active-win-pos-rs = "0.11.0"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
+x-win = "5.8.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = "0.3.9"
-windows = { version = "0.62.0", features = ["Win32_Foundation"] }
-
-
-[build-dependencies]
-winres = "0.1.12"
-build-version = "0.1.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader"] }

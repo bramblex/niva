@@ -1,10 +1,14 @@
 use anyhow::{Ok, Result};
-use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tao::window::Window;
 
+use crate::app::NivaApp;
 use crate::app::api_manager::ApiManager;
+use crate::app::api_manager::ApiRequest;
+use crate::app::main_exec::run_on_main;
+use crate::app::window_manager::window::NivaWindow;
+use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("dialog.showMessage", show_message);
@@ -25,24 +29,34 @@ enum MessageLevel {
     Error,
 }
 
-#[niva_api]
-fn show_message(title: String, content: Option<String>, level: Option<MessageLevel>) -> Result<()> {
-    let parent = &window.window;
-    let content = content.unwrap_or_default();
-    let level = level.unwrap_or(MessageLevel::Info);
+async fn show_message(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (title, content, level) =
+            request
+                .args()
+                .optional::<(String, Option<String>, Option<MessageLevel>)>(3)?;
+        let parent = &window.window;
+        let content = content.unwrap_or_default();
+        let level = level.unwrap_or(MessageLevel::Info);
 
-    rfd::MessageDialog::new()
-        .set_title(&title)
-        .set_description(&content)
-        .set_parent(parent)
-        .set_level(match level {
-            MessageLevel::Info => rfd::MessageLevel::Info,
-            MessageLevel::Warning => rfd::MessageLevel::Warning,
-            MessageLevel::Error => rfd::MessageLevel::Error,
-        })
-        .show();
+        rfd::MessageDialog::new()
+            .set_title(&title)
+            .set_description(&content)
+            .set_parent(parent)
+            .set_level(match level {
+                MessageLevel::Info => rfd::MessageLevel::Info,
+                MessageLevel::Warning => rfd::MessageLevel::Warning,
+                MessageLevel::Error => rfd::MessageLevel::Error,
+            })
+            .show();
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 fn _create_dialog(
@@ -63,57 +77,98 @@ fn _create_dialog(
     dialog.set_parent(parent)
 }
 
-#[niva_api]
-fn pick_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = &window.window;
-    let dialog = _create_dialog(parent, filters, start_dir);
+async fn pick_file(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (filters, start_dir) = request
+            .args()
+            .optional::<(Option<Vec<String>>, Option<String>)>(2)?;
+        let parent = &window.window;
+        let dialog = _create_dialog(parent, filters, start_dir);
 
-    match dialog.pick_file() {
-        Some(file) => Ok(json!(file)),
-        None => Ok(json!(null)),
-    }
+        match dialog.pick_file() {
+            Some(file) => Ok(json!(file)),
+            None => Ok(json!(null)),
+        }
+    })
+    .await
 }
 
-#[niva_api]
-fn pick_files(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = &window.window;
-    let dialog = _create_dialog(parent, filters, start_dir);
+async fn pick_files(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (filters, start_dir) = request
+            .args()
+            .optional::<(Option<Vec<String>>, Option<String>)>(2)?;
+        let parent = &window.window;
+        let dialog = _create_dialog(parent, filters, start_dir);
 
-    match dialog.pick_files() {
-        Some(files) => Ok(json!(files)),
-        None => Ok(json!(null)),
-    }
+        match dialog.pick_files() {
+            Some(files) => Ok(json!(files)),
+            None => Ok(json!(null)),
+        }
+    })
+    .await
 }
 
-#[niva_api]
-fn pick_dir(start_dir: Option<String>) -> Result<Value> {
-    let parent = &window.window;
-    let dialog = _create_dialog(parent, None, start_dir);
+async fn pick_dir(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (start_dir,) = request.args().optional::<(Option<String>,)>(1)?;
+        let parent = &window.window;
+        let dialog = _create_dialog(parent, None, start_dir);
 
-    match dialog.pick_folder() {
-        Some(dir) => Ok(json!(dir)),
-        None => Ok(json!(null)),
-    }
+        match dialog.pick_folder() {
+            Some(dir) => Ok(json!(dir)),
+            None => Ok(json!(null)),
+        }
+    })
+    .await
 }
 
-#[niva_api]
-fn pick_dirs(start_dir: Option<String>) -> Result<Value> {
-    let parent = &window.window;
-    let dialog = _create_dialog(parent, None, start_dir);
+async fn pick_dirs(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (start_dir,) = request.args().optional::<(Option<String>,)>(1)?;
+        let parent = &window.window;
+        let dialog = _create_dialog(parent, None, start_dir);
 
-    match dialog.pick_folders() {
-        Some(dirs) => Ok(json!(dirs)),
-        None => Ok(json!(null)),
-    }
+        match dialog.pick_folders() {
+            Some(dirs) => Ok(json!(dirs)),
+            None => Ok(json!(null)),
+        }
+    })
+    .await
 }
 
-#[niva_api]
-fn save_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = &window.window;
-    let dialog = _create_dialog(parent, filters, start_dir);
+async fn save_file(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    run_on_main(&app, move |_target, _control_flow| {
+        let (filters, start_dir) = request
+            .args()
+            .optional::<(Option<Vec<String>>, Option<String>)>(2)?;
+        let parent = &window.window;
+        let dialog = _create_dialog(parent, filters, start_dir);
 
-    match dialog.save_file() {
-        Some(file) => Ok(json!(file)),
-        None => Ok(json!(null)),
-    }
+        match dialog.save_file() {
+            Some(file) => Ok(json!(file)),
+            None => Ok(json!(null)),
+        }
+    })
+    .await
 }

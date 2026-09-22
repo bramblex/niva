@@ -27,7 +27,10 @@ pub struct NivaOptions {
 
     pub tray: Option<NivaTrayOptions>,
     pub shortcuts: Option<NivaShortcutsOptions>,
-    pub workers: Option<u32>,
+
+    // API dispatcher options (fully async runtime; the old fixed
+    // thread-pool `workers` setting is gone).
+    pub api: Option<ApiOptions>,
 
     // dev options (also used as defaults when the matching CLI flags are absent)
     pub debug: Option<NivaDebugOptions>,
@@ -43,6 +46,15 @@ pub struct NivaOptions {
 pub struct NivaDebugOptions {
     pub entry: Option<String>,
     pub resource: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiOptions {
+    /// Per-request timeout in milliseconds (default 30000).
+    pub timeout_ms: Option<u64>,
+    /// Dispatch queue cap; overflow rejects immediately (default 64).
+    pub max_queue: Option<usize>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -68,6 +68,9 @@ impl NivaHttpServer {
     }
 }
 
+/// Per-launch token, generated here and injected into both ends:
+/// the server checks it, the page receives it via the bootstrap script.
+/// Never accepted from the environment, args or the network.
 fn random_token() -> Result<String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|err| anyhow!("RNG failed: {err}"))?;
@@ -205,6 +208,31 @@ fn is_upgrade(headers: &HashMap<String, String>) -> bool {
         .map(|v| v.to_lowercase())
         .unwrap_or_default();
     upgrade.contains("websocket") && connection.contains("upgrade")
+}
+
+/// True when the request is a browser document load (top-level page or
+/// iframe), as opposed to JS fetching HTML as data via fetch()/XHR.
+///
+/// Detection order (header names are lowercased at parse):
+/// 1. `Sec-Fetch-Mode: navigate` — Fetch Metadata, sent by Chromium/WebView2
+///    and modern WebKit for real navigations. fetch()/XHR send
+///    cors/no-cors/same-origin instead, so they never match.
+/// 2. Fallback for engines without Fetch Metadata: `Accept` containing
+///    `text/html`. Navigations always ask for HTML; fetch() defaults to
+///    `*/*`, so an explicit text/html accept almost always means a document
+///    load. (A page *could* fetch() with `Accept: text/html` by hand — that
+///    corner is documented; such callers get the injected bytes too.)
+///
+/// Response rewriting (importmap injection for nodeCompat) only applies when
+/// this returns true: data-fetched HTML must pass through byte-identical.
+fn is_document_navigation(headers: &HashMap<String, String>) -> bool {
+    if let Some(mode) = headers.get("sec-fetch-mode") {
+        return mode.trim().to_lowercase() == "navigate";
+    }
+    headers
+        .get("accept")
+        .map(|v| v.to_lowercase().contains("text/html"))
+        .unwrap_or(false)
 }
 
 async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream) -> Result<()> {
@@ -389,7 +417,7 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
         .window()
         .and_then(|windows| windows.get_window(window_id))?;
 
-    let (tx, rx) = mpsc::channel::<String>();
+    let (tx, rx) = mpsc::channel::<crate::app::window_manager::window::WsOut>();
     window.set_ws_sender(Some(tx));
 
     ws.get_ref()
@@ -399,6 +427,9 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
             Ok(Message::Text(text)) => {
                 handle_ws_request(state, &window, &text);
             }
+            Ok(Message::Binary(bytes)) => {
+                handle_ws_binary(state, &window, &bytes);
+            }
             Ok(Message::Close(_)) => break,
             Ok(_) => {}
             Err(tungstenite::Error::Io(err))
@@ -406,8 +437,13 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
                     || err.kind() == std::io::ErrorKind::WouldBlock =>
             {
                 // No inbound traffic: flush outbound queue.
-                while let Ok(text) = rx.try_recv() {
-                    if ws.send(Message::text(text)).is_err() {
+                use crate::app::window_manager::window::WsOut;
+                while let Ok(out) = rx.try_recv() {
+                    let sent = match out {
+                        WsOut::Text(text) => ws.send(Message::text(text)).is_ok(),
+                        WsOut::Binary(bytes) => ws.send(Message::Binary(bytes.into())).is_ok(),
+                    };
+                    if !sent {
                         break;
                     }
                 }
@@ -420,17 +456,24 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
     }
 
     window.set_ws_sender(None);
+    // Abort in-flight stateful calls: the page is gone, nobody can consume.
+    state.app.api().cancel_window(window.id);
     Ok(())
 }
 
-/// `["hello", <window_id:number>]`
+/// `{t:"hello", wid, v}` — first text frame on a fresh connection.
+/// Version mismatches are refused loudly (fail fast, never half-talk).
 fn parse_hello(text: &str) -> Option<u8> {
-    let value: serde_json::Value = serde_json::from_str(text).ok()?;
-    let arr = value.as_array()?;
-    if arr.first()?.as_str()? != "hello" {
-        return None;
+    use crate::app::api_manager::protocol::{ClientMsg, WIRE_VERSION};
+
+    match serde_json::from_str::<ClientMsg>(text).ok()? {
+        ClientMsg::Hello { wid, v } if v == WIRE_VERSION => Some(wid),
+        ClientMsg::Hello { v, .. } => {
+            eprintln!("[niva] ws hello wire version mismatch: got {v}");
+            None
+        }
+        _ => None,
     }
-    arr.get(1)?.as_u64()?.try_into().ok()
 }
 
 fn handle_ws_request(
@@ -438,25 +481,15 @@ fn handle_ws_request(
     window: &Arc<crate::app::window_manager::window::NivaWindow>,
     text: &str,
 ) {
-    let request_id = serde_json::from_str::<serde_json::Value>(text)
-        .ok()
-        .and_then(|v| v.as_array()?.first()?.as_u64())
-        .unwrap_or(0);
+    state.app.api().on_text(window.id, text);
+}
 
-    let result = (|| -> Result<()> {
-        let api = state.app.api()?;
-        api.call(window.id, text.to_string())
-    })();
-
-    if let Err(err) = result {
-        // Deliver the error through the normal ipc.callback channel so the
-        // pending JS promise rejects instead of hanging.
-        let payload = serde_json::json!([request_id, -1, err.to_string(), null]);
-        let envelope = serde_json::json!(["event", "ipc.callback", payload]);
-        if !window.send_ws_envelope(&envelope.to_string()) {
-            let _ = window.send_envelope_eval(&envelope);
-        }
-    }
+fn handle_ws_binary(
+    state: &Arc<ServerState>,
+    window: &Arc<crate::app::window_manager::window::NivaWindow>,
+    bytes: &[u8],
+) {
+    state.app.api().on_binary(window.id, bytes);
 }
 
 /// Server accessor stored on the app (populated after the Arc exists).
@@ -491,5 +524,43 @@ mod tests {
         let (path, query) = split_target("/assets/a.js");
         assert_eq!(path, "/assets/a.js");
         assert!(query.is_none());
+    }
+
+    fn head_with(headers: &[(&str, &str)]) -> HttpHead {
+        HttpHead {
+            method: "GET".into(),
+            target: "/index.html".into(),
+            headers: headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn navigation_detection_prefers_fetch_metadata() {
+        // Real navigation (top-level or iframe): inject.
+        let nav = head_with(&[
+            ("sec-fetch-mode", "navigate"),
+            ("accept", "text/html,application/xhtml+xml"),
+        ]);
+        assert!(is_document_navigation(&nav.headers));
+        // fetch()/XHR: pass through byte-identical, even for HTML.
+        let fetch = head_with(&[("sec-fetch-mode", "cors"), ("accept", "text/html")]);
+        assert!(!is_document_navigation(&fetch.headers));
+        let xhr = head_with(&[("sec-fetch-mode", "same-origin"), ("accept", "*/*")]);
+        assert!(!is_document_navigation(&xhr.headers));
+    }
+
+    #[test]
+    fn navigation_detection_falls_back_to_accept() {
+        // Engines without Fetch Metadata: navigations ask for text/html…
+        let nav = head_with(&[("accept", "text/html,application/xhtml+xml")]);
+        assert!(is_document_navigation(&nav.headers));
+        // …while fetch() defaults to */*.
+        let fetch = head_with(&[("accept", "*/*")]);
+        assert!(!is_document_navigation(&fetch.headers));
+        let none = head_with(&[]);
+        assert!(!is_document_navigation(&none.headers));
     }
 }

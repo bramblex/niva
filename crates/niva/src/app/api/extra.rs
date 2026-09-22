@@ -1,120 +1,159 @@
 use crate::app::api_manager::ApiManager;
 
+use crate::app::NivaApp;
+use crate::app::api_manager::ApiRequest;
+use crate::app::main_exec::run_on_main;
+use crate::app::window_manager::window::NivaWindow;
 use anyhow::{Result, anyhow};
-use niva_macros::niva_api;
-use niva_macros::niva_event_api;
+use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
-    api_manager.register_async_api("extra.getActiveWindowId", get_active_window_id);
-    api_manager.register_async_api("extra.focusByWindowId", focus_by_window_id);
+    api_manager.register_blocking_api("extra.getActiveWindowId", get_active_window_id);
+    #[cfg(target_os = "macos")]
+    api_manager.register_api("extra.focusByWindowId", focus_by_window_id);
+    #[cfg(target_os = "windows")]
+    api_manager.register_blocking_api("extra.focusByWindowId", focus_by_window_id);
 
     #[cfg(target_os = "macos")]
     {
-        api_manager.register_event_api("extra.hideApplication", hide_application);
-        api_manager.register_event_api("extra.showApplication", show_application);
-        api_manager.register_event_api("extra.hideOtherApplications", hide_other_applications);
-        api_manager.register_event_api("extra.setActivationPolicy", set_activation_policy);
+        api_manager.register_api("extra.hideApplication", hide_application);
+        api_manager.register_api("extra.showApplication", show_application);
+        api_manager.register_api("extra.hideOtherApplications", hide_other_applications);
+        api_manager.register_api("extra.setActivationPolicy", set_activation_policy);
     }
 }
 
 #[cfg(target_os = "macos")]
-#[niva_event_api]
-fn hide_application() -> Result<()> {
-    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
-    target.hide_application();
-    Ok(())
+async fn hide_application(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<()> {
+    run_on_main(&app, move |target, _control_flow| {
+        use tao::platform::macos::EventLoopWindowTargetExtMacOS;
+        target.hide_application();
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
-#[niva_event_api]
-fn show_application() -> Result<()> {
-    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
-    target.show_application();
-    Ok(())
+async fn show_application(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<()> {
+    run_on_main(&app, move |target, _control_flow| {
+        use tao::platform::macos::EventLoopWindowTargetExtMacOS;
+        target.show_application();
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
-#[niva_event_api]
-fn hide_other_applications() -> Result<()> {
-    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
-    target.hide_other_applications();
-    Ok(())
+async fn hide_other_applications(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<()> {
+    run_on_main(&app, move |target, _control_flow| {
+        use tao::platform::macos::EventLoopWindowTargetExtMacOS;
+        target.hide_other_applications();
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
-#[niva_event_api]
-fn set_activation_policy(policy: NivaActivationPolicy) -> Result<()> {
-    use crate::app::options::NivaActivationPolicy;
-    use tao::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS};
+async fn set_activation_policy(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    run_on_main(&app, move |target, _control_flow| {
+        let (policy,) = request.args().get::<(NivaActivationPolicy,)>()?;
+        use crate::app::options::NivaActivationPolicy;
+        use tao::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS};
 
-    let policy = match policy {
-        NivaActivationPolicy::Regular => ActivationPolicy::Regular,
-        NivaActivationPolicy::Accessory => ActivationPolicy::Accessory,
-        NivaActivationPolicy::Prohibited => ActivationPolicy::Prohibited,
-    };
-    target.set_activation_policy_at_runtime(policy);
-    Ok(())
+        let policy = match policy {
+            NivaActivationPolicy::Regular => ActivationPolicy::Regular,
+            NivaActivationPolicy::Accessory => ActivationPolicy::Accessory,
+            NivaActivationPolicy::Prohibited => ActivationPolicy::Prohibited,
+        };
+        target.set_activation_policy_at_runtime(policy);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
-#[niva_api]
-fn get_active_window_id() -> Result<Option<String>> {
-    // TODO: restore via maintained crate (see Cargo.toml note).
-    // active-win-pos-rs disabled: bindgen 0.59 incompatible with current SDK.
-    Ok(None)
-}
-
-#[cfg(target_os = "macos")]
-#[niva_api]
-fn focus_by_window_id(id_string: String) -> Result<bool> {
-    use cocoa::appkit::NSApplicationActivateIgnoringOtherApps;
-    use cocoa::base::{NO, nil};
-    use objc::runtime::{Class, Object, Sel};
-    use objc::{class, msg_send, sel, sel_impl};
-    let result = id_string.split("_").collect::<Vec<&str>>();
-
-    if result.len() != 2 {
-        return Err(anyhow!("invalid window id"));
+fn get_active_window_id(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Option<String>> {
+    match x_win::get_active_window() {
+        Ok(window) => Ok(Some(format!("{}_{}", window.info.process_id, window.id))),
+        Err(_) => Ok(None),
     }
-    let process_id = result[0].parse::<u32>()?;
-    let window_id = result[1].parse::<u64>()?;
+}
 
-    unsafe {
-        let app_class = class!(NSRunningApplication);
-        let app_with_process_id: *mut Object = msg_send![
-            app_class,
-            runningApplicationWithProcessIdentifier: process_id as i64
-        ];
-        if app_with_process_id != nil {
-            let success: bool = msg_send![
-                app_with_process_id,
-                activateWithOptions: NSApplicationActivateIgnoringOtherApps
-            ];
+#[cfg(target_os = "macos")]
+async fn focus_by_window_id(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id_string,) = request.args().get::<(String,)>()?;
+    // NSRunningApplication is main-thread-only: hop to the event loop.
+    run_on_main(&app, move |_, _| {
+        use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 
-            if !success {
-                return Ok(true);
-            }
+        let result = id_string.split("_").collect::<Vec<&str>>();
+        if result.len() != 2 {
+            return Err(anyhow!("invalid window id"));
         }
-    }
-    Ok(false)
+        let process_id = result[0].parse::<u32>()?;
+
+        let target: Option<objc2::rc::Retained<NSRunningApplication>> =
+            NSRunningApplication::runningApplicationWithProcessIdentifier(process_id as _);
+        match target {
+            // NOTE: ActivateIgnoringOtherApps is deprecated since macOS 14
+            // and has no effect there (system restricts programmatic
+            // activation); kept for older systems, matching legacy behavior.
+            Some(app) => Ok(app.activateWithOptions(
+                #[allow(deprecated)]
+                NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+            )),
+            None => Ok(false),
+        }
+    })
+    .await
 }
 
 #[cfg(target_os = "windows")]
-#[niva_api]
-fn get_active_window_id() -> Result<String> {
-    use winapi::um::winuser::GetForegroundWindow;
+fn get_active_window_id(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<String> {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
-    let hwnd = unsafe { GetForegroundWindow() as usize };
-    Ok(hwnd.to_string())
+    let hwnd = unsafe { GetForegroundWindow() };
+    Ok((hwnd.0 as usize).to_string())
 }
 
 #[cfg(target_os = "windows")]
-#[niva_api]
-fn focus_by_window_id(hwnd_str: String) -> Result<()> {
-    use winapi::shared::windef::HWND;
-    use winapi::um::winuser::SetForegroundWindow;
+fn focus_by_window_id(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (hwnd_str,) = request.args().get::<(String,)>()?;
+    use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::SetForegroundWindow};
 
-    let hwnd = hwnd_str.parse::<usize>()? as HWND;
+    let hwnd = HWND(hwnd_str.parse::<isize>()? as _);
     unsafe {
         SetForegroundWindow(hwnd);
     }

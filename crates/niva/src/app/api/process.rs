@@ -1,10 +1,11 @@
-include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
-use crate::app::api_manager::ApiManager;
+use crate::app::NivaApp;
+use crate::app::api_manager::{ApiManager, ApiRequest, CallContext};
+use crate::app::main_exec::run_on_main;
+use crate::app::window_manager::window::NivaWindow;
 use anyhow::{Ok, Result};
-use niva_macros::{niva_api, niva_event_api};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
@@ -14,49 +15,58 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.env", env);
     api_manager.register_api("process.args", args);
     api_manager.register_api("process.setCurrentDir", set_current_dir);
-    api_manager.register_event_api("process.exit", exit);
+    api_manager.register_api("process.exit", exit);
     api_manager.register_api("process.version", version);
-    api_manager.register_async_api("process.exec", exec);
-    api_manager.register_async_api("process.open", open);
+    api_manager.register_blocking_api("process.open", open);
+    api_manager.register_stream_api("process.execStream", exec_stream);
 }
 
-#[niva_api]
-fn pid() -> Result<u32> {
+async fn pid(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<u32> {
     Ok(std::process::id())
 }
 
-#[niva_api]
-fn current_dir() -> Result<Value> {
+async fn current_dir(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Value> {
     Ok(json!(std::env::current_dir()?))
 }
 
-#[niva_api]
-fn current_exe() -> Result<Value> {
+async fn current_exe(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Value> {
     Ok(json!(std::env::current_exe()?))
 }
 
-#[niva_api]
-fn env() -> Result<Value> {
+async fn env(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
     let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
     Ok(json!(env))
 }
 
-#[niva_api]
-fn args() -> Result<Value> {
+async fn args(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
     let args = std::env::args().collect::<Vec<String>>();
     Ok(json!(args))
 }
 
-#[niva_api]
-fn set_current_dir(path: String) -> Result<()> {
+async fn set_current_dir(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (path,) = request.args().get::<(String,)>()?;
     std::env::set_current_dir(path)?;
     Ok(())
 }
 
-#[niva_event_api]
-fn exit() -> Result<()> {
-    *control_flow = ControlFlow::Exit;
-    Ok(())
+async fn exit(app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<()> {
+    run_on_main(&app, move |_target, control_flow| {
+        *control_flow = ControlFlow::Exit;
+        Ok(())
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -67,14 +77,34 @@ struct ExecOptions {
     pub detached: Option<bool>,
 }
 
-#[niva_api]
-fn exec(cmd: String, args: Option<Vec<String>>, options: Option<ExecOptions>) -> Result<Value> {
-    let mut cmd = std::process::Command::new(cmd);
+fn open(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (uri,) = request.args().get::<(String,)>()?;
+    opener::open(uri)?;
+    Ok(())
+}
 
+async fn version(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// Full-duplex streaming exec: stdout/stderr arrive as `stdout`/`stderr`
+/// stream events (one per line), stdin is fed from inbound binary chunks
+/// (END closes it), terminal result carries the exit status.
+/// No timeout by default: interactive sessions are client-governed
+/// (cancel message or window close abandons the child, it is not killed).
+async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    use std::io::Write;
+
+    let (cmd, args, options): (String, Option<Vec<String>>, Option<ExecOptions>) =
+        request.args().optional(3)?;
+    let mut cmd = std::process::Command::new(cmd);
     if let Some(args) = args {
         cmd.args(args);
     }
-
     let mut detached = false;
     if let Some(options) = options {
         if let Some(current_dir) = options.current_dir {
@@ -86,31 +116,94 @@ fn exec(cmd: String, args: Option<Vec<String>>, options: Option<ExecOptions>) ->
         detached = options.detached.unwrap_or(false);
     }
 
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    // Detached: answer child id immediately, no pumps, no wait.
     if detached {
-        let child = cmd.spawn()?;
-        return Ok(json!(child.id()));
+        let id = child.id();
+        // Child keeps running; nobody consumes stdio (inherits closed pipes).
+        ctx.respond(Ok(json!(id)));
+        return Ok(());
     }
 
-    let output = cmd.output()?;
+    // Byte pumps (dedicated threads: blocking reads, exact bytes).
+    if let Some(stdout) = child.stdout.take() {
+        pump_bytes(&ctx, stdout, false)?;
+    }
+    if let Some(stderr) = child.stderr.take() {
+        pump_bytes(&ctx, stderr, true)?;
+    }
 
-    Ok(json!({
-            "status": output.status.code(),
-            "stdout": String::from_utf8(output.stdout)?,
-            "stderr": String::from_utf8(output.stderr)?,
-    }))
-}
+    // Stdin pump runs on its own thread: it must never precede wait()
+    // (no stdin input would stall the child forever).
+    if let Some(mut stdin) = child.stdin.take() {
+        let ctx2 = ctx.clone();
+        std::thread::Builder::new()
+            .name("niva-exec-stdin".into())
+            .spawn(move || {
+                while let Some(chunk) = ctx2.next_chunk_blocking() {
+                    if stdin.write_all(&chunk.data).is_err() {
+                        break;
+                    }
+                    if chunk.end {
+                        break;
+                    }
+                }
+                // Dropping stdin signals EOF to the child.
+            })
+            .map_err(|err| anyhow::anyhow!("spawn stdin pump failed: {err}"))?;
+    }
 
-#[niva_api]
-fn open(uri: String) -> Result<()> {
-    opener::open(uri)?;
+    // wait() blocks: elastic pool, never the driver thread.
+    let ctx2 = ctx.clone();
+    crate::blocking!({
+        let mut child = child;
+        let status = child.wait()?;
+        ctx2.respond(Ok(json!({ "status": status.code() })));
+        Ok(())
+    })
+    .await?;
     Ok(())
 }
 
-#[niva_api]
-fn version() -> Result<String> {
-    if let Some(version) = GIT_BUILD_VERSION {
-        Ok(version.to_string())
-    } else {
-        Ok("unknown".to_string())
-    }
+/// Pump an output pipe in raw byte chunks into stream frames.
+fn pump_bytes<R: std::io::Read + Send + 'static>(
+    ctx: &CallContext,
+    stream: R,
+    is_stderr: bool,
+) -> Result<()> {
+    let ctx = ctx.clone();
+    std::thread::Builder::new()
+        .name("niva-exec-pump".into())
+        .spawn(move || {
+            let mut buf = vec![0u8; 32768];
+            let mut reader = stream;
+            loop {
+                if ctx.is_cancelled() {
+                    break;
+                }
+                match reader.read(&mut buf) {
+                    std::result::Result::Ok(0) => break,
+                    std::result::Result::Ok(n) => {
+                        if is_stderr {
+                            ctx.chunk_stderr(&buf[..n], false);
+                        } else {
+                            ctx.chunk(&buf[..n], false);
+                        }
+                    }
+                    std::result::Result::Err(_) => break,
+                }
+            }
+            if is_stderr {
+                ctx.chunk_stderr(&[], true);
+            } else {
+                ctx.chunk(&[], true);
+            }
+        })
+        .map_err(|err| anyhow::anyhow!("spawn pump failed: {err}"))?;
+    Ok(())
 }

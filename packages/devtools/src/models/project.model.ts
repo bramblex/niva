@@ -11,6 +11,8 @@ import {
 import { ErrorCode } from "../common/error";
 import { buildMacOsApp } from "../build-scripts/build-macos";
 import { buildWindowsApp } from "../build-scripts/build-windows";
+import { signMacOsApp } from "../build-scripts/sign-macos";
+import { signWindowsApp } from "../build-scripts/sign-windows";
 
 const { fs, process, os } = Niva.api;
 
@@ -168,11 +170,13 @@ export class ProjectModel extends StateModel<ProjectModelState> {
           appPath = await buildMacOsApp(_p);
           await progress.run();
           close();
+          await this.signIfConfigured("macos", appPath);
         } else if (osType.toLowerCase() === "windows") {
           _p.file = target || (await Niva.api.dialog.saveFile(["exe"]));
           appPath = await buildWindowsApp(_p);
           await progress.run();
           close();
+          await this.signIfConfigured("windows", appPath);
         } else {
           throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
         }
@@ -190,6 +194,36 @@ export class ProjectModel extends StateModel<ProjectModelState> {
           }
         });
     });
+  }
+
+  /**
+   * One-stop signing after a successful build. The `sign` section is
+   * optional; secrets never live in niva.json (keychain profile on macOS,
+   * env vars for passwords — see sign-*.ts).
+   */
+  private async signIfConfigured(
+    platform: "macos" | "windows",
+    appPath: string
+  ): Promise<void> {
+    const { modal, locale } = this.app.state;
+    const sign = this.state.config.sign;
+    if (platform === "macos" && sign?.macos) {
+      const [progress, close] = modal.progress(locale.t("SIGNING_APP"));
+      try {
+        await signMacOsApp({ project: this, progress, appPath });
+        await progress.run();
+      } finally {
+        close();
+      }
+    } else if (platform === "windows" && sign?.windows) {
+      const [progress, close] = modal.progress(locale.t("SIGNING_APP"));
+      try {
+        await signWindowsApp({ project: this, progress, exePath: appPath });
+        await progress.run();
+      } finally {
+        close();
+      }
+    }
   }
 
   async debug(): Promise<AppResult> {

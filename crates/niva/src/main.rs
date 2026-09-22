@@ -3,6 +3,9 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+// Deadlock discipline:std Mutex guards must never cross an `.await`.
+// api_manager reads (handler map) are lock-free after init.
+#![deny(clippy::await_holding_lock)]
 
 mod app;
 use anyhow::Result;

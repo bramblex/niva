@@ -70,4 +70,8 @@ export const zh_CN: typeof en_US = {
   NEWER_VERSION_TIP: "有更新的版本~",
   NEWER_VERSION_TEXT: "点击“确认”，将会打开新版本({{version}})的下载页面",
   DEBUG_RESOURCE_NOT_FOUND: "调试资源目录不存在：{{path}}",
+  SIGNING_APP: "正在签名应用",
+  SIGN_NO_IDENTITY: "未配置 macOS 签名身份（sign.macos.identity）",
+  SIGN_NO_PFX: "未配置或找不到 Windows 证书文件（sign.windows.pfx）",
+  SIGN_NO_SIGNTOOL: "找不到 signtool.exe（请安装 Windows SDK）",
 };

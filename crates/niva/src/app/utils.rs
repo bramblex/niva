@@ -202,3 +202,21 @@ pub(crate) fn error_page_html(status: u16, title: &str, uri: &str, detail: &str)
     );
     (status, body.into_bytes())
 }
+
+/// Run blocking work on smol's elastic thread pool and await it.
+/// Rule: NOTHING blocking may run directly in an async API body or on a
+/// driver thread — wrap every syscall, subprocess wait and modal loop here.
+/// Unlike the old fixed 4-worker pool, this pool grows on demand, so slow
+/// calls can never starve other requests (timeouts still bound them).
+/// Run blocking work on smol's elastic thread pool and await it.
+/// Rule: NOTHING blocking may run directly in an async API body or on a
+/// driver thread — wrap every syscall, subprocess wait and modal loop here.
+/// Unlike the old fixed 4-worker pool, this pool grows on demand, so slow
+/// calls can never starve other requests (timeouts still bound them).
+/// The closure always returns `anyhow::Result`; bodies end with `Ok(..)`.
+#[macro_export]
+macro_rules! blocking {
+    ($body:expr) => {
+        smol::unblock(move || -> anyhow::Result<_> { $body })
+    };
+}

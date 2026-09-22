@@ -35,6 +35,27 @@ interface NivaObj {
    * 内部方法
    */
   call(methodName: string, args: any): void;
+  /**
+   * 发起流式调用，返回 { promise, cancel, id }。
+   * handlers.onEvent 接收与本次调用关联的推送，onBlob 接收
+   * 按 END 分组的二进制 Blob（onBlob 的第二个参数标识 stderr 子流）。
+   */
+  stream(
+    methodName: string,
+    args: any,
+    handlers?: {
+      onEvent?: (name: string, data: any) => void;
+      onBlob?: (blob: Blob, isStderr: boolean) => void;
+    }
+  ): {
+    id: number;
+    promise: Promise<any>;
+    cancel: () => void;
+  };
+  /**
+   * 向流式调用发送二进制分片（stdin 式输入），end 为 true 表示结束。
+   */
+  streamSend(id: number, data: ArrayBuffer | Uint8Array | string, end?: boolean): boolean;
   /** 接口方法 */
   api: {
     /** 剪切板 */
@@ -84,8 +105,10 @@ interface NivaOptions {
   /** 应用程序全局快捷键的选项 */
   shortcuts?: NivaShortcutsOptions;
 
-  /** 应用程序开启的工作线程数量 */
-  workers?: number;
+  /** API 调度器选项（全异步运行时；旧的固定线程池 workers 已移除） */
+  api?: NivaApiOptions;
+  /** 应用签名选项（用户自备证书；devtools 在构建成功后自动执行） */
+  sign?: NivaSignOptions;
 
   /** 应用程序的激活策略,仅Mac */
   activationPolicy?: "regular" | "accessory" | "prohibited";
@@ -99,6 +122,36 @@ interface NivaOptions {
   /** 专为windows单独使用的配置 */
   windows: NivaOptions;
 }
+
+/** 应用签名选项 */
+type NivaSignOptions = {
+  /** macOS 签名：identity 为 codesign 身份（如 "Developer ID Application: Foo (TEAMID)"） */
+  macos?: {
+    identity: string;
+    /** 项目相对路径的 entitlements plist（可选） */
+    entitlements?: string;
+    notarize?: {
+      /** notarytool 钥匙串 profile（推荐，零秘密） */
+      profile?: string;
+      /** Apple ID（与 teamId 配合，需 env NIVA_APPLE_ID_PASSWORD） */
+      appleId?: string;
+      teamId?: string;
+    };
+  };
+  /** Windows 签名：pfx 为项目相对路径，密码走 env NIVA_WIN_CERT_PASSWORD */
+  windows?: {
+    pfx: string;
+    timestamp?: string;
+  };
+};
+
+/** API 调度器选项 */
+type NivaApiOptions = {
+  /** 单个请求超时毫秒数（默认 30000；流式长任务可设更大） */
+  timeoutMs?: number;
+  /** 调度队列上限，超限立即拒绝（默认 64） */
+  maxQueue?: number;
+};
 
 /** 尺寸 */
 type NivaSize = {
@@ -615,6 +668,17 @@ interface NivaHttp {
     headers: { [key: string]: string };
     body: string;
   }>;
+  /**
+   * 流式 HTTP 请求：head 事件带 status/headers，body 以二进制分片到达，
+   * 需配合 Niva.stream 使用。
+   */
+  requestStream(options: {
+    method: string;
+    url: string;
+    headers?: { [key: string]: string };
+    body?: string;
+    proxy?: string;
+  }): Promise<{ status: number }>;
 }
 
 interface NivaMonitorInfo {
@@ -765,6 +829,15 @@ interface NivaProcess {
     stderr: string;
   }>;
   /**
+   * 全双工流式执行：stdout/stderr 以二进制分片推送，stdin 通过
+   * Niva.streamSend 以二进制分片喂入，需配合 Niva.stream 使用。
+   */
+  execStream(
+    cmd: string,
+    args?: string[],
+    options?: ExecOptions
+  ): Promise<{ status: number | null }>;
+  /**
    * 打开指定的 URI。
    * @param uri 要打开的 URI。
    * @returns 一个 Promise，在打开 URI 成功时解析该 Promise，或在发生错误时拒绝该 Promise。
@@ -791,6 +864,10 @@ interface NivaResource {
    * @returns 一个 Promise，在读取文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回读取的文件内容。
    */
   read(path: string, encode?: "utf8" | "base64"): Promise<string>;
+  /**
+   * 流式读取虚拟文件系统中的文件（二进制分片，需配合 Niva.stream 使用）。
+   */
+  readStream(path: string): Promise<{ size: number }>;
   /**
    * 将虚拟文件系统中的文件提取到本地文件系统上。
    * @param from 要提取的虚拟文件系统中的文件路径。

@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use niva_macros::{niva_api, niva_event_api};
 use serde_json::{Value, json};
 
 use tao::{
@@ -7,10 +6,18 @@ use tao::{
     window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
 };
 
+use std::sync::Arc;
+
 use crate::{
     app::{
-        api_manager::ApiManager,
-        window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
+        NivaApp,
+        api_manager::{ApiManager, ApiRequest},
+        main_exec::run_on_main,
+        window_manager::{
+            WindowManager,
+            options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
+            window::NivaWindow,
+        },
     },
     lock, logical, logical_try,
 };
@@ -26,8 +33,8 @@ macro_rules! match_window {
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.current", current);
-    api_manager.register_event_api("window.open", open);
-    api_manager.register_event_api("window.close", close);
+    api_manager.register_api("window.open", open);
+    api_manager.register_api("window.close", close);
     api_manager.register_api("window.list", list);
     api_manager.register_api("window.sendMessage", send_message);
     api_manager.register_api("window.setMenu", set_menu);
@@ -84,31 +91,42 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.blockCloseRequested", block_close_requested);
 }
 
-#[niva_api]
-fn current() -> Result<u8> {
+async fn current(_app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest) -> Result<u8> {
     Ok(window.id)
 }
 
-#[niva_event_api]
-fn open(options: Option<NivaWindowOptions>) -> Result<u8> {
-    let new_window = app
-        .window()?
-        .open_window(&options.unwrap_or_default(), target)?;
-    Ok(new_window.id)
+async fn open(app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<u8> {
+    let app2 = app.clone();
+    run_on_main(&app, move |target, _control_flow| {
+        let (options,) = request.args().optional::<(Option<NivaWindowOptions>,)>(1)?;
+        let new_window = app2
+            .window()?
+            .open_window(&options.unwrap_or_default(), target)?;
+        Ok(new_window.id)
+    })
+    .await
 }
 
-#[niva_event_api]
-fn close(id: Option<u8>) -> Result<()> {
-    let id = id.unwrap_or(window.id);
-    if id == 0 {
-        *control_flow = ControlFlow::Exit;
-        return Ok(());
-    }
-    app.window()?.close_window(id)
+async fn close(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, control_flow| {
+        let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+        let id = id.unwrap_or(window.id);
+        if id == 0 {
+            *control_flow = ControlFlow::Exit;
+            return Ok(());
+        }
+        let closed = app2.window()?.close_window(id)?;
+        WindowManager::cleanup_window(&app2, &closed)
+    })
+    .await
 }
 
-#[niva_api]
-fn list() -> Result<Vec<Value>> {
+async fn list(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Vec<Value>> {
     Ok(app
         .window()?
         .list_windows()
@@ -117,239 +135,363 @@ fn list() -> Result<Vec<Value>> {
         .collect())
 }
 
-#[niva_api]
-fn send_message(message: String, id: u8) -> Result<()> {
+async fn send_message(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (message, id) = request.args().get::<(String, u8)>()?;
     let remote = app.window()?.get_window(id)?;
     remote.send_ipc_event(
         "window.message",
         json!({"from":window.id,"message":message,}),
-    )?;
+    );
     Ok(())
 }
 
-#[niva_api]
-fn set_menu(options: Option<WindowMenuOptions>, id: Option<u8>) -> Result<()> {
+async fn set_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (options, id) = request
+        .args()
+        .optional::<(Option<WindowMenuOptions>, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_menu(&options);
     Ok(())
 }
 
-#[niva_api]
-fn hide_menu(id: Option<u8>) -> Result<()> {
+async fn hide_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     window.hide_menu();
     Ok(())
 }
 
-#[niva_api]
-fn show_menu(id: Option<u8>) -> Result<()> {
+async fn show_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     window.show_menu();
     Ok(())
 }
 
-#[niva_api]
-fn is_menu_visible(id: Option<u8>) -> Result<bool> {
+async fn is_menu_visible(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_menu_visible())
 }
 
-#[niva_api]
-fn scale_factor(id: Option<u8>) -> Result<f64> {
+async fn scale_factor(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<f64> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.scale_factor())
 }
 
-#[niva_api]
-fn inner_position(id: Option<u8>) -> Result<NivaPosition> {
+async fn inner_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<NivaPosition> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(logical_try!(window, inner_position))
 }
 
-#[niva_api]
-fn outer_position(id: Option<u8>) -> Result<NivaPosition> {
+async fn outer_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<NivaPosition> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(logical_try!(window, outer_position))
 }
 
-#[niva_api]
-fn set_outer_position(position: NivaPosition, id: Option<u8>) -> Result<()> {
+async fn set_outer_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_outer_position(position);
     Ok(())
 }
 
-#[niva_api]
-fn inner_size(id: Option<u8>) -> Result<NivaSize> {
+async fn inner_size(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<NivaSize> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(logical!(window, inner_size))
 }
 
-#[niva_api]
-fn set_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
+async fn set_inner_size(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_inner_size(size);
     Ok(())
 }
 
-#[niva_api]
-fn outer_size(id: Option<u8>) -> Result<NivaSize> {
+async fn outer_size(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<NivaSize> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(logical!(window, outer_size))
 }
 
-#[niva_api]
-fn set_min_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
+async fn set_min_inner_size(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_min_inner_size(Some(size));
     Ok(())
 }
 
-#[niva_api]
-fn set_max_inner_size(size: NivaSize, id: Option<u8>) -> Result<()> {
+async fn set_max_inner_size(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_max_inner_size(Some(size));
     Ok(())
 }
 
-#[niva_api]
-fn set_title(title: String, id: Option<u8>) -> Result<()> {
+async fn set_title(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (title, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_title(&title);
     Ok(())
 }
 
-#[niva_api]
-fn title(id: Option<u8>) -> Result<String> {
+async fn title(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.title())
 }
 
-#[niva_api]
-fn is_visible(id: Option<u8>) -> Result<bool> {
+async fn is_visible(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_visible())
 }
 
-#[niva_api]
-fn set_visible(visible: bool, id: Option<u8>) -> Result<()> {
+async fn set_visible(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_visible(visible);
     Ok(())
 }
 
-#[niva_api]
-fn is_focused(id: Option<u8>) -> Result<bool> {
+async fn is_focused(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_focused())
 }
 
-#[niva_api]
-fn set_focus(id: Option<u8>) -> Result<()> {
+async fn set_focus(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     window.set_focus();
     Ok(())
 }
 
-#[niva_api]
-fn is_resizable(id: Option<u8>) -> Result<bool> {
+async fn is_resizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_resizable())
 }
 
-#[niva_api]
-fn set_resizable(resizable: bool, id: Option<u8>) -> Result<()> {
+async fn set_resizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (resizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_resizable(resizable);
     Ok(())
 }
 
-#[niva_api]
-fn is_minimizable(id: Option<u8>) -> Result<bool> {
+async fn is_minimizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_minimizable())
 }
 
-#[niva_api]
-fn set_minimizable(minimizable: bool, id: Option<u8>) -> Result<()> {
+async fn set_minimizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (minimizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_minimizable(minimizable);
     Ok(())
 }
 
-#[niva_api]
-fn is_maximizable(id: Option<u8>) -> Result<bool> {
+async fn is_maximizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_maximizable())
 }
 
-#[niva_api]
-fn set_maximizable(maximizable: bool, id: Option<u8>) -> Result<()> {
+async fn set_maximizable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (maximizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_maximizable(maximizable);
     Ok(())
 }
 
-#[niva_api]
-fn is_closable(id: Option<u8>) -> Result<bool> {
+async fn is_closable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_closable())
 }
 
-#[niva_api]
-fn set_closable(closable: bool, id: Option<u8>) -> Result<()> {
+async fn set_closable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (closable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_closable(closable);
     Ok(())
 }
 
-#[niva_api]
-fn is_minimized(id: Option<u8>) -> Result<bool> {
+async fn is_minimized(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_minimized())
 }
 
-#[niva_api]
-fn set_minimized(minimized: bool, id: Option<u8>) -> Result<()> {
+async fn set_minimized(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (minimized, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_minimized(minimized);
     Ok(())
 }
 
-#[niva_api]
-fn is_maximized(id: Option<u8>) -> Result<bool> {
+async fn is_maximized(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_maximized())
 }
 
-#[niva_api]
-fn set_maximized(maximized: bool, id: Option<u8>) -> Result<()> {
+async fn set_maximized(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (maximized, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_maximized(maximized);
     Ok(())
 }
 
-#[niva_api]
-fn decorated(id: Option<u8>) -> Result<bool> {
+async fn decorated(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.is_decorated())
 }
 
-#[niva_api]
-fn set_decorated(decorated: bool, id: Option<u8>) -> Result<()> {
+async fn set_decorated(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (decorated, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_decorations(decorated);
     Ok(())
 }
 
-#[niva_api]
-fn fullscreen(id: Option<u8>) -> Result<bool> {
+async fn fullscreen(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(window.fullscreen().is_some())
 }
 
-#[niva_api]
-fn set_fullscreen(is_fullscreen: bool, monitor_name: Option<String>, id: Option<u8>) -> Result<()> {
+async fn set_fullscreen(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (is_fullscreen, monitor_name, id) = request
+        .args()
+        .optional::<(bool, Option<String>, Option<u8>)>(3)?;
     match_window!(app, window, id);
     if !is_fullscreen {
         window.set_fullscreen(None);
@@ -372,22 +514,34 @@ fn set_fullscreen(is_fullscreen: bool, monitor_name: Option<String>, id: Option<
     Ok(())
 }
 
-#[niva_api]
-fn set_always_on_top(always_on_top: bool, id: Option<u8>) -> Result<()> {
+async fn set_always_on_top(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (always_on_top, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_always_on_top(always_on_top);
     Ok(())
 }
 
-#[niva_api]
-fn set_always_on_bottom(always_on_bottom: bool, id: Option<u8>) -> Result<()> {
+async fn set_always_on_bottom(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (always_on_bottom, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_always_on_bottom(always_on_bottom);
     Ok(())
 }
 
-#[niva_api]
-fn request_user_attention(level: String, id: Option<u8>) -> Result<()> {
+async fn request_user_attention(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (level, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
     match level.as_str() {
         "informational" => window.request_user_attention(Some(UserAttentionType::Informational)),
@@ -397,22 +551,34 @@ fn request_user_attention(level: String, id: Option<u8>) -> Result<()> {
     Ok(())
 }
 
-#[niva_api]
-fn set_content_protection(enabled: bool, id: Option<u8>) -> Result<()> {
+async fn set_content_protection(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (enabled, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_content_protection(enabled);
     Ok(())
 }
 
-#[niva_api]
-fn set_visible_on_all_workspaces(visible: bool, id: Option<u8>) -> Result<()> {
+async fn set_visible_on_all_workspaces(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_visible_on_all_workspaces(visible);
     Ok(())
 }
 
-#[niva_api]
-fn set_cursor_icon(icon: String, id: Option<u8>) -> Result<()> {
+async fn set_cursor_icon(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (icon, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_cursor_icon(match icon.as_str() {
         "default" => CursorIcon::Default,
@@ -455,49 +621,77 @@ fn set_cursor_icon(icon: String, id: Option<u8>) -> Result<()> {
     Ok(())
 }
 
-#[niva_api]
-fn cursor_position(id: Option<u8>) -> Result<NivaPosition> {
+async fn cursor_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<NivaPosition> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(logical_try!(window, cursor_position))
 }
 
-#[niva_api]
-fn set_cursor_position(position: NivaPosition, id: Option<u8>) -> Result<()> {
+async fn set_cursor_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_cursor_position(position)?;
     Ok(())
 }
 
-#[niva_api]
-fn set_cursor_grab(grab: bool, id: Option<u8>) -> Result<()> {
+async fn set_cursor_grab(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (grab, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_cursor_grab(grab)?;
     Ok(())
 }
 
-#[niva_api]
-fn set_cursor_visible(visible: bool, id: Option<u8>) -> Result<()> {
+async fn set_cursor_visible(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_cursor_visible(visible);
     Ok(())
 }
 
-#[niva_api]
-fn drag_window(id: Option<u8>) -> Result<()> {
-    match_window!(app, window, id);
-    window.drag_window()?;
-    Ok(())
+async fn drag_window(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+        match_window!(app2, window, id);
+        window.drag_window()?;
+        Ok(())
+    })
+    .await
 }
 
-#[niva_api]
-fn set_ignore_cursor_events(ignore: bool, id: Option<u8>) -> Result<()> {
+async fn set_ignore_cursor_events(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (ignore, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     window.set_ignore_cursor_events(ignore)?;
     Ok(())
 }
 
-#[niva_api]
-fn theme(id: Option<u8>) -> Result<String> {
+async fn theme(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
     Ok(String::from(match window.theme() {
         Theme::Light => "light",
@@ -506,8 +700,12 @@ fn theme(id: Option<u8>) -> Result<String> {
     }))
 }
 
-#[niva_api]
-fn block_close_requested(blocked: bool, id: Option<u8>) -> Result<()> {
+async fn block_close_requested(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (blocked, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
     let mut state = lock!(window.state)?;
     state.is_block_closed_requested = blocked;

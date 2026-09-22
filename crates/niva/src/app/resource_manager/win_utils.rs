@@ -1,31 +1,31 @@
 use anyhow::{Ok, Result};
 
-use std::ptr;
-use winapi::um::libloaderapi::{
-    FindResourceW, FreeResource, GetModuleHandleW, LoadResource, LockResource, SizeofResource,
+use windows::{
+    Win32::System::LibraryLoader::{
+        FindResourceW, FreeResource, GetModuleHandleW, LoadResource, LockResource, SizeofResource,
+    },
+    core::PCWSTR,
 };
-use winapi::um::winuser::RT_RCDATA;
+
+// MAKEINTRESOURCEW(10): predefined resource type, stable Win32 ABI.
+const RT_RCDATA: PCWSTR = PCWSTR(10 as *const u16);
 
 pub fn load_resource(name: &str) -> Result<Vec<u8>> {
     unsafe {
-        let h_module = GetModuleHandleW(ptr::null());
-        if h_module.is_null() {
+        let h_module = GetModuleHandleW(None)?;
+        if h_module.is_invalid() {
             return Err(anyhow::anyhow!("Failed to get module handle."));
         }
 
         let lp_name = to_wstr(name);
-        let lp_name_ptr = lp_name.as_ptr();
-
-        let h_res_info = FindResourceW(h_module, lp_name_ptr, RT_RCDATA);
-        if h_res_info.is_null() {
+        let h_res_info = FindResourceW(Some(h_module), PCWSTR(lp_name.as_ptr()), RT_RCDATA);
+        if h_res_info.is_invalid() {
             return Err(anyhow::anyhow!("Failed to find resource."));
         }
-        let size = SizeofResource(h_module, h_res_info) as usize;
+        let size = SizeofResource(Some(h_module), h_res_info) as usize;
 
-        let h_res_data = LoadResource(h_module, h_res_info);
-        if h_res_data.is_null() {
-            return Err(anyhow::anyhow!("Failed to load resource."));
-        }
+        let h_res_data = LoadResource(Some(h_module), h_res_info)
+            .map_err(|_| anyhow::anyhow!("Failed to load resource."))?;
 
         let lp_res_data = LockResource(h_res_data) as *const u8;
         if lp_res_data.is_null() {

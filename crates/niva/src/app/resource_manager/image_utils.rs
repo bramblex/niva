@@ -11,7 +11,7 @@ pub fn png_to_rgba(png_data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     let mut decoder = png::Decoder::new(&mut cursor);
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info()?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
+    let mut buffer = vec![0; reader.output_buffer_size().unwrap_or(0)];
     let info = reader.next_frame(&mut buffer)?;
 
     // Convert the pixel data to RGBA format

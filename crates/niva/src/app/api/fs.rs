@@ -1,30 +1,31 @@
 use anyhow::Result;
 use glob::Pattern;
-use niva_macros::niva_api;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use std::{io::Write, path::Path, time::UNIX_EPOCH};
+use std::{path::Path, time::UNIX_EPOCH};
 
-use crate::app::api_manager::ApiManager;
+use crate::app::NivaApp;
+use crate::app::api_manager::{ApiManager, ApiRequest, CallContext};
+use crate::app::window_manager::window::NivaWindow;
+use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
-    api_manager.register_async_api("fs.stat", stat);
-    api_manager.register_async_api("fs.exists", exists);
-    api_manager.register_async_api("fs.read", read);
-    api_manager.register_async_api("fs.write", write);
-    api_manager.register_async_api("fs.append", append);
-    api_manager.register_async_api("fs.copy", copy);
-    api_manager.register_async_api("fs.move", move_);
-    api_manager.register_async_api("fs.remove", remove);
-    api_manager.register_async_api("fs.createDir", create_dir);
-    api_manager.register_async_api("fs.createDirAll", create_dir_all);
-    api_manager.register_async_api("fs.readDir", read_dir);
-    api_manager.register_async_api("fs.readDirAll", read_dir_all);
+    api_manager.register_blocking_api("fs.stat", stat);
+    api_manager.register_blocking_api("fs.exists", exists);
+    api_manager.register_stream_api("fs.readStream", read_stream);
+    api_manager.register_blocking_api("fs.copy", copy);
+    api_manager.register_stream_api("fs.writeStream", write_stream);
+    api_manager.register_blocking_api("fs.move", move_);
+    api_manager.register_blocking_api("fs.remove", remove);
+    api_manager.register_blocking_api("fs.createDir", create_dir);
+    api_manager.register_blocking_api("fs.createDirAll", create_dir_all);
+    api_manager.register_blocking_api("fs.readDir", read_dir);
+    api_manager.register_blocking_api("fs.readDirAll", read_dir_all);
 }
 
-#[niva_api]
-fn stat(path: String) -> Result<Value> {
+fn stat(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
+    let (path,) = request.args().get::<(String,)>()?;
     let meta = std::fs::metadata(path)?;
 
     Ok(json!({
@@ -38,69 +39,10 @@ fn stat(path: String) -> Result<Value> {
     }))
 }
 
-#[niva_api]
-fn exists(path: String) -> Result<bool> {
+fn exists(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<bool> {
+    let (path,) = request.args().get::<(String,)>()?;
     let path = std::path::Path::new(&path);
     Ok(path.exists())
-}
-
-#[derive(Deserialize)]
-enum EncodeType {
-    #[serde(rename = "utf8")]
-    UTF8,
-    #[serde(rename = "base64")]
-    BASE64,
-}
-
-#[niva_api]
-fn read(path: String, encode: Option<EncodeType>) -> Result<String> {
-    let encode = encode.unwrap_or(EncodeType::UTF8);
-    let content = match encode {
-        EncodeType::UTF8 => std::fs::read_to_string(path)?,
-        EncodeType::BASE64 => {
-            let content = std::fs::read(path)?;
-            base64::encode(content)
-        }
-    };
-
-    Ok(content)
-}
-
-#[niva_api]
-fn write(path: String, content: String, encode: Option<EncodeType>) -> Result<()> {
-    let encode = encode.unwrap_or(EncodeType::UTF8);
-
-    match encode {
-        EncodeType::BASE64 => {
-            let content = base64::decode(content)?;
-            std::fs::write(path, content)?
-        }
-        EncodeType::UTF8 => std::fs::write(path, content)?,
-    };
-    Ok(())
-}
-
-#[niva_api]
-fn append(path: String, content: String, encode: Option<EncodeType>) -> Result<()> {
-    let encode = encode.unwrap_or(EncodeType::UTF8);
-
-    match encode {
-        EncodeType::BASE64 => {
-            let content = base64::decode(content)?;
-            std::fs::OpenOptions::new()
-                .append(true)
-                .open(path)?
-                .write_all(&content)?;
-        }
-        EncodeType::UTF8 => {
-            std::fs::OpenOptions::new()
-                .append(true)
-                .open(path)?
-                .write_all(content.as_bytes())?;
-        }
-    };
-
-    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -114,91 +56,82 @@ struct CopyOptions {
     pub depth: Option<u64>,
 }
 
-fn _create_file_copy_options(options: Option<CopyOptions>) -> fs_extra::file::CopyOptions {
+fn _resolve_copy_options(options: Option<CopyOptions>) -> crate::app::fs_ops::CopyOptions {
+    use crate::app::fs_ops::CopyOptions;
     match options {
-        Some(options) => fs_extra::file::CopyOptions {
+        Some(options) => CopyOptions {
             overwrite: options.overwrite.unwrap_or(false),
             skip_exist: options.skip_exist.unwrap_or(false),
-            buffer_size: options.buffer_size.unwrap_or(64000),
-        },
-        None => fs_extra::file::CopyOptions::default(),
-    }
-}
-
-fn _create_dir_copy_options(options: Option<CopyOptions>) -> fs_extra::dir::CopyOptions {
-    match options {
-        Some(options) => fs_extra::dir::CopyOptions {
-            overwrite: options.overwrite.unwrap_or(false),
-            skip_exist: options.skip_exist.unwrap_or(false),
-            buffer_size: options.buffer_size.unwrap_or(64000),
             copy_inside: options.copy_inside.unwrap_or(false),
             content_only: options.content_only.unwrap_or(false),
             depth: options.depth.unwrap_or(0),
         },
-        None => fs_extra::dir::CopyOptions::default(),
+        None => CopyOptions::default(),
     }
 }
 
-#[niva_api]
-fn move_(from: String, to: String, options: Option<CopyOptions>) -> Result<()> {
+fn move_(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    use crate::app::fs_ops;
+    let (from, to, options) = request
+        .args()
+        .optional::<(String, String, Option<CopyOptions>)>(3)?;
     let from = std::path::Path::new(&from);
+    let to = std::path::Path::new(&to);
+    let options = _resolve_copy_options(options);
 
     if from.is_dir() {
-        use fs_extra::dir;
-        let options = _create_dir_copy_options(options);
-        dir::move_dir(from, to, &options)?;
+        fs_ops::move_dir(from, to, &options)?;
     } else {
-        use fs_extra::file;
-        let options = _create_file_copy_options(options);
-        file::move_file(from, to, &options)?;
+        fs_ops::move_file(from, to, &options)?;
     }
     Ok(())
 }
 
-#[niva_api]
-fn copy(from: String, to: String, options: Option<CopyOptions>) -> Result<()> {
+fn copy(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    use crate::app::fs_ops;
+    let (from, to, options) = request
+        .args()
+        .optional::<(String, String, Option<CopyOptions>)>(3)?;
     let from = std::path::Path::new(&from);
+    let to = std::path::Path::new(&to);
+    let options = _resolve_copy_options(options);
 
     if from.is_dir() {
-        use fs_extra::dir;
-        let options = _create_dir_copy_options(options);
-        dir::copy(from, to, &options)?;
+        fs_ops::copy_dir(from, to, &options)?;
     } else {
-        use fs_extra::file;
-        let options = _create_file_copy_options(options);
-        file::copy(from, to, &options)?;
+        fs_ops::copy_file(from, to, &options)?;
     }
 
     Ok(())
 }
 
-#[niva_api]
-fn remove(path: String) -> Result<()> {
+fn remove(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (path,) = request.args().get::<(String,)>()?;
     let path = std::path::Path::new(&path);
 
-    if path.is_dir() {
-        fs_extra::dir::remove(path)?
-    } else {
-        fs_extra::file::remove(path)?
-    };
+    crate::app::fs_ops::remove_path(path)?;
 
     Ok(())
 }
 
-#[niva_api]
-fn create_dir(path: String) -> Result<()> {
+fn create_dir(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (path,) = request.args().get::<(String,)>()?;
     std::fs::create_dir(path)?;
     Ok(())
 }
 
-#[niva_api]
-fn create_dir_all(path: String) -> Result<()> {
+fn create_dir_all(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (path,) = request.args().get::<(String,)>()?;
     std::fs::create_dir_all(path)?;
     Ok(())
 }
 
-#[niva_api]
-fn read_dir(path: Option<String>) -> Result<Vec<String>> {
+fn read_dir(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Vec<String>> {
+    let (path,) = request.args().optional::<(Option<String>,)>(1)?;
     let path = path.unwrap_or(".".to_string());
 
     let mut entries = Vec::new();
@@ -242,8 +175,14 @@ fn _visit_dirs(
     Ok(())
 }
 
-#[niva_api]
-fn read_dir_all(path: String, excludes: Option<Vec<String>>) -> Result<Vec<String>> {
+fn read_dir_all(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Vec<String>> {
+    let (path, excludes) = request
+        .args()
+        .optional::<(String, Option<Vec<String>>)>(2)?;
     let path = Path::new(&path);
     let mut files: Vec<String> = Vec::new();
 
@@ -257,4 +196,69 @@ fn read_dir_all(path: String, excludes: Option<Vec<String>>) -> Result<Vec<Strin
 
     _visit_dirs(path, path, &mut files, &exclude_patterns)?;
     Ok(files)
+}
+
+/// Chunked file read: binary chunks stream out (64KB default), terminal
+/// result carries `{size}`. For files too big to fit a JSON string.
+async fn read_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    use std::io::Read;
+
+    let (path, chunk_size): (String, Option<u64>) = request.args().optional(2)?;
+    let chunk_size = chunk_size.unwrap_or(65536).clamp(1024, 1 << 20) as usize;
+
+    // Whole loop on the elastic pool: blocking reads, cooperative cancel.
+    crate::blocking!({
+        let mut file = std::fs::File::open(&path)?;
+        let size = file.metadata()?.len();
+        let mut buf = vec![0u8; chunk_size];
+        loop {
+            if ctx.is_cancelled() {
+                return Ok(());
+            }
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            ctx.chunk(&buf[..n], false);
+        }
+        ctx.chunk(&[], true);
+        ctx.respond(Ok(json!({ "size": size })));
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}
+
+/// Streaming file write: binary chunks arrive from the client, END commits.
+/// Terminal result carries `{bytes}`. Replaces unary write/append.
+async fn write_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    let (path, append): (String, Option<bool>) = request.args().optional(2)?;
+    let append = append.unwrap_or(false);
+
+    crate::blocking!({
+        use std::io::Write;
+
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(!append)
+            .append(append)
+            .open(&path)?;
+        let mut bytes = 0u64;
+        while let Some(chunk) = ctx.next_chunk_blocking() {
+            if ctx.is_cancelled() {
+                return Ok(());
+            }
+            file.write_all(&chunk.data)?;
+            bytes += chunk.data.len() as u64;
+            if chunk.end {
+                break;
+            }
+        }
+        file.flush()?;
+        ctx.respond(Ok(json!({ "bytes": bytes })));
+        Ok(())
+    })
+    .await?;
+    Ok(())
 }

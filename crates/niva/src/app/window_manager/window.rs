@@ -1,22 +1,18 @@
 use crate::lock_force;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::{
     ops::Deref,
     sync::{Arc, Mutex},
 };
 
 use serde::Serialize;
-use serde_json::json;
-use tao::{
-    event_loop::ControlFlow,
-    window::{Window, WindowId},
-};
+use tao::window::{Window, WindowId};
 use wry::WebView;
 
 use crate::{
     app::{
-        NivaApp, NivaEvent, NivaEventLoopProxy, NivaWindowTarget,
+        NivaApp, NivaWindowTarget,
         utils::{ArcMut, arc, arc_mut},
     },
     unsafe_impl_sync_send,
@@ -42,16 +38,21 @@ pub struct NivaWindow {
     pub window: Window,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
     app: Arc<NivaApp>,
-    event_loop_proxy: NivaEventLoopProxy,
 
     /// Attached muda menu handle. Must be kept alive while attached:
     /// dropping it removes the native menu.
     menu_handle: Mutex<Option<muda::Menu>>,
 
     /// Live API WebSocket sender for this window's webview, if connected.
-    ws_tx: Mutex<Option<std::sync::mpsc::Sender<String>>>,
+    ws_tx: Mutex<Option<std::sync::mpsc::Sender<WsOut>>>,
 
     pub state: Mutex<NivaWindowState>,
+}
+
+/// Outbound WebSocket traffic for one window.
+pub enum WsOut {
+    Text(String),
+    Binary(Vec<u8>),
 }
 
 // NivaWindow is accessed from the webview IPC/drag-drop handlers and the
@@ -91,7 +92,6 @@ impl NivaWindow {
             webview,
             window,
             menu_options: arc_mut(options.menu.clone()),
-            event_loop_proxy: app.event_loop_proxy.clone(),
             menu_handle: Mutex::new(menu),
             ws_tx: Mutex::new(None),
 
@@ -113,27 +113,28 @@ impl NivaWindow {
         if !lock_force!(self.state).is_menu_visible {
             return;
         }
-        let menu_options = lock_force!(self.menu_options);
+        // Clone out and drop the guard: building does file IO and attaching
+        // takes menu_handle — never nest menu_options -> menu_handle.
+        let menu_options = lock_force!(self.menu_options).clone();
         if let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options) {
             self.attach_built_menu(&menu);
         }
     }
 
     pub fn set_menu(self: &Arc<Self>, options: &Option<WindowMenuOptions>) {
-        let mut menu_options = lock_force!(self.menu_options);
-        *menu_options = options.clone();
+        *lock_force!(self.menu_options) = options.clone();
         let visible = lock_force!(self.state).is_menu_visible;
-        if self.is_focused()
-            && visible
-            && let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options)
-        {
-            self.attach_built_menu(&menu);
+        if self.is_focused() && visible {
+            let menu_options = lock_force!(self.menu_options).clone();
+            if let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options) {
+                self.attach_built_menu(&menu);
+            }
         }
     }
 
     pub fn show_menu(self: &Arc<Self>) {
         lock_force!(self.state).is_menu_visible = true;
-        let menu_options = lock_force!(self.menu_options);
+        let menu_options = lock_force!(self.menu_options).clone();
         if let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options) {
             self.attach_built_menu(&menu);
         }
@@ -151,18 +152,9 @@ impl NivaWindow {
         lock_force!(self.state).is_menu_visible
     }
 
-    pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(
-        self: &Arc<Self>,
-        f: F,
-    ) -> Result<()> {
-        self.event_loop_proxy
-            .send_event(NivaEvent::new(f))
-            .map_err(|_| anyhow!("Failed to send event"))
-    }
-
     /// Register (or replace) the live API WebSocket sender for this window.
     /// Called by the HTTP server when the webview connects.
-    pub fn set_ws_sender(self: &Arc<Self>, tx: Option<std::sync::mpsc::Sender<String>>) {
+    pub fn set_ws_sender(self: &Arc<Self>, tx: Option<std::sync::mpsc::Sender<WsOut>>) {
         *lock_force!(self.ws_tx) = tx;
     }
 
@@ -171,44 +163,29 @@ impl NivaWindow {
     pub fn send_ws_envelope(self: &Arc<Self>, envelope: &str) -> bool {
         let guard = lock_force!(self.ws_tx);
         match guard.as_ref() {
-            Some(tx) => tx.send(envelope.to_string()).is_ok(),
+            Some(tx) => tx.send(WsOut::Text(envelope.to_string())).is_ok(),
             None => false,
         }
     }
 
+    /// Try pushing a binary chunk frame to the window's WebSocket.
+    pub fn send_ws_binary(self: &Arc<Self>, frame: &[u8]) -> bool {
+        let guard = lock_force!(self.ws_tx);
+        match guard.as_ref() {
+            Some(tx) => tx.send(WsOut::Binary(frame.to_vec())).is_ok(),
+            None => false,
+        }
+    }
+
+    /// Push an event to the page over its WebSocket. Returns false (dropped,
+    /// no log) when no socket is connected — by definition nobody can be
+    /// listening, e.g. the page is still booting. All API traffic is WS-only.
     pub fn send_ipc_event<E: Into<String>, P: Serialize>(
         self: &Arc<Self>,
         event: E,
         payload: P,
-    ) -> Result<()> {
+    ) -> bool {
         let envelope = serde_json::json!(["event", event.into(), payload]);
-        if self.send_ws_envelope(&envelope.to_string()) {
-            return Ok(());
-        }
-        self.send_envelope_eval(&envelope)
-    }
-
-    /// Deliver a pre-built envelope by evaluating `Niva.__emit__` on the main
-    /// thread. Used when no WebSocket is connected yet (page still loading).
-    pub fn send_envelope_eval(self: &Arc<Self>, envelope: &serde_json::Value) -> Result<()> {
-        let arr = envelope.as_array().ok_or(anyhow!("Invalid IPC envelope"))?;
-        let event = arr
-            .first()
-            .and_then(|v| v.as_str())
-            .ok_or(anyhow!("Invalid IPC envelope"))?
-            .to_string();
-        let payload = arr.get(2).cloned().unwrap_or(serde_json::Value::Null);
-        let payload = serde_json::to_string(&payload)?;
-        let _self = self.clone();
-        self.send_event(move |_, _| {
-            _self
-                .webview
-                .evaluate_script(&format!("Niva.__emit__(\"{event}\", {payload})"))?;
-            Ok(())
-        })
-    }
-
-    pub fn send_ipc_callback<D: Serialize>(self: &Arc<Self>, data: D) -> Result<()> {
-        self.send_ipc_event("ipc.callback", json!(data))
+        self.send_ws_envelope(&envelope.to_string())
     }
 }

@@ -10,7 +10,7 @@ use tao::{
 
 use crate::{lock, log_if_err, try_or_log_err};
 
-use super::{NivaApp, NivaEvent, utils::split_id};
+use super::{NivaApp, NivaEvent, utils::split_id, window_manager::WindowManager};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
@@ -53,7 +53,8 @@ impl EventHandler {
             .map_err(|_| anyhow!("Invalid menu id"))?;
         let (window_id, id) = split_id(merged_id);
         let window = app.window()?.get_window(window_id)?;
-        window.send_ipc_event("menu.clicked", id)
+        window.send_ipc_event("menu.clicked", id);
+        Ok(())
     }
 
     fn dispatch_tray_event(app: &Arc<NivaApp>, event: tray_icon::TrayIconEvent) -> Result<()> {
@@ -74,12 +75,15 @@ impl EventHandler {
                     .ok_or(anyhow!("Tray not found"))?;
                 let window = app.window()?.get_window(window_id)?;
                 match button {
-                    MouseButton::Left => window.send_ipc_event("tray.leftClicked", json!(tray_id)),
-                    MouseButton::Right => {
-                        window.send_ipc_event("tray.rightClicked", json!(tray_id))
+                    MouseButton::Left => {
+                        window.send_ipc_event("tray.leftClicked", json!(tray_id));
                     }
-                    _ => Ok(()),
+                    MouseButton::Right => {
+                        window.send_ipc_event("tray.rightClicked", json!(tray_id));
+                    }
+                    _ => {}
                 }
+                Ok(())
             }
             TrayIconEvent::DoubleClick { id, .. } => {
                 let (window_id, tray_id) = app
@@ -87,7 +91,8 @@ impl EventHandler {
                     .get_window_id_by_tray_id(id.as_ref())
                     .ok_or(anyhow!("Tray not found"))?;
                 let window = app.window()?.get_window(window_id)?;
-                window.send_ipc_event("tray.doubleClicked", json!(tray_id))
+                window.send_ipc_event("tray.doubleClicked", json!(tray_id));
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -103,7 +108,8 @@ impl EventHandler {
             .lookup(event.id())
             .ok_or(anyhow!("Shortcut not found"))?;
         let window = app.window()?.get_window(window_id)?;
-        window.send_ipc_event("shortcut.emit", id)
+        window.send_ipc_event("shortcut.emit", id);
+        Ok(())
     }
 
     pub fn handle(
@@ -134,7 +140,8 @@ impl EventHandler {
         control_flow: &mut ControlFlow,
     ) -> Result<()> {
         if let WindowEvent::Destroyed = event {
-            self.app.window()?.close_window_inner(window_id)?;
+            let closed = self.app.window()?.close_window_inner(window_id)?;
+            WindowManager::cleanup_window(&self.app, &closed)?;
         }
 
         let window = self.app.window()?.get_window_inner(window_id)?;
@@ -149,7 +156,7 @@ impl EventHandler {
                 {
                     let _ = focused;
                 }
-                window.send_ipc_event("window.focused", focused)?;
+                window.send_ipc_event("window.focused", focused);
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor,
@@ -161,7 +168,7 @@ impl EventHandler {
                         "scaleFactor": scale_factor,
                         "newInnerSize": new_inner_size
                     }),
-                )?;
+                );
             }
             WindowEvent::ThemeChanged(theme) => {
                 window.send_ipc_event(
@@ -171,14 +178,15 @@ impl EventHandler {
                         tao::window::Theme::Light => "light",
                         _ => "system",
                     },
-                )?;
+                );
             }
             WindowEvent::CloseRequested => {
                 let is_block_closed_requested = { lock!(window.state)?.is_block_closed_requested };
                 if is_block_closed_requested {
-                    window.send_ipc_event("window.closeRequested", json!(null))?;
+                    window.send_ipc_event("window.closeRequested", json!(null));
                 } else {
-                    self.app.window()?.close_window_inner(window_id)?;
+                    let closed = self.app.window()?.close_window_inner(window_id)?;
+                    WindowManager::cleanup_window(&self.app, &closed)?;
                     if window.id == 0 {
                         *control_flow = ControlFlow::Exit;
                     }

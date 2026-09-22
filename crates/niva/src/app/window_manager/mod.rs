@@ -73,7 +73,11 @@ impl WindowManager {
         self.get_window(id)
     }
 
-    pub fn close_window(&mut self, id: u8) -> Result<()> {
+    /// Remove a window from the maps and hand it back. Per the crate-wide
+    /// lock discipline this never touches other managers while the
+    /// WindowManager guard is held — callers run shortcut/tray cleanup
+    /// afterwards via [`Self::cleanup_window`].
+    pub fn close_window(&mut self, id: u8) -> Result<Arc<NivaWindow>> {
         let niva_window = self
             .windows
             .remove(&id)
@@ -81,22 +85,30 @@ impl WindowManager {
         self.id_map
             .remove(&niva_window.window_id)
             .ok_or(anyhow!("Window {id} not found"))?;
-
-        let app = self.app.clone().ok_or(anyhow!("App not found"))?;
-        app.shortcut()?.unregister_all(id)?;
-        app.tray()?.destroy_all(id)?;
-        Ok(())
+        Ok(niva_window)
     }
 
     pub fn list_windows(&self) -> Vec<&Arc<NivaWindow>> {
         self.windows.values().collect()
     }
 
-    pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<()> {
+    pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<Arc<NivaWindow>> {
         let id = self
             .id_map
             .get(&window_id)
+            .cloned()
             .ok_or(anyhow!("Window not found"))?;
-        self.close_window(*id)
+        self.close_window(id)
+    }
+
+    /// Owner cleanup after removal (shortcuts, trays). Takes the app, NOT a
+    /// manager guard, so locks are always acquired leaf-first and released
+    /// before the next one — no nesting, no inversion.
+    pub fn cleanup_window(app: &Arc<NivaApp>, window: &Arc<NivaWindow>) -> Result<()> {
+        app.shortcut()?.unregister_all(window.id)?;
+        app.tray()?.destroy_all(window.id)?;
+        // Cancel in-flight stateful API calls bound to the closed window.
+        app.api().cancel_window(window.id);
+        Ok(())
     }
 }

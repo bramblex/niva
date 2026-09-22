@@ -68,5 +68,9 @@ export const en_US = {
   NEWER_VERSION_TIP:"Newer version tip~",
   NEWER_VERSION_TEXT: "Click 'Confirm' to open the download page of the new version({{version}})",
   DEBUG_RESOURCE_NOT_FOUND: "Debug resource directory was not found: {{path}}",
+  SIGNING_APP: "Signing app",
+  SIGN_NO_IDENTITY: "macOS signing identity is not configured (sign.macos.identity)",
+  SIGN_NO_PFX: "Windows certificate file is not configured or missing (sign.windows.pfx)",
+  SIGN_NO_SIGNTOOL: "signtool.exe was not found (install Windows SDK)",
 };
 

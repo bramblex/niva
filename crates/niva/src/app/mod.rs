@@ -2,7 +2,9 @@ mod api;
 mod api_manager;
 mod assets;
 mod event_handler;
+pub(crate) mod fs_ops;
 pub(crate) mod http_server;
+pub(crate) mod main_exec;
 mod menu;
 mod options;
 mod resource_manager;
@@ -41,7 +43,6 @@ use self::{
 };
 
 pub type NivaEventLoop = EventLoop<NivaEvent>;
-pub type NivaEventLoopProxy = EventLoopProxy<NivaEvent>;
 pub type NivaWindowTarget = EventLoopWindowTarget<NivaEvent>;
 
 pub type NivaCallback = Pin<Box<dyn Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send>>;
@@ -73,7 +74,7 @@ pub struct NivaApp {
 
     _resource: Arc<dyn ResourceManager>,
     _window: ArcMut<WindowManager>, // Window manager.
-    _api: ArcMut<ApiManager>,
+    _api: Arc<ApiManager>,
     _shortcut: ArcMut<NivaShortcutManager>,
     _tray: ArcMut<NivaTrayManager>,
     _http: HttpServerSlot, // Async HTTP + WebSocket server (populated post-Arc).
@@ -116,11 +117,9 @@ impl NivaApp {
         };
 
         // create api manager and register api instances
-        let api_manager = ApiManager::new(&launch_info.options);
-        {
-            let mut api_manager = lock!(api_manager)?;
-            register_api_instances(&mut api_manager);
-        }
+        let mut api_manager = ApiManager::new(&launch_info.options);
+        register_api_instances(&mut api_manager);
+        let api_manager = Arc::new(api_manager);
 
         let window_manager = WindowManager::new(&launch_info);
 
@@ -144,7 +143,7 @@ impl NivaApp {
 
         // bind app to window manager
         lock!(window_manager)?.bind_app(app.clone());
-        lock!(api_manager)?.bind_app(app.clone());
+        api_manager.bind_app(app.clone());
         lock!(tray_manager)?.bind_app(app.clone());
 
         // start the loopback HTTP + WebSocket server before any window exists
@@ -176,8 +175,10 @@ impl NivaApp {
         lock!(self._window)
     }
 
-    pub fn api(self: &Arc<Self>) -> Result<MutexGuard<'_, ApiManager>> {
-        lock!(self._api)
+    /// Handler map is frozen after init: lock-free clone, dispatch never
+    /// blocks on this manager. (Registration takes &mut during startup only.)
+    pub fn api(self: &Arc<Self>) -> Arc<ApiManager> {
+        self._api.clone()
     }
 
     pub fn shortcut(self: &Arc<Self>) -> Result<MutexGuard<'_, NivaShortcutManager>> {

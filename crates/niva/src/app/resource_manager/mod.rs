@@ -55,30 +55,28 @@ impl ResourceManager for FileSystemResource {
     }
 
     fn extract(&self, from: &str, to: &Path) -> Result<()> {
-        fs_extra::file::copy(
-            self.root_dir.join(from),
+        use super::fs_ops;
+        fs_ops::copy_file(
+            &self.root_dir.join(from),
             to,
-            &fs_extra::file::CopyOptions::new(),
+            &fs_ops::CopyOptions::default(),
         )?;
         Ok(())
     }
 
     fn load_icon(&self, path: &str) -> Result<Icon> {
-        let mut cache = lock!(self.icon_cache)?;
-        let icon = cache.get(path);
-        match icon {
-            Some(icon) => return Ok(icon.clone()),
-            None => {
-                let data = self.load(path)?;
-                if path.ends_with("png") {
-                    let icon = image_utils::png_to_icon(&data)?;
-                    cache.insert(path.to_string(), icon.clone());
-                    Ok(icon)
-                } else {
-                    Err(anyhow::anyhow!("Unsupported icon format."))
-                }
-            }
+        // Fast path under lock; file IO + decode happen lock-free, then a
+        // double-checked insert (last writer wins, icons are deterministic).
+        if let Some(icon) = lock!(self.icon_cache)?.get(path).cloned() {
+            return Ok(icon);
         }
+        let data = self.load(path)?;
+        if !path.ends_with("png") {
+            return Err(anyhow::anyhow!("Unsupported icon format."));
+        }
+        let icon = image_utils::png_to_icon(&data)?;
+        lock!(self.icon_cache)?.insert(path.to_string(), icon.clone());
+        Ok(icon)
     }
 }
 
@@ -154,20 +152,17 @@ impl ResourceManager for AppResourceManager {
     }
 
     fn load_icon(&self, path: &str) -> Result<Icon> {
-        let mut cache = lock!(self.icon_cache)?;
-        let icon = cache.get(path);
-        match icon {
-            Some(icon) => return Ok(icon.clone()),
-            None => {
-                let data = self.load(path)?;
-                if path.ends_with("png") {
-                    let icon = image_utils::png_to_icon(&data)?;
-                    cache.insert(path.to_string(), icon.clone());
-                    Ok(icon)
-                } else {
-                    Err(anyhow::anyhow!("Unsupported icon format."))
-                }
-            }
+        // Fast path under lock; file IO + decode happen lock-free, then a
+        // double-checked insert (last writer wins, icons are deterministic).
+        if let Some(icon) = lock!(self.icon_cache)?.get(path).cloned() {
+            return Ok(icon);
         }
+        let data = self.load(path)?;
+        if !path.ends_with("png") {
+            return Err(anyhow::anyhow!("Unsupported icon format."));
+        }
+        let icon = image_utils::png_to_icon(&data)?;
+        lock!(self.icon_cache)?.insert(path.to_string(), icon.clone());
+        Ok(icon)
     }
 }

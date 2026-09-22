@@ -287,26 +287,26 @@ impl NivaBuilder {
                 Ok(window) => match event {
                     DragDropEvent::Enter { paths, position } => {
                         let position = physical_to_logical(position, window.scale_factor());
-                        log_if_err!(window.send_ipc_event(
+                        window.send_ipc_event(
                             "fileDrop.hovered",
                             json!({
                                 "paths": paths,
                                 "position": position,
                             }),
-                        ));
+                        );
                     }
                     DragDropEvent::Drop { paths, position } => {
                         let position = physical_to_logical(position, window.scale_factor());
-                        log_if_err!(window.send_ipc_event(
+                        window.send_ipc_event(
                             "fileDrop.dropped",
                             json!({
                                 "paths": paths,
                                 "position": position,
                             }),
-                        ));
+                        );
                     }
                     DragDropEvent::Leave => {
-                        log_if_err!(window.send_ipc_event("fileDrop.cancelled", json!(null)));
+                        window.send_ipc_event("fileDrop.cancelled", json!(null));
                     }
                     // Over events fire continuously; avoid spamming the frontend.
                     DragDropEvent::Over { .. } => (),
