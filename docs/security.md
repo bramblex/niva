@@ -74,8 +74,8 @@
 
 ## 4. 行动清单（转 roadmap 跟踪）
 
-- [ ] entry 信任分级（remote 默认无桥）—— P0，需产品决策
-- [ ] 资源路径穿越修复（canonicalize + 前缀校验 + `%2e` 归一）—— P0，搭 http-auth-plan 便车
+- [ ] entry 信任分级（remote 默认无桥）—— P0，方案见 `docs/permission-design.md`
+  （本地包全权 + 远端默认零权 + niva.json origin 授权表，`*.` 通配，不用自由正则）- [ ] 资源路径穿越修复（canonicalize + 前缀校验 + `%2e` 归一）—— P0，搭 http-auth-plan 便车
 - [ ] Host 头校验 + WS Origin 校验 —— P1，小
 - [ ] `http` SSRF blocklist（先文档警示） —— P1
 - [ ] CSP 默认模板 + eval 规矩文档化 —— P1

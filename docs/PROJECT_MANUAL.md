@@ -467,3 +467,10 @@ Windows 打包从 `ResourceHacker.exe + icon_creator.exe` 迁移到自研
 实现 stub 在 `crates/win_packager/src/windows_impl.rs`。
 关系到本手册 §2.11（icon_creator）、§3.5（build-windows.ts）、
 §6.2（build_Windows.cmd）的描述，迁移完成后更新。
+
+## 11. Stdio Host Bridge（设计稿，未实现）
+
+`niva.exe --stdio` 被任意程序当子进程拉起做 UI 窗口，双方经 stdin/stdout
+换 NDJSON（设计见 `docs/stdio-host-design.md`，roadmap 已立项）。
+约束：管道与 app 级 API 只归主窗口（id 0，退即全退）；v1 只做三帧透传
+（`ready`/`msg` 双向），无 RPC，子窗口调 `host.*` 直接报错。

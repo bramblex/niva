@@ -303,5 +303,26 @@ mod tests {
             u16::from_le_bytes([ico[4], ico[5]]) as usize,
             icon::ICON_SIZES.len()
         );
+        // Every entry: dims + planes/bitcount + sane offset/size,
+        // payload starts with PNG magic and decodes to RGBA dims.
+        for (i, size) in icon::ICON_SIZES.iter().enumerate() {
+            let e = 6 + i * 16;
+            let dim = if *size >= 256 { 0 } else { *size as u8 };
+            assert_eq!(ico[e], dim, "width entry {i}");
+            assert_eq!(ico[e + 1], dim, "height entry {i}");
+            assert_eq!(&ico[e + 4..e + 6], &[1, 0], "planes entry {i}");
+            assert_eq!(&ico[e + 6..e + 8], &[32, 0], "bitcount entry {i}");
+            let len = u32::from_le_bytes(ico[e + 8..e + 12].try_into().unwrap()) as usize;
+            let off = u32::from_le_bytes(ico[e + 12..e + 16].try_into().unwrap()) as usize;
+            assert!(len > 8 && off + len <= ico.len(), "entry {i} bounds");
+            assert_eq!(
+                &ico[off..off + 8],
+                &[137, 80, 78, 71, 13, 10, 26, 10],
+                "PNG magic entry {i}"
+            );
+            let decoded = image::load_from_memory(&ico[off..off + len]).unwrap();
+            assert_eq!(decoded.width(), *size);
+            assert_eq!(decoded.height(), *size);
+        }
     }
 }

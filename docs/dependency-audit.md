@@ -50,7 +50,23 @@
 3. rfd 0.17（中， dialog 真机验证）→ 4. ureq 3（中）→
 5. objc2 + x-win（中，需 macOS 真机）→ 6. fs_extra 替换 + winres（P2，有空再说）。
 
-## 6. 落地记录（2026-09-23）
+## 6. 落地记录（2026-09-23，已提交推送）
+
+补充（审计时遗漏的两处，落地中发现并处理）：
+
+- `win_packager` 同样拖着 `ico 0.3`/`image` 全特性：已同步升级；
+  进一步发现 `ico 0.5` 写死依赖 `png 0.17`（非可选），遂**手写 ICO 编码**
+  （`win_packager::icon::encode_ico`，标准 ICONDIR + PNG payload，
+  结构单测逐 entry 校验魔数/偏移/解码尺寸），删掉 `ico` crate——
+  `adler` 整条链（`ico→png 0.17→miniz_oxide 0.6→adler`）彻底出树。
+  `icon_creator` 瘦身为 thin wrapper（二进制实测可生成合法 7-entry ICO）。
+- `cargo audit` 现状：**0 错误**，仅剩 3 条 warning（`paste` 经 x-win 的
+  image/avif 链、`proc-macro-error`/`glib` 经 Linux-only gtk 栈——均为
+  纯传递依赖，不可达/不可修，已接受）。
+
+验证：macOS/Windows 双 target check、workspace clippy 零错误、
+20 单测全过、ureq3 HTTPS 200、fs 9 项行为电池、WS/devtools 全回归、
+release 2.45MB（< 3MB）。
 
 全部完成，偏离审计预期的只有三处（都是往好的方向）：
 

@@ -1,6 +1,21 @@
 # Niva Roadmap / 待完善事项
 
 > 更新：2026-09-22。本轮重构（Rust 1.98 / wry 0.57 / 全异步 API / WS 桥 / smol 服务器）完成后盘点。
+> v1.0 门禁见下一节（2026-09-23 评审结论）。
+
+## v1.0 门禁（盖章前必须清零）
+
+- [ ] **origin 权限**：`docs/permission-design.md` 落地（本地包全权 + 远端默认零权），
+  或 v1.0 明确 scope 成“只支持本地资源”并写死警告。对应旧 P0 entry 分级。
+- [ ] **资源路径穿越 + http-auth 最小实现**：`docs/security.md` P0-2 与
+  `docs/http-auth-plan.md`（至少 `__niva_fs` 鉴权）。
+- [ ] **window-tray-menu 三个 P0**：hotkey `expect` 改 `Result`、owner 字段、
+  菜单三件套包 `run_on_main`（`docs/window-tray-menu-plan.md` §1–3）。
+- [ ] **CI**：`cargo check/clippy/test` + `tsc` + `vite build` 进 Actions。
+- [ ] **Windows 真机跑一遍**（现仅 target check）。
+
+明确**不出 v1.0**：win_packager 迁移、stdio bridge、node-compat 独立仓、
+wry 能力补齐（`docs/api-coverage.md` §3）、devtools 自身签名（需证书）。
 
 ## 产品定位（已定）
 
@@ -9,7 +24,6 @@
 - **签名责任在下游**：打包产出的是新应用，由开发者自己签名；Niva 最多给 devtools 自身做签名。
 
 ## P0 —— 正确性缺口
-
 - [x] **Windows 构建验证**：`cargo check --target x86_64-pc-windows-msvc` 已通过
   （2026-09-23，装 target 后首验证；此前从未验证）。覆盖托盘、HWND、窗口菜单挂载、
   `beginResizeDrag`、fs 盘符路径。真机运行仍待一台 Windows。
@@ -28,8 +42,10 @@
   全面评估（含信任模型、分级发现、eval 专项）。残留行动转 P0/P1 新条目。
 - [x] **线协议版本**：`WIRE_VERSION` / `Niva.bridgeVersion = 1` 已同步，
   hello 握手显式校验版本。
-- [ ] **entry 信任分级**（remote 默认无桥）：见 `docs/security.md §4` —— P0，需产品决策。
-- [ ] **资源路径穿越修复**：见 `docs/security.md §4` —— P0，搭 http-auth-plan 便车。
+- [ ] **entry 信任分级**：方案已定，见 `docs/permission-design.md`（转 v1.0 门禁跟踪）。
+- [ ] **资源路径穿越修复**：见 `docs/security.md §4` —— P0，搭 http-auth-plan 便车（转 v1.0 门禁跟踪）。
+- [ ] **wry 能力补齐**（1.x）：`evaluate_script`/`load_url`/`reload`/cookie/标题跟随等，
+  完整清单见 `docs/api-coverage.md` §3；tao 侧缺口同文件 §1–2。
 - [ ] **Host/Origin 校验、`http` SSRF blocklist、CSP 默认模板**：见 `docs/security.md §4` —— P1。
 
 ## P2 —— 发布与工程
@@ -38,6 +54,9 @@
 - [ ] **打包脚本过期**：`build_MacOS.sh` 是 CRA 时代假设，按 vite 产物对一遍。
 - [x] **签名工具（一站式，证书用户自备）**：devtools 构建成功后按 `sign` 配置自动签名。macOS（codesign deep/runtime + verify，可选 notarytool 公证 + stapler，钥匙串 profile 零秘密）；Windows（signtool + PFX，密码走 env）。秘密永不进 niva.json。
 - [ ] **devtools 自身签名**：用上面这套工具给 devtools 打包签名（需证书）。
+- [ ] **Stdio host bridge（niva 当子进程 UI）**：`niva.exe --stdio` 经 stdin/stdout
+  与任意宿主程序换 NDJSON，管道与 app 级 API 只归主窗口（id 0）。设计见
+  `docs/stdio-host-design.md`；落地先做 `println!` 审计（stdout 纯洁性）。
 - [ ] Node.js 支持、系统通知 Notification、miniblink 按原 README TODO 排期。
 - [ ] **文档站过期**：`packages/website` 缺 stream 新 API 文档。
 - [ ] **测试覆盖**：6 个单测 + /tmp 手工 e2e；CI 落了之后把 e2e 脚本化进仓库。

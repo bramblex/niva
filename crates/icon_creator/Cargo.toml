@@ -7,5 +7,4 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
-ico = "0.3.0"
-image = "0.25.10"
+win_packager = { path = "../win_packager" }

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use image::imageops::FilterType;
 /*
   TODO: Resource Hacker 替换图标配置
   -delete ICON,1,1033
@@ -15,18 +14,8 @@ fn main() -> Result<()> {
     let source = Path::new(&args[1]);
     let target = Path::new(&args[2]);
 
-    let img = image::open(source)?;
-    let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
-
-    for size in &[16, 24, 32, 48, 64, 128, 256] {
-        let img = img.resize_exact(*size, *size, FilterType::Lanczos3);
-        let rgba = img.to_rgba8().to_vec();
-        let icon_img = ico::IconImage::from_rgba_data(*size, *size, rgba);
-        let icon = ico::IconDirEntry::encode(&icon_img)?;
-        icon_dir.add_entry(icon);
-    }
-
-    let target = std::fs::File::create(target)?;
-    icon_dir.write(target)?;
+    let png = std::fs::read(source)?;
+    let ico = win_packager::icon::png_to_ico_bytes(&png)?;
+    std::fs::write(target, ico)?;
     Ok(())
 }
