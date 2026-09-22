@@ -1,7 +1,7 @@
 use serde::Deserialize;
-use tao::dpi::{LogicalSize, LogicalPosition};
+use tao::dpi::{LogicalPosition, LogicalSize};
 
-use crate::app::{menu::options::MenuOptions};
+use crate::app::menu::options::MenuOptions;
 
 pub type NivaSize = LogicalSize<f64>;
 pub type NivaPosition = LogicalPosition<f64>;
@@ -10,7 +10,7 @@ pub type NivaPosition = LogicalPosition<f64>;
 pub struct WindowRootMenu {
     pub label: String,
     pub enabled: Option<bool>,
-    pub children: MenuOptions
+    pub children: MenuOptions,
 }
 
 pub type WindowMenuOptions = Vec<WindowRootMenu>;
@@ -43,7 +43,6 @@ pub struct WinWindowExtraOptions {
     pub skip_taskbar: Option<bool>,
     pub undecorated_shadow: Option<bool>,
 }
-
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -92,5 +91,3 @@ pub struct NivaWindowOptions {
     // merge background_color options to transparent
     pub menu: Option<WindowMenuOptions>,
 }
-
-

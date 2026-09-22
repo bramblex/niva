@@ -1,13 +1,15 @@
 import "./app.scss";
 
 import classNames from "classnames";
-import { PropsWithChildren, useEffect, useRef, useState } from "react";
+import React, { PropsWithChildren, useEffect, useRef, useState } from "react";
+import {useLocalModel,
+  useModel,} from "./common/state";
 import {
-  useLocalModel,
-  useModel,
-  useModelProvider,
-} from "@bramblex/state-model-react";
-import { AppModel, useApp, useLocale } from "./models/app.model";
+  AppModel,
+  AppModelProvider,
+  useApp,
+  useLocale,
+} from "./models/app.model";
 import { Modal } from "./modals";
 
 import {
@@ -220,7 +222,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   }, []);
 
   const locale = useLocale();
-  const isDevelop = process.env.NODE_ENV === "development";
+  const isDevelop = import.meta.env.DEV;
 
   return (
     <div className={classNames("window", { active }, `os-${platform}`)}>
@@ -297,8 +299,8 @@ export function App() {
   const app: AppModel = useLocalModel(
     () => (window as any).app || new AppModel()
   );
-  const AppProvider = useModelProvider(AppModel);
-  const history = useModel(app.state.history);
+  const history = app.state.history;
+  useModel(history);
 
   useEffect(() => {
     if (!(window as any).app) {
@@ -335,11 +337,11 @@ export function App() {
   }, []);
 
   return (
-    <AppProvider value={app}>
+    <AppModelProvider value={app}>
       <WindowFrame>
         {history.state.history.length > 0 ? <ProjectPage /> : <ImportPage />}
       </WindowFrame>
       <Modal />
-    </AppProvider>
+    </AppModelProvider>
   );
 }

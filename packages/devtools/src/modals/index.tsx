@@ -1,4 +1,4 @@
-import { useModel } from "@bramblex/state-model-react";
+import {useModel} from "../common/state";
 import classNames from "classnames";
 import { XPromise } from "../common/utils";
 
@@ -128,7 +128,7 @@ export function ProgressModal({
 
 export function Modal() {
   const modal = useModal();
-  const modals = modal.state;
+  const modals = modal.state.modals;
 
   return modals.length > 0 ? (
     <div className="modal-container">

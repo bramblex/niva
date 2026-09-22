@@ -1,4 +1,4 @@
-import pako from "pako";
+import { deflateRaw } from "pako";
 import { pathJoin, runCmd, tempDirWith } from "../common/utils";
 import {
   appendResource,
@@ -51,7 +51,7 @@ export async function buildWindowsApp(params: BuildParams): Promise<string> {
   });
 
   progress.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
-    const compressedBuffer = pako.deflateRaw(buffer).buffer;
+    const compressedBuffer = deflateRaw(buffer).buffer;
     await Promise.all([
       fs.write(indexesPath, JSON.stringify(fileIndexes, null, 2)),
       fs.write(dataPath, arrayBufferToBase64(compressedBuffer), "base64"),

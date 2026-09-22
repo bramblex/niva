@@ -94,7 +94,7 @@ export function ProjectList() {
                 locale.t("DELETE_CONFIRM")
               )
             ) {
-              history.setState({ history: [] });
+              history.update({ history: [] });
             }
           }}
         >

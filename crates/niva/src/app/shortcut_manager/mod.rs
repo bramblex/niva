@@ -1,17 +1,10 @@
-use crate::{log_if_err, unsafe_impl_sync_send};
+use crate::unsafe_impl_sync_send;
 
-use super::{
-    api::register_api_instances,
-    utils::{arc_mut, ArcMut, IdCounter, merge_id},
-    NivaEventLoop,
-};
-use anyhow::{anyhow, Result};
+use super::utils::{ArcMut, arc_mut};
+use anyhow::{Result, anyhow};
+use global_hotkey::{GlobalHotKeyManager, hotkey::HotKey};
 use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
-use tao::{
-    accelerator::{Accelerator, AcceleratorId},
-    global_shortcut::{GlobalShortcut, ShortcutManager},
-};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ShortcutOption {
@@ -23,27 +16,27 @@ pub type NivaShortcutsOptions = Vec<ShortcutOption>;
 
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
-    manager: ShortcutManager,
-    shortcuts: HashMap<u8, (u8, String, GlobalShortcut)>,
-    id_counter: IdCounter,
+    manager: GlobalHotKeyManager,
+    /// hotkey id (u32 from global-hotkey) -> (window id, action id, hotkey)
+    shortcuts: HashMap<u32, (u8, u8, HotKey)>,
+    /// (window id, action id) -> hotkey id, for per-window unregister/list
+    index: HashMap<(u8, u8), u32>,
 }
 
 impl NivaShortcutManager {
-    pub fn new(
-        event_loop: &NivaEventLoop,
-    ) -> ArcMut<NivaShortcutManager> {
+    pub fn new() -> ArcMut<NivaShortcutManager> {
         let manager = NivaShortcutManager {
-            manager: ShortcutManager::new(event_loop),
+            manager: GlobalHotKeyManager::new().expect("Failed to create global hotkey manager"),
             shortcuts: HashMap::new(),
-            id_counter: IdCounter::new(),
+            index: HashMap::new(),
         };
         arc_mut(manager)
     }
 
-    pub fn get(&self, id: u8) -> Result<&(u8, String, GlobalShortcut)> {
+    pub fn lookup(&self, hotkey_id: u32) -> Option<(u8, u8)> {
         self.shortcuts
-            .get(&id)
-            .ok_or(anyhow!("Shortcut with id {} not found", id))
+            .get(&hotkey_id)
+            .map(|(window_id, id, _)| (*window_id, *id))
     }
 
     pub fn register_with_options(
@@ -63,65 +56,70 @@ impl NivaShortcutManager {
         id: u8,
         accelerator_str: String,
     ) -> Result<()> {
-        if self.shortcuts.contains_key(&id) {
-            return Err(anyhow!("Shortcetet with id {} already registered", id));
+        if self.index.contains_key(&(window_id, id)) {
+            return Err(anyhow!("Shortcut with id {} already registered", id));
         }
 
-        let accelerator = Accelerator::from_str(&accelerator_str)
-            .map_err(|err| anyhow!("{}", err.to_string()))?
-            .with_id(AcceleratorId(merge_id(window_id, id)));
-        let shortcut = self.manager.register(accelerator)?;
+        let hotkey = HotKey::from_str(&accelerator_str).map_err(|err| anyhow!("{err}"))?;
+        let hotkey_id = hotkey.id();
+        if self.shortcuts.contains_key(&hotkey_id) {
+            return Err(anyhow!("Shortcut {} already registered", accelerator_str));
+        }
+        self.manager.register(hotkey)?;
 
-        self.shortcuts
-            .insert(id, (window_id, accelerator_str, shortcut));
+        self.shortcuts.insert(hotkey_id, (window_id, id, hotkey));
+        self.index.insert((window_id, id), hotkey_id);
         Ok(())
     }
 
     pub fn register(&mut self, window_id: u8, accelerator_str: String) -> Result<u8> {
-        let id = self.id_counter.next(&self.shortcuts)?;
+        // find a free action id for this window
+        let mut id = 0u8;
+        while self.index.contains_key(&(window_id, id)) {
+            id = id.wrapping_add(1);
+            if id == 0 {
+                return Err(anyhow!("No free shortcut id"));
+            }
+        }
         self.register_with_id(window_id, id, accelerator_str)?;
         Ok(id)
     }
 
     pub fn unregister(&mut self, window_id: u8, id: u8) -> Result<()> {
-        let (owner_id, _, _) = self
-            .shortcuts
-            .get(&id)
+        let hotkey_id = self
+            .index
+            .remove(&(window_id, id))
             .ok_or(anyhow!("Shortcut with id {} not found", id))?;
-        if window_id != *owner_id {
-            return Err(anyhow!(
-                "Shortcut with id {} can only unregister in window {}",
-                id,
-                owner_id
-            ));
-        }
-        let (_, _, shortcut) = self
+        let (_, _, hotkey) = self
             .shortcuts
-            .remove(&id)
+            .remove(&hotkey_id)
             .ok_or(anyhow!("Shortcut with id {} not found", id))?;
-        self.manager.unregister(shortcut)?;
+        self.manager.unregister(hotkey)?;
         Ok(())
     }
 
     pub fn unregister_all(&mut self, window_id: u8) -> Result<()> {
         let shortcuts = self
-            .shortcuts
-            .iter()
-            .filter(|(_, (owner_id, _, _))| *owner_id == window_id)
-            .map(|(id, _)| *id)
+            .index
+            .keys()
+            .filter(|(owner_id, _)| *owner_id == window_id)
+            .cloned()
             .collect::<Vec<_>>();
-        for id in shortcuts {
+        for (window_id, id) in shortcuts {
             self.unregister(window_id, id)?;
         }
         Ok(())
     }
 
     pub fn list(&self, window_id: u8) -> Result<Vec<(u8, String)>> {
-        Ok(self
-            .shortcuts
-            .iter()
-            .filter(|(_, (owner_id, _, _))| *owner_id == window_id)
-            .map(|(id, (_, accelerator_str, _))| (*id, accelerator_str.clone()))
-            .collect())
+        let mut result = Vec::new();
+        for ((owner_id, id), hotkey_id) in &self.index {
+            if *owner_id == window_id
+                && let Some((_, _, hotkey)) = self.shortcuts.get(hotkey_id)
+            {
+                result.push((*id, (*hotkey).into_string()));
+            }
+        }
+        Ok(result)
     }
 }

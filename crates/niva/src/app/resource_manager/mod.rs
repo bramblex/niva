@@ -1,20 +1,20 @@
 #[cfg(target_os = "windows")]
 mod win_utils;
 
-mod image_utils;
+pub(crate) mod image_utils;
 
 use anyhow::{Ok, Result};
 use std::{
     collections::HashMap,
     io::Read,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 use tao::window::Icon;
 
 use crate::lock;
 
-use super::utils::{arc, arc_mut, ArcMut};
+use super::utils::{ArcMut, arc, arc_mut};
 
 type IconCache = HashMap<String, Icon>;
 

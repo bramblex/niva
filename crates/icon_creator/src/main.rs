@@ -20,9 +20,7 @@ fn main() -> Result<()> {
 
     for size in &[16, 24, 32, 48, 64, 128, 256] {
         let img = img.resize_exact(*size, *size, FilterType::Lanczos3);
-        let rgba = img
-            .to_rgba8()
-            .to_vec();
+        let rgba = img.to_rgba8().to_vec();
         let icon_img = ico::IconImage::from_rgba_data(*size, *size, rgba);
         let icon = ico::IconDirEntry::encode(&icon_img)?;
         icon_dir.add_entry(icon);

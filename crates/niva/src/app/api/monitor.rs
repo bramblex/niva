@@ -1,6 +1,6 @@
 use anyhow::Result;
 use niva_macros::niva_api;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use tao::monitor::MonitorHandle;
 

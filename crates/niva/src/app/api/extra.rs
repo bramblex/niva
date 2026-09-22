@@ -1,6 +1,6 @@
-use crate::{app::api_manager::ApiManager};
+use crate::app::api_manager::ApiManager;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use niva_macros::niva_api;
 use niva_macros::niva_event_api;
 
@@ -8,7 +8,8 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_async_api("extra.getActiveWindowId", get_active_window_id);
     api_manager.register_async_api("extra.focusByWindowId", focus_by_window_id);
 
-    #[cfg(target_os = "macos")] {
+    #[cfg(target_os = "macos")]
+    {
         api_manager.register_event_api("extra.hideApplication", hide_application);
         api_manager.register_event_api("extra.showApplication", show_application);
         api_manager.register_event_api("extra.hideOtherApplications", hide_other_applications);
@@ -19,7 +20,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 #[cfg(target_os = "macos")]
 #[niva_event_api]
 fn hide_application() -> Result<()> {
-    use wry::application::platform::macos::EventLoopWindowTargetExtMacOS;
+    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
     target.hide_application();
     Ok(())
 }
@@ -27,7 +28,7 @@ fn hide_application() -> Result<()> {
 #[cfg(target_os = "macos")]
 #[niva_event_api]
 fn show_application() -> Result<()> {
-    use wry::application::platform::macos::EventLoopWindowTargetExtMacOS;
+    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
     target.show_application();
     Ok(())
 }
@@ -35,7 +36,7 @@ fn show_application() -> Result<()> {
 #[cfg(target_os = "macos")]
 #[niva_event_api]
 fn hide_other_applications() -> Result<()> {
-    use wry::application::platform::macos::EventLoopWindowTargetExtMacOS;
+    use tao::platform::macos::EventLoopWindowTargetExtMacOS;
     target.hide_other_applications();
     Ok(())
 }
@@ -44,7 +45,7 @@ fn hide_other_applications() -> Result<()> {
 #[niva_event_api]
 fn set_activation_policy(policy: NivaActivationPolicy) -> Result<()> {
     use crate::app::options::NivaActivationPolicy;
-    use wry::application::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS};
+    use tao::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS};
 
     let policy = match policy {
         NivaActivationPolicy::Regular => ActivationPolicy::Regular,
@@ -58,20 +59,16 @@ fn set_activation_policy(policy: NivaActivationPolicy) -> Result<()> {
 #[cfg(target_os = "macos")]
 #[niva_api]
 fn get_active_window_id() -> Result<Option<String>> {
-    use active_win_pos_rs::get_active_window;
-
-    let window = get_active_window();
-    match window {
-        Ok(window) => Ok(Some(format!("{}_{}", window.process_id, window.window_id))),
-        Err(_) => Ok(None),
-    }
+    // TODO: restore via maintained crate (see Cargo.toml note).
+    // active-win-pos-rs disabled: bindgen 0.59 incompatible with current SDK.
+    Ok(None)
 }
 
 #[cfg(target_os = "macos")]
 #[niva_api]
 fn focus_by_window_id(id_string: String) -> Result<bool> {
     use cocoa::appkit::NSApplicationActivateIgnoringOtherApps;
-    use cocoa::base::{nil, NO};
+    use cocoa::base::{NO, nil};
     use objc::runtime::{Class, Object, Sel};
     use objc::{class, msg_send, sel, sel_impl};
     let result = id_string.split("_").collect::<Vec<&str>>();

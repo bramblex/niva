@@ -66,6 +66,7 @@ export const en_US = {
   BUILD_FAILED: "Build Failed",
   BUILD_SUCCESS_MESSAGE: "The application has been built successfully.",
   NEWER_VERSION_TIP:"Newer version tip~",
-  NEWER_VERSION_TEXT: "Click 'Confirm' to open the download page of the new version({{version}})"
+  NEWER_VERSION_TEXT: "Click 'Confirm' to open the download page of the new version({{version}})",
+  DEBUG_RESOURCE_NOT_FOUND: "Debug resource directory was not found: {{path}}",
 };
 

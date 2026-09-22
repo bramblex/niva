@@ -1,12 +1,10 @@
+use super::WindowManager;
+use super::options::NivaWindowOptions;
 use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
-use super::WindowManager;
-use super::{options::NivaWindowOptions, window::NivaWindow};
 use crate::app::assets::INITIALIZE_SCRIPT;
-use crate::app::menu::options::MenuItemOption;
-use crate::app::menu::options::MenuOptions;
-use crate::app::menu::{self, build_native_item};
-use crate::app::utils::merge_id;
+use crate::app::menu::options::{MenuItemOption, MenuOptions};
+use crate::app::menu::{build_menu as build_muda_menu, build_submenu};
 use crate::app::utils::url_join;
 use crate::app::window_manager::url::get_host_from_url;
 use crate::app::window_manager::url::make_base_url;
@@ -14,33 +12,27 @@ use crate::{
     app::{NivaApp, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
 };
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::anyhow;
 use serde_json::json;
-use std::default;
-use std::str::FromStr;
-use std::{borrow::Cow, sync::Arc};
-use tao::accelerator::Accelerator;
-use tao::{
-    menu::{MenuBar, MenuId, MenuItem, MenuItemAttributes},
-    window::{Fullscreen, Theme, Window, WindowBuilder},
-};
-use wry::http::HeaderValue;
-use wry::{
-    http::Response,
-    webview::{FileDropEvent, WebContext, WebView, WebViewBuilder},
-};
+use std::borrow::Cow;
+use std::sync::Arc;
+use tao::window::{Fullscreen, Theme, Window, WindowBuilder};
+use wry::{DragDropEvent, WebContext, WebView, WebViewBuilder, http::Response};
 
 pub struct NivaBuilder {}
 
 impl NivaBuilder {
+    /// Build the native window plus its muda menu (if any).
+    /// The menu handle must be kept alive by the caller for as long as
+    /// the menu should stay attached.
     pub fn build_window(
         app: &Arc<NivaApp>,
         manager: &WindowManager,
         _id: u8,
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
-    ) -> Result<Window> {
+    ) -> Result<(Window, Option<muda::Menu>)> {
         let mut builder = WindowBuilder::new();
 
         set_property_some!(
@@ -101,10 +93,6 @@ impl NivaBuilder {
         set_property_some!(builder, with_focused, options.focused);
         set_property_some!(builder, with_content_protection, options.content_protection);
 
-        if let Some(menu) = Self::build_menu(_id, app, &options.menu) {
-            set_property!(builder, with_menu, menu);
-        }
-
         #[cfg(target_os = "macos")]
         if let Some(macos_extra) = &options.macos_extra {
             use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
@@ -159,17 +147,16 @@ impl NivaBuilder {
         #[cfg(target_os = "windows")]
         if let Some(windows_extra) = &options.windows_extra {
             use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
-            use windows::Win32::Foundation::HWND;
 
             if let Some(parent) = &windows_extra.parent_window {
                 let parent = manager.get_window(*parent)?;
-                let parent = HWND(parent.hwnd() as _);
+                let parent = parent.hwnd() as _;
                 set_property!(builder, with_parent_window, parent);
             }
 
             if let Some(owner) = &windows_extra.parent_window {
                 let owner = manager.get_window(*owner)?;
-                let owner = HWND(owner.hwnd() as _);
+                let owner = owner.hwnd() as _;
                 set_property!(builder, with_owner_window, owner);
             }
 
@@ -186,14 +173,63 @@ impl NivaBuilder {
             );
         }
 
-        Ok(builder.build(target)?)
+        let window = builder.build(target)?;
+
+        // Attach the window menu (tao no longer owns menus; muda does).
+        let menu = Self::build_menu(_id, app, &options.menu);
+        if let Some(menu) = &menu {
+            Self::attach_menu(&window, menu);
+        }
+
+        Ok((window, menu))
+    }
+
+    /// Attach a muda menu to a native window.
+    pub fn attach_menu(window: &Window, menu: &muda::Menu) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window;
+            menu.init_for_nsapp();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use tao::platform::windows::WindowExtWindows;
+            unsafe {
+                log_if_err!(menu.init_for_hwnd(window.hwnd()));
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = (window, menu);
+        }
+    }
+
+    /// Detach a muda menu from a native window.
+    pub fn detach_menu(window: &Window, menu: &muda::Menu) {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window;
+            menu.remove_for_nsapp();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use tao::platform::windows::WindowExtWindows;
+            unsafe {
+                log_if_err!(menu.remove_for_hwnd(window.hwnd()));
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ = (window, menu);
+        }
     }
 
     pub fn build_webview(
         app: &Arc<NivaApp>,
         options: &NivaWindowOptions,
-        window: Window,
+        window: &Window,
         web_context: &mut WebContext,
+        window_id: tao::window::WindowId,
     ) -> Result<WebView> {
         let id_name = app.launch_info.id_name.clone();
         let protocol = "niva";
@@ -204,9 +240,8 @@ impl NivaBuilder {
 
         let entry_url = url_join(&base_url, &options.entry.clone().unwrap_or_default());
 
-        let mut builder = WebViewBuilder::new(window)?;
+        let mut builder = WebViewBuilder::new_with_web_context(web_context);
 
-        set_property!(builder, with_web_context, web_context);
         set_property!(builder, with_initialization_script, INITIALIZE_SCRIPT);
         set_property!(builder, with_accept_first_mouse, true);
         set_property!(builder, with_clipboard, true);
@@ -222,60 +257,71 @@ impl NivaBuilder {
             .starts_with(&prefix));
 
         let custom_protocol_app = app.clone();
-        builder = builder.with_custom_protocol(protocol.to_string(), move |request| {
-            let hostname = request.uri().host().unwrap_or(&id_name);
+        builder =
+            builder.with_custom_protocol(protocol.to_string(), move |_webview_id, request| {
+                let hostname = request.uri().host().unwrap_or(&id_name);
 
-            let mut path = request.uri().path().to_string();
+                let mut path = request.uri().path().to_string();
 
-            if path.ends_with('/') {
-                path += "index.html";
-            }
-
-            let result = (|| -> Result<Vec<u8>> {
-                if hostname == &id_name {
-                    let path = path.strip_prefix('/').unwrap_or("index.html");
-                    custom_protocol_app.resource().load(&path.to_string())
-                } else if hostname == "filesystem" {
-                    #[cfg(target_os = "windows")]
-                    let path = path.strip_prefix('/').unwrap_or("index.html");
-                    Ok(std::fs::read(&path)?)
-                } else {
-                    Err(anyhow!("Invalid hostname: {}", hostname))
+                if path.ends_with('/') {
+                    path += "index.html";
                 }
-            })();
 
-            let origin = get_host_from_url(&request.uri().to_string()).unwrap_or("*".to_string());
+                let result = (|| -> Result<Vec<u8>> {
+                    if hostname == id_name {
+                        let path = path.strip_prefix('/').unwrap_or("index.html");
+                        custom_protocol_app.resource().load(path)
+                    } else if hostname == "filesystem" {
+                        let file_path = path.strip_prefix('/').unwrap_or("index.html");
+                        Ok(std::fs::read(file_path)?)
+                    } else {
+                        Err(anyhow!("Invalid hostname: {}", hostname))
+                    }
+                })();
 
-            match result {
-                Err(err) => Ok(Response::builder()
-                    .status(404)
-                    .header("Content-Type", "text/plain; charset=utf-8")
-                    .body(Cow::Owned(err.to_string().into_bytes()))?),
+                let origin =
+                    get_host_from_url(&request.uri().to_string()).unwrap_or("*".to_string());
+                let uri_string = request.uri().to_string();
 
-                Ok(content) => {
-                    let mime_type = mime_guess::from_path(path)
-                        .first()
-                        .unwrap_or(mime_guess::mime::TEXT_PLAIN)
-                        .to_string();
+                match result {
+                    Err(err) => {
+                        eprintln!("[niva] custom protocol {uri_string} -> 404: {err}");
+                        error_page(404, "Not Found", &uri_string, &err.to_string())
+                    }
 
-                    Ok(Response::builder()
-                        .status(200)
-                        .header("Content-Type", mime_type)
-                        .header("Access-Control-Allow-Origin", origin)
-                        .body(Cow::Owned(content))?)
+                    Ok(content) => {
+                        let mime_type = mime_guess::from_path(path)
+                            .first()
+                            .unwrap_or(mime_guess::mime::TEXT_PLAIN)
+                            .to_string();
+
+                        Response::builder()
+                            .status(200)
+                            .header("Content-Type", mime_type)
+                            .header("Access-Control-Allow-Origin", origin)
+                            .body(Cow::Owned(content))
+                            .unwrap_or_else(|err| {
+                                eprintln!("[niva] custom protocol {uri_string} -> 500: {err}");
+                                error_page(
+                                    500,
+                                    "Internal Server Error",
+                                    &uri_string,
+                                    "Failed to build response",
+                                )
+                            })
+                    }
                 }
-            }
-        });
+            });
 
         let drop_app = app.clone();
-        set_property!(builder, with_file_drop_handler, move |window, event| {
+        builder = builder.with_drag_drop_handler(move |event| {
             let window_result = drop_app
                 .window()
-                .and_then(|w| w.get_window_inner(window.id()));
+                .and_then(|w| w.get_window_inner(window_id));
             match window_result {
                 Ok(window) => match event {
-                    FileDropEvent::Hovered { paths, position } => {
-                        let position = position.to_logical::<f64>(window.scale_factor());
+                    DragDropEvent::Enter { paths, position } => {
+                        let position = physical_to_logical(position, window.scale_factor());
                         log_if_err!(window.send_ipc_event(
                             "fileDrop.hovered",
                             json!({
@@ -284,8 +330,8 @@ impl NivaBuilder {
                             }),
                         ));
                     }
-                    FileDropEvent::Dropped { paths, position } => {
-                        let position = position.to_logical::<f64>(window.scale_factor());
+                    DragDropEvent::Drop { paths, position } => {
+                        let position = physical_to_logical(position, window.scale_factor());
                         log_if_err!(window.send_ipc_event(
                             "fileDrop.dropped",
                             json!({
@@ -294,9 +340,11 @@ impl NivaBuilder {
                             }),
                         ));
                     }
-                    FileDropEvent::Cancelled => {
+                    DragDropEvent::Leave => {
                         log_if_err!(window.send_ipc_event("fileDrop.cancelled", json!(null)));
                     }
+                    // Over events fire continuously; avoid spamming the frontend.
+                    DragDropEvent::Over { .. } => (),
                     _ => (),
                 },
                 Err(err) => {
@@ -307,11 +355,10 @@ impl NivaBuilder {
         });
 
         let ipc_app = app.clone();
-        set_property!(builder, with_ipc_handler, move |window, request_str| {
-            if let Err(err) = ipc_app.api().and_then(|w| w.call(window, request_str)) {
-                let window = ipc_app
-                    .window()
-                    .and_then(|w| w.get_window_inner(window.id()));
+        builder = builder.with_ipc_handler(move |request| {
+            let request_str = request.body().clone();
+            if let Err(err) = ipc_app.api().and_then(|w| w.call(window_id, request_str)) {
+                let window = ipc_app.window().and_then(|w| w.get_window_inner(window_id));
                 if let Ok(window) = window {
                     log_if_err!(window.send_ipc_callback(json!({
                         "ipc.error": err.to_string(),
@@ -320,14 +367,14 @@ impl NivaBuilder {
             };
         });
 
-        Ok(builder.with_url(&entry_url)?.build()?)
+        Ok(builder.with_url(entry_url).build(window)?)
     }
 
     pub fn build_menu(
         window_id: u8,
         app: &Arc<NivaApp>,
         menu_options: &Option<WindowMenuOptions>,
-    ) -> Option<MenuBar> {
+    ) -> Option<muda::Menu> {
         #[cfg(target_os = "macos")]
         let default_menu = Self::macos_default_menu();
         #[cfg(target_os = "macos")]
@@ -337,74 +384,28 @@ impl NivaBuilder {
         };
 
         if let Some(window_menu_options) = menu_options {
-            let mut menu = MenuBar::new();
+            let menu = muda::Menu::new();
             for WindowRootMenu {
                 label,
                 enabled,
                 children,
             } in window_menu_options
             {
-                let mut root_menu = MenuBar::new();
-                Self::build_custom_menu(window_id, app, &mut root_menu, children);
-                menu.add_submenu(&label, enabled.unwrap_or(true), root_menu);
+                let submenu =
+                    build_submenu(window_id, app, label, enabled.unwrap_or(true), children);
+                log_if_err!(menu.append(&submenu));
             }
             return Some(menu);
         }
         None
     }
 
-    fn build_custom_menu(
+    pub fn build_tray_menu(
         window_id: u8,
         app: &Arc<NivaApp>,
-        menu: &mut MenuBar,
-        options: &MenuOptions,
-    ) {
-        for option in options {
-            match option {
-                MenuItemOption::Native { label } => {
-                    menu.add_native_item(build_native_item(label));
-                }
-                MenuItemOption::Item {
-                    label,
-                    id,
-                    enabled,
-                    selected,
-                    icon,
-                    accelerator,
-                } => {
-                    let mut attr =
-                        MenuItemAttributes::new(label).with_id(MenuId(merge_id(window_id, *id)));
-                    set_property_some!(attr, with_enabled, enabled);
-                    set_property_some!(attr, with_selected, selected);
-
-                    #[cfg(target_os = "macos")]
-                    if let Some(accelerator) = accelerator {
-                        if let Ok(accelerator) = Accelerator::from_str(accelerator) {
-                            set_property!(attr, with_accelerators, &accelerator);
-                        }
-                    }
-
-                    let mut item = menu.add_item(attr);
-
-                    #[cfg(target_os = "macos")]
-                    if let Some(icon) = icon {
-                        let icon = app.resource().load_icon(icon);
-                        if let Ok(icon) = icon {
-                            item.set_icon(icon);
-                        }
-                    }
-                }
-                MenuItemOption::Menu {
-                    label,
-                    enabled,
-                    children,
-                } => {
-                    let mut submenu = MenuBar::new();
-                    Self::build_custom_menu(window_id, app, &mut submenu, children);
-                    menu.add_submenu(label, enabled.unwrap_or(true), submenu);
-                }
-            }
-        }
+        menu_options: &MenuOptions,
+    ) -> muda::Menu {
+        build_muda_menu(window_id, app, menu_options)
     }
 
     #[cfg(target_os = "macos")]
@@ -438,5 +439,59 @@ impl NivaBuilder {
                 },
             ],
         }])
+    }
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Render a debuggable HTML error page instead of a bare status text, so a
+/// missing entry/resource shows *what* is missing right in the window.
+fn error_page(status: u16, title: &str, uri: &str, detail: &str) -> Response<Cow<'static, [u8]>> {
+    let body = format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+        <title>{status} {title}</title></head><body>\
+        <h1>{status} {title}</h1>\
+        <p>URI: <code>{}</code></p>\
+        <p>{}</p>\
+        <p style=\"color:#888\">Niva custom protocol: check that the entry file \
+        exists in the resource directory.</p>\
+        </body></html>",
+        html_escape(uri),
+        html_escape(detail),
+    );
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(Cow::Owned(body.into_bytes()))
+        .unwrap_or_else(|_| Response::new(Cow::Borrowed(&[][..])))
+}
+
+fn physical_to_logical(position: (i32, i32), scale_factor: f64) -> tao::dpi::LogicalPosition<f64> {
+    tao::dpi::PhysicalPosition::new(position.0 as f64, position.1 as f64).to_logical(scale_factor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_page_renders_status_uri_and_escaped_detail() {
+        let response = error_page(
+            404,
+            "Not Found",
+            "niva://demo_12345678/missing.html",
+            "No such file <x> & \"y\" (os error 2)",
+        );
+        assert_eq!(response.status(), 404);
+        let body = response.body();
+        let body = std::str::from_utf8(body).unwrap();
+        assert!(body.contains("<h1>404 Not Found</h1>"), "{body}");
+        assert!(body.contains("niva://demo_12345678/missing.html"), "{body}");
+        assert!(body.contains("No such file &lt;x&gt; &amp;"), "{body}");
+        assert!(!body.contains("<x>"), "{body}");
     }
 }

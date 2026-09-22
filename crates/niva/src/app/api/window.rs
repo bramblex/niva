@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use niva_macros::{niva_api, niva_event_api};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use tao::{
     event_loop::ControlFlow,
@@ -12,7 +12,7 @@ use crate::{
         api_manager::ApiManager,
         window_manager::options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
     },
-    logical, logical_try, lock,
+    lock, logical, logical_try,
 };
 
 macro_rules! match_window {
@@ -144,7 +144,7 @@ fn hide_menu(id: Option<u8>) -> Result<()> {
 #[niva_api]
 fn show_menu(id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
-    window.hide_menu();
+    window.show_menu();
     Ok(())
 }
 
@@ -349,11 +349,7 @@ fn fullscreen(id: Option<u8>) -> Result<bool> {
 }
 
 #[niva_api]
-fn set_fullscreen(
-    is_fullscreen: bool,
-    monitor_name: Option<String>,
-    id: Option<u8>,
-) -> Result<()> {
+fn set_fullscreen(is_fullscreen: bool, monitor_name: Option<String>, id: Option<u8>) -> Result<()> {
     match_window!(app, window, id);
     if !is_fullscreen {
         window.set_fullscreen(None);

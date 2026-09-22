@@ -1,7 +1,7 @@
 use anyhow::Result;
 use directories::UserDirs;
 use niva_macros::niva_api;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sys_locale::get_locale;
 
 use crate::app::api_manager::ApiManager;

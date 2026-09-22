@@ -38,14 +38,14 @@ export class HistoryModel extends StateModel<HistoryModelState> {
           await fs.write(this.historyFilePath, '{"history": []}');
         }
         const content = JSON.parse(await fs.read(this.historyFilePath));
-        this.setState({
+        this.update({
           ...this.state,
           ...content,
         });
       })
     );
 
-    this.onStateChange(async () => {
+    this.onUpdate(async () => {
       await fs.write(this.historyFilePath, JSON.stringify(this.state));
     });
   }
@@ -78,14 +78,14 @@ export class HistoryModel extends StateModel<HistoryModelState> {
       });
     }
 
-    this.setState({
+    this.update({
       ...this.state,
       history: newHistory,
     });
   }
 
   async remove(path?: string, uuid?: string) {
-    this.setState({
+    this.update({
       ...this.state,
       history: this.state.history.filter(
         (p) => p.path !== path && p.uuid !== uuid

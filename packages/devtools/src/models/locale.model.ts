@@ -28,7 +28,7 @@ export class LocaleModel extends StateModel<LocaleModelState> {
       ...resources[this.defaultLocale],
       ...resources[locale],
     };
-    this.setState({
+    this.update({
       current: locale,
       translations: translation,
     });

@@ -1,24 +1,16 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use serde_json::json;
 use tao::{
-    accelerator::AcceleratorId,
-    event::{Event, TrayEvent, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopWindowTarget},
-    menu::{MenuId, MenuType},
     window::WindowId,
-    TrayId,
 };
 
 use crate::{lock, log_if_err, try_or_log_err};
 
-use super::{
-    utils::split_id,
-    window_manager::window::{self, NivaWindow},
-    NivaApp, NivaEvent,
-};
+use super::{NivaApp, NivaEvent, utils::split_id};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
@@ -29,9 +21,94 @@ impl EventHandler {
         Self { app }
     }
 
+    /// Install global handlers for menu / tray-icon / hotkey events.
+    /// Those crates are not tied to the tao event loop, so their events are
+    /// forwarded to windows through the event-loop proxy (thread-safe).
+    pub fn install_external_handlers(app: Arc<NivaApp>) {
+        let menu_app = app.clone();
+        muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
+            log_if_err!(Self::dispatch_menu_event(&menu_app, &event));
+        }));
+
+        let tray_app = app.clone();
+        tray_icon::TrayIconEvent::set_event_handler(Some(
+            move |event: tray_icon::TrayIconEvent| {
+                log_if_err!(Self::dispatch_tray_event(&tray_app, event));
+            },
+        ));
+
+        let hotkey_app = app.clone();
+        global_hotkey::GlobalHotKeyEvent::set_event_handler(Some(
+            move |event: global_hotkey::GlobalHotKeyEvent| {
+                log_if_err!(Self::dispatch_hotkey_event(&hotkey_app, &event));
+            },
+        ));
+    }
+
+    fn dispatch_menu_event(app: &Arc<NivaApp>, event: &muda::MenuEvent) -> Result<()> {
+        let merged_id: u16 = event
+            .id()
+            .0
+            .parse()
+            .map_err(|_| anyhow!("Invalid menu id"))?;
+        let (window_id, id) = split_id(merged_id);
+        let window = app.window()?.get_window(window_id)?;
+        window.send_ipc_event("menu.clicked", id)
+    }
+
+    fn dispatch_tray_event(app: &Arc<NivaApp>, event: tray_icon::TrayIconEvent) -> Result<()> {
+        use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
+        match event {
+            TrayIconEvent::Click {
+                id,
+                button,
+                button_state,
+                ..
+            } => {
+                if button_state != MouseButtonState::Up {
+                    return Ok(());
+                }
+                let (window_id, tray_id) = app
+                    .tray()?
+                    .get_window_id_by_tray_id(id.as_ref())
+                    .ok_or(anyhow!("Tray not found"))?;
+                let window = app.window()?.get_window(window_id)?;
+                match button {
+                    MouseButton::Left => window.send_ipc_event("tray.leftClicked", json!(tray_id)),
+                    MouseButton::Right => {
+                        window.send_ipc_event("tray.rightClicked", json!(tray_id))
+                    }
+                    _ => Ok(()),
+                }
+            }
+            TrayIconEvent::DoubleClick { id, .. } => {
+                let (window_id, tray_id) = app
+                    .tray()?
+                    .get_window_id_by_tray_id(id.as_ref())
+                    .ok_or(anyhow!("Tray not found"))?;
+                let window = app.window()?.get_window(window_id)?;
+                window.send_ipc_event("tray.doubleClicked", json!(tray_id))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn dispatch_hotkey_event(
+        app: &Arc<NivaApp>,
+        event: &global_hotkey::GlobalHotKeyEvent,
+    ) -> Result<()> {
+        // Only key-press events carry an id we registered.
+        let (window_id, id) = app
+            .shortcut()?
+            .lookup(event.id())
+            .ok_or(anyhow!("Shortcut not found"))?;
+        let window = app.window()?.get_window(window_id)?;
+        window.send_ipc_event("shortcut.emit", id)
+    }
+
     pub fn handle(
         &self,
-        event: Event<NivaEvent>,
+        event: Event<'_, NivaEvent>,
         target: &EventLoopWindowTarget<NivaEvent>,
         control_flow: &mut ControlFlow,
     ) {
@@ -44,12 +121,6 @@ impl EventHandler {
                 Event::UserEvent(callback) => {
                     self.handle_user_event(callback, target, control_flow)?
                 }
-                Event::MenuEvent {
-                    menu_id,
-                    ..
-                } => self.handle_menu_event(menu_id)?,
-                Event::TrayEvent { event, id, .. } => self.handle_tray_event(event, id)?,
-                Event::GlobalShortcutEvent(id) => self.handle_shortcut_event(id)?,
                 _ => (),
             }
             Ok(())
@@ -58,22 +129,26 @@ impl EventHandler {
 
     fn handle_window_event(
         &self,
-        event: WindowEvent,
+        event: WindowEvent<'_>,
         window_id: WindowId,
         control_flow: &mut ControlFlow,
     ) -> Result<()> {
-        match event {
-            WindowEvent::Destroyed => {
-                self.app.window()?.close_window_inner(window_id)?;
-            }
-            _ => (),
+        if let WindowEvent::Destroyed = event {
+            self.app.window()?.close_window_inner(window_id)?;
         }
 
         let window = self.app.window()?.get_window_inner(window_id)?;
         match event {
             WindowEvent::Focused(focused) => {
                 #[cfg(target_os = "macos")]
-                window.switch_menu();
+                {
+                    let _ = focused;
+                    window.switch_menu();
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = focused;
+                }
                 window.send_ipc_event("window.focused", focused)?;
             }
             WindowEvent::ScaleFactorChanged {
@@ -112,33 +187,6 @@ impl EventHandler {
             _ => (),
         }
         return Ok(());
-    }
-
-    fn handle_menu_event(
-        &self,
-        menu_id: MenuId,
-    ) -> Result<()> {
-        let (window_id, id) = split_id(menu_id.0);
-        let window = self.app.window()?.get_window(window_id)?;
-        window.send_ipc_event("menu.clicked", id)
-    }
-
-    fn handle_tray_event(&self, event: TrayEvent, id: TrayId) -> Result<()> {
-        let (window_id, id) = split_id(id.0);
-        let window = self.app.window()?.get_window(window_id)?;
-
-        match event {
-            TrayEvent::RightClick => window.send_ipc_event("tray.rightClicked", json!(id)),
-            TrayEvent::LeftClick => window.send_ipc_event("tray.leftClicked", json!(id)),
-            TrayEvent::DoubleClick => window.send_ipc_event("tray.doubleClicked", json!(id)),
-            _ => Ok(()),
-        }
-    }
-
-    fn handle_shortcut_event(&self, id: AcceleratorId) -> Result<()> {
-        let (window_id, id) = split_id(id.0);
-        let window = self.app.window()?.get_window(window_id)?;
-        window.send_ipc_event("shortcut.emit", id)
     }
 
     fn handle_user_event(

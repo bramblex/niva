@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tao::window::Icon;
 
-pub fn png_to_icon(png_data: &[u8]) -> Result<tao::window::Icon> {
+pub fn png_to_rgba(png_data: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     use png::ColorType;
 
     let mut cursor = Cursor::new(png_data);
@@ -50,8 +50,20 @@ pub fn png_to_icon(png_data: &[u8]) -> Result<tao::window::Icon> {
         _ => return Err(anyhow!("Unsupported color type")),
     };
 
-    let width = info.width;
-    let height = info.height;
+    Ok((rgba, info.width, info.height))
+}
 
+pub fn png_to_icon(png_data: &[u8]) -> Result<tao::window::Icon> {
+    let (rgba, width, height) = png_to_rgba(png_data)?;
     Ok(Icon::from_rgba(rgba, width, height)?)
+}
+
+pub fn png_to_muda_icon(png_data: &[u8]) -> Result<muda::Icon> {
+    let (rgba, width, height) = png_to_rgba(png_data)?;
+    Ok(muda::Icon::from_rgba(rgba, width, height)?)
+}
+
+pub fn png_to_tray_icon(png_data: &[u8]) -> Result<tray_icon::Icon> {
+    let (rgba, width, height) = png_to_rgba(png_data)?;
+    Ok(tray_icon::Icon::from_rgba(rgba, width, height)?)
 }

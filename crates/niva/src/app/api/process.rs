@@ -4,7 +4,7 @@ use crate::app::api_manager::ApiManager;
 use anyhow::{Ok, Result};
 use niva_macros::{niva_api, niva_event_api};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tao::event_loop::ControlFlow;
 
 pub fn register_apis(api_manager: &mut ApiManager) {

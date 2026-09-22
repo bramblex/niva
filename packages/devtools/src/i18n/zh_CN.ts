@@ -68,5 +68,6 @@ export const zh_CN: typeof en_US = {
   BUILD_FAILED: "构建失败",
   BUILD_SUCCESS_MESSAGE: "应用已成功构建",
   NEWER_VERSION_TIP: "有更新的版本~",
-  NEWER_VERSION_TEXT: "点击“确认”，将会打开新版本({{version}})的下载页面"
+  NEWER_VERSION_TEXT: "点击“确认”，将会打开新版本({{version}})的下载页面",
+  DEBUG_RESOURCE_NOT_FOUND: "调试资源目录不存在：{{path}}",
 };

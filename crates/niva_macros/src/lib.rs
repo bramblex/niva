@@ -1,18 +1,17 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, parse_quote, parse_str,
+    FnArg, ItemFn, LitInt, Pat, Stmt, Type, parse_macro_input, parse_quote, parse_str,
     punctuated::Punctuated,
     token::{Comma, Semi},
-    FnArg, ItemFn, LitInt, Pat, Stmt, Type,
 };
 
 fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            let path_segment = &segment.ident;
-            return path_segment == "Option";
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        let path_segment = &segment.ident;
+        return path_segment == "Option";
     }
     false
 }
@@ -28,14 +27,11 @@ fn niva_api_args(api_inputs: Punctuated<FnArg, Comma>) -> Option<Stmt> {
         let len = parse_str::<LitInt>(&len.to_string()).unwrap();
 
         for arg in api_inputs {
-            match arg {
-                FnArg::Typed(typed) => {
-                    let ty = &typed.ty;
-                    let pat = &typed.pat;
-                    names.push(pat.clone());
-                    types.push(ty.clone());
-                }
-                _ => {}
+            if let FnArg::Typed(typed) = arg {
+                let ty = &typed.ty;
+                let pat = &typed.pat;
+                names.push(pat.clone());
+                types.push(ty.clone());
             }
         }
 
@@ -79,7 +75,6 @@ pub fn niva_api(_: TokenStream, raw_item: TokenStream) -> TokenStream {
         }
     })
 }
-
 
 #[proc_macro_attribute]
 pub fn niva_event_api(_: TokenStream, raw_item: TokenStream) -> TokenStream {

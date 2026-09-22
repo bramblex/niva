@@ -1,6 +1,7 @@
 import { StateModel } from "@bramblex/state-model";
 import { HistoryModel } from "./history.model";
-import { useModel, useModelContext } from "@bramblex/state-model-react";
+import {useModel} from "../common/state";
+import { createContext, useContext } from "react";
 import { ProjectModel } from "./project.model";
 import { ModalModel } from "./modal.model";
 import { checkVersion, pathJoin, pathSplit, tryOrAlert } from "../common/utils";
@@ -22,7 +23,7 @@ export class AppModel extends StateModel<{
 }> {
   constructor() {
     super({} as any);
-    this.setState({
+    this.update({
       history: new HistoryModel(this),
       modal: new ModalModel(this),
       locale: new LocaleModel(this),
@@ -43,7 +44,7 @@ export class AppModel extends StateModel<{
 
   async openWithPicker(): Promise<AppResult> {
     const { modal } = this.state;
-    const path = await modal.showNative<string>(() =>
+    const path = await modal.showNative<string | null>(() =>
       Niva.api.dialog.pickDir()
     );
 
@@ -128,7 +129,7 @@ export class AppModel extends StateModel<{
     const project = new ProjectModel(this, path);
     const projectInitResult = await project.init();
 
-    this.setState({
+    this.update({
       ...this.state,
       project,
     });
@@ -144,7 +145,7 @@ export class AppModel extends StateModel<{
       if (result.isErr()) {
         return result;
       }
-      this.setState({
+      this.update({
         ...this.state,
         project: null,
       });
@@ -154,7 +155,7 @@ export class AppModel extends StateModel<{
 
   async create(): Promise<AppResult> {
     const { modal } = this.state;
-    const path = await modal.showNative<string>(() =>
+    const path = await modal.showNative<string | null>(() =>
       Niva.api.dialog.saveFile()
     );
 
@@ -184,7 +185,7 @@ export class AppModel extends StateModel<{
   async exit(): Promise<AppResult> {
     const { modal } = this.state;
 
-    if (modal.state.length > 0) {
+    if (modal.state.modals.length > 0) {
       return Err(ErrorCode.APP_EXIT_PREVENTED_BY_DIALOG);
     }
 
@@ -198,30 +199,47 @@ export class AppModel extends StateModel<{
   }
 }
 
+const AppModelContext = createContext<AppModel | null>(null);
+
+export const AppModelProvider = AppModelContext.Provider;
+
+function useAppModel(): AppModel {
+  const app = useContext(AppModelContext);
+  if (!app) {
+    throw new Error("AppModel is not provided");
+  }
+  return app;
+}
+
 export function useApp() {
-  const app = useModelContext(AppModel);
-  return useModel(app);
+  const app = useAppModel();
+  useModel(app);
+  return app;
 }
 
 export function useHistory() {
-  const { history } = useModelContext(AppModel).state;
-  return useModel(history);
+  const { history } = useAppModel().state;
+  useModel(history);
+  return history;
 }
 
 export function useProject() {
-  const { project } = useModelContext(AppModel).state;
+  const { project } = useAppModel().state;
   if (!project) {
     throw new Error("No project is open");
   }
-  return useModel(project);
+  useModel(project);
+  return project;
 }
 
 export function useModal() {
-  const { modal } = useModelContext(AppModel).state;
-  return useModel(modal);
+  const { modal } = useAppModel().state;
+  useModel(modal);
+  return modal;
 }
 
 export function useLocale() {
-  const { locale } = useModelContext(AppModel).state;
-  return useModel(locale);
+  const { locale } = useAppModel().state;
+  useModel(locale);
+  return locale;
 }

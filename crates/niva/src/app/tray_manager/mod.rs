@@ -1,35 +1,21 @@
+use crate::app::resource_manager::image_utils::png_to_tray_icon;
 use crate::app::utils::merge_id;
+use crate::app::window_manager::builder::NivaBuilder;
 use crate::lock;
-use crate::set_property;
-use crate::set_property_some;
 use crate::unsafe_impl_sync_send;
 
-use super::menu::build_native_item;
-use super::menu::options::MenuItemOption;
 use super::menu::options::MenuOptions;
 use super::utils::IdCounter;
 use super::{
-    utils::{arc_mut, ArcMut},
     NivaApp, NivaWindowTarget,
+    utils::{ArcMut, arc_mut},
 };
-use tao::TrayId;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::Deserialize;
-use std::any::Any;
 use std::collections::HashSet;
-use std::option;
-use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
-use tao::accelerator::Accelerator;
-use tao::system_tray::SystemTray;
-use tao::{
-    menu::{ContextMenu, MenuId, MenuItem, MenuItemAttributes},
-    system_tray::SystemTrayBuilder,
-};
-
-#[cfg(target_os = "macos")]
-use tao::platform::macos::{SystemTrayBuilderExtMacOS, SystemTrayExtMacOS};
+use tray_icon::{TrayIcon, TrayIconBuilder};
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -53,7 +39,7 @@ unsafe_impl_sync_send!(NivaTrayManager);
 pub struct NivaTrayManager {
     id_counter: IdCounter,
     app: Option<Arc<NivaApp>>,
-    trays: HashMap<u8, (u8, HashSet<u8>, ArcMut<SystemTray>)>,
+    trays: HashMap<u8, (u8, HashSet<u8>, ArcMut<TrayIcon>)>,
 }
 
 impl NivaTrayManager {
@@ -70,9 +56,19 @@ impl NivaTrayManager {
     }
 
     pub fn get_window_id_by_menu_id(&self, menu_id: u8) -> Option<u8> {
-        for (_, (window_id, menu_ids, _)) in &self.trays {
+        for (window_id, menu_ids, _) in self.trays.values() {
             if menu_ids.contains(&menu_id) {
                 return Some(*window_id);
+            }
+        }
+        None
+    }
+
+    /// Look up the owning window id by tray-icon id string.
+    pub fn get_window_id_by_tray_id(&self, tray_id: &str) -> Option<(u8, u8)> {
+        for (id, (window_id, _, _)) in &self.trays {
+            if tray_icon_id(*window_id, *id) == tray_id {
+                return Some((*window_id, *id));
             }
         }
         None
@@ -82,10 +78,10 @@ impl NivaTrayManager {
         &mut self,
         window_id: u8,
         options: &NivaTrayOptions,
-        target: &NivaWindowTarget,
+        _target: &NivaWindowTarget,
     ) -> Result<u8> {
         let id = self.id_counter.next(&self.trays)?;
-        let tray = self.build_tray(id, window_id, options, target)?;
+        let tray = self.build_tray(id, window_id, options)?;
         let menu_ids = if let Some(options) = &options.menu {
             Self::get_menu_ids(options)
         } else {
@@ -96,7 +92,7 @@ impl NivaTrayManager {
         Ok(id)
     }
 
-    pub fn get(&self, id: u8) -> Result<&(u8, HashSet<u8>, ArcMut<SystemTray>)> {
+    pub fn get(&self, id: u8) -> Result<&(u8, HashSet<u8>, ArcMut<TrayIcon>)> {
         self.trays
             .get(&id)
             .ok_or(anyhow!("Tray with id {} not found", id))
@@ -116,13 +112,9 @@ impl NivaTrayManager {
             ));
         }
 
-        let (_, _, _tray) = self
-            .trays
+        self.trays
             .remove(&id)
             .ok_or(anyhow!("Tray with id {} not found", id))?;
-
-        #[cfg(target_os = "windows")]
-        drop(lock!(_tray));
 
         Ok(())
     }
@@ -163,21 +155,36 @@ impl NivaTrayManager {
             ));
         }
 
-        let mut tray = lock!(tray)?;
+        let tray = lock!(tray)?;
 
-        if let Some(icon) = options.icon.clone() {
-            let icon = self
+        if let Some(icon_path) = options.icon.clone() {
+            let app = self
                 .app
                 .clone()
-                .ok_or(anyhow!("App not bound to tray manager"))?
-                .resource()
-                .load_icon(&icon)?;
-            tray.set_icon(icon);
+                .ok_or(anyhow!("App not bound to tray manager"))?;
+            let data = app.resource().load(&icon_path)?;
+            let icon = png_to_tray_icon(&data)?;
+            tray.set_icon(Some(icon))?;
+        }
+
+        if let Some(tooltip) = options.tooltip.clone() {
+            tray.set_tooltip(Some(tooltip))?;
         }
 
         #[cfg(target_os = "macos")]
         if let Some(title) = options.title.clone() {
-            tray.set_title(&title);
+            tray.set_title(Some(title));
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = &options.title;
+
+        if let Some(menu_options) = &options.menu {
+            let app = self
+                .app
+                .clone()
+                .ok_or(anyhow!("App not bound to tray manager"))?;
+            let menu = NivaBuilder::build_tray_menu(window_id, &app, menu_options);
+            tray.set_menu(Some(Box::new(menu)));
         }
 
         Ok(())
@@ -188,96 +195,40 @@ impl NivaTrayManager {
         id: u8,
         window_id: u8,
         options: &NivaTrayOptions,
-        target: &NivaWindowTarget,
-    ) -> Result<ArcMut<SystemTray>> {
+    ) -> Result<ArcMut<TrayIcon>> {
         let app = self
             .app
             .clone()
             .ok_or(anyhow!("App not bound to tray manager"))?;
 
-        let icon = app.resource().load_icon(&options.icon)?;
+        let icon_data = app.resource().load(&options.icon)?;
+        let icon = png_to_tray_icon(&icon_data)?;
 
-        let menu = options
-            .menu
-            .as_ref()
-            .map(|m| Self::build_menu(window_id, &app, m));
-        let mut builder = SystemTrayBuilder::new(icon, menu);
+        let mut builder = TrayIconBuilder::new()
+            .with_id(tray_icon_id(window_id, id))
+            .with_icon(icon);
 
-        set_property!(builder, with_id, TrayId(merge_id(window_id, id)));
-
-        #[cfg(target_os = "macos")]
-        if let Some(title) = options.title.clone() {
-            set_property!(builder, with_title, &title);
+        if let Some(menu_options) = &options.menu {
+            let menu = NivaBuilder::build_tray_menu(window_id, &app, menu_options);
+            builder = builder.with_menu(Box::new(menu));
         }
 
         if let Some(tooltip) = options.tooltip.clone() {
-            set_property!(builder, with_tooltip, &tooltip);
+            builder = builder.with_tooltip(tooltip);
         }
 
-        Ok(arc_mut(builder.build(target)?))
-    }
-
-    fn build_menu(window_id: u8, app: &Arc<NivaApp>, menu_options: &MenuOptions) -> ContextMenu {
-        let mut menu = ContextMenu::new();
-        Self::build_custom_menu(window_id, app, &mut menu, &menu_options);
-        menu
-    }
-
-    fn build_custom_menu(
-        window_id: u8,
-        app: &Arc<NivaApp>,
-        menu: &mut ContextMenu,
-        options: &MenuOptions,
-    ) {
-        for option in options {
-            match option {
-                MenuItemOption::Native { label } => {
-                    menu.add_native_item(build_native_item(label));
-                }
-                MenuItemOption::Item {
-                    label,
-                    id,
-                    enabled,
-                    selected,
-                    icon,
-                    accelerator,
-                } => {
-                    let mut attr =
-                        MenuItemAttributes::new(label).with_id(MenuId(merge_id(window_id, *id)));
-                    set_property_some!(attr, with_enabled, enabled);
-                    set_property_some!(attr, with_selected, selected);
-
-                    #[cfg(target_os = "macos")]
-                    if let Some(accelerator) = accelerator {
-                        if let Ok(accelerator) = Accelerator::from_str(accelerator) {
-                            set_property!(attr, with_accelerators, &accelerator);
-                        }
-                    }
-
-                    let mut item = menu.add_item(attr);
-
-                    #[cfg(target_os = "macos")]
-                    if let Some(icon) = icon {
-                        let icon = app.resource().load_icon(icon);
-                        if let Ok(icon) = icon {
-                            item.set_icon(icon);
-                        }
-                    }
-                }
-                MenuItemOption::Menu {
-                    label,
-                    enabled,
-                    children,
-                } => {
-                    let mut submenu = ContextMenu::new();
-                    Self::build_custom_menu(window_id, app, &mut submenu, children);
-                    menu.add_submenu(label, enabled.unwrap_or(true), submenu);
-                }
-            }
+        #[cfg(target_os = "macos")]
+        if let Some(title) = options.title.clone() {
+            builder = builder.with_title(title);
         }
+
+        let tray = builder.build()?;
+        Ok(arc_mut(tray))
     }
 
     fn get_menu_ids(options: &MenuOptions) -> HashSet<u8> {
+        use super::menu::options::MenuItemOption;
+
         let mut ids = HashSet::<u8>::new();
 
         fn get_menu_item_id(item: &MenuItemOption, ids: &mut HashSet<u8>) {
@@ -300,4 +251,8 @@ impl NivaTrayManager {
 
         ids
     }
+}
+
+fn tray_icon_id(window_id: u8, id: u8) -> String {
+    merge_id(window_id, id).to_string()
 }

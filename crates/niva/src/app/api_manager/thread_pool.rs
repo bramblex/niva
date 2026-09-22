@@ -1,9 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use crate::{app::utils::{arc_mut, ArcMut}, lock_force, log_if_err};
+use crate::{
+    app::utils::{ArcMut, arc_mut},
+    lock_force, log_if_err,
+};
 
 type Task = Box<dyn FnOnce() -> Result<()> + Send + 'static>;
 

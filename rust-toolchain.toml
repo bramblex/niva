@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.98.1"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+components = ["rustc", "cargo", "clippy", "rustfmt"]

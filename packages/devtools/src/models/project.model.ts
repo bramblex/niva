@@ -28,7 +28,7 @@ export class ProjectEditorModel extends StateModel<ProjectEditorModelState> {
   }
 
   setContent(content: string) {
-    this.setState({
+    this.update({
       content,
       isEdit: true,
     });
@@ -88,7 +88,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
 
     const config = validateResult.value;
 
-    this.setState({
+    this.update({
       ...this.state,
 
       icon: config.icon
@@ -144,7 +144,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
         reason: saveResult.error,
       });
     }
-    this.state.editor.setState({content, isEdit: false})
+    this.state.editor.update({content, isEdit: false})
     return this.refresh();
   }
 
@@ -160,7 +160,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       const _p = {
         project: this,
         progress,
-        file: null
+        file: null as string | null
       }
       try {
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
@@ -184,14 +184,27 @@ export class ProjectModel extends StateModel<ProjectModelState> {
 
       modal
         .confirm(locale.t("BUILD_SUCCESS"), locale.t("BUILD_SUCCESS_MESSAGE"))
-        .then((ok) => ok && process.open(dirname(appPath)));
+        .then((ok) => {
+          if (ok) {
+            return process.open(dirname(appPath));
+          }
+        });
     });
   }
 
   async debug(): Promise<AppResult> {
     const { path, configPath, config } = this.state;
+    const { modal, locale } = this.app.state;
     const resource = pathJoin(path, config?.debug?.resource);
     const entry = config?.debug?.entry || "";
+
+    if (!(await fs.exists(resource))) {
+      await modal.alert(
+        locale.t("TIPS"),
+        locale.t("DEBUG_RESOURCE_NOT_FOUND", { path: resource })
+      );
+      return Err(ErrorCode.DEBUG_RESOURCE_NOT_FOUND, { resource });
+    }
 
     return fromThrowableAsync(async () => {
       const exe = await process.currentExe();

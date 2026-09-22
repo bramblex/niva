@@ -1,12 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
-use url::Url;
-use wry::http::HeaderValue;
 
 pub type ArcMut<T> = Arc<Mutex<T>>;
 

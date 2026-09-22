@@ -158,16 +158,16 @@ export function parseVersion(versionString: string): number[] {
 }
 
 export const isFirstOpenToday = () => {
-  const timeStamp = global.localStorage.getItem('niva_last_open');
+  const timeStamp = globalThis.localStorage.getItem('niva_last_open');
 
   if (!timeStamp) {
-    global.localStorage.setItem('niva_last_open', String(Date.now()))
+    globalThis.localStorage.setItem('niva_last_open', String(Date.now()))
     return true
   }
 
   const getDays = (time: number) => Math.floor(time / 1000 / 24 / 3600)
 
-  global.localStorage.setItem('niva_last_open', String(Date.now()))
+  globalThis.localStorage.setItem('niva_last_open', String(Date.now()))
 
   const diff = getDays(Date.now()) - getDays(Number(timeStamp));
   return diff >= 1
@@ -190,7 +190,11 @@ export const checkVersion = (modal: ModalModel, locale: LocaleModel) => {
     })
 }
 
-export async function runCmd(cmd: string, args: string[], options?: unknown) {
+export async function runCmd(
+  cmd: string,
+  args: string[],
+  options?: { env?: Record<string, string>; current_dir?: string; detached?: boolean }
+) {
   const { process } = Niva.api;
   const res = await process.exec(
     cmd,

@@ -1,6 +1,5 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use niva_macros::niva_api;
-use serde_json::{json, Value};
 
 #[cfg(target_os = "macos")]
 use tao::platform::macos::WindowExtMacOS;
@@ -47,8 +46,14 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
         api_manager.register_api("windowExtra.setHasShadow", set_has_shadow);
         api_manager.register_api("windowExtra.setIsDocumentEdited", set_is_document_edited);
         api_manager.register_api("windowExtra.isDocumentEdited", is_document_edited);
-        api_manager.register_api("windowExtra.setAllowsAutomaticWindowTabbing", set_allows_automatic_window_tabbing);
-        api_manager.register_api("windowExtra.allowsAutomaticWindowTabbing", allows_automatic_window_tabbing);
+        api_manager.register_api(
+            "windowExtra.setAllowsAutomaticWindowTabbing",
+            set_allows_automatic_window_tabbing,
+        );
+        api_manager.register_api(
+            "windowExtra.allowsAutomaticWindowTabbing",
+            allows_automatic_window_tabbing,
+        );
         api_manager.register_api("windowExtra.setTabbingIdentifier", set_tabbing_identifier);
         api_manager.register_api("windowExtra.tabbingIdentifier", tabbing_identifier);
     }

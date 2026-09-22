@@ -1,4 +1,4 @@
-import { useModel } from "@bramblex/state-model-react";
+import {useModel} from "../../common/state";
 import { useLocale, useProject } from "../../models/app.model";
 import { useState } from "react";
 import { ProjectDetails } from "./details";
@@ -9,9 +9,11 @@ export function ProjectInfo() {
   const locale = useLocale();
   const { state } = project;
 
+  const editor = state.editor;
+  useModel(editor);
   const {
     state: { isEdit },
-  } = useModel(state.editor);
+  } = editor;
 
   const [tab, setTab] = useState(0);
 

@@ -1,20 +1,20 @@
-mod builder;
+pub(crate) mod builder;
 pub mod options;
 pub mod url;
 pub mod window;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use std::{collections::HashMap, sync::Arc};
 use tao::window::WindowId;
-use wry::webview::WebContext;
+use wry::WebContext;
 
 use crate::unsafe_impl_sync_send;
 
 use self::{options::NivaWindowOptions, window::NivaWindow};
 use super::{
-    utils::{arc_mut, ArcMut, IdCounter},
     NivaApp, NivaLaunchInfo, NivaWindowTarget,
+    utils::{ArcMut, IdCounter, arc_mut},
 };
 
 unsafe_impl_sync_send!(WindowManager);
@@ -88,7 +88,7 @@ impl WindowManager {
         Ok(())
     }
 
-    pub fn list_windows<'a>(&'a self) -> Vec<&'a Arc<NivaWindow>> {
+    pub fn list_windows(&self) -> Vec<&Arc<NivaWindow>> {
         self.windows.values().collect()
     }
 

@@ -1,53 +1,64 @@
-use crate::{app::menu::options::MenuOptions, lock_force};
+use crate::lock_force;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{
     ops::Deref,
     sync::{Arc, Mutex},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use tao::{
     event_loop::ControlFlow,
     window::{Window, WindowId},
 };
-use wry::webview::{WebContext, WebView};
+use wry::WebView;
 
 use crate::{
     app::{
-        utils::{arc, arc_mut, ArcMut},
         NivaApp, NivaEvent, NivaEventLoopProxy, NivaWindowTarget,
+        utils::{ArcMut, arc, arc_mut},
     },
     unsafe_impl_sync_send,
 };
 
 use super::{
+    WindowManager,
     builder::NivaBuilder,
     options::{NivaWindowOptions, WindowMenuOptions},
-    WindowManager,
 };
 
 pub struct NivaWindowState {
     pub is_block_closed_requested: bool,
+    pub is_menu_visible: bool,
 }
 
 pub struct NivaWindow {
     pub id: u8,
     pub window_id: WindowId,
+    /// Owned native window (wry no longer gives access to it via WebView).
+    /// Declared after `webview` so it drops after the webview.
     pub webview: WebView,
+    pub window: Window,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
     app: Arc<NivaApp>,
     event_loop_proxy: NivaEventLoopProxy,
 
+    /// Attached muda menu handle. Must be kept alive while attached:
+    /// dropping it removes the native menu.
+    menu_handle: Mutex<Option<muda::Menu>>,
+
     pub state: Mutex<NivaWindowState>,
 }
 
+// NivaWindow is accessed from the webview IPC/drag-drop handlers and the
+// event loop. muda menu handles are thread-bound (Rc-based); all menu
+// operations happen on the main thread, same as before with tao menus.
 unsafe_impl_sync_send!(NivaWindow);
 impl Deref for NivaWindow {
     type Target = Window;
     fn deref(&self) -> &Self::Target {
-        self.webview.window()
+        &self.window
     }
 }
 
@@ -59,39 +70,80 @@ impl NivaWindow {
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
-        let window = NivaBuilder::build_window(&app, manager, id, options, target)?;
-        let webview = NivaBuilder::build_webview(&app, options, window, &mut manager.web_context)?;
+        let (window, menu) = NivaBuilder::build_window(&app, manager, id, options, target)?;
+        let window_id = window.id();
+        let webview = NivaBuilder::build_webview(
+            &app,
+            options,
+            &window,
+            &mut manager.web_context,
+            window_id,
+        )?;
 
         Ok(arc(Self {
             app: app.clone(),
             id,
-            window_id: webview.window().id(),
+            window_id,
             webview,
+            window,
             menu_options: arc_mut(options.menu.clone()),
             event_loop_proxy: app.event_loop_proxy.clone(),
+            menu_handle: Mutex::new(menu),
 
             state: Mutex::new(NivaWindowState {
                 is_block_closed_requested: false,
+                is_menu_visible: true,
             }),
         }))
     }
 
+    fn attach_built_menu(&self, menu: &muda::Menu) {
+        NivaBuilder::attach_menu(&self.window, menu);
+        // Replacing the handle drops the previous native menu.
+        *lock_force!(self.menu_handle) = Some(menu.clone());
+    }
+
     #[cfg(target_os = "macos")]
     pub fn switch_menu(self: &Arc<Self>) {
+        if !lock_force!(self.state).is_menu_visible {
+            return;
+        }
         let menu_options = lock_force!(self.menu_options);
-        self.webview
-            .window()
-            .set_menu(NivaBuilder::build_menu(self.id, &self.app, &menu_options));
+        if let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options) {
+            self.attach_built_menu(&menu);
+        }
     }
 
     pub fn set_menu(self: &Arc<Self>, options: &Option<WindowMenuOptions>) {
         let mut menu_options = lock_force!(self.menu_options);
         *menu_options = options.clone();
-        if self.is_focused() && self.is_menu_visible() {
-            self.webview
-                .window()
-                .set_menu(NivaBuilder::build_menu(self.id, &self.app, &menu_options));
+        let visible = lock_force!(self.state).is_menu_visible;
+        if self.is_focused()
+            && visible
+            && let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options)
+        {
+            self.attach_built_menu(&menu);
         }
+    }
+
+    pub fn show_menu(self: &Arc<Self>) {
+        lock_force!(self.state).is_menu_visible = true;
+        let menu_options = lock_force!(self.menu_options);
+        if let Some(menu) = NivaBuilder::build_menu(self.id, &self.app, &menu_options) {
+            self.attach_built_menu(&menu);
+        }
+    }
+
+    pub fn hide_menu(self: &Arc<Self>) {
+        lock_force!(self.state).is_menu_visible = false;
+        let handle = lock_force!(self.menu_handle).take();
+        if let Some(menu) = handle {
+            NivaBuilder::detach_menu(&self.window, &menu);
+        }
+    }
+
+    pub fn is_menu_visible(self: &Arc<Self>) -> bool {
+        lock_force!(self.state).is_menu_visible
     }
 
     pub fn send_event<F: Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send + 'static>(

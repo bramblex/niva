@@ -2,7 +2,7 @@ use anyhow::Result;
 use glob::Pattern;
 use niva_macros::niva_api;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use std::{io::Write, path::Path, time::UNIX_EPOCH};
 
@@ -88,14 +88,12 @@ fn append(path: String, content: String, encode: Option<EncodeType>) -> Result<(
         EncodeType::BASE64 => {
             let content = base64::decode(content)?;
             std::fs::OpenOptions::new()
-                .write(true)
                 .append(true)
                 .open(path)?
                 .write_all(&content)?;
         }
         EncodeType::UTF8 => {
             std::fs::OpenOptions::new()
-                .write(true)
                 .append(true)
                 .open(path)?
                 .write_all(content.as_bytes())?;

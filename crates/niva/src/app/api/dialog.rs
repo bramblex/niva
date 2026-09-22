@@ -1,8 +1,8 @@
 use anyhow::{Ok, Result};
 use niva_macros::niva_api;
 use serde::Deserialize;
-use serde_json::{json, Value};
-use wry::application::window::Window;
+use serde_json::{Value, json};
+use tao::window::Window;
 
 use crate::app::api_manager::ApiManager;
 
@@ -27,7 +27,7 @@ enum MessageLevel {
 
 #[niva_api]
 fn show_message(title: String, content: Option<String>, level: Option<MessageLevel>) -> Result<()> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let content = content.unwrap_or_default();
     let level = level.unwrap_or(MessageLevel::Info);
 
@@ -51,11 +51,11 @@ fn _create_dialog(
     start_dir: Option<String>,
 ) -> rfd::FileDialog {
     let mut dialog = rfd::FileDialog::new();
-    if let Some(extensions) = filters {
-        if !extensions.is_empty() {
-            let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
-            dialog = dialog.add_filter("pick", &extensions);
-        }
+    if let Some(extensions) = filters
+        && !extensions.is_empty()
+    {
+        let extensions = extensions.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+        dialog = dialog.add_filter("pick", &extensions);
     }
     if let Some(dir) = start_dir {
         dialog = dialog.set_directory(dir);
@@ -65,7 +65,7 @@ fn _create_dialog(
 
 #[niva_api]
 fn pick_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.pick_file() {
@@ -76,7 +76,7 @@ fn pick_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<
 
 #[niva_api]
 fn pick_files(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.pick_files() {
@@ -87,7 +87,7 @@ fn pick_files(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result
 
 #[niva_api]
 fn pick_dir(start_dir: Option<String>) -> Result<Value> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let dialog = _create_dialog(parent, None, start_dir);
 
     match dialog.pick_folder() {
@@ -98,7 +98,7 @@ fn pick_dir(start_dir: Option<String>) -> Result<Value> {
 
 #[niva_api]
 fn pick_dirs(start_dir: Option<String>) -> Result<Value> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let dialog = _create_dialog(parent, None, start_dir);
 
     match dialog.pick_folders() {
@@ -109,7 +109,7 @@ fn pick_dirs(start_dir: Option<String>) -> Result<Value> {
 
 #[niva_api]
 fn save_file(filters: Option<Vec<String>>, start_dir: Option<String>) -> Result<Value> {
-    let parent = window.webview.window();
+    let parent = &window.window;
     let dialog = _create_dialog(parent, filters, start_dir);
 
     match dialog.save_file() {

@@ -1,5 +1,6 @@
 mod api;
 mod api_manager;
+mod assets;
 mod event_handler;
 mod menu;
 mod options;
@@ -8,9 +9,8 @@ mod shortcut_manager;
 mod tray_manager;
 mod utils;
 mod window_manager;
-mod assets;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use directories::BaseDirs;
 use serde_json::Value;
 use std::{
@@ -24,7 +24,7 @@ use std::{
 
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
-use crate::{lock, log_if_err, set_property_some};
+use crate::{lock, log_if_err};
 
 use self::{
     api::register_api_instances,
@@ -34,8 +34,8 @@ use self::{
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
-    utils::{arc, arc_mut, merge_values, ArcMut},
-    window_manager::{options::NivaWindowOptions, WindowManager},
+    utils::{ArcMut, merge_values},
+    window_manager::{WindowManager, options::NivaWindowOptions},
 };
 
 pub type NivaEventLoop = EventLoop<NivaEvent>;
@@ -92,7 +92,7 @@ impl NivaApp {
         #[cfg(target_os = "macos")]
         if let Some(macos_extra) = &launch_info.options.macos_extra {
             use self::options::NivaActivationPolicy;
-            use wry::application::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+            use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 
             if let Some(p) = macos_extra.activation_policy.clone() {
                 let policy = match p {
@@ -103,9 +103,9 @@ impl NivaApp {
                 event_loop.set_activation_policy(policy);
             }
 
-            if let Some(enable) = macos_extra.default_menu_creation {
-                event_loop.enable_default_menu_creation(enable);
-            }
+            // NOTE: tao 0.37 removed default menu creation (menu now via muda).
+            // The `default_menu_creation` option is currently a no-op.
+            let _ = macos_extra.default_menu_creation;
 
             if let Some(ignore) = macos_extra.activate_ignoring_other_apps {
                 event_loop.set_activate_ignoring_other_apps(ignore);
@@ -121,8 +121,8 @@ impl NivaApp {
 
         let window_manager = WindowManager::new(&launch_info);
 
-        // build shortcuts
-        let shortcut_manager = NivaShortcutManager::new(event_loop);
+        // build shortcuts (global-hotkey manager is not tied to the event loop)
+        let shortcut_manager = NivaShortcutManager::new();
 
         let tray_manager = NivaTrayManager::new();
 
@@ -143,26 +143,29 @@ impl NivaApp {
         lock!(api_manager)?.bind_app(app.clone());
         lock!(tray_manager)?.bind_app(app.clone());
 
+        // forward menu / tray / hotkey events (outside tao) to windows
+        EventHandler::install_external_handlers(app.clone());
+
         Ok(app)
     }
 
-    pub fn resource<'a>(self: &'a Arc<Self>) -> Arc<dyn ResourceManager> {
+    pub fn resource(self: &Arc<Self>) -> Arc<dyn ResourceManager> {
         self._resource.clone()
     }
 
-    pub fn window<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, WindowManager>> {
+    pub fn window(self: &Arc<Self>) -> Result<MutexGuard<'_, WindowManager>> {
         lock!(self._window)
     }
 
-    pub fn api<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, ApiManager>> {
+    pub fn api(self: &Arc<Self>) -> Result<MutexGuard<'_, ApiManager>> {
         lock!(self._api)
     }
 
-    pub fn shortcut<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaShortcutManager>> {
+    pub fn shortcut(self: &Arc<Self>) -> Result<MutexGuard<'_, NivaShortcutManager>> {
         lock!(self._shortcut)
     }
 
-    pub fn tray<'a>(self: &'a Arc<Self>) -> Result<MutexGuard<'a, NivaTrayManager>> {
+    pub fn tray(self: &Arc<Self>) -> Result<MutexGuard<'_, NivaTrayManager>> {
         lock!(self._tray)
     }
 
@@ -175,9 +178,10 @@ impl NivaApp {
 
         let shortcuts_options = &self.launch_info.options.shortcuts.clone();
         if let Some(options) = shortcuts_options {
-            log_if_err!(self
-                .shortcut()?
-                .register_with_options(main_window.id, options));
+            log_if_err!(
+                self.shortcut()?
+                    .register_with_options(main_window.id, options)
+            );
         }
 
         let tray_options = &self.launch_info.options.tray.clone();
@@ -250,7 +254,6 @@ impl NivaLaunchInfo {
         arguments: NivaArguments,
         resource_manager: Arc<dyn ResourceManager>,
     ) -> Result<NivaLaunchInfo> {
-
         let mut options = {
             let base_content = if let Some(debug_config) = &arguments.debug_config {
                 std::fs::read(debug_config)?
@@ -264,7 +267,7 @@ impl NivaLaunchInfo {
             let platform = std::env::consts::OS;
             let platform_options = base_options.get(platform).cloned();
 
-            let options = if let Some(platform_options) = platform_options  {
+            let options = if let Some(platform_options) = platform_options {
                 merge_values(base_options, platform_options)
             } else {
                 base_options

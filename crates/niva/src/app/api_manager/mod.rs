@@ -2,20 +2,20 @@ mod thread_pool;
 
 use std::{collections::HashMap, pin::Pin, sync::Arc};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use wry::application::{event_loop::ControlFlow, window::Window};
+use serde_json::{Value, json};
+use tao::{event_loop::ControlFlow, window::WindowId};
 
 use crate::{lock_force, unsafe_impl_sync_send};
 
 use self::thread_pool::ThreadPool;
 
 use super::{
-    options::NivaOptions,
-    utils::{arc_mut, ArcMut},
-    window_manager::window::NivaWindow,
     NivaApp, NivaWindowTarget,
+    options::NivaOptions,
+    utils::{ArcMut, arc_mut},
+    window_manager::window::NivaWindow,
 };
 
 #[derive(Deserialize, Clone)]
@@ -150,9 +150,9 @@ impl ApiManager {
         self.api_instance.insert(name.into(), api_instance);
     }
 
-    pub fn call(&self, _window: &Window, request_str: String) -> Result<()> {
+    pub fn call(&self, window_id: WindowId, request_str: String) -> Result<()> {
         let app = self.app.clone().ok_or(anyhow!("app not set"))?;
-        let window = app.window()?.get_window_inner(_window.id())?;
+        let window = app.window()?.get_window_inner(window_id)?;
 
         let request = serde_json::from_str::<ApiRequest>(&request_str)?;
 

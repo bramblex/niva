@@ -18,11 +18,13 @@ type ModalItem = {
   Component: ComponentType;
 };
 
-export type ModalModelState = ModalItem[];
+export type ModalModelState = {
+  modals: ModalItem[];
+};
 
 export class ModalModel extends StateModel<ModalModelState> {
   constructor(public readonly app: AppModel) {
-    super([]);
+    super({ modals: [] });
   }
 
   show<Props extends {}>(
@@ -31,20 +33,24 @@ export class ModalModel extends StateModel<ModalModelState> {
   ) {
     const id = uuid();
     const close = () => {
-      this.setState(this.state.filter(({ id: _id }) => _id !== id));
+      this.update({
+        modals: this.state.modals.filter(({ id: _id }) => _id !== id),
+      });
     };
-    this.setState([
-      ...this.state,
-      {
-        id,
-        Component: () => <Component {...props} close={close} />,
-      },
-    ]);
+    this.update({
+      modals: [
+        ...this.state.modals,
+        {
+          id,
+          Component: () => <Component {...props} close={close} />,
+        },
+      ],
+    });
     return close;
   }
 
   destroyAll() {
-    this.setState([]);
+    this.update({ modals: [] });
   }
 
   async showNative<T>(callback: () => Promise<T>): Promise<T | null> {
@@ -102,7 +108,7 @@ export class ProgressModel extends StateModel<{
   async run() {
     for (let i = 0, l = this.tasks.length; i < l; i++) {
       const [text, task] = this.tasks[i];
-      this.setState({
+      this.update({
         ...this.state,
         text: `(${i + 1}/${l})${text}`,
         progress: i / l,
@@ -111,14 +117,14 @@ export class ProgressModel extends StateModel<{
         await task();
         await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (e) {
-        this.setState({
+        this.update({
           ...this.state,
           text: (e as any).toString(),
         });
         throw e;
       }
     }
-    this.setState({ ...this.state, progress: 1 });
+    this.update({ ...this.state, progress: 1 });
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
 }
