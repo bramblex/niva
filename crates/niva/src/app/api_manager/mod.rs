@@ -5,7 +5,7 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tao::{event_loop::ControlFlow, window::WindowId};
+use tao::event_loop::ControlFlow;
 
 use crate::{lock_force, unsafe_impl_sync_send};
 
@@ -150,9 +150,9 @@ impl ApiManager {
         self.api_instance.insert(name.into(), api_instance);
     }
 
-    pub fn call(&self, window_id: WindowId, request_str: String) -> Result<()> {
+    pub fn call(&self, window_id: u8, request_str: String) -> Result<()> {
         let app = self.app.clone().ok_or(anyhow!("app not set"))?;
-        let window = app.window()?.get_window_inner(window_id)?;
+        let window = app.window()?.get_window(window_id)?;
 
         let request = serde_json::from_str::<ApiRequest>(&request_str)?;
 

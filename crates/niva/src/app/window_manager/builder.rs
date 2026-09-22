@@ -3,22 +3,20 @@ use super::options::NivaWindowOptions;
 use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
 use crate::app::assets::INITIALIZE_SCRIPT;
+use crate::app::http_server::app_server;
 use crate::app::menu::options::{MenuItemOption, MenuOptions};
 use crate::app::menu::{build_menu as build_muda_menu, build_submenu};
 use crate::app::utils::url_join;
 use crate::app::window_manager::url::get_host_from_url;
-use crate::app::window_manager::url::make_base_url;
 use crate::{
     app::{NivaApp, NivaWindowTarget},
     log_err, log_if_err, set_property, set_property_some,
 };
 use anyhow::Result;
-use anyhow::anyhow;
 use serde_json::json;
-use std::borrow::Cow;
 use std::sync::Arc;
 use tao::window::{Fullscreen, Theme, Window, WindowBuilder};
-use wry::{DragDropEvent, WebContext, WebView, WebViewBuilder, http::Response};
+use wry::{DragDropEvent, WebContext, WebView, WebViewBuilder};
 
 pub struct NivaBuilder {}
 
@@ -226,23 +224,46 @@ impl NivaBuilder {
 
     pub fn build_webview(
         app: &Arc<NivaApp>,
+        id: u8,
         options: &NivaWindowOptions,
         window: &Window,
         web_context: &mut WebContext,
         window_id: tao::window::WindowId,
     ) -> Result<WebView> {
-        let id_name = app.launch_info.id_name.clone();
-        let protocol = "niva";
+        let (server_port, server_token) = app_server(app)?;
+        let server_origin = format!("http://127.0.0.1:{server_port}");
 
-        let debug_entry = app.launch_info.arguments.debug_entry.clone();
+        // CLI flags win; otherwise fall back to the project's debug config
+        // (niva.json), so plain `niva --debug-config=...` Just Works.
+        let debug_entry = app.launch_info.arguments.debug_entry.clone().or_else(|| {
+            app.launch_info
+                .options
+                .debug
+                .as_ref()
+                .and_then(|debug| debug.entry.clone())
+        });
 
-        let base_url = debug_entry.unwrap_or(make_base_url(protocol, &id_name));
+        // Local entries are served by our own HTTP server over loopback
+        // (plain http keeps iframes working, unlike custom schemes).
+        // Remote entries (e.g. frontend dev servers) pass through.
+        let base_url = debug_entry.unwrap_or(server_origin.clone());
 
         let entry_url = url_join(&base_url, &options.entry.clone().unwrap_or_default());
 
+        // Per-window bootstrap, prepended so the shared init script (which
+        // connects the API WebSocket immediately when evaluated) sees it.
+        let init_script = format!(
+            "window.__niva_ws_url={:?};\
+            window.__niva_window_id={id};window.__niva_token={:?};{INITIALIZE_SCRIPT}",
+            format!("ws://127.0.0.1:{server_port}/__niva_ws"),
+            server_token,
+        );
+
         let mut builder = WebViewBuilder::new_with_web_context(web_context);
 
-        set_property!(builder, with_initialization_script, INITIALIZE_SCRIPT);
+        // Inject into sub frames as well: iframes get their own bridge over
+        // the same per-window WebSocket (plain http keeps them working).
+        builder = builder.with_initialization_script_for_main_only(init_script, false);
         set_property!(builder, with_accept_first_mouse, true);
         set_property!(builder, with_clipboard, true);
         set_property_some!(builder, with_devtools, options.devtools);
@@ -252,66 +273,10 @@ impl NivaBuilder {
             set_property!(builder, with_transparent, true);
         }
 
-        let prefix = get_host_from_url(&entry_url).unwrap_or(base_url);
-        set_property!(builder, with_navigation_handler, move |url| url
-            .starts_with(&prefix));
-
-        let custom_protocol_app = app.clone();
-        builder =
-            builder.with_custom_protocol(protocol.to_string(), move |_webview_id, request| {
-                let hostname = request.uri().host().unwrap_or(&id_name);
-
-                let mut path = request.uri().path().to_string();
-
-                if path.ends_with('/') {
-                    path += "index.html";
-                }
-
-                let result = (|| -> Result<Vec<u8>> {
-                    if hostname == id_name {
-                        let path = path.strip_prefix('/').unwrap_or("index.html");
-                        custom_protocol_app.resource().load(path)
-                    } else if hostname == "filesystem" {
-                        let file_path = path.strip_prefix('/').unwrap_or("index.html");
-                        Ok(std::fs::read(file_path)?)
-                    } else {
-                        Err(anyhow!("Invalid hostname: {}", hostname))
-                    }
-                })();
-
-                let origin =
-                    get_host_from_url(&request.uri().to_string()).unwrap_or("*".to_string());
-                let uri_string = request.uri().to_string();
-
-                match result {
-                    Err(err) => {
-                        eprintln!("[niva] custom protocol {uri_string} -> 404: {err}");
-                        error_page(404, "Not Found", &uri_string, &err.to_string())
-                    }
-
-                    Ok(content) => {
-                        let mime_type = mime_guess::from_path(path)
-                            .first()
-                            .unwrap_or(mime_guess::mime::TEXT_PLAIN)
-                            .to_string();
-
-                        Response::builder()
-                            .status(200)
-                            .header("Content-Type", mime_type)
-                            .header("Access-Control-Allow-Origin", origin)
-                            .body(Cow::Owned(content))
-                            .unwrap_or_else(|err| {
-                                eprintln!("[niva] custom protocol {uri_string} -> 500: {err}");
-                                error_page(
-                                    500,
-                                    "Internal Server Error",
-                                    &uri_string,
-                                    "Failed to build response",
-                                )
-                            })
-                    }
-                }
-            });
+        let entry_prefix = get_host_from_url(&entry_url).unwrap_or(base_url);
+        set_property!(builder, with_navigation_handler, move |url| {
+            url.starts_with(&server_origin) || url.starts_with(&entry_prefix)
+        });
 
         let drop_app = app.clone();
         builder = builder.with_drag_drop_handler(move |event| {
@@ -354,18 +319,8 @@ impl NivaBuilder {
             false
         });
 
-        let ipc_app = app.clone();
-        builder = builder.with_ipc_handler(move |request| {
-            let request_str = request.body().clone();
-            if let Err(err) = ipc_app.api().and_then(|w| w.call(window_id, request_str)) {
-                let window = ipc_app.window().and_then(|w| w.get_window_inner(window_id));
-                if let Ok(window) = window {
-                    log_if_err!(window.send_ipc_callback(json!({
-                        "ipc.error": err.to_string(),
-                    })));
-                }
-            };
-        });
+        // NOTE: API traffic goes over our own WebSocket now
+        // (see http_server + initialize_script.js); wry's ipc handler is gone.
 
         Ok(builder.with_url(entry_url).build(window)?)
     }
@@ -442,55 +397,26 @@ impl NivaBuilder {
     }
 }
 
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-/// Render a debuggable HTML error page instead of a bare status text, so a
-/// missing entry/resource shows *what* is missing right in the window.
-fn error_page(status: u16, title: &str, uri: &str, detail: &str) -> Response<Cow<'static, [u8]>> {
-    let body = format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
-        <title>{status} {title}</title></head><body>\
-        <h1>{status} {title}</h1>\
-        <p>URI: <code>{}</code></p>\
-        <p>{}</p>\
-        <p style=\"color:#888\">Niva custom protocol: check that the entry file \
-        exists in the resource directory.</p>\
-        </body></html>",
-        html_escape(uri),
-        html_escape(detail),
-    );
-    Response::builder()
-        .status(status)
-        .header("Content-Type", "text/html; charset=utf-8")
-        .body(Cow::Owned(body.into_bytes()))
-        .unwrap_or_else(|_| Response::new(Cow::Borrowed(&[][..])))
-}
-
 fn physical_to_logical(position: (i32, i32), scale_factor: f64) -> tao::dpi::LogicalPosition<f64> {
     tao::dpi::PhysicalPosition::new(position.0 as f64, position.1 as f64).to_logical(scale_factor)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::app::utils::error_page_html;
 
     #[test]
     fn error_page_renders_status_uri_and_escaped_detail() {
-        let response = error_page(
+        let (status, body) = error_page_html(
             404,
             "Not Found",
-            "niva://demo_12345678/missing.html",
+            "http://127.0.0.1:9/missing.html",
             "No such file <x> & \"y\" (os error 2)",
         );
-        assert_eq!(response.status(), 404);
-        let body = response.body();
-        let body = std::str::from_utf8(body).unwrap();
+        assert_eq!(status, 404);
+        let body = std::str::from_utf8(&body).unwrap();
         assert!(body.contains("<h1>404 Not Found</h1>"), "{body}");
-        assert!(body.contains("niva://demo_12345678/missing.html"), "{body}");
+        assert!(body.contains("http://127.0.0.1:9/missing.html"), "{body}");
         assert!(body.contains("No such file &lt;x&gt; &amp;"), "{body}");
         assert!(!body.contains("<x>"), "{body}");
     }

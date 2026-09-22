@@ -48,6 +48,9 @@ pub struct NivaWindow {
     /// dropping it removes the native menu.
     menu_handle: Mutex<Option<muda::Menu>>,
 
+    /// Live API WebSocket sender for this window's webview, if connected.
+    ws_tx: Mutex<Option<std::sync::mpsc::Sender<String>>>,
+
     pub state: Mutex<NivaWindowState>,
 }
 
@@ -74,6 +77,7 @@ impl NivaWindow {
         let window_id = window.id();
         let webview = NivaBuilder::build_webview(
             &app,
+            id,
             options,
             &window,
             &mut manager.web_context,
@@ -89,6 +93,7 @@ impl NivaWindow {
             menu_options: arc_mut(options.menu.clone()),
             event_loop_proxy: app.event_loop_proxy.clone(),
             menu_handle: Mutex::new(menu),
+            ws_tx: Mutex::new(None),
 
             state: Mutex::new(NivaWindowState {
                 is_block_closed_requested: false,
@@ -155,12 +160,44 @@ impl NivaWindow {
             .map_err(|_| anyhow!("Failed to send event"))
     }
 
+    /// Register (or replace) the live API WebSocket sender for this window.
+    /// Called by the HTTP server when the webview connects.
+    pub fn set_ws_sender(self: &Arc<Self>, tx: Option<std::sync::mpsc::Sender<String>>) {
+        *lock_force!(self.ws_tx) = tx;
+    }
+
+    /// Try pushing a pre-built `["event", name, payload]` envelope to the
+    /// window's WebSocket. Returns false when no socket is connected.
+    pub fn send_ws_envelope(self: &Arc<Self>, envelope: &str) -> bool {
+        let guard = lock_force!(self.ws_tx);
+        match guard.as_ref() {
+            Some(tx) => tx.send(envelope.to_string()).is_ok(),
+            None => false,
+        }
+    }
+
     pub fn send_ipc_event<E: Into<String>, P: Serialize>(
         self: &Arc<Self>,
         event: E,
         payload: P,
     ) -> Result<()> {
-        let event: String = event.into();
+        let envelope = serde_json::json!(["event", event.into(), payload]);
+        if self.send_ws_envelope(&envelope.to_string()) {
+            return Ok(());
+        }
+        self.send_envelope_eval(&envelope)
+    }
+
+    /// Deliver a pre-built envelope by evaluating `Niva.__emit__` on the main
+    /// thread. Used when no WebSocket is connected yet (page still loading).
+    pub fn send_envelope_eval(self: &Arc<Self>, envelope: &serde_json::Value) -> Result<()> {
+        let arr = envelope.as_array().ok_or(anyhow!("Invalid IPC envelope"))?;
+        let event = arr
+            .first()
+            .and_then(|v| v.as_str())
+            .ok_or(anyhow!("Invalid IPC envelope"))?
+            .to_string();
+        let payload = arr.get(2).cloned().unwrap_or(serde_json::Value::Null);
         let payload = serde_json::to_string(&payload)?;
         let _self = self.clone();
         self.send_event(move |_, _| {

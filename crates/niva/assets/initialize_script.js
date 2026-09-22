@@ -60,7 +60,9 @@
   EventListener = removeEventListener;
   Niva.__emit__ = emit;
 
-  // === API Call ===
+  // === API Call over our own WebSocket ===
+  // The native side appends a bootstrap snippet after this script defining:
+  //   window.__niva_ws_url / window.__niva_window_id / window.__niva_token
   var getNextCallbackId = (function () {
     var callbackId = 0;
     return function () {
@@ -72,14 +74,59 @@
   })();
 
   var callbacks = {};
+  var sendQueue = [];
+  var socket = null;
+
+  function flushQueue() {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      while (sendQueue.length > 0) {
+        socket.send(sendQueue.shift());
+      }
+    }
+  }
+
+  function connectSocket() {
+    var url = window.__niva_ws_url;
+    if (!url || typeof WebSocket === 'undefined') {
+      return;
+    }
+    try {
+      socket = new WebSocket(url + "?token=" + encodeURIComponent(window.__niva_token || ""));
+    } catch (e) {
+      socket = null;
+      return;
+    }
+    socket.addEventListener("open", function () {
+      try {
+        socket.send(JSON.stringify(["hello", window.__niva_window_id || 0]));
+      } catch (e) {}
+      flushQueue();
+    });
+    socket.addEventListener("message", function (ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        // ["event", name, payload] — same envelope the native side used
+        // to evaluate with.
+        if (msg && msg[0] === "event") {
+          emit(msg[1], msg[2]);
+        }
+      } catch (e) {}
+    });
+    socket.addEventListener("close", function () {
+      socket = null;
+      // Reconnect (e.g. dev-server HMR should not kill the bridge).
+      setTimeout(connectSocket, 1000);
+    });
+  }
 
   function call(method, args) {
     var callbackId = getNextCallbackId();
-    window.ipc.postMessage(JSON.stringify([
+    sendQueue.push(JSON.stringify([
       callbackId,
       method,
       args
     ]));
+    flushQueue();
 
     var _resolve, _reject;
     var promise = new Promise((resolve, reject) => {
@@ -140,6 +187,8 @@
   // === Tauri API ===
   window.Niva = Niva;
   console.log('Niva loaded');
+
+  connectSocket();
 
   (function docReady(func) {
     if (document.readyState === "complete" || document.readyState === "interactive") {

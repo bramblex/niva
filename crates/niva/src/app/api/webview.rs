@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use niva_macros::{niva_api, niva_event_api};
 
-use crate::app::{api_manager::ApiManager, window_manager::url::make_base_url};
+use crate::app::api_manager::ApiManager;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_event_api("webview.isDevtoolsOpen", is_devtools_open);
@@ -31,10 +31,12 @@ fn close_devtools() -> Result<()> {
 
 #[niva_api]
 fn base_url() -> Result<String> {
-    Ok(make_base_url("niva", &app.launch_info.id_name))
+    let (port, _) = app.server_info()?;
+    Ok(format!("http://127.0.0.1:{port}/"))
 }
 
 #[niva_api]
 fn base_filesystem_url() -> Result<String> {
-    Ok(make_base_url("niva", "filesystem"))
+    let (port, _) = app.server_info()?;
+    Ok(format!("http://127.0.0.1:{port}/__niva_fs/"))
 }

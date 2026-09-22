@@ -29,10 +29,20 @@ pub struct NivaOptions {
     pub shortcuts: Option<NivaShortcutsOptions>,
     pub workers: Option<u32>,
 
+    // dev options (also used as defaults when the matching CLI flags are absent)
+    pub debug: Option<NivaDebugOptions>,
+
     // mac app options
     #[cfg(target_os = "macos")]
     #[serde(flatten)]
     pub macos_extra: Option<MacExtraOptions>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NivaDebugOptions {
+    pub entry: Option<String>,
+    pub resource: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

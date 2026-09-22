@@ -2,6 +2,7 @@ mod api;
 mod api_manager;
 mod assets;
 mod event_handler;
+pub(crate) mod http_server;
 mod menu;
 mod options;
 mod resource_manager;
@@ -30,11 +31,12 @@ use self::{
     api::register_api_instances,
     api_manager::ApiManager,
     event_handler::EventHandler,
+    http_server::{HttpServerSlot, NivaHttpServer, app_server},
     options::NivaOptions,
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
-    utils::{ArcMut, merge_values},
+    utils::{ArcMut, arc_mut, merge_values},
     window_manager::{WindowManager, options::NivaWindowOptions},
 };
 
@@ -74,6 +76,7 @@ pub struct NivaApp {
     _api: ArcMut<ApiManager>,
     _shortcut: ArcMut<NivaShortcutManager>,
     _tray: ArcMut<NivaTrayManager>,
+    _http: HttpServerSlot, // Async HTTP + WebSocket server (populated post-Arc).
 
     event_loop_proxy: EventLoopProxy<NivaEvent>, // Event loop proxy.
 }
@@ -134,6 +137,7 @@ impl NivaApp {
             _api: api_manager.clone(),
             _shortcut: shortcut_manager,
             _tray: tray_manager.clone(),
+            _http: arc_mut(None),
 
             event_loop_proxy: event_loop.create_proxy(),
         });
@@ -143,10 +147,25 @@ impl NivaApp {
         lock!(api_manager)?.bind_app(app.clone());
         lock!(tray_manager)?.bind_app(app.clone());
 
+        // start the loopback HTTP + WebSocket server before any window exists
+        let server = NivaHttpServer::start(&app)?;
+        eprintln!("[niva] http server listening on {}", server.base_url());
+        *lock!(app._http)? = Some(server);
+
         // forward menu / tray / hotkey events (outside tao) to windows
         EventHandler::install_external_handlers(app.clone());
 
         Ok(app)
+    }
+
+    pub fn http_slot(self: &Arc<Self>) -> HttpServerSlot {
+        self._http.clone()
+    }
+
+    /// (port, token) of the loopback server; used for entry URLs and the
+    /// per-window WebSocket bootstrap script.
+    pub fn server_info(self: &Arc<Self>) -> Result<(u16, String)> {
+        app_server(self)
     }
 
     pub fn resource(self: &Arc<Self>) -> Arc<dyn ResourceManager> {

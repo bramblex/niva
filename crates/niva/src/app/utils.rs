@@ -177,3 +177,28 @@ pub fn merge_id(window_id: u8, item_id: u8) -> u16 {
 pub fn split_id(merged_id: u16) -> (u8, u8) {
     ((merged_id >> 8) as u8, merged_id as u8)
 }
+
+pub(crate) fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Render a debuggable HTML error page instead of a bare status text, so a
+/// missing entry/resource shows *what* is missing right in the window.
+/// Returns (status, html body) so both the wry and axum layers can wrap it.
+pub(crate) fn error_page_html(status: u16, title: &str, uri: &str, detail: &str) -> (u16, Vec<u8>) {
+    let body = format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+        <title>{status} {title}</title></head><body>\
+        <h1>{status} {title}</h1>\
+        <p>URI: <code>{}</code></p>\
+        <p>{}</p>\
+        <p style=\"color:#888\">Niva: check that the entry file \
+        exists in the resource directory.</p>\
+        </body></html>",
+        html_escape(uri),
+        html_escape(detail),
+    );
+    (status, body.into_bytes())
+}
