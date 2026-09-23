@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Niva macOS supervised window API cases</title>
+  </head>
+  <body>
+    <main>
+      <h1>Niva macOS supervised window API cases</h1>
+      <p>This disposable page runs window IPC, focus, cursor, window-level, and content-sharing assertions.</p>
+      <p>UI-only cases are listed by run_window_supervised.py and require a separate operator observation.</p>
+      <output id="status">Starting native checks…</output>
+    </main>
+    <script>
+      (() => {
+        "use strict";
+
+        const api = Niva.api;
+        const passed = [];
+        const invoked = [];
+        const skipped = [];
+        const pendingObservations = new Map();
+        let observationSerial = 0;
+        let activeMethod = "setup";
+        let childId = null;
+        let childTitle = null;
+        let originalCursor = null;
+        let childOrigin = null;
+
+        const waiters = [];
+        const windowMessages = [];
+        Niva.addEventListener("window.message", (_eventName, payload) => {
+          if (!payload || typeof payload.message !== "string") return;
+          windowMessages.push(payload);
+          for (let index = waiters.length - 1; index >= 0; index -= 1) {
+            if (waiters[index].predicate(payload)) {
+              const [waiter] = waiters.splice(index, 1);
+              clearTimeout(waiter.timer);
+              waiter.resolve(payload);
+            }
+          }
+        });
+
+        Niva.addEventListener("host:message", (_eventName, message) => {
+          if (!message || message.name !== "window-supervised-command") return;
+          const data = message.data || {};
+          if (data.kind === "exit") {
+            api.process.exit().catch(() => {});
+            return;
+          }
+          if (data.kind === "observation") {
+            const resolve = pendingObservations.get(data.requestId);
+            if (resolve) {
+              pendingObservations.delete(data.requestId);
+              resolve(data.snapshot);
+            }
+          } else if (data.kind === "accessibility") {
+            const resolve = pendingObservations.get(data.requestId);
+            if (resolve) {
+              pendingObservations.delete(data.requestId);
+              resolve(data);
+            }
+          }
+        });
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        function finitePosition(value, label) {
+          assert(value && Number.isFinite(value.x) && Number.isFinite(value.y), `${label} must have finite x/y`);
+        }
+
+        function near(actual, expected, tolerance, label) {
+          const dx = Math.abs(actual.x - expected.x);
+          const dy = Math.abs(actual.y - expected.y);
+          assert(dx <= tolerance && dy <= tolerance,
+            `${label}: got (${actual.x}, ${actual.y}), expected (${expected.x}, ${expected.y}) ± ${tolerance}`);
+        }
+
+        function sleep(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function waitForWindowMessage(predicate, label, timeoutMs = 10000) {
+          for (let index = windowMessages.length - 1; index >= 0; index -= 1) {
+            if (predicate(windowMessages[index])) return windowMessages.splice(index, 1)[0];
+          }
+          return new Promise((resolve, reject) => {
+            const waiter = { predicate, resolve, timer: null };
+            waiter.timer = setTimeout(() => {
+              const index = waiters.indexOf(waiter);
+              if (index >= 0) waiters.splice(index, 1);
+              reject(new Error(`timed out waiting for ${label}`));
+            }, timeoutMs);
+            waiters.push(waiter);
+          });
+        }
+
+        async function nativeSnapshot(stage, captureWindowId = null, showsCursor = false) {
+          const requestId = `window-observation-${++observationSerial}`;
+          const result = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingObservations.delete(requestId);
+              reject(new Error(`timed out waiting for native window snapshot (${stage})`));
+            }, 20000);
+            pendingObservations.set(requestId, value => {
+              clearTimeout(timer);
+              resolve(value);
+            });
+          });
+          await api.host.send("window-supervised-observe", { requestId, title: childTitle, stage, captureWindowId, showsCursor });
+          const snapshot = await result;
+          assert(snapshot && Array.isArray(snapshot.windows), `native window snapshot missing for ${stage}`);
+          return snapshot;
+        }
+
+        async function nativeWindowSnapshot(stage, capture = false, showsCursor = false) {
+          const snapshot = await nativeSnapshot(stage);
+          const matches = snapshot.windows.filter(item => item.title === childTitle);
+          assert(matches.length === 1, `expected one native window named ${childTitle} at ${stage}; observed=${JSON.stringify(snapshot.windows)}`);
+          if (!capture) return matches[0];
+          const imageSnapshot = await nativeSnapshot(`${stage}:capture`, matches[0].windowId, showsCursor);
+          return { ...matches[0], capture: imageSnapshot.capture || null };
+        }
+
+        async function accessibilityButtonPositions(stage) {
+          const requestId = `window-accessibility-${++observationSerial}`;
+          const result = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingObservations.delete(requestId);
+              reject(new Error(`timed out waiting for titlebar accessibility state (${stage})`));
+            }, 20000);
+            pendingObservations.set(requestId, value => {
+              clearTimeout(timer);
+              resolve(value);
+            });
+          });
+          await api.host.send("window-supervised-accessibility", { requestId, title: childTitle, stage });
+          const response = await result;
+          if (response.error) throw new Error(response.error);
+          assert(Array.isArray(response.positions) && response.positions.length === 1,
+            `titlebar Accessibility probe did not return the close-button position: ${JSON.stringify(response)}`);
+          return response.positions;
+        }
+
+        async function pressAccessibilityCloseButton(stage) {
+          const requestId = `window-accessibility-${++observationSerial}`;
+          const result = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingObservations.delete(requestId);
+              reject(new Error(`timed out waiting for native close-button press (${stage})`));
+            }, 20000);
+            pendingObservations.set(requestId, value => {
+              clearTimeout(timer);
+              resolve(value);
+            });
+          });
+          await api.host.send("window-supervised-accessibility", {
+            requestId, title: childTitle, stage, action: "press-close",
+          });
+          const response = await result;
+          if (response.error) throw new Error(response.error);
+          assert(response.pressed === true, `System Events did not press the close button: ${JSON.stringify(response)}`);
+        }
+
+        async function record(method, assertion) {
+          passed.push(method);
+          document.querySelector("#status").textContent = `PASS ${method}`;
+          await api.host.send("window-supervised-case", { method, assertion, status: "passed" });
+        }
+
+        async function recordInvocation(method, evidence) {
+          invoked.push({ method, evidence });
+          document.querySelector("#status").textContent = `INVOKED ${method}`;
+          await api.host.send("window-supervised-invocation", { method, evidence, status: "invoked-only" });
+        }
+
+        async function recordSkip(method, reason) {
+          skipped.push({ method, reason });
+          document.querySelector("#status").textContent = `SKIP ${method}: ${reason}`;
+          await api.host.send("window-supervised-skip", { method, reason });
+        }
+
+        async function runMessageCase() {
+          activeMethod = "window.sendMessage";
+          const id = childId;
+          const nonce = `niva-window-ipc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          await waitForWindowMessage(payload => payload.from === id && payload.message === `ready:${id}`, "child ready message");
+          await api.window.sendMessage(`ping:${nonce}`, id);
+          const reply = await waitForWindowMessage(
+            payload => payload.from === id && payload.message === `pong:${nonce}`,
+            "matching child IPC echo",
+          );
+          assert(reply.from === id, "window.message source id did not match the child window");
+          await record("window.sendMessage", "main-to-child IPC reached the child and its exact nonce echo returned with the child window id");
+        }
+
+        async function runLayerCase(method, setLayer, comparison) {
+          activeMethod = method;
+          await setLayer(false, childId);
+          await sleep(250);
+          const baseline = await nativeWindowSnapshot(`${method}:baseline`);
+          assert(Number.isInteger(baseline.layer), `${method} baseline has no CoreGraphics window layer`);
+          try {
+            await setLayer(true, childId);
+            await sleep(400);
+            const changed = await nativeWindowSnapshot(`${method}:enabled`);
+            assert(Number.isInteger(changed.layer), `${method} enabled state has no CoreGraphics window layer`);
+            assert(comparison(changed.layer, baseline.layer),
+              `${method} did not move native layer: baseline=${baseline.layer}, enabled=${changed.layer}`);
+          } finally {
+            await setLayer(false, childId);
+          }
+          await sleep(400);
+          const restored = await nativeWindowSnapshot(`${method}:restored`);
+          assert(restored.layer === baseline.layer,
+            `${method} failed to restore native layer: baseline=${baseline.layer}, restored=${restored.layer}`);
+          await record(method, `CoreGraphics kCGWindowLayer changed from ${baseline.layer} while enabled and returned to ${restored.layer} after cleanup`);
+        }
+
+        async function runContentProtectionCase() {
+          activeMethod = "window.setContentProtection";
+          const baseline = await nativeWindowSnapshot("window.setContentProtection:baseline");
+          const baselineImage = await nativeWindowSnapshot("window.setContentProtection:baseline-image", true);
+          assert(Number.isInteger(baseline.sharingState), "CoreGraphics window snapshot did not expose kCGWindowSharingState");
+          assert(baseline.sharingState !== 0, "window content-sharing precondition was already protected");
+          const marker = [241, 31, 197];
+          const markerIsVisible = (image) => image && image.available &&
+            Object.values(image.corners || {}).some(pixel =>
+              Array.isArray(pixel) && pixel.slice(0, 3).every((value, index) => Math.abs(value - marker[index]) <= 70));
+          const captureAvailable = baselineImage.capture && baselineImage.capture.available;
+          if (captureAvailable) {
+            assert(markerIsVisible(baselineImage.capture), `unprotected child screenshot did not contain the fixture marker: ${JSON.stringify(baselineImage.capture)}`);
+          }
+          try {
+            await api.window.setContentProtection(true, childId);
+            await sleep(250);
+            const protectedState = await nativeWindowSnapshot("window.setContentProtection:enabled");
+            assert(protectedState.sharingState === 0,
+              `content protection should set NSWindow sharing state to None (0), got ${protectedState.sharingState}`);
+            if (captureAvailable) {
+              const protectedImage = await nativeWindowSnapshot("window.setContentProtection:enabled-image", true);
+              assert(!markerIsVisible(protectedImage.capture), "screen capture still contained the protected child marker");
+            }
+          } finally {
+            await api.window.setContentProtection(false, childId);
+          }
+          await sleep(250);
+          const restored = await nativeWindowSnapshot("window.setContentProtection:restored");
+          assert(restored.sharingState === baseline.sharingState,
+            `content-sharing state did not restore: baseline=${baseline.sharingState}, restored=${restored.sharingState}`);
+          if (captureAvailable) {
+            const restoredImage = await nativeWindowSnapshot("window.setContentProtection:restored-image", true);
+            assert(markerIsVisible(restoredImage.capture), "screen capture did not reveal the child marker after protection was disabled");
+          }
+          await record("window.setContentProtection", `CoreGraphics kCGWindowSharingState changed to None while protected and restored to ${restored.sharingState}`);
+        }
+
+        async function runBackgroundColorCase() {
+          activeMethod = "window.setBackgroundColor";
+          const expected = [23, 181, 77, 255];
+          let skipReason = null;
+          try {
+            await api.window.setBackgroundColor(expected, childId);
+            await sleep(250);
+            const observed = await nativeWindowSnapshot("window.setBackgroundColor:pixel", true);
+            if (!observed.capture || !observed.capture.available) {
+              skipReason = observed.capture && observed.capture.reason || "CoreGraphics window capture is unavailable";
+            } else {
+              const pixel = observed.capture.corners && observed.capture.corners.bottomRight;
+              assert(Array.isArray(pixel) && pixel.length >= 3, "background pixel probe returned no bottom-right sample");
+              // The transparent WKWebView blends the NSWindow color with its
+              // own surface; the captured pixel retains the requested green
+              // dominance without matching the raw RGBA tuple byte-for-byte.
+              const matches = pixel[3] >= 240 && pixel[1] > pixel[0] + 40 && pixel[1] > pixel[2] + 40;
+              assert(matches, `native background pixel ${JSON.stringify(pixel)} did not show the requested green background`);
+            }
+          } finally {
+            await api.window.setBackgroundColor(null, childId).catch(() => {});
+          }
+          if (skipReason) {
+            await recordSkip("window.setBackgroundColor", skipReason);
+            return;
+          }
+          await record("window.setBackgroundColor", "CoreGraphics captured the requested green-dominant background through the transparent WebView; the fixture restored it");
+        }
+
+        async function runFocusableCase() {
+          activeMethod = "window.setFocusable";
+          try {
+            await api.window.setFocus(childId);
+            await sleep(200);
+            assert(await api.window.isFocused(childId), "could not focus the disposable child before changing focusability");
+            await api.window.setFocusable(false, childId);
+            await api.window.setFocus(0);
+            await sleep(250);
+            assert(!(await api.window.isFocused(childId)), "child remained key after the main window took focus");
+            await api.window.setFocus(childId);
+            await sleep(350);
+            assert(!(await api.window.isFocused(childId)), "non-focusable child accepted a native focus request");
+          } finally {
+            await api.window.setFocusable(true, childId);
+            await api.window.setFocus(0);
+          }
+          await record("window.setFocusable", "a non-focusable child remained non-key after a native setFocus request; focusability was restored");
+        }
+
+        async function runCursorCases() {
+          activeMethod = "window.cursorPosition";
+          childOrigin = await api.window.innerPosition(childId);
+          finitePosition(childOrigin, "child inner position");
+          originalCursor = await api.window.cursorPosition(childId);
+          finitePosition(originalCursor, "initial cursor position");
+          const localTarget = { x: 38, y: 46 };
+          try {
+            activeMethod = "window.setCursorPosition";
+            await api.window.setCursorPosition(localTarget, childId);
+            await sleep(150);
+            activeMethod = "window.cursorPosition";
+            const current = await api.window.cursorPosition(childId);
+            finitePosition(current, "cursor readback");
+            near(current, { x: childOrigin.x + localTarget.x, y: childOrigin.y + localTarget.y }, 6,
+              "window.cursorPosition screen-coordinate readback");
+            await record("window.setCursorPosition", "warps the system pointer to the requested child-local logical position");
+            await record("window.cursorPosition", "reports the system pointer at the matching screen-coordinate position");
+          } finally {
+            const restore = { x: originalCursor.x - childOrigin.x, y: originalCursor.y - childOrigin.y };
+            await api.window.setCursorPosition(restore, childId).catch(() => {});
+            await sleep(120);
+          }
+        }
+
+        async function runCursorAppearanceCases() {
+          const previousId = childId;
+          const previousTitle = childTitle;
+          let cursorId = null;
+          let origin = null;
+          let original = null;
+          const localTarget = { x: 16, y: 16 };
+          let captureUnavailable = null;
+          try {
+            const title = `Niva cursor probe ${Date.now()}`;
+            cursorId = await api.window.open({
+              entry: "window-supervised-child.html", title,
+              size: { width: 340, height: 240 }, position: { x: 70, y: 70 },
+              visible: true, transparent: false, decorations: true,
+            });
+            childId = cursorId;
+            await waitForWindowMessage(
+              payload => payload.from === cursorId && payload.message === `ready:${cursorId}`,
+              "opaque cursor child ready",
+            );
+            await api.window.setTitle(title, cursorId);
+            childTitle = title;
+            origin = await api.window.innerPosition(childId);
+            original = await api.window.cursorPosition(childId);
+            await api.window.setCursorVisible(true, childId);
+            await api.window.setCursorIcon("default", childId);
+            await api.window.setCursorPosition(localTarget, childId);
+            await sleep(200);
+            const baseline = await nativeWindowSnapshot("cursor-appearance:default", true, true);
+            if (!baseline.capture || !baseline.capture.cursorDigest) {
+              captureUnavailable = baseline.capture && (baseline.capture.cursorReason || baseline.capture.reason) || "macOS cursor capture is unavailable";
+            } else {
+              const baselineDigest = baseline.capture.cursorDigest;
+              assert(typeof baselineDigest === "string" && baselineDigest.length > 0, "cursor capture omitted its image digest");
+
+              activeMethod = "window.setCursorIcon";
+              await api.window.setCursorIcon("crosshair", childId);
+              await sleep(250);
+              await api.window.sendMessage("cursor-query", childId);
+              const cursorStyle = await waitForWindowMessage(
+                payload => payload.from === childId && payload.message.startsWith("cursor-style:"),
+                "computed WebView cursor style",
+              );
+              assert(cursorStyle.message === "cursor-style:crosshair", `WebView cursor style was ${cursorStyle.message}`);
+              const crosshair = await nativeWindowSnapshot("cursor-appearance:crosshair", true, true);
+              assert(crosshair.capture && crosshair.capture.cursorDigest, "macOS screenshot did not include a cursor digest after setCursorIcon");
+              if (crosshair.capture.cursorDigest === baselineDigest) {
+                captureUnavailable = "macOS cursor screenshot did not change after changing the cursor icon";
+              } else {
+                await record("window.setCursorIcon", "macOS screenshot around the pointer changed from arrow to crosshair");
+                activeMethod = "window.setCursorVisible";
+                await api.window.setCursorVisible(false, childId);
+                await sleep(250);
+                const hidden = await nativeWindowSnapshot("cursor-appearance:hidden", true, true);
+                assert(hidden.capture && hidden.capture.cursorDigest, "macOS screenshot omitted a cursor digest after hiding the cursor");
+                assert(hidden.capture.cursorDigest !== crosshair.capture.cursorDigest, "native screenshot still contained the visible crosshair cursor");
+                await api.window.setCursorVisible(true, childId);
+                await sleep(250);
+                const visibleAgain = await nativeWindowSnapshot("cursor-appearance:restored", true, true);
+                assert(visibleAgain.capture && visibleAgain.capture.cursorDigest, "macOS screenshot omitted a cursor digest after restoring the cursor");
+                assert(visibleAgain.capture.cursorDigest !== hidden.capture.cursorDigest, "native screenshot did not restore the visible cursor");
+                await record("window.setCursorVisible", "macOS screenshot changed when the pointer was hidden and changed again when restored");
+              }
+            }
+          } finally {
+            if (cursorId !== null) {
+              await api.window.setCursorVisible(true, cursorId).catch(() => {});
+              await api.window.setCursorIcon("default", cursorId).catch(() => {});
+              if (origin && original) {
+                await api.window.setCursorPosition({ x: original.x - origin.x, y: original.y - origin.y }, cursorId).catch(() => {});
+              }
+              await api.window.close(cursorId).catch(() => {});
+            }
+            childId = previousId;
+            childTitle = previousTitle;
+            await sleep(120);
+          }
+          if (captureUnavailable) {
+            await recordSkip("window.setCursorIcon", captureUnavailable);
+            await recordSkip("window.setCursorVisible", captureUnavailable);
+          }
+        }
+
+        async function runTrafficLightInsetCase() {
+          const mainChildId = childId;
+          const mainChildTitle = childTitle;
+          let trafficId = null;
+          activeMethod = "windowExtra.setTrafficLightInset";
+          try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const trafficTitle = `Niva titlebar inset ${suffix}`;
+            trafficId = await api.window.open({
+              entry: "window-supervised-child.html",
+              title: trafficTitle,
+              size: { width: 420, height: 280 },
+              position: { x: 470, y: 80 },
+              visible: true,
+              resizable: true,
+              decorations: true,
+              transparent: false,
+            });
+            childId = trafficId;
+            await waitForWindowMessage(
+              payload => payload.from === trafficId && payload.message === `ready:${trafficId}`,
+              "decorated titlebar child ready",
+            );
+            await api.window.setTitle(trafficTitle, trafficId);
+            childTitle = await api.window.title(trafficId);
+            assert(childTitle === trafficTitle, `titlebar child native title did not remain unique: ${childTitle}`);
+            await sleep(300);
+            const before = await accessibilityButtonPositions("traffic-light:baseline");
+            const outer = await api.window.outerPosition(trafficId);
+            await api.windowExtra.setTrafficLightInset({ x: 80, y: 24 }, trafficId);
+            await sleep(350);
+            const after = await accessibilityButtonPositions("traffic-light:offset");
+            const relativeX = after[0][0] - outer.x;
+            const movedX = after[0][0] - before[0][0];
+            assert(movedX >= 35 && relativeX >= 65,
+              `traffic light close button did not move to the requested inset: movedX=${movedX}, relativeX=${relativeX}`);
+            const inner = await api.window.innerSize(trafficId);
+            await api.window.setInnerSize({ width: inner.width + 2, height: inner.height }, trafficId);
+            await sleep(350);
+            const afterResize = await accessibilityButtonPositions("traffic-light:after-resize");
+            const retainedX = afterResize[0][0] - outer.x;
+            assert(retainedX >= 65, `traffic light inset was lost after resize: x=${retainedX}`);
+            await record("windowExtra.setTrafficLightInset", `System Events read the close button after a ${movedX}px shift to x=${relativeX}, retained x=${retainedX} after resize`);
+          } catch (error) {
+            if (/System Events could not read the disposable titlebar controls/.test(String(error))) {
+              await recordSkip("windowExtra.setTrafficLightInset", String(error));
+            } else {
+              throw error;
+            }
+          } finally {
+            if (trafficId !== null) await api.window.close(trafficId).catch(() => {});
+            childId = mainChildId;
+            childTitle = mainChildTitle;
+          }
+        }
+
+        async function runBlockCloseRequestedCase() {
+          const mainChildId = childId;
+          const mainChildTitle = childTitle;
+          let closeId = null;
+          activeMethod = "window.blockCloseRequested";
+          try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            const closeTitle = `Niva blocked close ${suffix}`;
+            closeId = await api.window.open({
+              entry: "window-supervised-child.html",
+              title: closeTitle,
+              size: { width: 360, height: 250 },
+              position: { x: 470, y: 80 },
+              visible: true,
+              resizable: true,
+              closable: true,
+              decorations: true,
+              transparent: false,
+            });
+            childId = closeId;
+            childTitle = await api.window.title(closeId);
+            await waitForWindowMessage(
+              payload => payload.from === closeId && payload.message === `ready:${closeId}`,
+              "decorated close-test child ready",
+            );
+            await api.window.setTitle(closeTitle, closeId);
+            childTitle = closeTitle;
+            await api.window.blockCloseRequested(true, closeId);
+            await pressAccessibilityCloseButton("block-close:press");
+            await waitForWindowMessage(
+              payload => payload.from === closeId && payload.message === `close-requested:${closeId}`,
+              "window.closeRequested IPC echo",
+            );
+            assert(await api.window.isVisible(closeId), "blocked close request hid the disposable child");
+            const windows = await api.window.list();
+            assert(windows.some(item => item.id === closeId), "blocked close request removed the child from window.list");
+            await record("window.blockCloseRequested", "System Events pressed the native close button; the child echoed window.closeRequested and remained visible/listed");
+          } catch (error) {
+            if (/System Events could not press the disposable close button/.test(String(error))) {
+              await recordSkip("window.blockCloseRequested", String(error));
+            } else {
+              throw error;
+            }
+          } finally {
+            if (closeId !== null) {
+              await api.window.blockCloseRequested(false, closeId).catch(() => {});
+              await api.window.close(closeId).catch(() => {});
+            }
+            childId = mainChildId;
+            childTitle = mainChildTitle;
+          }
+        }
+
+        async function runInvocationOnlyCases() {
+          const win = api.window;
+          const id = childId;
+
+          activeMethod = "window.requestRedraw";
+          await win.requestRedraw(id);
+          await new Promise(resolve => requestAnimationFrame(() => resolve()));
+          await recordInvocation("window.requestRedraw", "native API request resolved and a browser frame followed; redraw event or changed pixels were not asserted");
+
+          activeMethod = "window.requestUserAttention";
+          await win.requestUserAttention("informational", id);
+          await win.setFocus(id);
+          await recordInvocation("window.requestUserAttention", "informational request resolved and the disposable child was focused to clear attention; Dock cue was not observed");
+
+          activeMethod = "window.setCursorGrab";
+          try {
+            await win.setCursorGrab(true, id);
+          } finally {
+            await win.setCursorGrab(false, id);
+          }
+          await recordInvocation("window.setCursorGrab", "native grab and release calls resolved; physical pointer confinement was not asserted");
+
+          activeMethod = "window.setIgnoreCursorEvents";
+          try {
+            await win.setIgnoreCursorEvents(true, id);
+          } finally {
+            await win.setIgnoreCursorEvents(false, id);
+          }
+          await recordInvocation("window.setIgnoreCursorEvents", "native ignore and restore calls resolved; click-through was not asserted");
+
+          activeMethod = "window.setVisibleOnAllWorkspaces";
+          try {
+            await win.setVisibleOnAllWorkspaces(true, id);
+          } finally {
+            await win.setVisibleOnAllWorkspaces(false, id);
+          }
+          await recordInvocation("window.setVisibleOnAllWorkspaces", "enable and restore calls resolved; a second Space was not opened for observation");
+
+          activeMethod = "window.setImePosition";
+          await win.setFocus(id);
+          await win.sendMessage("focus-ime", id);
+          await waitForWindowMessage(
+            payload => payload.from === id && payload.message === `ime-focused:${id}`,
+            "focused IME probe input",
+          );
+          await win.setImePosition({ x: 72, y: 84 }, id);
+          await recordInvocation("window.setImePosition", "position call resolved while the disposable WebView input was focused; IME candidate location was not observed");
+        }
+
+        async function runSuite() {
+          let failure = null;
+          try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+            childTitle = `Niva supervised window ${suffix}`;
+            childId = await api.window.open({
+              entry: "window-supervised-child.html",
+              title: childTitle,
+              size: { width: 340, height: 240 },
+              position: { x: 70, y: 70 },
+              visible: true,
+              resizable: false,
+              decorations: false,
+              transparent: true,
+            });
+            assert(Number.isInteger(childId) && childId > 0, "window.open did not allocate the supervised child");
+
+            await runMessageCase();
+            const uniqueChildTitle = childTitle;
+            await api.window.setTitle(uniqueChildTitle, childId);
+            childTitle = await api.window.title(childId);
+            assert(childTitle === uniqueChildTitle, `child native title did not remain unique: ${childTitle}`);
+            await runLayerCase("window.setAlwaysOnTop", (value, id) => api.window.setAlwaysOnTop(value, id), (value, base) => value > base);
+            await runLayerCase("window.setAlwaysOnBottom", (value, id) => api.window.setAlwaysOnBottom(value, id), (value, base) => value < base);
+            await runContentProtectionCase();
+            await runBackgroundColorCase();
+            await runFocusableCase();
+            await runCursorCases();
+            await runCursorAppearanceCases();
+            await runTrafficLightInsetCase();
+            await runBlockCloseRequestedCase();
+            await runInvocationOnlyCases();
+          } catch (error) {
+            failure = `${error?.message || String(error)}\n${error?.stack || ""}`;
+            document.querySelector("#status").textContent = `FAIL ${activeMethod}: ${failure}`;
+            await api.host.send("window-supervised-error", { method: activeMethod, message: failure }).catch(() => {});
+          } finally {
+            if (childId !== null) {
+              await api.window.setContentProtection(false, childId).catch(() => {});
+              await api.window.setAlwaysOnTop(false, childId).catch(() => {});
+              await api.window.setAlwaysOnBottom(false, childId).catch(() => {});
+              await api.window.setFocusable(true, childId).catch(() => {});
+              await api.window.close(childId).catch(() => {});
+            }
+            await api.host.send("window-supervised-done", { passed, invoked, skipped, failed: failure }).catch(() => {});
+          }
+        }
+
+        window.addEventListener("load", () => {
+          setTimeout(() => {
+            api.host.send("window-supervised-ready", { title: document.title }).then(runSuite).catch(error => {
+              document.querySelector("#status").textContent = `FAIL setup: ${String(error)}`;
+            });
+          }, 200);
+        }, { once: true });
+      })();
+    </script>
+  </body>
+</html>

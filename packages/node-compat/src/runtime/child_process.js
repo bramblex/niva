@@ -98,7 +98,7 @@
         if (!isDetached && streamRef.current) {
           try {
             var bytes = chunk === undefined ? new Uint8Array(0) : bytesOf(chunk);
-            niva.streamSend(streamRef.current.id, bytes, true);
+            runtime.resolveNiva(niva).streamSend(streamRef.current.id, bytes, true);
           } catch (error) {
             emitter.emit("error", runtime.nativeError(error));
           }
@@ -112,7 +112,7 @@
         if (typeof encoding === "function") callback = encoding;
         if (ended || isDetached || !streamRef.current) return false;
         try {
-          var ok = niva.streamSend(streamRef.current.id, bytesOf(chunk), false);
+          var ok = runtime.resolveNiva(niva).streamSend(streamRef.current.id, bytesOf(chunk), false);
           if (callback) Promise.resolve().then(callback);
           return ok;
         } catch (error) {

@@ -143,7 +143,9 @@
 
     function readFile(path, options) {
       var parsed = readOptions(options);
-      var encoding = parsed.encoding === undefined ? "utf8" : parsed.encoding;
+      // Node's omitted/null encoding returns bytes. The classic runtime used
+      // to default to UTF-8 text, which also made readFile(path, null) wrong.
+      var encoding = parsed.encoding === undefined ? null : parsed.encoding;
       if (encoding === null) {
         return bridge("read", [path, "base64"]).then(function (value) {
           var bytes = base64ToBytes(value);

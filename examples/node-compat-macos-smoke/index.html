@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Niva NodeCompat macOS integration smoke</title>
+  </head>
+  <body>
+    <h1>Niva NodeCompat macOS integration smoke</h1>
+    <p id="status">Waiting for Niva and NodeCompat…</p>
+    <script src="cases.js"></script>
+    <script type="module">
+      import fs from "fs";
+      window.__nodeCompatImportMapReady = typeof fs.readFile === "function";
+    </script>
+  </body>
+</html>

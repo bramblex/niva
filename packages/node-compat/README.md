@@ -3,6 +3,11 @@
 This optional package provides a bounded Node-shaped builtin subset for Niva
 pages. It does not change the Niva binary or initialize script.
 
+The real macOS WebView integration fixture is in
+`examples/node-compat-macos-smoke/`. Run it with a locally built Niva binary;
+its 185 checks complement the package's mock-bridge unit tests. The fixture's
+HTTPS checks cover protocol rejection, not a live TLS request.
+
 ## ESM
 
 ```js

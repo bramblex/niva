@@ -252,6 +252,22 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
     }
 
     if head.method != "GET" {
+        // Drain bounded Content-Length and chunked bodies before replying.
+        // Closing with unread bytes can reset the peer before it receives 405.
+        let drain = smol::future::or(drain_rejected_body(&mut stream, &head.headers), async {
+            smol::Timer::after(Duration::from_secs(3)).await;
+            Err(anyhow!("request body timeout"))
+        })
+        .await;
+        if !matches!(drain, Ok(true)) {
+            let (status, reason) = if matches!(drain, Ok(false)) {
+                (413, "Payload Too Large")
+            } else {
+                (400, "Bad Request")
+            };
+            return write_response(&mut stream, status, reason, "text/plain", reason.as_bytes())
+                .await;
+        }
         return write_response(
             &mut stream,
             405,
@@ -514,6 +530,93 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
     }
 }
 
+/// Consume a rejected request body up to 1 MiB. `false` means it exceeded
+/// the cap; malformed framing returns an error. This runs under a 3s deadline.
+async fn drain_rejected_body<R: smol::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    headers: &HashMap<String, String>,
+) -> Result<bool> {
+    const MAX_BODY: usize = 1024 * 1024;
+    if headers.get("transfer-encoding").is_some_and(|value| {
+        value
+            .split(',')
+            .any(|item| item.trim().eq_ignore_ascii_case("chunked"))
+    }) {
+        let mut total = 0usize;
+        loop {
+            let line = read_rejected_body_line(reader, 128).await?;
+            let size_text = std::str::from_utf8(&line)?
+                .split(';')
+                .next()
+                .unwrap_or_default();
+            let size = usize::from_str_radix(size_text.trim(), 16)?;
+            if size > MAX_BODY - total {
+                return Ok(false);
+            }
+            if size == 0 {
+                let mut trailer_bytes = 0usize;
+                loop {
+                    let trailer = read_rejected_body_line(reader, 1024).await?;
+                    trailer_bytes += trailer.len() + 2;
+                    if trailer_bytes > 8192 {
+                        return Err(anyhow!("request trailers exceed 8 KiB"));
+                    }
+                    if trailer.is_empty() {
+                        return Ok(true);
+                    }
+                }
+            }
+            drain_rejected_bytes(reader, size).await?;
+            total += size;
+            let mut ending = [0u8; 2];
+            reader.read_exact(&mut ending).await?;
+            if ending != *b"\r\n" {
+                return Err(anyhow!("malformed chunk ending"));
+            }
+        }
+    }
+    if let Some(raw) = headers.get("content-length") {
+        let length: usize = raw.parse()?;
+        if length > MAX_BODY {
+            return Ok(false);
+        }
+        drain_rejected_bytes(reader, length).await?;
+    }
+    Ok(true)
+}
+
+async fn drain_rejected_bytes<R: smol::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    mut length: usize,
+) -> Result<()> {
+    let mut buffer = [0u8; 8192];
+    while length > 0 {
+        let chunk_len = length.min(buffer.len());
+        reader.read_exact(&mut buffer[..chunk_len]).await?;
+        length -= chunk_len;
+    }
+    Ok(())
+}
+
+async fn read_rejected_body_line<R: smol::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    let mut line = Vec::new();
+    loop {
+        let mut byte = [0u8; 1];
+        reader.read_exact(&mut byte).await?;
+        line.push(byte[0]);
+        if line.len() > limit + 2 {
+            return Err(anyhow!("request body line exceeds limit"));
+        }
+        if line.ends_with(b"\r\n") {
+            line.truncate(line.len() - 2);
+            return Ok(line);
+        }
+    }
+}
+
 const MAX_FILE_RESPONSE: u64 = 32 * 1024 * 1024;
 
 fn read_limited_regular_file(path: &Path) -> std::io::Result<Vec<u8>> {
@@ -731,6 +834,28 @@ pub fn app_server(app: &Arc<NivaApp>) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_post_body_drain_accepts_length_and_chunked_framing() {
+        let mut length_headers = HashMap::new();
+        length_headers.insert("content-length".into(), "5".into());
+        let mut length_body = smol::io::Cursor::new(b"helloNEXT".to_vec());
+        assert!(smol::block_on(drain_rejected_body(&mut length_body, &length_headers)).unwrap());
+        let mut next = [0u8; 4];
+        smol::block_on(length_body.read_exact(&mut next)).unwrap();
+        assert_eq!(&next, b"NEXT");
+
+        let mut chunked_headers = HashMap::new();
+        chunked_headers.insert("transfer-encoding".into(), "chunked".into());
+        let mut chunked_body =
+            smol::io::Cursor::new(b"5\r\nhello\r\n0\r\nX-Check: yes\r\n\r\nNEXT".to_vec());
+        assert!(smol::block_on(drain_rejected_body(&mut chunked_body, &chunked_headers)).unwrap());
+        smol::block_on(chunked_body.read_exact(&mut next)).unwrap();
+        assert_eq!(&next, b"NEXT");
+
+        length_headers.insert("content-length".into(), (1024 * 1024 + 1).to_string());
+        assert!(!smol::block_on(drain_rejected_body(&mut length_body, &length_headers)).unwrap());
+    }
 
     #[test]
     fn parse_head_splits_method_target_headers() {

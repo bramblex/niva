@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Niva top-level bridge smoke</title></head>
+  <body>
+    <h1>Niva top-level bridge smoke</h1>
+    <script>
+      (() => {
+        const coverage = [];
+        const assert = (condition, message) => { if (!condition) throw new Error(message); };
+        const record = (method, assertion) => coverage.push({ method, assertion });
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        async function until(read, expected, label) {
+          for (let i = 0; i < 40; i += 1) {
+            if (read() === expected) return;
+            await sleep(50);
+          }
+          throw new Error(`${label} did not become ${expected}`);
+        }
+
+        async function run(tempRoot) {
+          const module = { marker: `bridge-module-${Date.now()}` };
+          Niva.registerModule("niva-mac-smoke", module);
+          record("Niva.registerModule", "registers a unique local module");
+          assert(Niva.require("niva-mac-smoke") === module, "require changed module identity");
+          record("Niva.require", "returns the registered module by identity");
+          assert(await Niva.import("niva-mac-smoke") === module, "import changed module identity");
+          record("Niva.import", "asynchronously imports the same registered module");
+
+          const id = await Niva.api.window.current();
+          let hits = 0;
+          const listener = (_name, data) => { if (data?.message?.startsWith("bridge-event-")) hits += 1; };
+          Niva.addEventListener("window.message", listener);
+          await Niva.api.window.sendMessage("bridge-event-1", id);
+          await until(() => hits, 1, "registered native event listener");
+          record("Niva.addEventListener", "receives a real native window.message event");
+          Niva.removeEventListener("window.message", listener);
+          await Niva.api.window.sendMessage("bridge-event-2", id);
+          await sleep(150);
+          assert(hits === 1, "removed listener still received a native event");
+          record("Niva.removeEventListener", "stops the native event callback");
+          Niva.addEventListener("window.message", listener);
+          Niva.removeAllEventListeners("window.message");
+          await Niva.api.window.sendMessage("bridge-event-3", id);
+          await sleep(150);
+          assert(hits === 1, "removeAll left a native event callback");
+          record("Niva.removeAllEventListeners", "clears the event's remaining listeners");
+
+          assert(await Niva.call("os.sep", []) === "/", "direct native call returned the wrong separator");
+          record("Niva.call", "dispatches a direct native call and resolves its result");
+
+          const blobs = [];
+          const readStream = Niva.stream("resource.readStream", ["probe.txt"], {
+            onBlob: (blob) => blobs.push(blob),
+          });
+          await readStream.promise;
+          const text = (await Promise.all(blobs.map(blob => blob.text()))).join("");
+          assert(text === "niva-top-level-probe\n", `native stream returned ${JSON.stringify(text)}`);
+          record("Niva.stream", "receives and decodes a native resource stream");
+
+          const file = `${tempRoot}/top-level-stream.txt`;
+          try {
+            const writeStream = Niva.stream("fs.writeStream", [file], {});
+            assert(Niva.streamSend(writeStream.id, new TextEncoder().encode("stream-send-ok"), true), "streamSend rejected the owned call");
+            await writeStream.promise;
+            assert(await Niva.api.fs.read(file) === "stream-send-ok", "native streamed write did not preserve bytes");
+          } finally { await Niva.api.fs.remove(file).catch(() => {}); }
+          record("Niva.streamSend", "sends END-terminated bytes into a native stream and reads them back");
+          await Niva.api.host.send("bridge-top-level-result", { coverage });
+        }
+
+        Niva.addEventListener("host:message", (_name, message) => {
+          if (message?.name !== "bridge-top-level-command") return;
+          run(message.data.tempRoot).catch(error =>
+            Niva.api.host.send("bridge-top-level-error", { message: error?.message || String(error), coverage }).catch(() => {}));
+        });
+        window.addEventListener("load", () => setTimeout(() =>
+          Niva.api.host.send("bridge-top-level-ready", { url: location.href }), 100));
+      })();
+    </script>
+  </body>
+</html>

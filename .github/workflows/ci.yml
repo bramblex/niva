@@ -29,6 +29,14 @@ jobs:
       - run: npm test --workspace=packages/node-compat
       - run: node --test packages/devtools/scripts/api-contract.test.mjs
       - run: node --test packages/devtools/scripts/bridge-api-overrides.test.mjs
+      - run: node --test packages/devtools/scripts/macos-window-cases.test.mjs
+      - run: node --test packages/devtools/scripts/macos-public-cases.test.mjs
+      - run: node --test packages/devtools/scripts/macos-bridge-cases.test.mjs
+      - run: node --check examples/node-compat-macos-smoke/cases.js
+      - if: runner.os == 'macOS'
+        run: python3 -B -m unittest examples/macos-api-smoke/test_runner.py
+      - if: runner.os == 'macOS'
+        run: python3 -B -m unittest discover -s examples/node-compat-macos-smoke -p 'test_runner.py'
       - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva

@@ -129,8 +129,15 @@ async fn set_traffic_light_inset(
     let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
     let app2 = app.clone();
     run_on_main(&app, move |_target, _control_flow| {
+        use wry::WebViewExtMacOS;
+
         match_window!(app2, window, id);
         window.set_traffic_light_inset(position);
+        // Wry owns the replacement parent view. Its setter updates the
+        // controls now and remembers the inset for later redraws.
+        window
+            .webview
+            .set_traffic_light_inset(wry::dpi::LogicalPosition::new(position.x, position.y))?;
         Ok(())
     })
     .await
@@ -271,7 +278,10 @@ async fn simple_fullscreen(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.simple_fullscreen())
+    run_on_main(&app, move |_target, _control_flow| {
+        Ok(window.simple_fullscreen())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -282,7 +292,10 @@ async fn set_simple_fullscreen(
 ) -> Result<bool> {
     let (fullscreen, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    Ok(window.set_simple_fullscreen(fullscreen))
+    run_on_main(&app, move |_target, _control_flow| {
+        Ok(window.set_simple_fullscreen(fullscreen))
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -293,7 +306,7 @@ async fn has_shadow(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.has_shadow())
+    run_on_main(&app, move |_target, _control_flow| Ok(window.has_shadow())).await
 }
 
 #[cfg(target_os = "macos")]
@@ -304,8 +317,11 @@ async fn set_has_shadow(
 ) -> Result<()> {
     let (has_shadow, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_has_shadow(has_shadow);
-    Ok(())
+    run_on_main(&app, move |_target, _control_flow| {
+        window.set_has_shadow(has_shadow);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -316,8 +332,11 @@ async fn set_is_document_edited(
 ) -> Result<()> {
     let (edited, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_is_document_edited(edited);
-    Ok(())
+    run_on_main(&app, move |_target, _control_flow| {
+        window.set_is_document_edited(edited);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -328,7 +347,10 @@ async fn is_document_edited(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_document_edited())
+    run_on_main(&app, move |_target, _control_flow| {
+        Ok(window.is_document_edited())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -339,8 +361,11 @@ async fn set_allows_automatic_window_tabbing(
 ) -> Result<()> {
     let (enabled, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_allows_automatic_window_tabbing(enabled);
-    Ok(())
+    run_on_main(&app, move |_target, _control_flow| {
+        window.set_allows_automatic_window_tabbing(enabled);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -351,7 +376,10 @@ async fn allows_automatic_window_tabbing(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.allows_automatic_window_tabbing())
+    run_on_main(&app, move |_target, _control_flow| {
+        Ok(window.allows_automatic_window_tabbing())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -362,8 +390,11 @@ async fn set_tabbing_identifier(
 ) -> Result<()> {
     let (identifier, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_tabbing_identifier(&identifier);
-    Ok(())
+    run_on_main(&app, move |_target, _control_flow| {
+        window.set_tabbing_identifier(&identifier);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "macos")]
@@ -374,5 +405,8 @@ async fn tabbing_identifier(
 ) -> Result<String> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.tabbing_identifier())
+    run_on_main(&app, move |_target, _control_flow| {
+        Ok(window.tabbing_identifier())
+    })
+    .await
 }

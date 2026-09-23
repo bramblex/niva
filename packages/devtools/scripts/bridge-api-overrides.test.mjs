@@ -231,3 +231,26 @@ test("the public proxy keeps responding after 300 native calls", async () => {
     assert.equal(await operation, "/");
   }
 });
+
+test("a file upload after many unary calls keeps its call ID and END frame", async () => {
+  const page = createPage();
+  for (let id = 1; id <= 18; id += 1) {
+    page.socket.sent.length = 0;
+    const operation = page.api.os.sep();
+    page.result(id, "/");
+    assert.equal(await operation, "/");
+  }
+  page.socket.sent.length = 0;
+  const operation = page.api.fs.write("fixture.txt", "content");
+  const call = page.call();
+  assert.equal(call.id, 19);
+  assert.equal(call.method, "fs.writeStream");
+  const frame = page.socket.sent.find((value) => value instanceof ArrayBuffer);
+  assert.ok(frame, "file upload must send a binary frame");
+  const view = new DataView(frame);
+  assert.equal(view.getUint32(6), 19);
+  assert.equal(view.getUint8(1) & 0x03, 0x03);
+  assert.equal(new TextDecoder().decode(new Uint8Array(frame, 18)), "content");
+  page.result(19, { bytes: 7 });
+  assert.equal(await operation, null);
+});

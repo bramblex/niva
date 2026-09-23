@@ -234,10 +234,41 @@ fn read_line_limited<R: BufRead>(reader: &mut R, limit: usize) -> io::Result<Rea
 #[cfg(test)]
 mod tests {
     use std::io::{BufReader, Cursor};
+    use std::sync::{Mutex, mpsc};
 
     use serde_json::{Value, json};
 
-    use super::{ReadLine, parse_message, read_line_limited};
+    use super::{ReadLine, StdioBridge, parse_message, read_line_limited};
+
+    #[test]
+    fn host_message_serializes_name_and_payload_as_ndjson() {
+        let (writer, output) = mpsc::sync_channel(1);
+        let bridge = StdioBridge {
+            writer,
+            ready_sent: Mutex::new(false),
+        };
+        bridge
+            .send_message("api-progress", Some(json!({ "method": "fs.read" })))
+            .unwrap();
+        let frame = output.try_recv().unwrap();
+        assert_eq!(frame.last(), Some(&b'\n'));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&frame).unwrap(),
+            json!({ "t": "msg", "name": "api-progress", "data": { "method": "fs.read" } })
+        );
+    }
+
+    #[test]
+    fn host_message_reports_a_full_queue_without_blocking() {
+        let (writer, _output) = mpsc::sync_channel(1);
+        writer.try_send(b"occupied\n".to_vec()).unwrap();
+        let bridge = StdioBridge {
+            writer,
+            ready_sent: Mutex::new(false),
+        };
+        let error = bridge.send_message("api-progress", None).unwrap_err();
+        assert!(error.to_string().contains("output queue is full"));
+    }
 
     #[test]
     fn reads_lf_and_crlf_lines_and_recovers_after_an_oversized_line() {

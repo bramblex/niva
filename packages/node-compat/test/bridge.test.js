@@ -98,12 +98,16 @@ test("fs promise adapters bridge text, bytes, writes, stats, and directory entri
   const binary = await fs.readFile("/file.bin", { encoding: null });
   assert.equal(runtime.buffer.Buffer.isBuffer(binary), true);
   assert.deepEqual([...binary], [0, 255, 65]);
+  assert.equal(runtime.buffer.Buffer.isBuffer(await fs.readFile("/file.bin", null)), true);
+  assert.equal(runtime.buffer.Buffer.isBuffer(await fs.readFile("/file.bin")), true);
   await fs.writeFile("/note.txt", "hello");
   await fs.writeFile("/file.bin", Uint8Array.from([0, 255, 65]));
   await fs.appendFile("/note.txt", "!");
   await assert.rejects(fs.writeFile("/note.txt", "hello", { mode: 0o600 }), { code: "ENOTSUP" });
   assert.deepEqual(calls.filter((call) => ["read", "write", "append"].includes(call[0])), [
     ["read", "/note.txt", "utf8"],
+    ["read", "/file.bin", "base64"],
+    ["read", "/file.bin", "base64"],
     ["read", "/file.bin", "base64"],
     ["write", "/note.txt", "hello", "utf8"],
     ["write", "/file.bin", "AP9B", "base64"],
@@ -260,6 +264,37 @@ test("classic entry registers the four modules and async cwd bootstrap", async (
   assert.equal(modules.get("fs/promises").readFile, modules.get("fs").readFile);
   assert.equal(niva.require("child_process"), modules.get("child_process"));
   assert.equal(context.Buffer, modules.get("buffer").Buffer);
+});
+
+test("classic child_process sends stdin through the global Niva bridge", async () => {
+  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const source = await readFile(path.join(packageRoot, "dist/niva-node-compat.js"), "utf8");
+  const modules = new Map();
+  const sent = [];
+  const niva = {
+    bridgeVersion: 1,
+    registerModule(name, value) { modules.set(name, value); },
+    stream() { return { id: 77, promise: Promise.resolve({ status: 0 }) }; },
+    streamSend(id, bytes, end) { sent.push([id, Array.from(bytes), end]); return true; },
+    api: { process: { currentDir: () => Promise.resolve("/workspace/app") } },
+  };
+  const context = vm.createContext({ Niva: niva, Symbol, Promise, Map, Set, TextEncoder, TextDecoder, Blob });
+  vm.runInContext(source, context, { filename: "niva-node-compat.js" });
+  await context.NivaNodeCompatReady;
+  const child = modules.get("child_process").spawn("/bin/cat");
+  assert.equal(child.stdin.write("ping"), true);
+  child.stdin.end();
+  await child.completion;
+  assert.deepEqual(sent, [[77, [112, 105, 110, 103], false], [77, [], true]]);
+});
+
+test("child_process without Niva reports its bridge error after spawn returns", async () => {
+  assert.equal(globalThis.Niva, undefined);
+  const child = runtime.createChildProcessModule().spawn("/bin/echo", ["test"]);
+  let emittedError;
+  child.on("error", (error) => { emittedError = error; });
+  await assert.rejects(child.completion, /Niva is not available/);
+  assert.match(emittedError.message, /Niva is not available/);
 });
 
 test("classic registration honors the selected-module allowlist", async () => {

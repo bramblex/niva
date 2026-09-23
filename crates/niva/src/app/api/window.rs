@@ -308,7 +308,27 @@ async fn inner_size(
 ) -> Result<NivaSize> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(logical!(window, inner_size))
+    #[cfg(target_os = "macos")]
+    {
+        // Wry replaces Tao's original NSView with its own content view. Tao's
+        // inner_size reads the detached view and keeps returning the startup
+        // size after a resize. Read the live NSWindow content rect instead.
+        return run_on_main(&app, move |_target, _control_flow| {
+            use objc2_app_kit::NSWindow;
+            use tao::platform::macos::WindowExtMacOS;
+
+            let pointer = window.ns_window().cast::<NSWindow>();
+            let native = unsafe { pointer.as_ref() }
+                .ok_or_else(|| anyhow!("window has no native NSWindow"))?;
+            let content = native.contentRectForFrameRect(native.frame());
+            Ok(NivaSize::new(content.size.width, content.size.height))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(logical!(window, inner_size))
+    }
 }
 
 async fn set_inner_size(
@@ -318,8 +338,32 @@ async fn set_inner_size(
 ) -> Result<()> {
     let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_inner_size(size);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        // Tao defers setContentSize to GCD even on the event-loop thread. In
+        // this app that dispatch can remain queued while the window is live,
+        // so the API resolves without changing its size. Execute the Cocoa
+        // setter synchronously on the main event loop instead.
+        return run_on_main(&app, move |_target, _control_flow| {
+            use objc2_app_kit::NSWindow;
+            use objc2_foundation::NSSize;
+            use tao::platform::macos::WindowExtMacOS;
+
+            let pointer = window.ns_window().cast::<NSWindow>();
+            // The Arc<NivaWindow> captured above owns this NSWindow until the
+            // main-thread closure returns.
+            let native = unsafe { pointer.as_ref() }
+                .ok_or_else(|| anyhow!("window has no native NSWindow"))?;
+            native.setContentSize(NSSize::new(size.width, size.height));
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_inner_size(size);
+        Ok(())
+    }
 }
 
 async fn outer_size(
@@ -346,8 +390,19 @@ async fn set_min_inner_size(
         .args()
         .optional::<(Option<NivaSize>, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_min_inner_size(size);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_min_inner_size(size);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_min_inner_size(size);
+        Ok(())
+    }
 }
 
 async fn set_max_inner_size(
@@ -364,8 +419,19 @@ async fn set_max_inner_size(
         .args()
         .optional::<(Option<NivaSize>, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_max_inner_size(size);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_max_inner_size(size);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_max_inner_size(size);
+        Ok(())
+    }
 }
 
 async fn set_window_icon(
@@ -686,8 +752,19 @@ async fn set_minimized(
 ) -> Result<()> {
     let (minimized, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_minimized(minimized);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_minimized(minimized);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_minimized(minimized);
+        Ok(())
+    }
 }
 
 async fn is_maximized(
@@ -816,8 +893,19 @@ async fn set_content_protection(
 ) -> Result<()> {
     let (enabled, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_content_protection(enabled);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_content_protection(enabled);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_content_protection(enabled);
+        Ok(())
+    }
 }
 
 async fn set_visible_on_all_workspaces(
@@ -827,8 +915,19 @@ async fn set_visible_on_all_workspaces(
 ) -> Result<()> {
     let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_visible_on_all_workspaces(visible);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_visible_on_all_workspaces(visible);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_visible_on_all_workspaces(visible);
+        Ok(())
+    }
 }
 
 async fn set_cursor_icon(
@@ -838,7 +937,7 @@ async fn set_cursor_icon(
 ) -> Result<()> {
     let (icon, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_cursor_icon(match icon.as_str() {
+    let native_icon = match icon.as_str() {
         "default" => CursorIcon::Default,
         "crosshair" => CursorIcon::Crosshair,
         "hand" => CursorIcon::Hand,
@@ -875,7 +974,84 @@ async fn set_cursor_icon(
         "col_resize" => CursorIcon::ColResize,
         "row_resize" => CursorIcon::RowResize,
         _ => CursorIcon::Arrow,
-    });
+    };
+    #[cfg(target_os = "macos")]
+    {
+        let css_icon = match icon.as_str() {
+            "hand" => "pointer",
+            "not_allowed" => "not-allowed",
+            "context_menu" => "context-menu",
+            "vertical_text" => "vertical-text",
+            "no_drop" => "no-drop",
+            "all_scroll" => "all-scroll",
+            "zoom_in" => "zoom-in",
+            "zoom_out" => "zoom-out",
+            "e_resize" => "e-resize",
+            "n_resize" => "n-resize",
+            "ne_resize" => "ne-resize",
+            "nw_resize" => "nw-resize",
+            "s_resize" => "s-resize",
+            "se_resize" => "se-resize",
+            "sw_resize" => "sw-resize",
+            "w_resize" => "w-resize",
+            "ew_resize" => "ew-resize",
+            "ns_resize" => "ns-resize",
+            "nesw_resize" => "nesw-resize",
+            "nwse_resize" => "nwse-resize",
+            "col_resize" => "col-resize",
+            "row_resize" => "row-resize",
+            "default" | "arrow" => "default",
+            "move" => "move",
+            "text" => "text",
+            "wait" => "wait",
+            "help" => "help",
+            "progress" => "progress",
+            "cell" => "cell",
+            "alias" => "alias",
+            "copy" => "copy",
+            "grab" => "grab",
+            "grabbing" => "grabbing",
+            "crosshair" => "crosshair",
+            _ => "default",
+        };
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_cursor_icon(native_icon);
+            update_macos_webview_cursor(&window, Some(css_icon), None)
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_cursor_icon(native_icon);
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn update_macos_webview_cursor(
+    window: &Arc<NivaWindow>,
+    icon: Option<&str>,
+    visible: Option<bool>,
+) -> Result<()> {
+    let icon = serde_json::to_string(&icon)?;
+    let visible = serde_json::to_string(&visible)?;
+    let script = format!(
+        r#"(function() {{
+          var state = window.__nivaCursorState || (window.__nivaCursorState = {{icon: 'default', visible: true}});
+          var icon = {icon};
+          var visible = {visible};
+          if (icon !== null) state.icon = icon;
+          if (visible !== null) state.visible = visible;
+          var style = document.getElementById('__niva_cursor_style');
+          if (!style) {{
+            style = document.createElement('style');
+            style.id = '__niva_cursor_style';
+            (document.head || document.documentElement).appendChild(style);
+          }}
+          style.textContent = '* {{ cursor: ' + (state.visible ? state.icon : 'none') + ' !important; }}';
+        }})();"#
+    );
+    window.webview.evaluate_script(&script)?;
     Ok(())
 }
 
@@ -918,8 +1094,19 @@ async fn set_cursor_visible(
 ) -> Result<()> {
     let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_cursor_visible(visible);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_cursor_visible(visible);
+            update_macos_webview_cursor(&window, None, Some(visible))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_cursor_visible(visible);
+        Ok(())
+    }
 }
 
 async fn drag_window(
@@ -927,14 +1114,68 @@ async fn drag_window(
     window: Arc<NivaWindow>,
     request: ApiRequest,
 ) -> Result<()> {
-    let app2 = app.clone();
-    run_on_main(&app, move |_target, _control_flow| {
-        let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
-        match_window!(app2, window, id);
-        window.drag_window()?;
-        Ok(())
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+    match_window!(app, window, id);
+    #[cfg(target_os = "macos")]
+    {
+        drag_macos_window(&app, window).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        run_on_main(&app, move |_target, _control_flow| {
+            window.drag_window()?;
+            Ok(())
+        })
+        .await
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn drag_macos_window(app: &Arc<NivaApp>, window: Arc<NivaWindow>) -> Result<()> {
+    use objc2_app_kit::{NSEvent, NSWindow};
+    use tao::platform::macos::WindowExtMacOS;
+
+    // WebView calls cross the WebSocket bridge before reaching AppKit. By
+    // then NSApp.currentEvent is the bridge's application event, not the
+    // original mouseDown, so performWindowDragWithEvent silently does nothing.
+    // Track the held button asynchronously; each native frame update happens
+    // on the event-loop thread, which remains free between updates.
+    let initial_window = window.clone();
+    let (start_x, start_y, origin_x, origin_y) = run_on_main(app, move |_target, _control_flow| {
+        let pointer = initial_window.ns_window().cast::<NSWindow>();
+        let native =
+            unsafe { pointer.as_ref() }.ok_or_else(|| anyhow!("window has no native NSWindow"))?;
+        if NSEvent::pressedMouseButtons() & 1 == 0 {
+            return Err(anyhow!(
+                "window.dragWindow requires a pressed left mouse button"
+            ));
+        }
+        let start = NSEvent::mouseLocation();
+        let origin = native.frame().origin;
+        Ok((start.x, start.y, origin.x, origin.y))
     })
-    .await
+    .await?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let step_window = window.clone();
+        let held = run_on_main(app, move |_target, _control_flow| {
+            let pointer = step_window.ns_window().cast::<NSWindow>();
+            let native = unsafe { pointer.as_ref() }
+                .ok_or_else(|| anyhow!("window has no native NSWindow"))?;
+            let current = NSEvent::mouseLocation();
+            native.setFrameOrigin(objc2_foundation::NSPoint::new(
+                origin_x + current.x - start_x,
+                origin_y + current.y - start_y,
+            ));
+            Ok(NSEvent::pressedMouseButtons() & 1 != 0)
+        })
+        .await?;
+        if !held || std::time::Instant::now() >= deadline {
+            break;
+        }
+        smol::Timer::after(std::time::Duration::from_millis(8)).await;
+    }
+    Ok(())
 }
 
 async fn set_ignore_cursor_events(

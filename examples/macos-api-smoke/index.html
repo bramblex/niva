@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8">
     <title>Niva macOS API smoke</title>
+    <script src="window-cases.js"></script>
+    <script src="system-cases.js"></script>
   </head>
   <body>
     <main>
@@ -141,10 +143,14 @@
 
           const requestedSize = { width: 720, height: 480 };
           await win.setInnerSize(requestedSize);
+          let lastResize = null;
           const resized = await waitUntil(async () => {
             const value = await win.innerSize();
+            lastResize = value;
             return Math.abs(value.width - requestedSize.width) <= 2 && Math.abs(value.height - requestedSize.height) <= 2 ? value : null;
-          }, "window.setInnerSize readback");
+          }, "window.setInnerSize readback").catch(error => {
+            throw new Error(`${error.message}; observed=${JSON.stringify(lastResize)}, requested=${JSON.stringify(requestedSize)}`);
+          });
           result.innerSize = resized;
           await win.setInnerSize({ width: originalSize.width, height: originalSize.height });
           await waitUntil(async () => {
@@ -188,21 +194,14 @@
           record("webview.canGoForward", "reports no forward history before fixture navigation");
 
           const evalNonce = `eval-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-          const evalReceipt = new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error("webview.evaluateScript receipt timed out")), 5000);
-            const listener = (_name, data) => {
-              if (data && data.nonce === evalNonce) {
-                clearTimeout(timer);
-                Niva.removeEventListener("eval-executed", listener);
-                resolve(data);
-              }
-            };
-            Niva.addEventListener("eval-executed", listener);
-          });
-          await webview.evaluateScript(`Niva.api.host.send("eval-executed", { nonce: ${JSON.stringify(evalNonce)}, value: document.querySelector("h1").textContent });`);
-          const evalResult = await evalReceipt;
+          await webview.evaluateScript(`document.documentElement.dataset.nivaEval = JSON.stringify({ nonce: ${JSON.stringify(evalNonce)}, value: document.querySelector("h1").textContent });`);
+          const evalResult = await waitUntil(() => {
+            const text = document.documentElement.dataset.nivaEval;
+            return text ? JSON.parse(text) : null;
+          }, "webview.evaluateScript DOM side effect");
+          equal(evalResult.nonce, evalNonce, "webview.evaluateScript nonce");
           equal(evalResult.value, "Niva macOS native API smoke", "webview.evaluateScript side effect");
-          record("webview.evaluateScript", "executes script in the current document and returns its host receipt");
+          record("webview.evaluateScript", "executes a script in the current document with an observable DOM side effect");
 
           result.initialUrl = pageUrl;
           result.coverage = covered.slice();
@@ -282,6 +281,9 @@
             let value;
             if (method === "showMessage") value = await Niva.api.dialog.showMessage("Niva API smoke", "Dismiss this test message to continue", "info");
             else if (method === "pickFile") value = await Niva.api.dialog.pickFile(["txt"], startDir);
+            else if (method === "pickFiles") value = await Niva.api.dialog.pickFiles(["txt"], startDir);
+            else if (method === "pickDir") value = await Niva.api.dialog.pickDir(startDir);
+            else if (method === "pickDirs") value = await Niva.api.dialog.pickDirs(startDir);
             else if (method === "saveFile") value = await Niva.api.dialog.saveFile(["txt"], startDir);
             else throw new Error(`unsupported controlled dialog case: ${method}`);
             clearInterval(dialogHeartbeatTimer);
@@ -290,8 +292,29 @@
           } catch (error) {
             clearInterval(dialogHeartbeatTimer);
             dialogHeartbeatTimer = null;
-            await send("dialog-error", { method, message: String(error) });
+            await send("dialog-error", { method, code: error?.code ?? null, message: error?.message || String(error) });
           }
+        }
+
+        async function runExtendedAutomatic(data) {
+          if (!window.NivaMacWindowCases || !window.NivaMacSystemCases) {
+            throw new Error("extended automatic case scripts did not load");
+          }
+          const coverage = [];
+          const seen = new Set();
+          const record = (method, assertion) => {
+            if (seen.has(method)) throw new Error(`duplicate extended method case: ${method}`);
+            if (typeof assertion !== "string" || assertion.length === 0) throw new Error(`missing assertion for ${method}`);
+            seen.add(method);
+            coverage.push({ method, assertion });
+          };
+          await window.NivaMacWindowCases.runAutomatic(Niva.api, record);
+          await window.NivaMacSystemCases.runAutomatic(Niva.api, record, data.tempRoot);
+          const supervised = [
+            ...window.NivaMacWindowCases.supervised,
+            ...window.NivaMacSystemCases.supervised,
+          ].map(item => ({ method: item.method, action: item.action, expected: item.expected, restore: item.restore }));
+          await send("extended-smoke", { coverage, supervised });
         }
 
         async function handleCommand(data) {
@@ -312,6 +335,7 @@
               equal(await Niva.api.webview.canGoForward(), true, "webview.canGoForward after back navigation");
               await Niva.api.webview.goForward();
             } else if (data.command === "dialog") await runDialogs(data);
+            else if (data.command === "extended-automatic") await runExtendedAutomatic(data);
             else if (data.command === "echo") await send("host-echo-result", data);
             else if (data.command === "exit") {
               await send("exit-started", { coverage: covered.map(item => item.method) });
@@ -326,7 +350,11 @@
           if (message && message.name === "smoke-command") handleCommand(message.data);
         });
 
-        const mainBootWasSeen = sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
+        // clearAllBrowsingData intentionally clears sessionStorage in the
+        // extended WebView cases; window.name survives same-origin navigation.
+        const mainBootWasSeen = window.name === "niva-macos-smoke-booted"
+          || sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
+        window.name = "niva-macos-smoke-booted";
         sessionStorage.setItem("niva-macos-smoke-booted", "yes");
         if (mainBootWasSeen) {
           setTimeout(async () => {

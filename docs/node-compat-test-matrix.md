@@ -12,6 +12,13 @@ The suite uses JavaScript bridge/test doubles for Niva-facing calls. These tests
 verify adapter behavior against simulated bridge responses; they do not
 validate a native WebView, a real Niva binary, or real OS processes/networking.
 
+On 2026-09-24, `examples/node-compat-macos-smoke/run.py` also passed in a real
+macOS Niva WebView: 16 cases, 15 documented modules, and 185 distinct API/alias
+checks. It used a disposable app/profile, actual native fs and child processes,
+and the app's own loopback HTTP server. The package tests below remain the
+separate mock-bridge layer. The Mac fixture checks HTTPS wrapper protocol
+rejection only; it does not perform an outbound TLS request.
+
 ## Module behavior
 
 | Module / export path(s) | README-documented surface (count) | Meaningful behavior tests |
@@ -48,10 +55,9 @@ not behavior for each export path.
 
 Known coverage boundaries from the documented surface:
 
-- No real native WebView/Niva binary or platform integration is exercised by
-  these package tests. In particular, streaming fs/process/HTTP behavior is
-  only verified through bridge doubles; macOS, Windows, and Linux runtime
-  behavior remains a separate validation task.
+- The package unit tests use bridge doubles. The separate macOS fixture gives
+  real WebView/native evidence for the 185 listed checks. Windows, Linux, and
+  outbound TLS remain unverified by that fixture.
 - The README documents branch/option limits that are not shown as exhaustively
   covered by named tests: fs option/encoding/error combinations; all OS
   directory values; process cancellation/deadline and unsupported stdio paths;
