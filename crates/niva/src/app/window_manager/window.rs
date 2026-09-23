@@ -2,8 +2,12 @@ use crate::lock_force;
 
 use anyhow::Result;
 use std::{
+    collections::HashMap,
     ops::Deref,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use serde::Serialize;
@@ -13,6 +17,7 @@ use wry::WebView;
 use crate::{
     app::{
         NivaApp, NivaWindowTarget,
+        api_manager::protocol::ServerMsg,
         utils::{ArcMut, arc, arc_mut},
     },
     unsafe_impl_sync_send,
@@ -22,6 +27,7 @@ use super::{
     WindowManager,
     builder::NivaBuilder,
     options::{NivaWindowOptions, WindowMenuOptions},
+    permissions::WindowPermissions,
 };
 
 pub struct NivaWindowState {
@@ -37,6 +43,10 @@ pub struct NivaWindow {
     pub webview: WebView,
     pub window: Window,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
+    pub token: String,
+    /// Exact browser origin permitted to use this window's WebSocket token.
+    pub trusted_ws_origin: Option<String>,
+    pub permissions: WindowPermissions,
     app: Arc<NivaApp>,
 
     /// Attached muda menu handle. Must be kept alive while attached:
@@ -44,7 +54,9 @@ pub struct NivaWindow {
     menu_handle: Mutex<Option<muda::Menu>>,
 
     /// Live API WebSocket sender for this window's webview, if connected.
-    ws_tx: Mutex<Option<std::sync::mpsc::Sender<WsOut>>>,
+    ws_txs: Mutex<HashMap<u64, std::sync::mpsc::Sender<WsOut>>>,
+    next_ws_id: AtomicU64,
+    next_event_seq: AtomicU64,
 
     pub state: Mutex<NivaWindowState>,
 }
@@ -74,16 +86,30 @@ impl NivaWindow {
         options: &NivaWindowOptions,
         target: &NivaWindowTarget,
     ) -> Result<Arc<NivaWindow>> {
+        let permissions = WindowPermissions::new(&options.permissions)?;
+        let mut token_bytes = [0u8; 16];
+        getrandom::fill(&mut token_bytes)
+            .map_err(|err| anyhow::anyhow!("Unable to generate window token: {err}"))?;
+        let token: String = token_bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
         let (window, menu) = NivaBuilder::build_window(&app, manager, id, options, target)?;
         let window_id = window.id();
-        let webview = NivaBuilder::build_webview(
+        let (webview, trusted_ws_origin) = NivaBuilder::build_webview(
             &app,
             id,
             options,
             &window,
             &mut manager.web_context,
             window_id,
+            &token,
         )?;
+
+        #[cfg(target_os = "macos")]
+        crate::app::ipc_macos::install(&webview, app.clone(), id)?;
+        #[cfg(target_os = "windows")]
+        crate::app::ipc_windows_frames::install(&webview, app.clone(), id)?;
 
         Ok(arc(Self {
             app: app.clone(),
@@ -92,8 +118,13 @@ impl NivaWindow {
             webview,
             window,
             menu_options: arc_mut(options.menu.clone()),
+            token,
+            trusted_ws_origin,
+            permissions,
             menu_handle: Mutex::new(menu),
-            ws_tx: Mutex::new(None),
+            ws_txs: Mutex::new(HashMap::new()),
+            next_ws_id: AtomicU64::new(1),
+            next_event_seq: AtomicU64::new(1),
 
             state: Mutex::new(NivaWindowState {
                 is_block_closed_requested: false,
@@ -152,40 +183,34 @@ impl NivaWindow {
         lock_force!(self.state).is_menu_visible
     }
 
-    /// Register (or replace) the live API WebSocket sender for this window.
-    /// Called by the HTTP server when the webview connects.
-    pub fn set_ws_sender(self: &Arc<Self>, tx: Option<std::sync::mpsc::Sender<WsOut>>) {
-        *lock_force!(self.ws_tx) = tx;
+    /// Each frame owns a separate socket and call-id namespace.
+    pub fn register_ws_sender(&self, tx: std::sync::mpsc::Sender<WsOut>) -> u64 {
+        let connection_id = self.next_ws_id.fetch_add(1, Ordering::Relaxed);
+        lock_force!(self.ws_txs).insert(connection_id, tx);
+        connection_id
     }
 
-    /// Try pushing a pre-built `["event", name, payload]` envelope to the
-    /// window's WebSocket. Returns false when no socket is connected.
+    pub fn remove_ws_sender(&self, connection_id: u64) {
+        lock_force!(self.ws_txs).remove(&connection_id);
+    }
+
+    /// Window events are broadcast to all connected frames. Call results are
+    /// sent directly to the connection that issued the call by ApiManager.
     pub fn send_ws_envelope(self: &Arc<Self>, envelope: &str) -> bool {
-        let guard = lock_force!(self.ws_tx);
-        match guard.as_ref() {
-            Some(tx) => tx.send(WsOut::Text(envelope.to_string())).is_ok(),
-            None => false,
-        }
+        let mut connections = lock_force!(self.ws_txs);
+        connections.retain(|_, tx| tx.send(WsOut::Text(envelope.to_string())).is_ok());
+        !connections.is_empty()
     }
 
-    /// Try pushing a binary chunk frame to the window's WebSocket.
-    pub fn send_ws_binary(self: &Arc<Self>, frame: &[u8]) -> bool {
-        let guard = lock_force!(self.ws_tx);
-        match guard.as_ref() {
-            Some(tx) => tx.send(WsOut::Binary(frame.to_vec())).is_ok(),
-            None => false,
-        }
-    }
-
-    /// Push an event to the page over its WebSocket. Returns false (dropped,
-    /// no log) when no socket is connected — by definition nobody can be
-    /// listening, e.g. the page is still booting. All API traffic is WS-only.
+    /// Push a window event to all connected same-origin frames.
     pub fn send_ipc_event<E: Into<String>, P: Serialize>(
         self: &Arc<Self>,
         event: E,
         payload: P,
     ) -> bool {
-        let envelope = serde_json::json!(["event", event.into(), payload]);
-        self.send_ws_envelope(&envelope.to_string())
+        let payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
+        let seq = self.next_event_seq.fetch_add(1, Ordering::Relaxed);
+        let envelope = ServerMsg::event(None, seq, event.into(), payload);
+        self.send_ws_envelope(&envelope.encode())
     }
 }

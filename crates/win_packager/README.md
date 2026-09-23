@@ -1,11 +1,12 @@
 # win_packager
 
-Windows exe 后注入打包器，一次调用代替旧链路三件套：前端 `pako` 备料 +
-`icon_creator.exe` + `ResourceHacker.exe`。
+Windows exe 后注入打包器。高层模式在一次调用中完成资源目录打包、PNG 转
+ICO、RCDATA、图标组和版本资源写入；不调用 `pako`、`icon_creator.exe` 或
+`ResourceHacker.exe`。
 
 ## 1. 背景：现在是怎么打 Windows 包的
 
-`packages/devtools/src/build-scripts/build-windows.ts`：
+旧链路 `packages/devtools/src/build-scripts/build-windows.ts`：
 
 1. 前端打包（`base.ts`）：`niva.json` 首包 + `readDirAll` 遍历 + `pako.deflateRaw`
    得到 `RESOURCE_INDEXES` / `RESOURCE_DATA` 两个临时文件；
@@ -18,10 +19,9 @@ Windows exe 后注入打包器，一次调用代替旧链路三件套：前端 `
 读侧：`crates/niva/src/app/resource_manager/mod.rs:117-131` +
 `win_utils.rs` 从 `RT_RCDATA` 的同名资源读回。
 
-注意：`versionInfoTemplate` 写出的 `VERSION_INFO` 文件目前没有被 script
-引用（版本信息实际没进目标 exe），新 crate 要把版本信息补上，见 §5 第 4 条。
+新链路会把 devtools 生成的版本信息写入目标 exe。
 
-## 2. 新链路（目标）
+## 2. 新链路（实现）
 
 ```text
 devtools: win_packager.exe --exe <currentExe> --save-as <target>
@@ -63,7 +63,8 @@ crates/win_packager/
   src/lib.rs           # PackRequest/pack()：校验 -> 备料 -> 拷贝模板 -> 分发 Windows 实现
   src/bundle.rs        # 资源打包（跨平台，已实现，有单测）
   src/icon.rs          # PNG->ICO 内存转换，逻辑从 icon_creator 原样搬入（跨平台，已实现，有单测）
-  src/windows_impl.rs  # 写盘 stub（仅 Windows 编译），TODO 见文件头
+  src/version_info.rs  # VERSIONINFO .rc -> VS_VERSIONINFO（跨平台）
+  src/windows_impl.rs  # Win32 UpdateResource 实现（仅 Windows 编译）
   src/main.rs          # CLI（std-only 参数解析）
 ```
 
@@ -72,28 +73,32 @@ crates/win_packager/
 - `template_exe == output_exe` 会被拒绝：必须 copy-then-update，
   避免写坏运行中的模板。
 
-## 5. Windows 实现 TODO（到 Windows 机器上做）
+## 5. Windows 写入实现
 
-按 `src/windows_impl.rs` 文件头的 5 条做，摘要：
+`windows_impl.rs` 使用 `BeginUpdateResourceW` / `UpdateResourceW` /
+`EndUpdateResourceW`。任一写入步骤失败都会尝试丢弃本次暂存的资源更新，并
+附带失败步骤；回滚失败也会报告。RCDATA 使用 UTF-16 名称和请求语言；图标替换删除请求列出的旧
+`RT_ICON` ID，再按 ICO 表写入 `RT_ICON` 与 `RT_GROUP_ICON`；版本数据写为
+`RT_VERSION` ID 1。
 
-1. `apply`：`BeginUpdateResourceW` / 三步 / `EndUpdateResourceW`，失败回滚。
-2. `update_rcdata`：`RT_RCDATA(10)` 逐条写，UTF-16 资源名。
-3. `replace_icon`：删旧 `RT_ICON(3)` -> 用 `ico` crate 解析已备好的 ico 字节、
-   写新 `RT_ICON` -> 写 `RT_GROUP_ICON(14)`。
-4. `apply_version`：`VERSION_INFO`（`.rc` 文本）-> `RT_VERSION(16)`。
-   先调 SDK `rc.exe` 的方案跑通，再考虑纯 Rust 手拼 `VS_VERSIONINFO` 去 SDK 依赖。
-5. 验证：高层模式跑一遍，与旧产物逐字节比 `RCDATA`、用资源查看器比图标/
-   版本页，再走签名。
+`version_info.rs` 将 devtools 生成的 VERSIONINFO `.rc` 子集转换为
+`VS_VERSIONINFO` 二进制，不依赖 Windows SDK 的 `rc.exe`。该解析器支持当前
+`windows-version-info-template.ts` 使用的数字版本字段、JSON 转义字符串和
+Translation 字段。跨平台单测覆盖版本结构、对齐、转义字符串和无效字段。
 
-## 6. `icon_creator` 还需要吗？
+Windows target 编译只能覆盖 Win32 API 的类型检查。通过 PE 资源查看器确认
+RCDATA、图标和版本页，并在签名后启动生成 exe，仍需 Windows 真机验收。
 
-新链路跑通之前：需要，旧 `build-windows.ts` 的 `GENERATING_ICON` 仍在用它，
-`public/windows/icon_creator.exe` 是已提交的预编译产物，别动。
+## 6. `icon_creator` 旧链路
 
-新链路跑通之后：不需要，删三处——`crates/icon_creator/`、
-根 `Cargo.toml` 的 workspace 成员、`public/windows/icon_creator.exe`——
-并更新 `docs/PROJECT_MANUAL.md` §2.11 和本 README 这一节。
-转换逻辑以 `icon.rs` 为准（尺寸/滤波与原来一致）。
+新的 devtools 构建脚本不再调用 `icon_creator.exe` 或 `ResourceHacker.exe`。
+`build_Windows.cmd` 从本 crate 生成 `win_packager.exe`，暂时放到
+`packages/devtools/public/windows/` 供 Vite 复制，再移除这个暂存文件；旧两个
+工具从该脚本构建的资源包中剔除。`icon_creator` crate 和
+`public/windows/` 中的旧二进制已从仓库删除；`icon_creator` crate 暂仍保留，
+但新构建链路不调用它。
+
+图标尺寸和 Lanczos3 滤波逻辑以 `icon.rs` 为准，与旧 `icon_creator` 保持一致。
 
 ## 7. 本地验证（macOS 可做）
 
@@ -101,33 +106,22 @@ crates/win_packager/
 cargo check -p win_packager
 cargo test -p win_packager
 cargo run -p win_packager -- --help
+cargo check -p win_packager --target x86_64-pc-windows-msvc
 ```
 
-备料单测（打包 round-trip、ICO 头）已在 mac 跑。完整写资源验证只能在
-Windows 上做（`windows_impl` 不在 mac 编译，`pack()` 在 mac 会停在
-“only supported on Windows” 错误，这是预期的）。
+bundle、ICO 和 VERSIONINFO 编码可在 macOS 测试。Windows target check 编译
+`windows_impl`，但不执行 PE 写入；`pack()` 在 macOS 会在资源写入阶段返回
+“only supported on Windows”。图标、版本页、签名和生成程序启动仍需 Windows
+真机检查。
 
-## 8. 迁移计划：win_packager 作为唯一的 Windows 打包器（已定）
+## 8. devtools 构建迁移
 
-现状（旧链路，仍可用）：前端 `pako` 备料 + `icon_creator.exe` +
-`ResourceHacker.exe`，见 §1。
+`build-windows.ts` 通过 `resource.extract("windows/win_packager.exe")` 取得
+工具，并传入模板 exe、目标路径、资源目录、`niva.json`、可选 PNG 图标和
+VERSIONINFO。`ProjectModel.build()` 仍在构建成功后调用 `sign-windows.ts`，
+所以签名发生在所有 PE 资源修改之后。
 
-目标（新链路）：devtools 只备 `build/` 目录 + `niva.json` + PNG，
-一次 `process.exec(win_packager.exe, …)` 完成全部注入，签名保持最后。
-
-步骤：
-
-1. Windows 上实现 `src/windows_impl.rs`（TODO 见其文件头 5 条）。
-2. 高层模式跑通，与旧产物逐字节比 `RCDATA`、资源查看器比图标/版本页
-   （版本信息是新增补齐，旧产物没有，见 §1 注意）。
-3. 改 `build-windows.ts`：`GENERATING_ICON` 整步删除，
-   `BUILD_EXECUTABLE_FILE` 改为 extract + exec `windows/win_packager.exe`。
-4. 删除 `crates/icon_creator/`、根 `Cargo.toml` 成员、
-   `public/windows/icon_creator.exe` + `public/windows/ResourceHacker.exe`，
-   更新 `docs/PROJECT_MANUAL.md`（§2.11/§3.5/§6.2）。
-5. 验收：`build_Windows.cmd` 全链路产出可用 exe，且包内不再含任何
-   第三方/预编译打包二进制（除系统 `signtool` 外，签名工具不打包）。
-
-自举说明：首版 `win_packager.exe` 在 Windows 上用 cargo 一次性打出，
-放入 `public/windows/` 提交；此后打包闭环——旧版 packager 打出含新版
-packager 的包，不存在循环依赖（cargo 构建 packager 本身从不需要 packager）。
+`build_Windows.cmd` 先以 `cargo build -p win_packager --target
+x86_64-pc-windows-msvc --release` 从源码构建工具，再在 devtools Vite 构建
+期间暂存二进制到 public 目录；Windows 打包器本身不依赖自身来构建。旧
+`ResourceHacker.exe` 和 `icon_creator.exe` 不再被构建步骤提取或执行。

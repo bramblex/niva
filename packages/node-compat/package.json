@@ -1,0 +1,33 @@
+{
+  "name": "@niva/node-compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional Node-shaped browser adapters for Niva pages",
+  "exports": {
+    ".": "./src/index.js",
+    "./path": "./src/path.js",
+    "./os": "./src/os.js",
+    "./fs": "./src/fs.js",
+    "./fs/promises": "./src/fs-promises.js",
+    "./child_process": "./src/child_process.js",
+    "./events": "./src/events.js",
+    "./util": "./src/util.js",
+    "./querystring": "./src/querystring.js",
+    "./buffer": "./src/buffer.js",
+    "./url": "./src/url.js",
+    "./crypto": "./src/crypto.js",
+    "./zlib": "./src/zlib.js",
+    "./http": "./src/http.js",
+    "./https": "./src/https.js",
+    "./assert": "./src/assert.js",
+    "./assert/strict": "./src/assert-strict.js",
+    "./stream": "./src/stream.js",
+    "./stream/promises": "./src/stream-promises.js",
+    "./classic": "./dist/niva-node-compat.js"
+  },
+  "scripts": {
+    "build:classic": "node ./scripts/build-classic.mjs",
+    "test": "npm run build:classic && node --test ./test/*.test.js"
+  }
+}

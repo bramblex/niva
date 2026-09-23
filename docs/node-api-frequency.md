@@ -5,6 +5,8 @@
 > 局限：**不存在权威的 builtin 级百分比排名**；SO / State of JS 只到运行时层面。以下名次 1–4 可信度高，5–12 中（教程间互换），函数级精确占比公开数据无（如需精确数，做 BigQuery `github_repos.contents` 全量 `require('node:x')` 计数或 npm Top-1000 静态扫描）。
 > Node 签名以 `nodejs.org/api` v26 为准；Niva 现状以本仓实测为准（见 `docs/PROJECT_MANUAL.md §2.6`）。
 
+> 实施状态更新（2026-09-23）：`packages/node-compat` 已提供 15 个浏览器适配模块，Rust `nodeCompat` 配置、服务器 HTML importmap/classic 注入与 CORS 兼容资源路由、Devtools 按模块选择资源均已实现。这里的频率排名和 API 清单仍是调研/目标范围，不代表每个列出的 Node 签名都已覆盖。同步 API 范围仍待用户决定；见 §6 和 [`node-compat-design.md`](node-compat-design.md)。
+
 ## 1. 模块频率排名
 
 | # | 模块 | 典型用途 | 可信度 |
@@ -165,24 +167,13 @@ assert.strictEqual(a: any, b: any): void; assert.deepStrictEqual(a: any, b: any)
 assert.ok(value: any, message?: string): void; assert.throws(fn: Function): void
 ```
 
-## 3. Niva 覆盖缺口（实测）
+## 3. Niva 覆盖状态（NodeCompat 浏览器适配器）
 
-| Node | Niva 现状 | 缺口 |
-|---|---|---|
-| `path` 全量 | 无 | 全部 |
-| `events`、`util`、`assert` | 无 | 全部（可纯 JS） |
-| `fs.readFile/writeFile/appendFile/rename/access/mkdtemp` | 有 `stat/exists/copy/move/remove/createDir/readDir`，`read/write/append` 只有流式 + 注入脚本垫片 | Promise 一元版 |
-| `process` | 有 `pid/currentDir/currentExe/env/args/setCurrentDir/exit/execStream/open/version` | 缺一元 `exec`（Rust 已删，靠垫片，见 `docs/PROJECT_MANUAL.md §8`） |
-| `os` | 有 `info/dirs/sep/eol/locale` | 缺 `cpus/freemem/totalmem/hostname/tmpdir/uptime` 细粒度 |
-| `http` | 仅 `requestStream` | 缺一元 `request/get/post`（靠垫片） |
-| `child_process` | 仅 `execStream` | 缺一元 `exec/spawn` 语义 |
-| `url/buffer` | 无（`url` crate 仅内部用） | 全部 |
-| `crypto/zlib` | 无（`getrandom/flate2/base64` 已在依赖树） | 全部 |
+`packages/node-compat` 当前包含 `path`、`os`、`fs`、`child_process`、`events`、`util`、`querystring`、`buffer`、`url`、`crypto`、`zlib`、`http`、`https`、`assert`、`stream` 共 15 个模块。适配器把 Node 风格 API 映射到浏览器原语及 Niva bridge；这是有边界的子集，不能据模块名称推断 Node 全量兼容。各模块逐项支持签名、不可用 API 和运行限制以 [`packages/node-compat/README.md`](../packages/node-compat/README.md) 为准。
 
-另有 3 处命名不一致（顺手修，不属 Node 范畴）：
-`extra.hideOtherApplication` vs Rust `hideOtherApplications`；
-`webview.isDevToolsOpen` vs Rust `isDevtoolsOpen`；
-`window.isDecorated/isFullscreen` vs Rust `Decorated/fullscreen`。
+覆盖边界示例：`fs` 提供异步操作，不提供 sync API；`child_process` 不支持 OS 进程终止、超时或 abort signal；`crypto` 仅提供 Web Crypto 支持的异步摘要等子集；`zlib` 依赖浏览器 compression streams。`http`/`https` 仅适配客户端请求，`stream.pipeline` 仅支持本包已有的适配流，不提供通用 Transform 或背压。频率排名中的 `process`、`readline` 等独立 Node builtin 尚未成为 NodeCompat 导出的适配器模块。
+
+本轮已有 macOS 隔离与打包浏览器验证覆盖路径和文件操作。Windows 真正的 WebView 运行时仍未验证；target 编译检查不构成 Windows 浏览器验收。页面 CSP 也必须允许所需脚本/资源。服务端 HTML 注入仅作用于文档导航，fetch 获取的 HTML 不改写；bundler 已处理的静态导入应由打包配置解决，不能依靠事后 DOM 注入。
 
 ## 4. 第三方依赖最小化分析
 
@@ -198,16 +189,15 @@ assert.ok(value: any, message?: string): void; assert.throws(fn: Function): void
 
 注意旧依赖四件套（`ureq 2.6 / rfd 0.11 / base64 0.13 / cocoa+objc`，见 `roadmap.md P1`）已在升级队列，新增 crate 前先查是否与它们重复。
 
-## 5. 落地顺序（分三期）
+## 5. 落地状态与后续调研
 
-- **Phase 1（0 新增依赖）**：`path` + `events` + `util` + `URL/Buffer/querystring` shim + `process/os/fs` 补齐（`readFile/writeFile/appendFile/rename/access`、`hostname/tmpdir/cpus/freemem`、一元 `exec` 回归）。
-  形态：优先独立仓 Node 形封装（`roadmap.md P3` / `node-compat-design.md §5` 四件套的超集），本仓只按 `bridge.md` 补缺失的流式原语。
-- **Phase 2（0/1 小依赖）**：`http request/get/post` 一元版 + `randomUUID/randomBytes` + `zlib gzip/gunzip` + `createHash`（`sha2` 或 `SubtleCrypto` 方案二选一）。
-- **Phase 3（按需）**：`stream.pipeline` 仿真、`readline`、`assert/node:test`、`net/dns`。低频，先等 Phase 1 用户反馈。
+NodeCompat 的 15 个浏览器模块、Rust `nodeCompat` 配置和服务器资源/HTML 注入、Devtools 的模块资源选择已实现。上述阶段表已被当前实现取代，不再作为未开始的交付计划。剩余差距应按实际用户需求逐项决策；本调研频率不能单独决定新增 bridge 能力、原生依赖或公开 API。
 
-## 6. Sync 函数的 hack 方案
+## 6. Sync API：历史提案与未决产品边界
 
-结论：主线程真同步做不到（bridge 是 WS 异步），两条路：
+以下 §6.1–§6.4 是此前讨论的候选方案和技术调研，**不是当前实现或已批准的规格**。历史文本同时记录了“只开放少数同步读 API”和“全量同步白名单”两种互相冲突的结论；两者均未落地，当前 NodeCompat 不导出同步文件 API。具体选择等待用户决定，不要从本节旧方案推断接口已经实现或已获决策。
+
+历史提案曾讨论同步 XHR 与打包期改写两条技术路线：
 
 ### 6.1 同步 XHR 打 loopback（~20 行）
 
@@ -228,7 +218,7 @@ Content-Length body 解析（约 30 行）。
 devtools 打包时用 codemod 把异步上下文中的 `readFileSync(p)` 改写为 `await readFile(p)`。
 构造器、顶层同步代码改不了，只能做辅助。
 
-决策（已定）：过渡同步**全量白名单**（读＋写＋exec，见 §6.4），
+历史提案（未决）：过渡同步**全量白名单**（读＋写＋exec，见 §6.4），
 每次调用 warning + 60s 硬超时 + 4MiB caps，用"疼"推用户迁异步。
 
 ### 6.4 过渡兼容方案（全量 sync + 60s 超时 + 每次 warning）

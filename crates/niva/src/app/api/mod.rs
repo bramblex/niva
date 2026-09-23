@@ -4,6 +4,7 @@ mod clipboard;
 mod dialog;
 mod extra;
 mod fs;
+mod host;
 mod http;
 mod monitor;
 mod os;
@@ -19,6 +20,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     dialog::register_api_instances(api_manager);
     window::register_api_instances(api_manager);
     fs::register_api_instances(api_manager);
+    host::register_api_instances(api_manager);
     http::register_api_instances(api_manager);
     os::register_apis(api_manager);
     process::register_apis(api_manager);

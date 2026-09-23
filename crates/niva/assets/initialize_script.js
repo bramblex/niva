@@ -71,6 +71,28 @@
   //   {t:"cancel", id}                  client -> server
   // Binary frames: [ver=1][flags][id u64 BE][seq u64 BE][payload]
   //   flags: 0x01 START, 0x02 END
+  // Same-origin iframes can share the main frame's local WebSocket credentials.
+  // Cross-origin access throws and leaves the frame on the IPC-only path.
+  function inheritLocalWebSocketCredentials() {
+    if (window.__niva_ws_url) {
+      return true;
+    }
+    try {
+      var topWindow = window.top;
+      if (topWindow && topWindow !== window && topWindow.__niva_ws_url) {
+        window.__niva_ws_url = topWindow.__niva_ws_url;
+        window.__niva_token = topWindow.__niva_token;
+        window.__niva_window_id = topWindow.__niva_window_id;
+      }
+    } catch (e) {}
+    return !!window.__niva_ws_url;
+  }
+
+  // Remote pages have a non-secret server origin but no local WebSocket
+  // credentials and use the platform IPC bridge for unary calls only.
+  var hasLocalWebSocket = inheritLocalWebSocketCredentials();
+  var hasRemoteIpcTransport = !hasLocalWebSocket && !!window.__niva_server_origin;
+
   var getNextCallbackId = (function () {
     var callbackId = 0;
     return function () {
@@ -82,8 +104,100 @@
   })();
 
   var pendings = {};
+  var ipcPendings = {};
+  var windowsIpcListenerInstalled = false;
   var sendQueue = [];
   var socket = null;
+
+  function finishIpcCall(id, response) {
+    var pending = ipcPendings[id];
+    if (!pending) {
+      return;
+    }
+    delete ipcPendings[id];
+    clearTimeout(pending.timer);
+    if (!response || response.t !== "result" || String(response.id) !== String(id)) {
+      pending.reject(new Error("Invalid Niva IPC response"));
+    } else if (response.code === 0) {
+      pending.resolve(response.data);
+    } else {
+      pending.reject(response);
+    }
+  }
+
+  function rejectIpcCall(id, error) {
+    var pending = ipcPendings[id];
+    if (!pending) return;
+    delete ipcPendings[id];
+    clearTimeout(pending.timer);
+    pending.reject(error);
+  }
+
+  function parseIpcResponse(raw) {
+    return (typeof raw === "string") ? JSON.parse(raw) : raw;
+  }
+
+  function handleWindowsIpcMessage(event) {
+    var response;
+    try {
+      response = parseIpcResponse(event.data);
+    } catch (e) {
+      return;
+    }
+    if (response && response.t === "result" && response.id != null) {
+      finishIpcCall(response.id, response);
+    }
+  }
+
+  function sendIpcCall(method, args) {
+    var id = getNextCallbackId();
+    var request = JSON.stringify({ t: "call", id: id, method: method, args: args });
+    if (new TextEncoder().encode(request).byteLength > 256 * 1024) {
+      return Promise.reject(new Error("Niva IPC request exceeds 256 KiB"));
+    }
+
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        rejectIpcCall(id, new Error("Niva IPC reply timed out"));
+      }, 60000);
+      ipcPendings[id] = { resolve: resolve, reject: reject, timer: timer };
+
+      try {
+        var macHandler = window.webkit && window.webkit.messageHandlers &&
+          window.webkit.messageHandlers.nivaReply;
+        if (macHandler && typeof macHandler.postMessage === "function") {
+          Promise.resolve(macHandler.postMessage(request)).then(function (raw) {
+            var response;
+            try {
+              response = parseIpcResponse(raw);
+            } catch (e) {
+              rejectIpcCall(id, new Error("Invalid Niva IPC response"));
+              return;
+            }
+            finishIpcCall(id, response);
+          }, function (error) {
+            rejectIpcCall(id, error);
+          });
+          return;
+        }
+
+        var webview = window.chrome && window.chrome.webview;
+        if (window.ipc && typeof window.ipc.postMessage === "function" &&
+            webview && typeof webview.addEventListener === "function") {
+          if (!windowsIpcListenerInstalled) {
+            webview.addEventListener("message", handleWindowsIpcMessage);
+            windowsIpcListenerInstalled = true;
+          }
+          window.ipc.postMessage(request);
+          return;
+        }
+
+        rejectIpcCall(id, new Error("Niva IPC is unavailable in this remote page"));
+      } catch (error) {
+        rejectIpcCall(id, error);
+      }
+    });
+  }
 
   function flushQueue() {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -143,7 +257,14 @@
       group = new Map();
       pending.groups.set(isStderr, group);
     }
-    group.set(seq, buffer.slice(18));
+    var payload = buffer.slice(18);
+    group.set(seq, payload);
+    if (pending.onChunk && payload.byteLength > 0) {
+      // WebSocket preserves frame order. Deliver a copy so consumers cannot
+      // mutate the bytes later assembled for the legacy onBlob callback.
+      try { pending.onChunk(new Uint8Array(payload.slice(0)), isStderr); }
+      catch (error) { console.error(error); }
+    }
     if (flags & 0x02) {
       // END: concatenate in seq order and flush one blob per group
       var keys = Array.from(group.keys()).sort(function (a, b) { return a - b; });
@@ -197,6 +318,12 @@
 
   // Unary call: same promise behavior as before.
   function call(method, args) {
+    if (hasRemoteIpcTransport) {
+      return sendIpcCall(method, args);
+    }
+    if (!hasLocalWebSocket) {
+      return Promise.reject(new Error("Niva bridge is unavailable in this page"));
+    }
     var stream = streamCall(method, args, {});
     return stream.promise;
   }
@@ -204,6 +331,9 @@
   // Stateful call: { promise, cancel }. onEvent receives stream pushes tied
   // to this call id; onBlob receives one Blob per END-terminated group.
   function streamCall(method, args, handlers) {
+    if (!hasLocalWebSocket) {
+      throw new Error("Niva.stream is unavailable in remote IPC-only pages; use Niva.call for non-stream calls.");
+    }
     handlers = handlers || {};
     var callbackId = getNextCallbackId();
     var pending = trackPending(callbackId, { groups: new Map(), seqOut: 0 });
@@ -213,6 +343,7 @@
     });
     pending.onEvent = handlers.onEvent;
     pending.onBlob = handlers.onBlob;
+    pending.onChunk = handlers.onChunk;
     sendQueue.push(JSON.stringify({ t: "call", id: callbackId, method: method, args: args }));
     flushQueue();
     return {
@@ -246,6 +377,9 @@
   // Send a binary chunk for a stateful call id (stdin-style input).
   // data: ArrayBuffer | Uint8Array | string. Queued while connecting.
   function streamSend(id, data, end) {
+    if (!hasLocalWebSocket) {
+      throw new Error("Niva.streamSend is unavailable in remote IPC-only pages.");
+    }
     var pending = pendings[id];
     if (!pending) {
       return false;
@@ -305,7 +439,7 @@
           namespaceCache[namespace] = new Proxy({}, {
             get: function (_, method) {
               var overrides = apiOverrides[namespace] || {};
-              if (overrides[method]) {
+              if (hasLocalWebSocket && overrides[method]) {
                 return overrides[method];
               }
               return function () {
@@ -473,11 +607,9 @@
   // (e.g. the standalone node-compat package, or inline shims) adds more
   // via Niva.registerModule. Unknown ids throw.
   //
-  // NOTE on ESM `import`: static import syntax is resolved by the browser
-  // before any runtime code runs, so it cannot be shimmed. Single-file
-  // pages use require()/Niva.import(); bundled projects (Vite/webpack)
-  // consume the node-compat npm package instead, which bundlers resolve
-  // natively (same pattern as Tauri's @tauri-apps/api).
+  // Static bare imports are resolved by the server's opt-in importmap before
+  // module evaluation. Dynamic Niva.import uses the same URL mapping when
+  // NodeCompat is enabled; built projects may also import the npm package.
   var moduleRegistry = {};
 
   function builtinNamespaces() {
@@ -522,6 +654,13 @@
 
   // Async module shape for single-file pages: `await Niva.import(id)`.
   Niva.import = function (id) {
+    var imports = window.__niva_compat_imports;
+    if (imports && Object.prototype.hasOwnProperty.call(imports, id)) {
+      var base = window.__niva_compat_origin || window.__niva_server_origin || location.origin;
+      return import(new URL(imports[id], base).href).then(function (module) {
+        return module.default || module;
+      });
+    }
     return Promise.resolve().then(function () {
       return nivaRequire(id);
     });
@@ -534,7 +673,9 @@
   window.Niva = Niva;
   console.log('Niva loaded');
 
-  connectSocket();
+  if (hasLocalWebSocket) {
+    connectSocket();
+  }
 
   (function docReady(func) {
     if (document.readyState === "complete" || document.readyState === "interactive") {

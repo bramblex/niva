@@ -1,88 +1,45 @@
-# Origin 权限设计（bridge 授权层）
+# Origin 权限与远端 IPC
 
-> 状态：方案（未实现）。解决 `docs/security.md` P0-1（远端 entry 自带全桥 = RCE）。
-> 与 `docs/http-auth-plan.md` 正交互补：本篇管“**谁能调 API**”，
-> http-auth 管“**谁能读 loopback 字节**”，都要做。
+本文记录当前远端 API 授权契约。源码已实现配置解析、原生 IPC 调用校验和平台请求/回复路径；这不等同于浏览器或目标操作系统运行时验收。
 
-## 1. 决策
+## 授权配置
 
-- 信任根：**本地包 = 全权**（resource bundle / 本地 server 源的页面）。
-  远端 URL = **默认零权限**，除非命中 `niva.json` 的显式授权。
-- 授权表（`niva.json` 顶层）：
+每个窗口可在窗口配置的 `permissions` 中列出允许调用原生 unary JSON API 的页面 origin 和方法：
 
 ```jsonc
-"permissions": {
-  "https://app.example.com": ["window.*", "clipboard.*"],
-  "*.trusted-cdn.example": ["resource.read"],
-  // 未列出的 origin：零 API 权限（连 window.title 都调不了）
+{
+  "entry": "https://app.example.com/",
+  "permissions": {
+    "https://app.example.com": ["window.title", "clipboard.*"],
+    "https://tools.example.com:8443": ["dialog.alert"]
+  }
 }
 ```
 
-- 粒度：`namespace.*` 或 `namespace.method`（对标 Tauri capabilities）。
-  先给命名空间级，方法级是其子集实现，不加复杂度。
+- key 必须是精确的 `http` 或 `https` origin，包含 scheme、host 和有效端口；路径、query、fragment、用户名密码均不接受。协议和端口参与匹配。没有子域通配或自由正则。
+- grant 支持 `namespace.method` 和 `namespace.*`。没有匹配 grant 时默认拒绝。
+- `permissions` 授权远端 IPC；同源本地 Niva 页面使用经 token 认证的 WS bridge。
 
-## 2. 为什么不用自由正则
+## 原生校验路径
 
-`niva.json` 的 key **只支持两种**：精确 origin（含 scheme+host+port）、
-`*.domain` 子域通配。不支持自由正则，原因：
+远端页面没有本地 WS token，只能调用 unary JSON IPC。调用来源由 WebView 提供，而不是从 JS 请求体读取：
 
-1. 未锚定正则 `example.com` 会匹配 `evil-example.com`——配错即 RCE，
-   而配的人是普通开发者，不是安全工程师；
-2. 回溯型 ReDoS（鉴权是高频路径，每次 call 都走）；
-3. 真有怪需求：exact + 通配已覆盖 99%（SaaS 多租户走 `*.` 即可）。
+- macOS 从 `WKScriptMessage` 的发送 frame request 取得 source URL，并绑定创建该 handler 的原生窗口 ID。`nivaReply.postMessage()` 返回 Promise 结果。
+- Windows IPC handler 同样把原生窗口 ID 和 request URI 交给 Rust 授权；响应投递前在主线程确认当前 WebView origin 仍等于请求 origin。前端通过 `window.ipc.postMessage()` 发起调用，通过 WebView message 事件收取响应。
+- Rust 根据窗口自己的 `WindowPermissions`，用 source URL 的精确 origin 检查完整方法名或 `namespace.*`。调用不能通过伪造 `wid` 切换窗口。
+- 远端 IPC 拒绝 `window.open` 与 `webview.baseFileSystemUrl`，即使配置 grant 也不开放。stream handler 和二进制数据没有 IPC 表示，不能经远端 IPC 授权或调用。
+- IPC 只接受 call 消息；请求体和编码后的响应最大 256 KiB。权限拒绝返回 bridge 错误码 `-4`。
 
-匹配规则：先精确、后通配（最长后缀胜），`http`/`https` 不同源，
-端口参与比对（`:3000` ≠ `:3001`）。
+## 传输边界
 
-## 3. 执行点（必须在 Rust，不在 JS）
+打包本地页面由 Wry 异步自定义协议从 `niva://app/` 加载：macOS 精确页面 origin 是 `niva://app`，Windows WebView2 实际页面 origin 是 `http://niva.app`。本地 WS 仍连接动态 `ws://127.0.0.1:<port>`，握手同时校验 loopback 服务 `Host`、对应窗口 token 和该窗口的平台精确页面 `Origin`；token 对应的窗口必须仍然存在。token 每窗单独随机生成并保存在内存。hello 帧中的 `wid` 必须等于 token 绑定的窗口 ID。每个 frame 的 WS 连接拥有独立调用 ID 空间；跨源 frame 不能读取主 frame 的本地凭据，因此只能使用自己的远端 IPC 来源与权限。
 
-- `ApiManager::dispatch` 按 wid 查**当前 origin** → 查授权表 → 拒绝 theological。
-- 当前 origin 来源：建窗 entry URL + 导航记录（现有 `with_navigation_handler`
-  处同步更新）。JS 上报的 origin 只做参考，不做依据——依据是 native 侧看到的
-  导航 URL。
-- iframe：init 脚本 hello 帧加 `origin` 字段（`location.origin`），Rust 校验与
-  导航记录一致；子 frame 权限 = **父 grant ∩ 自身 origin grant**（默认 deny）。
-  这需要 wire 加字段（`bridge.md` 同步，可选字段，不 bump 大版本）。
-- 拒绝码：wire 新增 `code -4 permission denied`（现有 0/-1/-2/-3 不动，
-  `bridge.md` 同步）。
+显式开发启动可把本机 Vite 入口的精确 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 作为该窗口的 WS 来源；握手仍逐窗校验 token、精确 `Origin` 和 Niva 服务 `Host`。带 `--debug-resource` 的文件系统资源调试也保留 loopback 静态服务。打包模式关闭普通 HTTP 静态路由，改从 `niva://app/` 读取包内静态文件；WS 和按窗口 token 鉴权的 `__niva_fs` 仍通过动态 loopback 服务。普通打包启动忽略嵌入配置的 `debug.entry`，不会因其指向本机端口而授予完整 bridge。
 
-## 4. localhost 开发位
+若页面直接 `fetch` `webview.baseFileSystemUrl` 返回的 `__niva_fs` URL，打包 origin 与 loopback HTTP 是跨源。协议 CSP 会允许当前 WS 与 HTTP endpoint；文件路由先校验窗口 token，再仅对与该 token 所属窗口 `trusted_ws_origin` 精确匹配的 `Origin` 返回 `Access-Control-Allow-Origin`。macOS 临时 app smoke 已验证 `niva://app` 页带 token fetch 成功；无效 token 返回 403，非匹配 Origin 即使带有效 token 也不返回 CORS allow header。Windows 尚未真机验收。
 
-`http://localhost:*` / `http://127.0.0.1:*` 的授权**仅 dev 生效**
-（`--debug-entry` 场景），发版包不允许配 localhost grant——本机任意进程都
-能绑端口，写进校验：发版构建遇到 localhost grant 直接报错。
+远端页面及跨源 frame 的 bridge 能力由原生来源 URL 和每窗 grant 限定，不会因拿到主窗口的 `wid` 而继承本地 WS 身份。HTTP `__niva_fs` 的认证与调试模式下普通 HTTP 静态路由的暴露属于另一条路径，不由本篇的 IPC grant 替代；包内普通资源由自定义协议按资源路径读取。
 
-## 5. 子窗口：open 时的完整配置（主窗口授权）
+## 尚需实际验收
 
-`window.open(options)` 的 options 即完整窗口配置：除现有几何/主题/菜单外，
-新增两类字段（全可选，反序列化兼容，老调用零改动）：
-
-- `permissions`：该子窗口的显式授权（同 §1 形状，`["window.*", …]`）。
-- `preload`：资源包内 JS 路径，open 时读出、拼在 bootstrap 初始化脚本之后、
-  页面脚本之前执行；另 `injectScripts: string[]` 行内脚本（经 WS JSON 直传，
-  小段逻辑用）。
-
-规则（ attenuation：只能收窄，不能放大 ）：
-
-1. 子窗口 effective = open 指定 ∩ 全局表(子 origin) ∩ opener 自身 grant。
-   超出的部分静默钳制 + stderr 打一行 warning（不直接炸 open，前端 fail-open
-   比 fail-closed 更容易错配权限）。
-2. open 指定的 grant **钉在 open 时的 entry origin 上**（origin pinning）：
-   子窗口一旦跨域导航，立即回落到全局表判定。防止“带权的窗漂到恶意页”。
-3. preload 以子窗口 effective 权限运行；给远端 entry 配 preload + 强权限是
-   显式委托——允许，但 devtools 模板给警告注释。
-4. 不指定 = 走全局表（旧行为，兼容）。
-
-实现面：`NivaWindowOptions` 加字段 → `WindowManager` 存每窗
-`explicit_grant + pinned_origin` → dispatch 查 effective；
-`build_webview` 在 bootstrap 之后追加 preload 文本。`packages/types` d.ts 同步。
-
-## 6. 落地步骤
-
-1. `niva.json` 加 `permissions` 结构 + 校验（发版禁 localhost）。
-2. dispatch 加 origin→grant 检查 + `-4` 码 + `bridge.md` 同步。
-3. hello 加 `origin` + iframe 交集规则。
-4. 导航 origin 更新 + 单测（精确/通配/端口/iframe 降级）。
-5. 子窗口：`NivaWindowOptions` 加 `permissions/preload/injectScripts` +
-   每窗 `explicit_grant + pinned_origin` + effective 钳制 + d.ts。
-6. devtools 模板注释 + 文档站：remote entry 默认零权限写死在模板里。
+代码路径和类型定义描述了预期契约，但 Windows 尚无真机验收。2026-09-23 的 macOS 临时 app smoke 实际观察到 `niva://app`，主页面与同源 iframe 分别通过 WS 调用 `window.current` 和 `fs.createDir`；主页面通过 `webview.baseFileSystemUrl()` 对 `__niva_fs` 做跨源 fetch 成功，非法 token 和非匹配 Origin 的行为也已探测。另一临时包仅选 `path/fs/assert/stream`，验证了部分 NodeCompat import/require 路径和未选模块 404。smoke 没有覆盖跨源 frame、窗口间 token 隔离、二进制流、重启存储、完整 NodeCompat 语义或导航/关窗时序。macOS IPC 授权/拒绝的既有测试证据见 [`bridge.md`](bridge.md)；Windows target check 不能替代 WebView2 真机验证。HTTP/资源服务的鉴权与路径安全也应按各自文档和独立验收记录判断。

@@ -1,41 +1,20 @@
-# Website
+# Niva 文档站
 
-This website is built using [Docusaurus 2](https://docusaurus.io/), a modern static website generator.
+文档站使用 Docusaurus 3。需要 Node.js 20 或更新版本；依赖由本目录的
+`package-lock.json` 固定。
 
-### Installation
-
-```
-$ yarn
-```
-
-### Local Development
-
-```
-$ yarn start
+```bash
+cd packages/website
+npm ci
+npm run start
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+发布前构建并检查站内链接：
 
-### Build
-
-```
-$ yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-### Deployment
-
-Using SSH:
-
-```
-$ USE_SSH=true yarn deploy
+```bash
+npm run build
+npm run serve
 ```
 
-Not using SSH:
-
-```
-$ GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+站点入口、导航和主题配置在 `docusaurus.config.js`；首页在 `src/pages/`；
+API 页面在 `docs/api/`。首页 logo 和配色与当前 Devtools 共用视觉来源。

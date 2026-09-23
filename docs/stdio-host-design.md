@@ -1,6 +1,6 @@
 # Niva Stdio Host Bridge 设计（niva 当子进程 UI）
 
-> 状态：设计稿，未实现。目标：任意程序 A 启动 `niva.exe --stdio` 把它当 UI 窗口，
+> 状态：已实现；Windows 管道继承仍待真机验证。目标：任意程序 A 启动 `niva.exe --stdio` 把它当 UI 窗口，
 > 双方经 stdin/stdout 换 JSON 消息（A 收到 `sayHello` → 回写 `sayHelloResult` → 前端拿到）。
 >
 > 架构约束（已定）：Niva 是主窗口（id 0）+ 子窗口的多窗口模型，主窗口在主循环、
@@ -28,8 +28,11 @@ A（任意语言，父进程）                  niva.exe --stdio（子进程）
 
 ```ts
 Niva.api.host.send(name: string, data?: unknown): Promise<void>; // 子窗口调 → reject
-Niva.addEventListener("host:message", (msg: { name: string; data: unknown }) => void); // 只在 main 收到
+Niva.addEventListener("host:message", (eventName, msg) => void); // listener 签名为 (eventName, payload)，只投递给 id 0
 ```
+
+`ready` 表示主窗口的 WebSocket hello 已成功，不代表页面脚本已安装业务监听器。
+需要避免页面启动竞态时，由页面先通过 `host.send` 发一条业务就绪消息，宿主收到后再发首条请求。
 
 ## 3. 线格式 v1（NDJSON，只三帧）
 
@@ -41,32 +44,20 @@ niva → A   {"t":"msg","name":string,"data"?:any}
 A → niva   {"t":"msg","name":string,"data"?:any}
 ```
 
-- 二进制放 base64 字段；大文件不走 stdio（走文件/extract）；单行上限 64MB。
+- 二进制放 base64 字段；大文件不走 stdio（走文件/extract）；单行上限 64 MiB（含换行）。
 - 不要 `id/result/call`：v1 无请求-响应相关性，需要往返的业务自己在 `data`
   里带 `reqId`（A 与前端约定的业务层字段，管道不理解）。
-- 坏行（非 UTF-8/非 JSON）：记 stderr，不崩进程（对标 EventHandler
-  “错误只打日志不崩循环”）。
+- 坏行（非 UTF-8、非 JSON、未知帧或超长行）：记 stderr 后丢弃；超长行会读到行尾再继续，进程不崩。
 
-## 4. Rust 实现规则（对照现代码）
+## 4. Rust 实现
 
-1. `--stdio` 显式门控（`app/mod.rs NivaArguments` 加键）。非 stdio 模式零变化，
-   双击打开的正常应用不受影响。
-2. 新模块 `app/stdio.rs`，只两件事：reader 线程（`smol::unblock` 包阻塞
-   `read_line`，driver 线程永不直接阻塞）→ 按行解析 → `get_window(0)` 投
-   `host:message`（main 已关则丢弃）；writer 单通道串行 + 每次 `flush`
-   （stdout 块缓冲，不 flush 宿主会“卡住”）。
-3. `host.send` 在 Rust 侧校验 `window.id == 0`，子窗口调直接回业务错
-   （`code -1 "host.* is main-window only"`），不在前端拦——后门也得守同一条。
-4. **stdout 纯洁性（v1 最大坑）**：`--stdio` 下 stdout 只允许上面三帧。
-   现状 `utils.rs` 的 `log!` 系宏用 `println!`，必须全转 `eprintln!` 或门控；
-   `[niva] http server listening` 已是 `eprintln!`（✓）。实现前先审计全部
-   `println!/print!`。
-5. 生命周期复用现有主窗口退出路径，不另起炉灶：stdin EOF → 按 id 0 走
-   `close_window_inner + cleanup` → `ControlFlow::Exit` 全程序退出（防孤儿窗口）；
-   写 broken pipe → 同样退出。退出码 0 正常，非 0 协议致命错误。
-6. Windows：release 已是 `windows_subsystem = "windows"`（无控制台），父进程
-   建 pipe 继承句柄理论可用，真机验证；换行统一 `\n`。
-7. 安全：默认信任 stdin 持有者（= 拉起它的父进程）；终端手输是 feature。
+1. `--stdio` 显式启用。reader 通过 `smol::unblock` 执行阻塞 stdin 读取，按行解析后只投递到 `get_window(0)`；主窗口不存在或已关闭时丢弃消息。
+2. stdout writer 单通道串行写入，每帧后 `flush`。输出队列有界；队列已满或帧超过 64 MiB 时，`host.send` 返回业务错误。
+3. `host.send` 在 Rust 侧校验 `window.id == 0`。子窗口调用返回 `code -1` 和 `host.send is main-window only`。
+4. **stdout 纯洁性**：`--stdio` 下 `log!` 系宏转到 stderr，普通模式仍输出 stdout；HTTP、WebSocket 等运行日志写 stderr。stdout 只含 `ready` 和 `msg` NDJSON 帧。
+5. stdin EOF 或 stdout 写失败时，事件投递回主循环，按 id 0 调用 `close_window_inner + cleanup` 后设置 `ControlFlow::Exit`。在主窗创建前到达的 EOF 会排队，主窗创建后仍走同一关闭路径。
+6. Windows：release 使用 `windows_subsystem = "windows"`（无控制台）；管道继承尚待 Windows 真机确认。输出换行统一为 `\n`。
+7. 安全：默认信任 stdin 持有者（即启动 Niva 的父进程）；不为终端手输提供额外交互功能。
 
 ## 5. 与现有能力的复用/冲突
 
@@ -75,10 +66,13 @@ A → niva   {"t":"msg","name":string,"data"?:any}
 - `runCmd`/`process.exec` 捕获 stdout 的调用方：若目标是 `--stdio` niva，
   需按 NDJSON 解析而非裸文本。`win_packager` 是普通模式，不受影响。
 
-## 6. 落地步骤
+## 6. 示例与验证
 
-1. `println!` 审计 + log 宏转 stderr。
-2. `app/stdio.rs`（reader/writer，只认 wid 0）+ `--stdio` 参数 + EOF 走主窗退出。
-3. `host` API namespace（含 `id == 0` 校验）+ `packages/types` d.ts。
-4. 宿主示例（Python/Node 各 10 行 sayHello 回显，主窗）+ e2e 脚本化。
-5. Windows 真机验证 pipe 继承 + EOF 退出。
+Python 父进程和最小 UI 示例位于 `examples/stdio_host.py` 与 `examples/stdio-host/`。构建后执行：
+
+```sh
+cargo build -p niva
+python examples/stdio_host.py target/debug/niva
+```
+
+示例会先等待 `ready`，再等页面发出 `page:ready`，完成 `sayHello` 往返，最后关闭 stdin 并等待主窗口走 EOF 退出路径。Windows 真机管道行为仍待验证。

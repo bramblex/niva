@@ -1,0 +1,22 @@
+import "./runtime/bridge.js";
+import "./runtime/path.js";
+import "./runtime/buffer.js";
+import "./runtime/fs.js";
+
+const fs = globalThis[Symbol.for("niva.node-compat.runtime")].fs;
+
+export const constants = fs.constants;
+export const readFile = fs.readFile;
+export const writeFile = fs.writeFile;
+export const appendFile = fs.appendFile;
+export const mkdir = fs.mkdir;
+export const readdir = fs.readdir;
+export const stat = fs.stat;
+export const access = fs.access;
+export const rename = fs.rename;
+export const rm = fs.rm;
+export const cp = fs.cp;
+export const copyFile = fs.copyFile;
+export const promises = fs.promises;
+
+export default fs;

@@ -28,6 +28,7 @@ export function AceEditor(props: AceEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<ace.Editor | null>(null);
   const onChangeRef = useRef(onChange);
+  const syncingRef = useRef(false);
   onChangeRef.current = onChange;
 
   useEffect(() => {
@@ -43,7 +44,9 @@ export function AceEditor(props: AceEditorProps) {
       (editor as unknown as { $blockScrolling: boolean }).$blockScrolling = true;
     }
     editor.on("change", () => {
-      onChangeRef.current?.(editor.getValue());
+      if (!syncingRef.current) {
+        onChangeRef.current?.(editor.getValue());
+      }
     });
     editorRef.current = editor;
     return () => {
@@ -57,9 +60,14 @@ export function AceEditor(props: AceEditorProps) {
     const editor = editorRef.current;
     if (editor && value !== undefined && editor.getValue() !== value) {
       const position = editor.getCursorPosition();
-      editor.setValue(value, -1);
-      editor.moveCursorToPosition(position);
-      editor.clearSelection();
+      syncingRef.current = true;
+      try {
+        editor.setValue(value, -1);
+        editor.moveCursorToPosition(position);
+        editor.clearSelection();
+      } finally {
+        syncingRef.current = false;
+      }
     }
   }, [value]);
 

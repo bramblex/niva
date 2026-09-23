@@ -1,14 +1,21 @@
 mod api;
 mod api_manager;
 mod assets;
+pub(crate) mod custom_protocol;
 mod event_handler;
 pub(crate) mod fs_ops;
 pub(crate) mod http_server;
+#[cfg(target_os = "macos")]
+mod ipc_macos;
+#[cfg(target_os = "windows")]
+mod ipc_windows_frames;
 pub(crate) mod main_exec;
 mod menu;
+mod node_compat;
 mod options;
 mod resource_manager;
 mod shortcut_manager;
+mod stdio;
 mod tray_manager;
 mod utils;
 mod window_manager;
@@ -22,7 +29,7 @@ use std::{
     ops::Deref,
     path::PathBuf,
     pin::Pin,
-    sync::{Arc, MutexGuard},
+    sync::{Arc, MutexGuard, OnceLock},
 };
 
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
@@ -78,6 +85,8 @@ pub struct NivaApp {
     _shortcut: ArcMut<NivaShortcutManager>,
     _tray: ArcMut<NivaTrayManager>,
     _http: HttpServerSlot, // Async HTTP + WebSocket server (populated post-Arc).
+    _stdio: OnceLock<stdio::StdioBridge>,
+    _custom_protocol: custom_protocol::CustomProtocolDispatcher,
 
     event_loop_proxy: EventLoopProxy<NivaEvent>, // Event loop proxy.
 }
@@ -127,6 +136,7 @@ impl NivaApp {
         let shortcut_manager = NivaShortcutManager::new();
 
         let tray_manager = NivaTrayManager::new();
+        let custom_protocol = custom_protocol::CustomProtocolDispatcher::new()?;
 
         let app = Arc::new(NivaApp {
             launch_info,
@@ -137,9 +147,18 @@ impl NivaApp {
             _shortcut: shortcut_manager,
             _tray: tray_manager.clone(),
             _http: arc_mut(None),
+            _stdio: OnceLock::new(),
+            _custom_protocol: custom_protocol,
 
             event_loop_proxy: event_loop.create_proxy(),
         });
+
+        if app.launch_info.arguments.stdio {
+            let bridge = stdio::StdioBridge::start(Arc::downgrade(&app))?;
+            app._stdio
+                .set(bridge)
+                .map_err(|_| anyhow!("stdio bridge already initialized"))?;
+        }
 
         // bind app to window manager
         lock!(window_manager)?.bind_app(app.clone());
@@ -161,9 +180,31 @@ impl NivaApp {
         self._http.clone()
     }
 
-    /// (port, token) of the loopback server; used for entry URLs and the
-    /// per-window WebSocket bootstrap script.
-    pub fn server_info(self: &Arc<Self>) -> Result<(u16, String)> {
+    pub(crate) fn stdio_bridge(&self) -> Option<&stdio::StdioBridge> {
+        self._stdio.get()
+    }
+
+    /// Close the main window through the normal owner cleanup path, then
+    /// terminate the event loop. Called when either side of the stdio pipe
+    /// reaches EOF or can no longer write.
+    pub(crate) fn request_stdio_exit(self: &Arc<Self>) {
+        let app = self.clone();
+        let event = NivaEvent::new(move |_, control_flow| {
+            let close_result = (|| {
+                let main_window = app.window()?.get_window(0)?;
+                let closed = app.window()?.close_window_inner(main_window.window_id)?;
+                WindowManager::cleanup_window(&app, &closed)
+            })();
+            *control_flow = ControlFlow::Exit;
+            close_result
+        });
+        if self.event_loop_proxy.send_event(event).is_err() {
+            eprintln!("[niva] unable to request stdio shutdown: event loop is closed");
+        }
+    }
+
+    /// Port of the loopback server; window credentials live on each window.
+    pub fn server_info(self: &Arc<Self>) -> Result<u16> {
         app_server(self)
     }
 
@@ -219,9 +260,11 @@ impl NivaApp {
 #[derive(Debug)]
 pub struct NivaArguments {
     pub debug_devtools: bool,
+    pub stdio: bool,
     pub debug_config: Option<PathBuf>,
     pub debug_resource: Option<PathBuf>,
     pub debug_entry: Option<String>,
+    pub build_mode: bool,
 }
 
 impl NivaArguments {
@@ -244,15 +287,23 @@ impl NivaArguments {
             .get("debug-devtools")
             .map(|v| v == "true")
             .unwrap_or(false);
+        let stdio = args_map
+            .get("stdio")
+            .map(|v| v.is_empty() || v == "true")
+            .unwrap_or(false);
+        utils::set_stdio_mode(stdio);
         let debug_resource = args_map.get("debug-resource").map(PathBuf::from);
         let debug_entry = args_map.get("debug-entry").map(|v| v.to_string());
         let debug_config = args_map.get("debug-config").map(PathBuf::from);
+        let build_mode = args_map.contains_key("build");
 
         Self {
             debug_devtools,
+            stdio,
             debug_config,
             debug_resource,
             debug_entry,
+            build_mode,
         }
     }
 }

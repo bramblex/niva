@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: cargo fmt --all -- --check
+      - run: cargo check --workspace
+      - run: cargo clippy --workspace --all-targets
+      - run: cargo test --workspace
+      - run: npm test --workspace=packages/node-compat
+      - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
+      - run: npm run build --workspace=packages/devtools
+      - run: cargo build --release -p niva
+      - if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bytes=$(stat -f%z target/release/niva)
+          echo "macOS release binary: $bytes bytes"
+          test "$bytes" -lt 3300000
+
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/website/package-lock.json
+      - run: npm ci
+        working-directory: packages/website
+      - run: npm run typecheck
+        working-directory: packages/website
+      - run: npm run build
+        working-directory: packages/website

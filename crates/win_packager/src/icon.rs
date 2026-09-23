@@ -14,6 +14,14 @@ use image::imageops::FilterType;
 
 pub const ICON_SIZES: &[u32] = &[16, 24, 32, 48, 64, 128, 256];
 
+/// A parsed ICO image, ready to store as a Windows `RT_ICON` resource.
+#[allow(dead_code)] // The Windows-only writer consumes these fields.
+pub(crate) struct IcoImage<'a> {
+    /// The first 12 bytes of `ICONDIRENTRY`, before the file offset field.
+    pub header: [u8; 12],
+    pub data: &'a [u8],
+}
+
 pub fn png_to_ico_bytes(png: &[u8]) -> Result<Vec<u8>> {
     let img = image::load_from_memory(png)?;
     let mut entries = Vec::with_capacity(ICON_SIZES.len());
@@ -63,4 +71,95 @@ pub fn encode_ico(entries: &[(u32, Vec<u8>)]) -> Vec<u8> {
         out.extend_from_slice(payload);
     }
     out
+}
+
+/// Split an ICO container into its image entries for `RT_ICON` resources.
+pub(crate) fn split_ico(ico: &[u8]) -> Result<Vec<IcoImage<'_>>> {
+    if ico.len() < 6 {
+        anyhow::bail!("ICO header is truncated");
+    }
+    let reserved = read_u16(ico, 0)?;
+    let kind = read_u16(ico, 2)?;
+    let count = usize::from(read_u16(ico, 4)?);
+    if reserved != 0 || kind != 1 || count == 0 {
+        anyhow::bail!("invalid ICO header");
+    }
+    let table_len = count
+        .checked_mul(16)
+        .ok_or_else(|| anyhow::anyhow!("ICO entry table length overflow"))?;
+    let table_end = 6usize
+        .checked_add(table_len)
+        .filter(|end| *end <= ico.len())
+        .ok_or_else(|| anyhow::anyhow!("ICO entry table is truncated"))?;
+
+    let mut entries = Vec::with_capacity(count);
+    for index in 0..count {
+        let start = 6 + index * 16;
+        let header = &ico[start..start + 16];
+        if header[3] != 0 {
+            anyhow::bail!("ICO entry {index} has a nonzero reserved byte");
+        }
+        let length = usize::try_from(read_u32(ico, start + 8)?)?;
+        let offset = usize::try_from(read_u32(ico, start + 12)?)?;
+        let end = offset
+            .checked_add(length)
+            .filter(|end| offset >= table_end && *end <= ico.len())
+            .ok_or_else(|| anyhow::anyhow!("ICO entry {index} image is outside the file"))?;
+        if length == 0 {
+            anyhow::bail!("ICO entry {index} has empty image data");
+        }
+        entries.push(IcoImage {
+            header: header[..12].try_into().unwrap(),
+            data: &ico[offset..end],
+        });
+    }
+    Ok(entries)
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> Result<u16> {
+    let slice = bytes
+        .get(offset..offset + 2)
+        .ok_or_else(|| anyhow::anyhow!("ICO field is truncated"))?;
+    Ok(u16::from_le_bytes([slice[0], slice[1]]))
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> Result<u32> {
+    let slice = bytes
+        .get(offset..offset + 4)
+        .ok_or_else(|| anyhow::anyhow!("ICO field is truncated"))?;
+    Ok(u32::from_le_bytes(slice.try_into()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use image::ImageEncoder;
+
+    use super::{ICON_SIZES, png_to_ico_bytes, split_ico};
+
+    #[test]
+    fn splits_png_ico_entries_for_resource_injection() {
+        let mut rgba = image::RgbaImage::new(64, 64);
+        for pixel in rgba.pixels_mut() {
+            *pixel = image::Rgba([20, 80, 180, 255]);
+        }
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&rgba, 64, 64, image::ExtendedColorType::Rgba8)
+            .unwrap();
+
+        let ico = png_to_ico_bytes(&png).unwrap();
+        let entries = split_ico(&ico).unwrap();
+        assert_eq!(entries.len(), ICON_SIZES.len());
+        for (index, (entry, size)) in entries.iter().zip(ICON_SIZES).enumerate() {
+            let dim = if *size >= 256 { 0 } else { *size as u8 };
+            assert_eq!(&entry.header[..2], &[dim, dim], "entry {index}");
+            assert_eq!(&entry.header[4..8], &[1, 0, 32, 0], "entry {index}");
+            assert!(entry.data.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_ico_entries() {
+        assert!(split_ico(&[0, 0, 1, 0, 1, 0]).is_err());
+    }
 }

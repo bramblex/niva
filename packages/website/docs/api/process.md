@@ -68,7 +68,7 @@ export function exit(): Promise<void>;
 ```ts
 interface ExecOptions {
   env?: Record<string, string>;
-  current_dir?: string;
+  currentDir?: string;
   detached?: boolean;
 }
 /**
@@ -86,8 +86,49 @@ export function exec(
   status: number | null;
   stdout: string;
   stderr: string;
-}>;
+} | number>;
 ```
+
+`exec` 是初始化脚本在本地 WebSocket 模式下提供的 JS wrapper，会收集 stdout/stderr，适合输出较小的命令。远端 IPC 没有 `process.exec` 原生注册项。需要持续输出或向 stdin
+写入数据时，用[流式调用](./stream)中的 `process.execStream`。普通执行在取消、
+超时或连接关闭后会终止并回收子进程；`detached: true` 明确让子进程独立运行。
+
+`ExecOptions.currentDir` 设置子进程工作目录。
+
+## Niva.api.process.execStream
+
+`execStream` 是原生流式 handler，只能通过本地 WebSocket 的 `Niva.stream` 使用。普通模式的终局结果为 `{ status: number | null }`；若传入 `detached: true`，结果是数字 PID，且不会返回 stdout/stderr 流。stdin 数据通过 `Niva.streamSend` 写入：
+
+```ts
+const decoders = [new TextDecoder(), new TextDecoder()];
+const child = Niva.stream(
+  "process.execStream",
+  ["python3", ["-c", "import sys; print(sys.stdin.readline().strip())"]],
+  {
+    onChunk(bytes, isStderr) {
+      const decoder = decoders[isStderr ? 1 : 0];
+      const text = decoder.decode(bytes, { stream: true });
+      if (text) console.log(isStderr ? "stderr:" : "stdout:", text);
+    },
+    onBlob(_blob, isStderr) {
+      // Flush a possible partial UTF-8 sequence at the end of this pipe.
+      const tail = decoders[isStderr ? 1 : 0].decode();
+      if (tail) console.log(isStderr ? "stderr:" : "stdout:", tail);
+    },
+  },
+);
+
+Niva.streamSend(child.id, "hello\n");
+Niva.streamSend(child.id, new Uint8Array(0), true); // 关闭 stdin
+const result = await child.promise;
+if (typeof result === "number") {
+  console.log("detached child PID:", result);
+} else {
+  console.log("exit status:", result.status);
+}
+```
+
+`onChunk` 可逐帧实时处理 stdout/stderr；`onBlob` 在收到对应子流的 END 帧后收到完整 Blob。stdout 与 stderr 各自分组，因此不能从两个 pipe 的回调顺序推断 OS 层精确输出先后。取消 stream、丢失所属 bridge 连接或关闭窗口会终止并回收普通子进程。`detached: true` 子进程不会由该调用管理。
 
 ## Niva.api.process.open
 ```ts

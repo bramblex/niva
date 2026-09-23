@@ -31,3 +31,18 @@ export function read(path: string, encode?: "utf8" | "base64"): Promise<string>;
  */
 export function extract(from: string, to: string): Promise<void>;
 ```
+
+## 流式读取
+
+`resource.readStream(path)` 是原生二进制流式 handler，可用 `Niva.stream` 读取打包资源：
+
+```ts
+const read = Niva.stream("resource.readStream", ["assets/data.bin"], {
+  onChunk(bytes) {
+    console.log("read bytes:", bytes.byteLength);
+  },
+});
+await read.promise;
+```
+
+`Niva.api.resource.read` 是初始化脚本建立在 `readStream` 上的 Promise wrapper，会收集整个响应；它仅在本地 WebSocket 页面可用。远端 IPC 页面不能调用 `resource.readStream` 或该 wrapper。另见[流式调用](./stream)。

@@ -7,6 +7,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app";
 import { envReady } from "./common/utils";
+import { applyThemePreference, readThemePreference } from "./common/theme";
+
+applyThemePreference(readThemePreference());
 
 window.addEventListener("contextmenu", (e) => {
   // let node: HTMLElement | null = e.target as HTMLElement;

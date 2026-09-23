@@ -12,11 +12,12 @@
 //! 平台说明：备料（打包/转图标）跨平台可跑，真正写 PE 资源只能在 Windows 上。
 //! 非 Windows 下 [`pack`] 走完备料和拷贝后返回明确错误，见函数文档。
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use std::path::PathBuf;
 
 pub mod bundle;
 pub mod icon;
+pub mod version_info;
 
 #[cfg(target_os = "windows")]
 mod windows_impl;
@@ -48,7 +49,7 @@ pub struct IconEntry {
 /// 备料全在 crate 内完成，devtools 只需调一次，不再需要
 /// `icon_creator.exe` 落盘和前端 `pako` 压缩。
 /// 低层模式（`rcdata` / `icon`）保留，用于调试和兼容旧备料。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PackRequest {
     /// 模板 exe（即 `process.currentExe()`）。
     pub template_exe: PathBuf,
@@ -73,6 +74,23 @@ pub struct PackRequest {
     pub version_info_rc: Option<PathBuf>,
     /// 资源语言 ID，默认 1033。
     pub lang: u16,
+}
+
+impl Default for PackRequest {
+    fn default() -> Self {
+        Self {
+            template_exe: PathBuf::new(),
+            output_exe: PathBuf::new(),
+            resource_dir: None,
+            config_file: None,
+            icon_png: None,
+            rcdata: Vec::new(),
+            icon: None,
+            delete_icon_ids: Vec::new(),
+            version_info_rc: None,
+            lang: DEFAULT_LANG,
+        }
+    }
 }
 
 impl PackRequest {
@@ -144,6 +162,8 @@ pub(crate) struct PreparedData {
     pub rcdata: Vec<(String, Vec<u8>)>,
     /// `(ico字节, 组id)`。
     pub icon: Option<(Vec<u8>, u16)>,
+    /// 编译好的 `VS_VERSIONINFO` 资源数据。
+    pub version_info: Option<Vec<u8>>,
 }
 
 /// 备料：读文件 + 打资源包 + PNG 转 ICO。全跨平台，Windows 实现只负责写盘。
@@ -158,16 +178,31 @@ fn prepare(req: &PackRequest) -> Result<PreparedData> {
         rcdata.push((e.name.clone(), std::fs::read(&e.file)?));
     }
     let icon = if let Some(p) = &req.icon_png {
-        Some((
-            icon::png_to_ico_bytes(&std::fs::read(p)?)?,
-            DEFAULT_ICON_GROUP_ID,
-        ))
+        let ico = icon::png_to_ico_bytes(&std::fs::read(p)?)?;
+        icon::split_ico(&ico).context("validate generated ICO")?;
+        Some((ico, DEFAULT_ICON_GROUP_ID))
     } else if let Some(ic) = &req.icon {
-        Some((std::fs::read(&ic.ico_file)?, ic.group_id))
+        let ico = std::fs::read(&ic.ico_file)?;
+        icon::split_ico(&ico).context("validate ICO file")?;
+        Some((ico, ic.group_id))
     } else {
         None
     };
-    Ok(PreparedData { rcdata, icon })
+    let version_info = req
+        .version_info_rc
+        .as_ref()
+        .map(|path| {
+            let source = std::fs::read_to_string(path)
+                .map_err(|error| anyhow!("read version info {}: {error}", path.display()))?;
+            version_info::compile_version_info_rc(&source)
+                .map_err(|error| anyhow!("compile version info {}: {error:#}", path.display()))
+        })
+        .transpose()?;
+    Ok(PreparedData {
+        rcdata,
+        icon,
+        version_info,
+    })
 }
 
 /// 执行一次打包：校验 -> 备料 -> 拷贝模板 -> 写资源。
@@ -253,6 +288,11 @@ mod tests {
         });
         r.icon_png = Some(PathBuf::from("x.png"));
         assert!(r.validate().is_err());
+    }
+
+    #[test]
+    fn default_language_matches_resource_manager_locale() {
+        assert_eq!(PackRequest::default().lang, DEFAULT_LANG);
     }
 
     #[test]

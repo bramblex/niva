@@ -1,9 +1,13 @@
 use anyhow::{Result, anyhow};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use tao::{
     event_loop::ControlFlow,
-    window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
+    window::{
+        CursorIcon, Fullscreen, ProgressBarState, ProgressState, ResizeDirection, Theme,
+        UserAttentionType,
+    },
 };
 
 use std::sync::Arc;
@@ -31,6 +35,60 @@ macro_rules! match_window {
     };
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressBarOptions {
+    state: Option<String>,
+    progress: Option<u64>,
+    desktop_filename: Option<String>,
+}
+
+fn parse_theme(theme: Option<&str>) -> Result<Option<Theme>> {
+    match theme {
+        None | Some("system") => Ok(None),
+        Some("light") => Ok(Some(Theme::Light)),
+        Some("dark") => Ok(Some(Theme::Dark)),
+        Some(value) => Err(anyhow!("Unknown window theme: {value}")),
+    }
+}
+
+fn parse_resize_direction(direction: &str) -> Result<ResizeDirection> {
+    match direction {
+        "east" => Ok(ResizeDirection::East),
+        "north" => Ok(ResizeDirection::North),
+        "northEast" => Ok(ResizeDirection::NorthEast),
+        "northWest" => Ok(ResizeDirection::NorthWest),
+        "south" => Ok(ResizeDirection::South),
+        "southEast" => Ok(ResizeDirection::SouthEast),
+        "southWest" => Ok(ResizeDirection::SouthWest),
+        "west" => Ok(ResizeDirection::West),
+        value => Err(anyhow!("Unknown window resize direction: {value}")),
+    }
+}
+
+fn parse_progress_state(state: Option<&str>) -> Result<Option<ProgressState>> {
+    match state {
+        None => Ok(None),
+        Some("none") => Ok(Some(ProgressState::None)),
+        Some("normal") => Ok(Some(ProgressState::Normal)),
+        Some("indeterminate") => Ok(Some(ProgressState::Indeterminate)),
+        Some("paused") => Ok(Some(ProgressState::Paused)),
+        Some("error") => Ok(Some(ProgressState::Error)),
+        Some(value) => Err(anyhow!("Unknown window progress state: {value}")),
+    }
+}
+
+fn parse_progress_bar(options: ProgressBarOptions) -> Result<ProgressBarState> {
+    if options.progress.is_some_and(|value| value > 100) {
+        return Err(anyhow!("Window progress must be between 0 and 100"));
+    }
+    Ok(ProgressBarState {
+        state: parse_progress_state(options.state.as_deref())?,
+        progress: options.progress,
+        desktop_filename: options.desktop_filename,
+    })
+}
+
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.current", current);
     api_manager.register_api("window.open", open);
@@ -50,6 +108,14 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.outerSize", outer_size);
     api_manager.register_api("window.setMinInnerSize", set_min_inner_size);
     api_manager.register_api("window.setMaxInnerSize", set_max_inner_size);
+    api_manager.register_api("window.setWindowIcon", set_window_icon);
+    api_manager.register_api("window.setTheme", set_theme);
+    api_manager.register_api("window.dragResizeWindow", drag_resize_window);
+    api_manager.register_api("window.setProgressBar", set_progress_bar);
+    api_manager.register_api("window.requestRedraw", request_redraw);
+    api_manager.register_api("window.setImePosition", set_ime_position);
+    api_manager.register_api("window.setBackgroundColor", set_background_color);
+    api_manager.register_api("window.setFocusable", set_focusable);
     api_manager.register_api("window.setTitle", set_title);
     api_manager.register_api("window.title", title);
     api_manager.register_api("window.isVisible", is_visible);
@@ -68,7 +134,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_api("window.setMinimized", set_minimized);
     api_manager.register_api("window.isMaximized", is_maximized);
     api_manager.register_api("window.setMaximized", set_maximized);
-    api_manager.register_api("window.Decorated", decorated);
+    api_manager.register_api("window.isDecorated", decorated);
     api_manager.register_api("window.setDecorated", set_decorated);
     api_manager.register_api("window.fullscreen", fullscreen);
     api_manager.register_api("window.setFullscreen", set_fullscreen);
@@ -150,26 +216,38 @@ async fn send_message(
 }
 
 async fn set_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let (options, id) = request
-        .args()
-        .optional::<(Option<WindowMenuOptions>, Option<u8>)>(2)?;
-    match_window!(app, window, id);
-    window.set_menu(&options);
-    Ok(())
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        let (options, id) = request
+            .args()
+            .optional::<(Option<WindowMenuOptions>, Option<u8>)>(2)?;
+        match_window!(app2, window, id);
+        window.set_menu(&options);
+        Ok(())
+    })
+    .await
 }
 
 async fn hide_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
-    match_window!(app, window, id);
-    window.hide_menu();
-    Ok(())
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+        match_window!(app2, window, id);
+        window.hide_menu();
+        Ok(())
+    })
+    .await
 }
 
 async fn show_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
-    match_window!(app, window, id);
-    window.show_menu();
-    Ok(())
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+        match_window!(app2, window, id);
+        window.show_menu();
+        Ok(())
+    })
+    .await
 }
 
 async fn is_menu_visible(
@@ -259,9 +337,16 @@ async fn set_min_inner_size(
     window: Arc<NivaWindow>,
     request: ApiRequest,
 ) -> Result<()> {
-    let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!(
+            "window.setMinInnerSize is unsupported on this platform"
+        ));
+    }
+    let (size, id) = request
+        .args()
+        .optional::<(Option<NivaSize>, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_min_inner_size(Some(size));
+    window.set_min_inner_size(size);
     Ok(())
 }
 
@@ -270,10 +355,183 @@ async fn set_max_inner_size(
     window: Arc<NivaWindow>,
     request: ApiRequest,
 ) -> Result<()> {
-    let (size, id) = request.args().optional::<(NivaSize, Option<u8>)>(2)?;
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!(
+            "window.setMaxInnerSize is unsupported on this platform"
+        ));
+    }
+    let (size, id) = request
+        .args()
+        .optional::<(Option<NivaSize>, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_max_inner_size(Some(size));
+    window.set_max_inner_size(size);
     Ok(())
+}
+
+async fn set_window_icon(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    )) {
+        return Err(anyhow!(
+            "window.setWindowIcon is unsupported on this platform"
+        ));
+    }
+    let (icon_path, id) = request.args().optional::<(Option<String>, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        let icon = icon_path
+            .as_deref()
+            .map(|path| app2.resource().load_icon(path))
+            .transpose()?;
+        window.set_window_icon(icon);
+        Ok(())
+    })
+    .await
+}
+
+async fn set_theme(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!("window.setTheme is unsupported on this platform"));
+    }
+    let (theme, id) = request.args().optional::<(Option<String>, Option<u8>)>(2)?;
+    let theme = parse_theme(theme.as_deref())?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_theme(theme);
+        Ok(())
+    })
+    .await
+}
+
+async fn drag_resize_window(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (direction, id) = request.args().optional::<(String, Option<u8>)>(2)?;
+    let direction = parse_resize_direction(&direction)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.drag_resize_window(direction)?;
+        Ok(())
+    })
+    .await
+}
+
+async fn set_progress_bar(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!(
+            "window.setProgressBar is unsupported on this platform"
+        ));
+    }
+    let (options, id) = request
+        .args()
+        .optional::<(ProgressBarOptions, Option<u8>)>(2)?;
+    let progress = parse_progress_bar(options)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_progress_bar(progress);
+        Ok(())
+    })
+    .await
+}
+
+async fn request_redraw(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(target_os = "android") {
+        return Err(anyhow!("window.requestRedraw is unsupported on Android"));
+    }
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.request_redraw();
+        Ok(())
+    })
+    .await
+}
+
+async fn set_ime_position(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(any(
+        target_os = "linux",
+        target_os = "ios",
+        target_os = "android"
+    )) {
+        return Err(anyhow!(
+            "window.setImePosition is unsupported on this platform"
+        ));
+    }
+    let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_ime_position(position);
+        Ok(())
+    })
+    .await
+}
+
+async fn set_background_color(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!(
+            "window.setBackgroundColor is unsupported on this platform"
+        ));
+    }
+    let (color, id) = request
+        .args()
+        .optional::<(Option<(u8, u8, u8, u8)>, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_background_color(color);
+        Ok(())
+    })
+    .await
+}
+
+async fn set_focusable(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
+        return Err(anyhow!(
+            "window.setFocusable is unsupported on this platform"
+        ));
+    }
+    let (focusable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_focusable(focusable);
+        Ok(())
+    })
+    .await
 }
 
 async fn set_title(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
@@ -710,4 +968,73 @@ async fn block_close_requested(
     let mut state = lock!(window.state)?;
     state.is_block_closed_requested = blocked;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_runtime_themes() {
+        assert_eq!(parse_theme(Some("light")).unwrap(), Some(Theme::Light));
+        assert_eq!(parse_theme(Some("dark")).unwrap(), Some(Theme::Dark));
+        assert_eq!(parse_theme(Some("system")).unwrap(), None);
+        assert!(parse_theme(Some("sepia")).is_err());
+    }
+
+    #[test]
+    fn parses_each_supported_resize_direction() {
+        for (name, expected) in [
+            ("east", ResizeDirection::East),
+            ("north", ResizeDirection::North),
+            ("northEast", ResizeDirection::NorthEast),
+            ("northWest", ResizeDirection::NorthWest),
+            ("south", ResizeDirection::South),
+            ("southEast", ResizeDirection::SouthEast),
+            ("southWest", ResizeDirection::SouthWest),
+            ("west", ResizeDirection::West),
+        ] {
+            assert_eq!(parse_resize_direction(name).unwrap(), expected);
+        }
+        assert!(parse_resize_direction("center").is_err());
+    }
+
+    #[test]
+    fn parses_progress_state_and_enforces_percent_range() {
+        let options: ProgressBarOptions = serde_json::from_value(json!({
+            "state": "error",
+            "progress": 100,
+            "desktopFilename": "sample.desktop"
+        }))
+        .unwrap();
+        let parsed = parse_progress_bar(options).unwrap();
+        assert!(matches!(parsed.state, Some(ProgressState::Error)));
+        assert_eq!(parsed.progress, Some(100));
+        assert_eq!(parsed.desktop_filename.as_deref(), Some("sample.desktop"));
+
+        let options: ProgressBarOptions =
+            serde_json::from_value(json!({ "progress": 101 })).unwrap();
+        assert!(parse_progress_bar(options).is_err());
+    }
+
+    #[test]
+    fn null_min_and_max_inner_sizes_deserialize_as_cleared_constraints() {
+        let min_request: ApiRequest =
+            serde_json::from_value(json!([1, "window.setMinInnerSize", [null, 3]])).unwrap();
+        let (min_size, min_window_id) = min_request
+            .args()
+            .optional::<(Option<NivaSize>, Option<u8>)>(2)
+            .unwrap();
+        assert!(min_size.is_none());
+        assert_eq!(min_window_id, Some(3));
+
+        let max_request: ApiRequest =
+            serde_json::from_value(json!([2, "window.setMaxInnerSize", [null]])).unwrap();
+        let (max_size, max_window_id) = max_request
+            .args()
+            .optional::<(Option<NivaSize>, Option<u8>)>(2)
+            .unwrap();
+        assert!(max_size.is_none());
+        assert_eq!(max_window_id, None);
+    }
 }

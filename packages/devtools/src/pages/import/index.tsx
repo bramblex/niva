@@ -35,28 +35,29 @@ export function ImportPage() {
 
   return (
     <div className="import-page">
-      <div className={classNames("file-uploader", { active: isHover })}>
-        <div className="file-uploader__tips">
-          <Plus size={36} />
-          {locale.t("UPLOAD_TIPS")}
+      <div className="import-content">
+        <div className="welcome-copy">
+          <img src="logo.png" alt="" />
+          <h1>{locale.t("UPLOAD_TIPS")}</h1>
         </div>
-        <div className="file-uploader__btns">
-          <button
-            className="btn btn-bg btn-primary"
-            onClick={() => tryOrAlert(app, app.openWithPicker())}
-          >
-            <i className="icon-sm icon-folder"></i>
-            {locale.t("OPEN_PROJECT")}
-          </button>
-
-          <button
-            className="btn btn-bg"
-            style={{ marginLeft: "6px" }}
-            onClick={() => tryOrAlert(app, app.create())}
-          >
-            <i className="icon-sm icon-plus-black"></i>
-            {locale.t("NEW_PROJECT")}
-          </button>
+        <div className={classNames("file-uploader", { active: isHover })}>
+          <div className="file-uploader__tips">
+            <span className="drop-icon"><Plus size={28} /></span>
+          </div>
+          <div className="file-uploader__btns">
+            <button
+              className="btn btn-bg btn-primary"
+              onClick={() => tryOrAlert(app, app.openWithPicker())}
+            >
+              {locale.t("OPEN_PROJECT")}
+            </button>
+            <button
+              className="btn btn-bg"
+              onClick={() => tryOrAlert(app, app.create())}
+            >
+              {locale.t("NEW_PROJECT")}
+            </button>
+          </div>
         </div>
       </div>
     </div>

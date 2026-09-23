@@ -147,3 +147,22 @@ export function readDir(path?: string): Promise<string[]>;
  */
 export function readDirAll(path: string, excludes?: string[]): Promise<string[]>;
 ```
+
+## 流式文件读写
+
+`fs.readStream(path)` 和 `fs.writeStream(path, append?)` 是原生流式 handler。配合 `Niva.stream` 获取/发送二进制分片：
+
+```ts
+const read = Niva.stream("fs.readStream", ["data.bin"], {
+  onChunk(bytes) {
+    console.log("read bytes:", bytes.byteLength);
+  },
+});
+await read.promise;
+
+const write = Niva.stream("fs.writeStream", ["data.bin"]);
+Niva.streamSend(write.id, new Uint8Array([1, 2, 3]), true);
+await write.promise;
+```
+
+`Niva.api.fs.read/write/append` 是初始化脚本的 Promise wrapper，会将完整数据收集或发送完毕后再完成；它们需要本地 WebSocket bridge。远端 IPC 不能调用流式文件 handler，且 Rust 没有单独注册 unary `fs.read/write/append` 方法。较大的文件应使用 stream API，见[流式调用](./stream)。`stat`、`exists`、目录和文件操作仍是独立 unary 原生 API。

@@ -1,35 +1,111 @@
-/**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
- */
+@font-face {
+  font-family: "NivaLogo";
+  src: url("../../static/fonts/nasalization-rg-1.ttf") format("truetype");
+  font-display: swap;
+}
 
-/* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #0077b6;
-  --ifm-color-primary-dark: #005c8d;
-  --ifm-color-primary-darker: #004d73;
-  --ifm-color-primary-darkest: #00394d;
-  --ifm-color-primary-light: #2592c2;
-  --ifm-color-primary-lighter: #43a5d5;
-  --ifm-color-primary-lightest: #6cbde7;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --niva-logo-font: "NivaLogo";
+  --niva-ink: #10251a;
+  --niva-ink-soft: #304a39;
+  --niva-ink-muted: #526755;
+  --niva-brand: #08774b;
+  --niva-brand-strong: #045d38;
+  --niva-brand-vivid: #35dd8e;
+  --niva-brand-vivid-hover: #27d17d;
+  --niva-brand-pale: #e5f7eb;
+  --niva-brand-line: #6ac994;
+  --niva-surface: #fff;
+  --niva-surface-muted: #f5f7f6;
+  --niva-surface-sunken: #edf2ef;
+  --niva-border: #c8dfce;
+  --ifm-color-primary: #08774b;
+  --ifm-color-primary-dark: #06693f;
+  --ifm-color-primary-darker: #045d38;
+  --ifm-color-primary-darkest: #03482c;
+  --ifm-color-primary-light: #14975f;
+  --ifm-color-primary-lighter: #1aa66b;
+  --ifm-color-primary-lightest: #35b77b;
+  --ifm-background-color: #fff;
+  --ifm-font-color-base: #10251a;
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-navbar-background-color: #fff;
+  --ifm-navbar-shadow: none;
+  --ifm-code-background: #edf2ef;
+  --ifm-footer-background-color: #f5f7f6;
+  --docusaurus-highlighted-code-line-bg: #e5f7eb;
 }
 
-
-/* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #00b4d8;
-  --ifm-color-primary-dark: #0096c7;
-  --ifm-color-primary-darker: #0085b5;
-  --ifm-color-primary-darkest: #006d90;
-  --ifm-color-primary-light: #00c7e6;
-  --ifm-color-primary-lighter: #00d2ed;
-  --ifm-color-primary-lightest: #28d7f0;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --niva-ink: #e7f7eb;
+  --niva-ink-soft: #c4decf;
+  --niva-ink-muted: #9dc4aa;
+  --niva-brand: #6ee6a3;
+  --niva-brand-strong: #91efb9;
+  --niva-brand-vivid: #35dd8e;
+  --niva-brand-vivid-hover: #27d17d;
+  --niva-brand-pale: #173d29;
+  --niva-brand-line: #368b5b;
+  --niva-surface: #14251b;
+  --niva-surface-muted: #101d15;
+  --niva-surface-sunken: #20352a;
+  --niva-border: #355540;
+  --ifm-color-primary: #6ee6a3;
+  --ifm-color-primary-dark: #54d990;
+  --ifm-color-primary-darker: #42ca80;
+  --ifm-color-primary-darkest: #2cb56b;
+  --ifm-color-primary-light: #89edb3;
+  --ifm-color-primary-lighter: #a1f2c5;
+  --ifm-color-primary-lightest: #c1f8d8;
+  --ifm-background-color: #14251b;
+  --ifm-font-color-base: #e7f7eb;
+  --ifm-navbar-background-color: #14251b;
+  --ifm-code-background: #20352a;
+  --ifm-footer-background-color: #101d15;
+  --docusaurus-highlighted-code-line-bg: #20442e;
 }
 
+body { color: var(--niva-ink); }
+::selection { color: #10251a; background: #8cebb3; }
+a { text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible, .menu__link:focus-visible {
+  outline: 2px solid var(--niva-brand);
+  outline-offset: 3px;
+}
 
-img[alt="screenshot"] {
-  box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+.navbar { border-bottom: 1px solid var(--niva-border); }
+.navbar__inner { max-width: 1220px; margin: auto; }
+.navbar__brand { gap: 9px; }
+.navbar__logo { height: 27px; width: 27px; }
+.navbar__title { color: var(--niva-ink); font: 700 15px/1 var(--niva-logo-font), sans-serif; letter-spacing: .055em; }
+.navbar__link { font-size: 14px; font-weight: 600; color: var(--niva-ink-soft); }
+.navbar__link:hover, .navbar__link--active { color: var(--niva-brand); }
+.navbar__items--right .navbar__link:last-child { border: 1px solid var(--niva-border); border-radius: 8px; padding: 8px 13px; margin-left: 5px; }
+.navbar__items--right .navbar__link:last-child:hover { background: var(--niva-brand-pale); border-color: var(--niva-brand-line); }
+
+.main-wrapper { background: var(--niva-surface); }
+.theme-doc-sidebar-container { border-right: 1px solid var(--niva-border) !important; }
+.menu__link { border-radius: 7px; color: var(--niva-ink-soft); }
+.menu__link--active:not(.menu__link--sublist), .menu__link:hover { background: var(--niva-brand-pale); color: var(--niva-brand); }
+.theme-doc-markdown { max-width: 76ch; font-size: 16px; line-height: 1.85; }
+.theme-doc-markdown h1 { font-size: clamp(2.2rem, 4vw, 3.15rem); letter-spacing: -.025em; }
+.theme-doc-markdown h2 { margin-top: 2.4em; padding-bottom: .38em; border-bottom: 1px solid var(--niva-border); letter-spacing: -.018em; }
+.theme-doc-markdown h3 { margin-top: 1.8em; }
+.theme-doc-markdown p, .theme-doc-markdown li { color: var(--niva-ink-soft); }
+.theme-doc-markdown table { display: table; width: 100%; }
+.theme-doc-markdown thead { background: var(--niva-surface-sunken); }
+.theme-doc-markdown tr:nth-child(2n) { background: var(--niva-surface-muted); }
+.theme-code-block { border: 1px solid var(--niva-border); border-radius: 10px; box-shadow: none; }
+.pagination-nav__link { border-color: var(--niva-border); border-radius: 9px; }
+.pagination-nav__link:hover { background: var(--niva-brand-pale); }
+.footer { border-top: 1px solid var(--niva-border); color: var(--niva-ink-soft); }
+.footer__title { color: var(--niva-ink); }
+.footer__link-item { color: var(--niva-ink-soft); }
+.footer__link-item:hover { color: var(--niva-brand); }
+.footer__copyright { color: var(--niva-ink-muted); }
+
+@media (max-width: 996px) {
+  .navbar__inner { padding-inline: 6px; }
+  .theme-doc-markdown table { display: block; overflow-x: auto; }
 }

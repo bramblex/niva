@@ -3,58 +3,201 @@
 //! 输入已经是备好的字节（`lib.rs::PreparedData`）：文件 IO、资源打包、
 //! PNG 转 ICO 都在跨平台侧做完了，这里只做 `UpdateResource` 写盘。
 //!
-//! # Windows 上待实现清单（给实现者）
-//!
-//! 1. `apply`：`BeginUpdateResourceW(output_exe, false)` 拿句柄，按序调下面三个
-//!    子步骤，最后 `EndUpdateResourceW(handle, false)` 提交；任何一步失败用
-//!    `EndUpdateResourceW(handle, true)` 丢弃。错误经 `windows::core::Error`
-//!    转 `anyhow`，并带上当前步骤名。
-//! 2. `update_rcdata`：`data.rcdata` 逐条
-//!    `UpdateResourceW(handle, RT_RCDATA(10), name, lang, bytes)`。
-//!    `name` 是字符串资源名，先 `encode_utf16 + NUL`（参考
-//!    `crates/niva/.../win_utils.rs::to_wstr`），注意 `PCWSTR` 生命周期必须
-//!    活到调用结束。
-//! 3. `replace_icon`：`data.icon` 为 `None` 时直接返回。否则先删
-//!    `req.delete_icon_ids`（`UpdateResourceW(handle, RT_ICON(3),
-//!    MAKEINTRESOURCE(id), lang, null, 0)` 逐个删，`GetLastError` 为
-//!    `ERROR_RESOURCE_DATA_NOT_FOUND` 时视为已无图标、继续）；再用 `ico` crate
-//!    解析 `ico字节` 的 `ICONDIR`，为每个 image 写 `RT_ICON(id=N...)`，最后组
-//!    `GRPICONDIR` 写 `RT_GROUP_ICON(14), group_id`。新 `ICON` id 从旧 id 之后
-//!    顺延，避免复用残留。语言统一用 `req.lang`。
-//! 4. `apply_version`：把 `req.version_info_rc` 的 `VERSION_INFO` 文本
-//!    （`1 VERSIONINFO ...` 的 `.rc` 语法）转成 `VS_VERSIONINFO` 二进制再
-//!    `UpdateResourceW(handle, RT_VERSION(16), MAKEINTRESOURCE(1), lang, ...)`。
-//!    二选一：(a) 调 SDK `rc.exe /fo tmp.res` 再解析 `.res` 提取 VERSION 段
-//!    （简单，但要求构建机有 SDK）；(b) 纯 Rust 手拼 `VS_VERSIONINFO`
-//!    （无外部依赖，但要小心 DWORD 对齐 + UTF-16 字段，参考 `winres` crate
-//!    的拼法）。建议先做 (a)，跑通后再做 (b)。
-//! 5. 验证：拿 `currentExe` + 高层模式备好的包跑一遍，与旧 ResourceHacker 产物
-//!    逐字节比 `RCDATA`、用资源查看器比图标与版本页；确认 `sign-windows.ts`
-//!    仍在打包后签名。
-
-use anyhow::Result;
+use anyhow::{Context, Result, anyhow};
+use std::path::Path;
+use windows::Win32::System::LibraryLoader::{
+    BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
+};
+use windows::core::{Error as WindowsError, PCWSTR};
 
 use crate::{PackRequest, PreparedData};
 
 pub(crate) fn apply(req: &PackRequest, data: &PreparedData) -> Result<()> {
-    let _ = (req, data);
-    update_rcdata(req, data)?;
-    replace_icon(req, data)?;
-    apply_version(req, data)?;
+    let exe_path = to_wide_path(&req.output_exe)?;
+    // SAFETY: exe_path is NUL-terminated and remains alive for this call.
+    let handle = unsafe { BeginUpdateResourceW(PCWSTR(exe_path.as_ptr()), false) }
+        .with_context(|| format!("begin resource update for {}", req.output_exe.display()))?;
+
+    let update_result = (|| {
+        update_rcdata(handle, req, data)?;
+        replace_icon(handle, req, data)?;
+        apply_version(handle, req, data)?;
+        Ok(())
+    })();
+
+    if let Err(update_error) = update_result {
+        // SAFETY: handle was returned by BeginUpdateResourceW and has not yet
+        // been closed. Discard the staged updates after any failed step.
+        let rollback = unsafe { EndUpdateResourceW(handle, true) };
+        return match rollback {
+            Ok(()) => Err(update_error),
+            Err(rollback_error) => Err(anyhow!(
+                "{update_error:#}; discarding resource update also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    // SAFETY: handle still owns the staged resource updates.
+    if let Err(commit_error) = unsafe { EndUpdateResourceW(handle, false) } {
+        // A failed commit can leave the update handle open. Try to discard its
+        // pending changes so a failed pack never commits a partial resource set.
+        // SAFETY: the first EndUpdateResourceW returned an error.
+        return match unsafe { EndUpdateResourceW(handle, true) } {
+            Ok(()) => Err(commit_error).context("commit PE resource updates"),
+            Err(rollback_error) => Err(anyhow!(
+                "commit PE resource updates failed: {commit_error}; rollback also failed: {rollback_error}"
+            )),
+        };
+    }
     Ok(())
 }
 
-fn update_rcdata(_req: &PackRequest, _data: &PreparedData) -> Result<()> {
-    // TODO(windows): 见模块文档第 2 条。
-    todo!("update_rcdata: BeginUpdateResourceW + UpdateResourceW(RT_RCDATA)")
+fn update_rcdata(
+    handle: windows::Win32::Foundation::HANDLE,
+    req: &PackRequest,
+    data: &PreparedData,
+) -> Result<()> {
+    let kind = resource_type(10); // RT_RCDATA
+    for (resource_name, bytes) in &data.rcdata {
+        let name = to_wide_string(resource_name)?;
+        update_resource(handle, kind, PCWSTR(name.as_ptr()), req.lang, Some(bytes))
+            .with_context(|| format!("write RCDATA resource {resource_name:?}"))?;
+    }
+    Ok(())
 }
 
-fn replace_icon(_req: &PackRequest, _data: &PreparedData) -> Result<()> {
-    // TODO(windows): 见模块文档第 3 条；data.icon 为 None 时直接 Ok。
-    todo!("replace_icon: delete RT_ICON + write RT_ICON/RT_GROUP_ICON")
+fn replace_icon(
+    handle: windows::Win32::Foundation::HANDLE,
+    req: &PackRequest,
+    data: &PreparedData,
+) -> Result<()> {
+    let Some((ico, group_id)) = &data.icon else {
+        return Ok(());
+    };
+
+    let icon_type = resource_type(3); // RT_ICON
+    for id in &req.delete_icon_ids {
+        if let Err(error) = update_resource(handle, icon_type, resource_id(*id), req.lang, None)
+            && !is_missing_resource(&error)
+        {
+            return Err(error).with_context(|| format!("delete old RT_ICON id {id}"));
+        }
+    }
+
+    let entries = crate::icon::split_ico(ico)?;
+    let first_id = req
+        .delete_icon_ids
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("no RT_ICON IDs remain after deleted IDs"))?
+        .max(1);
+    let mut group = Vec::with_capacity(6 + entries.len() * 14);
+    group.extend_from_slice(&0u16.to_le_bytes());
+    group.extend_from_slice(&1u16.to_le_bytes());
+    group.extend_from_slice(
+        &u16::try_from(entries.len())
+            .context("ICO has too many images for an icon group")?
+            .to_le_bytes(),
+    );
+
+    for (index, entry) in entries.iter().enumerate() {
+        let id = first_id
+            .checked_add(u16::try_from(index).context("ICO has too many images")?)
+            .ok_or_else(|| anyhow!("ICO icon resource ID exceeds 65535"))?;
+        update_resource(
+            handle,
+            icon_type,
+            resource_id(id),
+            req.lang,
+            Some(entry.data),
+        )
+        .with_context(|| format!("write RT_ICON id {id}"))?;
+
+        // GRPICONDIRENTRY is the ICO entry with its image offset replaced by
+        // the 16-bit RT_ICON resource ID.
+        group.extend_from_slice(&entry.header);
+        group.extend_from_slice(&id.to_le_bytes());
+    }
+
+    update_resource(
+        handle,
+        resource_type(14), // RT_GROUP_ICON
+        resource_id(*group_id),
+        req.lang,
+        Some(&group),
+    )
+    .with_context(|| format!("write RT_GROUP_ICON id {group_id}"))
 }
 
-fn apply_version(_req: &PackRequest, _data: &PreparedData) -> Result<()> {
-    // TODO(windows): 见模块文档第 4 条；req.version_info_rc 为 None 时直接 Ok。
-    todo!("apply_version: VERSIONINFO rc -> RT_VERSION")
+fn apply_version(
+    handle: windows::Win32::Foundation::HANDLE,
+    req: &PackRequest,
+    data: &PreparedData,
+) -> Result<()> {
+    let Some(version_info) = &data.version_info else {
+        return Ok(());
+    };
+    update_resource(
+        handle,
+        resource_type(16), // RT_VERSION
+        resource_id(1),
+        req.lang,
+        Some(version_info),
+    )
+    .context("write RT_VERSION resource 1")
+}
+
+fn update_resource(
+    handle: windows::Win32::Foundation::HANDLE,
+    kind: PCWSTR,
+    name: PCWSTR,
+    lang: u16,
+    bytes: Option<&[u8]>,
+) -> Result<()> {
+    let (data, len) = match bytes {
+        Some(bytes) => (
+            Some(bytes.as_ptr().cast()),
+            u32::try_from(bytes.len()).context("resource data exceeds Win32 size limit")?,
+        ),
+        None => (None, 0),
+    };
+    // SAFETY: integer resource identifiers are MAKEINTRESOURCE-compatible;
+    // named-resource buffers and data bytes outlive the call.
+    unsafe { UpdateResourceW(handle, kind, name, lang, data, len) }.map_err(Into::into)
+}
+
+fn resource_type(id: u16) -> PCWSTR {
+    PCWSTR(usize::from(id) as *const u16)
+}
+
+fn resource_id(id: u16) -> PCWSTR {
+    PCWSTR(usize::from(id) as *const u16)
+}
+
+fn to_wide_path(path: &Path) -> Result<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+    Ok(path.as_os_str().encode_wide().chain(Some(0)).collect())
+}
+
+fn to_wide_string(value: &str) -> Result<Vec<u16>> {
+    if value.contains('\0') {
+        return Err(anyhow!("resource name contains NUL"));
+    }
+    Ok(value.encode_utf16().chain(Some(0)).collect())
+}
+
+fn is_missing_resource(error: &anyhow::Error) -> bool {
+    let Some(error) = error.downcast_ref::<WindowsError>() else {
+        return false;
+    };
+    let code = error.code().0 as u32;
+    let win32_code = if code & 0xffff_0000 == 0x8007_0000 {
+        code & 0xffff
+    } else {
+        code
+    };
+    matches!(win32_code, 1812 | 1813 | 1814 | 1815)
 }

@@ -1,0 +1,10 @@
+{
+  "name": "stdio-host-example",
+  "uuid": "38b646a2-209e-45ed-a6c9-1817bd15aa4f",
+  "window": {
+    "entry": "index.html",
+    "title": "Niva stdio host example",
+    "size": { "width": 480, "height": 240 },
+    "visible": true
+  }
+}

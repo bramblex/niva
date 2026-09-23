@@ -6,20 +6,25 @@ use std::{
     pin::Pin,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        mpsc,
     },
     thread,
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{lock, unsafe_impl_sync_send};
 
 use self::protocol::{ClientMsg, ServerMsg, decode_chunk, encode_chunk};
-use super::{NivaApp, options::NivaOptions, window_manager::window::NivaWindow};
+use super::{
+    NivaApp,
+    options::NivaOptions,
+    window_manager::window::{NivaWindow, WsOut},
+};
 
 #[derive(Deserialize, Clone)]
 pub struct ApiArguments(Value);
@@ -102,6 +107,8 @@ pub struct CallInner {
     pub app: Arc<NivaApp>,
     pub window: Arc<NivaWindow>,
     pub id: u64,
+    pub connection_id: u64,
+    pub ws_tx: mpsc::Sender<WsOut>,
     pub seq: AtomicU64,
     pub cancel_rx: async_channel::Receiver<()>,
     pub inbound_rx: async_channel::Receiver<InboundChunk>,
@@ -120,7 +127,7 @@ impl CallContext {
     pub fn push(&self, name: &str, data: Value) {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         let msg = ServerMsg::event(Some(self.id), seq, name.to_string(), data);
-        self.window.send_ws_envelope(&msg.encode());
+        let _ = self.ws_tx.send(WsOut::Text(msg.encode()));
     }
 
     /// Best-effort binary chunk tied to this call (dropped when socket gone).
@@ -137,7 +144,7 @@ impl CallContext {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed);
         // First chunk of a call opens with START (seq starts at 1).
         let frame = encode_chunk(self.id, seq, seq == 1, end, stderr, data);
-        self.window.send_ws_binary(&frame);
+        let _ = self.ws_tx.send(WsOut::Binary(frame));
     }
 
     /// Terminal response for this call.
@@ -147,7 +154,7 @@ impl CallContext {
             Err(err) => (-1, err.to_string(), json!(null)),
         };
         let msg = ServerMsg::result(self.id, code, message, data);
-        if !self.window.send_ws_envelope(&msg.encode()) {
+        if self.ws_tx.send(WsOut::Text(msg.encode())).is_err() {
             eprintln!("[niva] api response dropped, window socket gone");
         }
     }
@@ -204,10 +211,32 @@ pub struct ApiManager {
     handlers: HashMap<String, HandlerEntry>,
     dispatch_tx: async_channel::Sender<DispatchJob>,
     default_timeout: Duration,
-    active: Arc<Mutex<HashMap<(u8, u64), ActiveCall>>>,
+    active: Arc<Mutex<HashMap<(u8, u64, u64), ActiveCall>>>,
+    ipc_active: AtomicUsize,
+    max_ipc_active: usize,
+}
+
+struct IpcPermit<'a>(&'a AtomicUsize);
+
+impl Drop for IpcPermit<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl ApiManager {
+    pub fn ipc_error_response(raw_body: &str, error: &str) -> String {
+        let id = if raw_body.len() <= 256 * 1024 {
+            serde_json::from_str::<Value>(raw_body)
+                .ok()
+                .and_then(|message| message.get("id").and_then(Value::as_u64))
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        ServerMsg::result(id, -1, error.to_string(), json!(null)).encode()
+    }
+
     pub fn new(options: &NivaOptions) -> Self {
         let api_options = options.api.clone().unwrap_or_default();
         let default_timeout = Duration::from_millis(api_options.timeout_ms.unwrap_or(30_000));
@@ -236,12 +265,96 @@ impl ApiManager {
             dispatch_tx,
             default_timeout,
             active,
+            ipc_active: AtomicUsize::new(0),
+            max_ipc_active: max_queue.max(1),
         }
     }
 
     /// Set once during startup; lock-free reads afterwards.
     pub fn bind_app(&self, app: Arc<NivaApp>) {
         let _ = self.app.set(app);
+    }
+
+    /// Execute one JSON-only call from a remote document. The native WebView
+    /// supplies both the window and source URL; neither is taken from the JS
+    /// payload. Stateful/stream handlers have no IPC representation.
+    pub async fn ipc_call(
+        &self,
+        window_id: u8,
+        source_url: &str,
+        raw_body: &str,
+    ) -> Result<String> {
+        const MAX_IPC_BYTES: usize = 256 * 1024;
+        if raw_body.len() > MAX_IPC_BYTES {
+            return Err(anyhow!("IPC request exceeds 256 KiB"));
+        }
+        let msg: ClientMsg = serde_json::from_str(raw_body)?;
+        let ClientMsg::Call { id, method, args } = msg else {
+            return Err(anyhow!("IPC only accepts unary calls"));
+        };
+        let request = ApiRequest(id, method, ApiArguments(args));
+        let previous = self.ipc_active.fetch_add(1, Ordering::AcqRel);
+        if previous >= self.max_ipc_active {
+            self.ipc_active.fetch_sub(1, Ordering::AcqRel);
+            return Ok(ServerMsg::result(id, -3, "IPC server busy".into(), json!(null)).encode());
+        }
+        let _permit = IpcPermit(&self.ipc_active);
+        let app = self
+            .app
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow!("API manager not ready"))?;
+        let window = app.window()?.get_window(window_id)?;
+        let local_origin = format!("http://127.0.0.1:{}", app.server_info()?);
+        let source_origin = url::Url::parse(source_url)
+            .map_err(|_| anyhow!("invalid IPC source URL"))?
+            .origin()
+            .ascii_serialization();
+        let denied = |message: &str| {
+            let response = request.err(-4, message);
+            ServerMsg::result(response.0, response.1, response.2, response.3).encode()
+        };
+        if source_origin == local_origin {
+            return Ok(denied("local pages use the WebSocket bridge"));
+        }
+        if !window.permissions.allows(source_url, &request.1)
+            || matches!(
+                request.1.as_str(),
+                "window.open" | "webview.baseFileSystemUrl"
+            )
+        {
+            return Ok(denied("permission denied"));
+        }
+        let Some(entry) = self.handlers.get(&request.1) else {
+            return Ok(denied("api not found"));
+        };
+        let HandlerKind::Unary(handler) = &entry.handler else {
+            return Ok(denied("stream APIs are unavailable over IPC"));
+        };
+        let handler = handler.clone();
+        let timeout = entry.timeout.unwrap_or(Some(self.default_timeout));
+        let work = handler(app, window, request.clone());
+        let response = match timeout {
+            Some(duration) => {
+                smol::future::or(work, async {
+                    smol::Timer::after(duration).await;
+                    request.err(-2, "API timeout")
+                })
+                .await
+            }
+            None => work.await,
+        };
+        let encoded = ServerMsg::result(response.0, response.1, response.2, response.3).encode();
+        if encoded.len() > MAX_IPC_BYTES {
+            return Ok(ServerMsg::result(
+                id,
+                -1,
+                "IPC response exceeds 256 KiB".into(),
+                json!(null),
+            )
+            .encode());
+        }
+        Ok(encoded)
     }
 
     /// Register a unary API: plain `async fn`, result auto-delivered.
@@ -336,7 +449,7 @@ impl ApiManager {
     }
 
     /// Entry for text frames from the transport (non-blocking).
-    pub fn on_text(&self, window_id: u8, text: &str) {
+    pub fn on_text(&self, window_id: u8, connection_id: u64, tx: &mpsc::Sender<WsOut>, text: &str) {
         let msg: ClientMsg = match serde_json::from_str(text) {
             Ok(msg) => msg,
             Err(err) => {
@@ -346,15 +459,18 @@ impl ApiManager {
         };
         match msg {
             ClientMsg::Hello { .. } => {}
-            ClientMsg::Cancel { id } => self.cancel_call(window_id, id),
-            ClientMsg::Call { id, method, args } => {
-                self.dispatch(window_id, ApiRequest(id, method, ApiArguments(args)))
-            }
+            ClientMsg::Cancel { id } => self.cancel_call(window_id, connection_id, id),
+            ClientMsg::Call { id, method, args } => self.dispatch(
+                window_id,
+                connection_id,
+                tx.clone(),
+                ApiRequest(id, method, ApiArguments(args)),
+            ),
         }
     }
 
     /// Entry for binary frames from the transport (non-blocking).
-    pub fn on_binary(&self, window_id: u8, frame: &[u8]) {
+    pub fn on_binary(&self, window_id: u8, connection_id: u64, frame: &[u8]) {
         let (header, payload) = match decode_chunk(frame) {
             Ok(pair) => pair,
             Err(err) => {
@@ -370,7 +486,7 @@ impl ApiManager {
                 return;
             }
         };
-        match active.get(&(window_id, header.id)) {
+        match active.get(&(window_id, connection_id, header.id)) {
             Some(call) => {
                 if call
                     .inbound_tx
@@ -391,13 +507,31 @@ impl ApiManager {
     }
 
     /// Abort one call (client cancel). Silent when unknown.
-    pub fn cancel_call(&self, window_id: u8, id: u64) {
+    pub fn cancel_call(&self, window_id: u8, connection_id: u64, id: u64) {
         let mut active = match lock!(self.active) {
             Ok(active) => active,
             Err(_) => return,
         };
-        if let Some(call) = active.remove(&(window_id, id)) {
+        if let Some(call) = active.remove(&(window_id, connection_id, id)) {
             call.cancel_tx.close();
+        }
+    }
+
+    /// Disconnecting one frame must not cancel calls from sibling frames.
+    pub fn cancel_connection(&self, window_id: u8, connection_id: u64) {
+        let mut active = match lock!(self.active) {
+            Ok(active) => active,
+            Err(_) => return,
+        };
+        let keys: Vec<_> = active
+            .keys()
+            .filter(|(wid, cid, _)| *wid == window_id && *cid == connection_id)
+            .copied()
+            .collect();
+        for key in keys {
+            if let Some(call) = active.remove(&key) {
+                call.cancel_tx.close();
+            }
         }
     }
 
@@ -407,19 +541,25 @@ impl ApiManager {
             Ok(active) => active,
             Err(_) => return,
         };
-        let ids: Vec<u64> = active
+        let keys: Vec<_> = active
             .keys()
-            .filter(|(wid, _)| *wid == window_id)
-            .map(|(_, id)| *id)
+            .filter(|(wid, _, _)| *wid == window_id)
+            .copied()
             .collect();
-        for id in ids {
-            if let Some(call) = active.remove(&(window_id, id)) {
+        for key in keys {
+            if let Some(call) = active.remove(&key) {
                 call.cancel_tx.close();
             }
         }
     }
 
-    pub(crate) fn dispatch(&self, window_id: u8, request: ApiRequest) {
+    pub(crate) fn dispatch(
+        &self,
+        window_id: u8,
+        connection_id: u64,
+        tx: mpsc::Sender<WsOut>,
+        request: ApiRequest,
+    ) {
         let app = match self.app.get().cloned() {
             Some(app) => app,
             None => {
@@ -437,7 +577,7 @@ impl ApiManager {
         let entry = match self.handlers.get(&request.1) {
             Some(entry) => entry,
             None => {
-                respond(&window, request.err(-1, "api not found".to_string()));
+                respond(&tx, request.err(-1, "api not found".to_string()));
                 return;
             }
         };
@@ -453,7 +593,7 @@ impl ApiManager {
         let (inbound_tx, inbound_rx) = async_channel::bounded::<InboundChunk>(64);
         if let Ok(mut active) = lock!(self.active) {
             active.insert(
-                (window_id, request.0),
+                (window_id, connection_id, request.0),
                 ActiveCall {
                     cancel_tx: cancel_tx.clone(),
                     inbound_tx,
@@ -465,6 +605,8 @@ impl ApiManager {
                 app,
                 window,
                 id: request.0,
+                connection_id,
+                ws_tx: tx,
                 seq: AtomicU64::new(1),
                 cancel_rx,
                 inbound_rx,
@@ -480,7 +622,7 @@ impl ApiManager {
             let job = err.into_inner();
             eprintln!("[niva] api dispatch queue full, rejecting");
             respond(
-                &job.ctx.window,
+                &job.ctx.ws_tx,
                 job.request.err(-3, "server busy".to_string()),
             );
         }
@@ -488,9 +630,9 @@ impl ApiManager {
 }
 
 /// Deliver a terminal response over the window socket; log-and-drop when gone.
-fn respond(window: &Arc<NivaWindow>, response: ApiResponse) {
+fn respond(tx: &mpsc::Sender<WsOut>, response: ApiResponse) {
     let msg = ServerMsg::result(response.0, response.1, response.2, response.3);
-    if !window.send_ws_envelope(&msg.encode()) {
+    if tx.send(WsOut::Text(msg.encode())).is_err() {
         eprintln!("[niva] api response dropped, window socket gone");
     }
 }
@@ -502,7 +644,7 @@ enum End {
     Cancelled,
 }
 
-async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64), ActiveCall>>>) {
+async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64, u64), ActiveCall>>>) {
     let DispatchJob {
         ctx,
         request,
@@ -510,6 +652,7 @@ async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64), ActiveCa
         timeout,
     } = job;
     let wid = ctx.window.id;
+    let connection_id = ctx.connection_id;
     let id = ctx.id;
     let watch = ctx.clone();
 
@@ -518,7 +661,7 @@ async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64), ActiveCa
         match handler {
             HandlerKind::Unary(f) => {
                 let response = f(ctx.app.clone(), ctx.window.clone(), request.clone()).await;
-                respond(&ctx.window, response);
+                respond(&ctx.ws_tx, response);
             }
             HandlerKind::Stream(f) => {
                 if let Err(err) = f(ctx, request.clone()).await {
@@ -560,12 +703,29 @@ async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64), ActiveCa
     // Always close the cancel channel on task end: unblocks ctx waiters
     // (collect loops, stdin pumps) even when nobody cancelled.
     if let Ok(mut active) = lock!(active)
-        && let Some(call) = active.remove(&(wid, id))
+        && let Some(call) = active.remove(&(wid, connection_id, id))
     {
         call.cancel_tx.close();
     }
     if end == End::Timeout {
-        respond(&reply.window, request.err(-2, "API timeout".to_string()));
+        respond(&reply.ws_tx, request.err(-2, "API timeout".to_string()));
     }
     // Cancelled: client went away, nothing to answer.
+}
+
+#[cfg(test)]
+mod ipc_tests {
+    use super::*;
+
+    #[test]
+    fn error_reply_keeps_the_call_id() {
+        let reply = ApiManager::ipc_error_response(
+            r#"{"t":"call","id":42,"method":"os.info","args":[]}"#,
+            "bad request",
+        );
+        let decoded: Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(decoded["t"], "result");
+        assert_eq!(decoded["id"], 42);
+        assert_eq!(decoded["code"], -1);
+    }
 }

@@ -2,7 +2,8 @@
   "private": true,
   "workspaces": [
     "packages/devtools",
-    "packages/types"
+    "packages/types",
+    "packages/node-compat"
   ],
   "devDependencies": {
     "husky": "^8.0.0"

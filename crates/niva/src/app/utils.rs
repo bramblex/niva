@@ -1,12 +1,29 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 pub type ArcMut<T> = Arc<Mutex<T>>;
+
+static STDIO_MODE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_stdio_mode(enabled: bool) {
+    STDIO_MODE.store(enabled, Ordering::Relaxed);
+}
+
+pub(crate) fn log_output(args: std::fmt::Arguments<'_>) {
+    if STDIO_MODE.load(Ordering::Relaxed) {
+        eprintln!("{args}");
+    } else {
+        println!("{args}");
+    }
+}
 
 pub fn arc<T>(t: T) -> Arc<T> {
     Arc::new(t)
@@ -105,7 +122,7 @@ macro_rules! logical_try {
 macro_rules! log_if_err {
     ($result:expr) => {
         if let Err(e) = $result {
-            println!("[Error]: {}", e);
+            $crate::app::utils::log_output(format_args!("[Error]: {}", e));
         }
     };
 }
@@ -113,14 +130,14 @@ macro_rules! log_if_err {
 #[macro_export]
 macro_rules! log {
     ($result:expr) => {
-        println!("[Info]: {}", $result);
+        $crate::app::utils::log_output(format_args!("[Info]: {}", $result));
     };
 }
 
 #[macro_export]
 macro_rules! log_err {
     ($result:expr) => {
-        println!("[Error]: {}", $result);
+        $crate::app::utils::log_output(format_args!("[Error]: {}", $result));
     };
 }
 

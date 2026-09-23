@@ -4,7 +4,7 @@ import {useModel} from "../common/state";
 import { createContext, useContext } from "react";
 import { ProjectModel } from "./project.model";
 import { ModalModel } from "./modal.model";
-import { checkVersion, pathJoin, pathSplit, tryOrAlert } from "../common/utils";
+import { checkVersion, pathJoin, tryOrAlert } from "../common/utils";
 import { Err, Ok, AppResult, fromThrowableAsync } from "../common/result";
 
 import { ErrorCode } from "../common/error";
@@ -20,6 +20,7 @@ export class AppModel extends StateModel<{
   modal: ModalModel;
   project: ProjectModel | null;
   locale: LocaleModel;
+  availableVersion: string | null;
 }> {
   constructor() {
     super({} as any);
@@ -28,6 +29,7 @@ export class AppModel extends StateModel<{
       modal: new ModalModel(this),
       locale: new LocaleModel(this),
       project: null,
+      availableVersion: null,
     });
   }
 
@@ -35,10 +37,13 @@ export class AppModel extends StateModel<{
     Niva.addEventListener("window.closeRequested", () =>
       tryOrAlert(this, this.exit())
     );
-    const { history, locale, modal } = this.state;
+    const { history, locale } = this.state;
     await Promise.all([history.init(), locale.init()])
-    initEndPromise.then(() => {
-      checkVersion(modal, locale);
+    initEndPromise.then(async () => {
+      const availableVersion = await checkVersion();
+      if (availableVersion) {
+        this.update({ ...this.state, availableVersion });
+      }
     })
   }
 
@@ -55,12 +60,7 @@ export class AppModel extends StateModel<{
   }
 
   async open(path: string): Promise<AppResult> {
-    const { modal, locale, project: lastProject } = this.state;
-
-    const result = await this.close();
-    if (result.isErr()) {
-      return result;
-    }
+    const { modal, locale } = this.state;
 
     // first check if the path is a valid project path
     const configPath = pathJoin(path, "niva.json");
@@ -87,7 +87,10 @@ export class AppModel extends StateModel<{
           locale.t("PROJECT_CREATE_CONFIG_WHERE_NOT_FOUND")
         ))
       ) {
-        return Err(ErrorCode.PROJECT_CONFIG_NOT_EXISTS, { configPath });
+        // Declining optional config creation is a user cancellation, not an
+        // invalid project error. In particular, keep the currently open
+        // project untouched.
+        return Ok(void 0);
       }
 
       let projectName = path.split(/\/|\\/).pop() as string;
@@ -126,16 +129,34 @@ export class AppModel extends StateModel<{
       }
     }
 
+    const { project: currentProject } = this.state;
+    if (currentProject?.state.path === path) {
+      // Reopening the active path should reload the same model after resolving
+      // its edits, so a just-saved config cannot be replaced by a stale
+      // candidate loaded before the save.
+      return currentProject.refresh();
+    }
+
     const project = new ProjectModel(this, path);
     const projectInitResult = await project.init();
+    if (projectInitResult.isErr()) {
+      return projectInitResult;
+    }
+
+    if (currentProject) {
+      const disposeResult = await currentProject.dispose();
+      if (disposeResult.isErr()) {
+        return disposeResult;
+      }
+    }
 
     this.update({
       ...this.state,
       project,
     });
 
-    this.state.history.record(project);
-    return projectInitResult;
+    await this.state.history.record(project);
+    return Ok(void 0);
   }
 
   async close(): Promise<AppResult> {
@@ -155,18 +176,61 @@ export class AppModel extends StateModel<{
 
   async create(): Promise<AppResult> {
     const { modal } = this.state;
-    const path = await modal.showNative<string | null>(() =>
-      Niva.api.dialog.saveFile()
-    );
-
-    if (!path) {
+    const requestedName = await modal.promptProjectName();
+    if (requestedName === null) {
       return Ok(void 0);
     }
 
+    const projectName = requestedName.trim();
+    if (
+      !projectName ||
+      projectName === "." ||
+      projectName === ".." ||
+      /[\\/]/.test(projectName)
+    ) {
+      return Err(ErrorCode.PROJECT_CREATE_FAILED, {
+        reason: "Project name must be a single non-empty directory name.",
+      });
+    }
+
+    const parentPath = await modal.showNative<string | null>(() =>
+      Niva.api.dialog.pickDir()
+    );
+    if (!parentPath) {
+      return Ok(void 0);
+    }
+
+    const path = pathJoin(parentPath, projectName);
+    if (await fs.exists(path)) {
+      return Err(ErrorCode.PROJECT_ALREADY_EXISTS, { path });
+    }
+
+    // Resolve the current editor before writing a new project. Cancelling the
+    // switch must not leave an unused project folder behind.
+    if (this.state.project) {
+      const leaveResult = await this.state.project.refresh();
+      if (leaveResult.isErr()) {
+        return leaveResult;
+      }
+    }
+
+    // createDir is atomic and fails if another item appears after the
+    // preflight check, so existing project data can never be overwritten.
+    const createDirectoryResult = await fromThrowableAsync(() =>
+      fs.createDir(path)
+    );
+    if (createDirectoryResult.isErr()) {
+      if (await fs.exists(path)) {
+        return Err(ErrorCode.PROJECT_ALREADY_EXISTS, { path });
+      }
+      return Err(ErrorCode.PROJECT_CREATE_FAILED, {
+        path,
+        reason: createDirectoryResult.error,
+      });
+    }
+
     const newProjectResult = await fromThrowableAsync(async () => {
-      await fs.createDirAll(path);
-      const projectName = pathSplit(path).pop();
-      const files = generateNewProject(projectName || "niva-new-project");
+      const files = generateNewProject(projectName);
       await Promise.all(
         files.map(([name, content]) => fs.write(pathJoin(path, name), content))
       );

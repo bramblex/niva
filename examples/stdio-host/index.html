@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Niva stdio host example</title>
+  </head>
+  <body>
+    <h1>Niva stdio host</h1>
+    <p>Waiting for the parent process to send <code>sayHello</code>.</p>
+    <script>
+      Niva.addEventListener("host:message", function (_eventName, message) {
+        if (message.name === "sayHello") {
+          Niva.api.host.send("sayHelloResult", {
+            text: "Hello, " + message.data.name + "!"
+          }).catch(function (error) {
+            console.error("Unable to reply to host:", error);
+          });
+        }
+      });
+
+      // ready confirms the native WS bridge; this message confirms that the
+      // page has installed its host:message listener.
+      Niva.api.host.send("page:ready").catch(function (error) {
+        console.error("Unable to notify host:", error);
+      });
+    </script>
+  </body>
+</html>

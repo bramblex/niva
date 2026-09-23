@@ -7,6 +7,10 @@ const { fs } = Niva.api;
 export const indexesKey = "RESOURCE_INDEXES";
 export const dataKey = "RESOURCE_DATA";
 type FileIndex = Record<string, [number, number]>;
+export interface ExtraResource {
+  path: string;
+  key: string;
+}
 export interface BuildParams {
   project: ProjectModel,
   progress: ProgressModel,
@@ -16,7 +20,8 @@ export interface BuildParams {
 export async function packageResource(
   projectResourcePath: string,
   fileIndex: FileIndex = {},
-  buffer: ArrayBuffer = new ArrayBuffer(0)
+  buffer: ArrayBuffer = new ArrayBuffer(0),
+  extraResources: ExtraResource[] = [],
 ) {
   for (const name of await fs.readDirAll(projectResourcePath)) {
     const filePath = pathJoin(projectResourcePath, name);
@@ -29,6 +34,14 @@ export async function packageResource(
     );
     buffer = newBuffer;
     fileIndex = newFileIndex;
+  }
+  for (const resource of extraResources) {
+    [fileIndex, buffer] = await appendResource(
+      resource.path,
+      resource.key,
+      fileIndex,
+      buffer,
+    );
   }
   return [fileIndex, buffer] as const;
 }

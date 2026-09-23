@@ -51,7 +51,7 @@ export async function signWindowsApp(params: {
   }
 
   progress.addTask("signtool sign", async () => {
-    await runCmd(signtool, [
+    await progress.runCommand("signtool sign", signtool, [
       "sign",
       "/fd",
       "SHA256",

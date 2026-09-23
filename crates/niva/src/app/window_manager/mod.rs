@@ -1,6 +1,6 @@
 pub(crate) mod builder;
 pub mod options;
-pub mod url;
+pub mod permissions;
 pub mod window;
 
 use anyhow::{Result, anyhow};
@@ -23,6 +23,7 @@ pub struct WindowManager {
     id_counter: IdCounter,
     web_context: WebContext,
     windows: HashMap<u8, Arc<NivaWindow>>,
+    token_map: HashMap<String, u8>,
     id_map: HashMap<WindowId, u8>,
 }
 
@@ -33,6 +34,7 @@ impl WindowManager {
             id_counter: IdCounter::new(),
             web_context: WebContext::new(Some(launch_info.data_dir.clone())),
             windows: HashMap::new(),
+            token_map: HashMap::new(),
             id_map: HashMap::new(),
         })
     }
@@ -52,6 +54,8 @@ impl WindowManager {
         let niva_window = NivaWindow::new(app, self, id, options, target)?;
 
         self.id_map.insert(niva_window.window_id, niva_window.id);
+        self.token_map
+            .insert(niva_window.token.clone(), niva_window.id);
         self.windows.insert(niva_window.id, niva_window.clone());
 
         Ok(niva_window)
@@ -62,6 +66,14 @@ impl WindowManager {
             .get(&id)
             .cloned()
             .ok_or(anyhow!("Window {id} not found"))
+    }
+
+    pub fn get_window_by_token(&self, token: &str) -> Result<Arc<NivaWindow>> {
+        let id = self
+            .token_map
+            .get(token)
+            .ok_or(anyhow!("Unknown window token"))?;
+        self.get_window(*id)
     }
 
     pub fn get_window_inner(&self, window_id: WindowId) -> Result<Arc<NivaWindow>> {
@@ -82,6 +94,7 @@ impl WindowManager {
             .windows
             .remove(&id)
             .ok_or(anyhow!("Window {id} not found"))?;
+        self.token_map.remove(&niva_window.token);
         self.id_map
             .remove(&niva_window.window_id)
             .ok_or(anyhow!("Window {id} not found"))?;

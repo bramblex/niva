@@ -18,6 +18,7 @@
   },
   "scripts": {
     "start": "vite",
+    "prebuild": "node ./scripts/stage-node-compat.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

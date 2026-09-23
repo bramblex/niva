@@ -1,14 +1,13 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const { themes } = require('prism-react-renderer');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Niva',
   tagline: '轻松构建超轻量级跨平台应用，Niva 让开发变得简单！',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/icon.png',
 
   // Set the production url of your site here
   url: 'https://bramblex.github.io',
@@ -24,15 +23,16 @@ const config = {
   trailingSlash: false,
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
 
-  // Even if you don't use internalization, you can use this field to set useful
-  // metadata like html lang. For example, if your site is Chinese, you may want
-  // to replace "en" with "zh-Hans".
-  // i18n: {
-  //   defaultLocale: 'zh-CN',
-  //   locales: ['zh-CN', 'en'],
-  // },
+  i18n: {
+    defaultLocale: 'zh-Hans',
+    locales: ['zh-Hans'],
+  },
 
   presets: [
     [
@@ -56,13 +56,15 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // Replace with your project's social card
-      image: 'img/docusaurus-social-card.jpg',
+      colorMode: {
+        defaultMode: 'light',
+        respectPrefersColorScheme: false,
+      },
       navbar: {
         title: 'Niva',
         logo: {
           alt: 'Niva Logo',
-          src: 'img/logo.svg',
+          src: 'img/logo.png',
         },
         items: [
           {
@@ -98,7 +100,7 @@ const config = {
         ],
       },
       footer: {
-        style: 'dark',
+        style: 'light',
         links: [
           {
             title: '文档',
@@ -144,39 +146,10 @@ const config = {
       },
 
       prism: {
-        theme: lightCodeTheme,
-        darkTheme: darkCodeTheme,
+        theme: themes.github,
+        darkTheme: themes.dracula,
       },
 
-      algolia: {
-        // The application ID provided by Algolia
-        appId: 'YOUR_APP_ID',
-
-        // Public API key: it is safe to commit it
-        apiKey: 'YOUR_SEARCH_API_KEY',
-
-        indexName: 'YOUR_INDEX_NAME',
-
-        // Optional: see doc section below
-        contextualSearch: true,
-
-        // Optional: Specify domains where the navigation should occur through window.location instead on history.push. Useful when our Algolia config crawls multiple documentation sites and we want to navigate with window.location.href to them.
-        externalUrlRegex: 'external\\.com|domain\\.com',
-
-        // Optional: Replace parts of the item URLs from Algolia. Useful when using the same search index for multiple deployments using a different baseUrl. You can use regexp or string in the `from` param. For example: localhost:3000 vs myCompany.com/docs
-        replaceSearchResultPathname: {
-          from: '/docs/', // or as RegExp: /\/docs\//
-          to: '/',
-        },
-
-        // Optional: Algolia search parameters
-        searchParameters: {},
-
-        // Optional: path for search page that enabled by default (`false` to disable it)
-        searchPagePath: 'search',
-
-        //... other Algolia params
-      },
     }),
 };
 

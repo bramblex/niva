@@ -65,6 +65,19 @@ export class ProjectModel extends StateModel<ProjectModelState> {
   }
 
   async init(): Promise<AppResult> {
+    // Keep accidental direct reloads (including future reset call sites) from
+    // replacing an active editor buffer without the unsaved-changes flow.
+    if (
+      this.app.state.project === this &&
+      this.state.editor.state.isEdit
+    ) {
+      return Err(ErrorCode.PROJECT_HAS_UNSAVED_CHANGE);
+    }
+
+    return this.loadConfig();
+  }
+
+  private async loadConfig(): Promise<AppResult> {
     const { path, configPath } = this.state;
 
     const loadResult = await fromThrowableAsync(async () => {
@@ -107,93 +120,169 @@ export class ProjectModel extends StateModel<ProjectModelState> {
   }
 
   async dispose(): Promise<AppResult> {
-    const { modal, locale } = this.app.state;
-    const { isEdit } = this.state.editor.state;
-    if (isEdit) {
-      if (
-        (await modal.confirm(locale.t("WARNING"), locale.t("UNSAVED"))) === true
-      ) {
-        return this.save();
-      }
-    }
-    return Ok(void 0);
+    return this.resolveUnsavedChanges();
   }
 
   async refresh() {
-    const result = await this.dispose();
+    const result = await this.resolveUnsavedChanges();
     if (result.isErr()) {
       return result;
     }
+
+    const loadResult = await this.loadConfig();
+    if (loadResult.isErr()) {
+      return loadResult;
+    }
     await this.app.state.history.record(this);
-    return this.init();
+    return Ok(void 0);
+  }
+
+  /** Reloads the persisted config after an explicit save/discard decision. */
+  async reset(): Promise<AppResult> {
+    return this.refresh();
   }
 
   async save(): Promise<AppResult> {
+    if (!this.state.editor.state.isEdit) {
+      return Ok(void 0);
+    }
+
+    const saveResult = await this.persistEdits();
+    if (saveResult.isErr()) {
+      return saveResult;
+    }
+    return this.refresh();
+  }
+
+  private async resolveUnsavedChanges(): Promise<AppResult> {
+    const { editor } = this.state;
+    if (!editor.state.isEdit) {
+      return Ok(void 0);
+    }
+
+    const { modal } = this.app.state;
+    const decision = await modal.confirmUnsaved();
+    if (decision === "cancel") {
+      return Err(ErrorCode.PROJECT_HAS_UNSAVED_CHANGE);
+    }
+    if (decision === "save") {
+      return this.persistEdits();
+    }
+
+    // Discard is intentionally deferred until a successful reload replaces
+    // the editor model. If disk loading fails, the user's draft is preserved.
+    return Ok(void 0);
+  }
+
+  private async prepareForAction(): Promise<AppResult> {
+    const hadUnsavedChanges = this.state.editor.state.isEdit;
+    if (!hadUnsavedChanges) {
+      return Ok(void 0);
+    }
+
+    const result = await this.resolveUnsavedChanges();
+    if (result.isErr()) {
+      return result;
+    }
+
+    // Both saving and discarding affect the editor's in-memory view of the
+    // project config. Reload before actions that consume config.state.
+    return this.loadConfig();
+  }
+
+  private async persistEdits(): Promise<AppResult> {
     const { isEdit, content } = this.state.editor.state;
     if (!isEdit) {
       return Ok(void 0);
     }
+
     const validateResult = ProjectModel.validateConfig(content);
     if (validateResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_VALIDATE_FAILED, { content });
     }
+
     const saveResult = await fromThrowableAsync(async () =>
       fs.write(this.state.configPath, content)
     );
-    
     if (saveResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_FAILED, {
         reason: saveResult.error,
       });
     }
-    this.state.editor.update({content, isEdit: false})
-    return this.refresh();
+
+    this.state.editor.update({ content, isEdit: false });
+    return Ok(void 0);
   }
 
   async build(target?: string): Promise<AppResult> {
+    const prepareResult = await this.prepareForAction();
+    if (prepareResult.isErr()) {
+      return prepareResult;
+    }
+
     const { modal, locale } = this.app.state;
+    let phase: "build" | "sign" | "open-output" = "build";
+    let platform: "macos" | "windows";
+    let appPath: string;
 
-    return await fromThrowableAsync(async () => {
+    try {
       const { os: osType } = await os.info();
-
-      let appPath: string;
-
       const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
-      const _p = {
-        project: this,
-        progress,
-        file: null as string | null
-      }
       try {
+        const buildParams = {
+          project: this,
+          progress,
+          file: null as string | null,
+        };
+
         if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
-          _p.file = target || (await Niva.api.dialog.saveFile(["app"]));
-          appPath = await buildMacOsApp(_p);
-          await progress.run();
-          close();
-          await this.signIfConfigured("macos", appPath);
+          platform = "macos";
+          buildParams.file =
+            target || (await Niva.api.dialog.saveFile(["app"]));
+          if (!buildParams.file) {
+            return Ok(void 0);
+          }
+          appPath = await buildMacOsApp(buildParams);
         } else if (osType.toLowerCase() === "windows") {
-          _p.file = target || (await Niva.api.dialog.saveFile(["exe"]));
-          appPath = await buildWindowsApp(_p);
-          await progress.run();
-          close();
-          await this.signIfConfigured("windows", appPath);
+          platform = "windows";
+          buildParams.file =
+            target || (await Niva.api.dialog.saveFile(["exe"]));
+          if (!buildParams.file) {
+            return Ok(void 0);
+          }
+          appPath = await buildWindowsApp(buildParams);
         } else {
           throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
         }
-      } catch (error) {
+
+        await progress.run();
+      } finally {
         close();
-        modal.alert(locale.t("BUILD_FAILED"), (error as any).toString());
-        return;
       }
 
-      modal
-        .confirm(locale.t("BUILD_SUCCESS"), locale.t("BUILD_SUCCESS_MESSAGE"))
-        .then((ok) => {
-          if (ok) {
-            return process.open(dirname(appPath));
-          }
-        });
-    });
+      phase = "sign";
+      await this.signIfConfigured(platform, appPath);
+
+      // A caller-supplied target is the non-interactive CLI path. It must be
+      // able to await a definitive build result without a success prompt.
+      if (!target) {
+        phase = "open-output";
+        const shouldOpen = await modal.confirm(
+          locale.t("BUILD_SUCCESS"),
+          locale.t("BUILD_SUCCESS_MESSAGE")
+        );
+        if (shouldOpen) {
+          await process.open(dirname(appPath));
+        }
+      }
+
+      return Ok(void 0);
+    } catch (error) {
+      return Err(ErrorCode.UNKNOWN, {
+        phase,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**
@@ -227,22 +316,22 @@ export class ProjectModel extends StateModel<ProjectModelState> {
   }
 
   async debug(): Promise<AppResult> {
+    const prepareResult = await this.prepareForAction();
+    if (prepareResult.isErr()) {
+      return prepareResult;
+    }
+
     const { path, configPath, config } = this.state;
-    const { modal, locale } = this.app.state;
     const resource = pathJoin(path, config?.debug?.resource);
     const entry = config?.debug?.entry || "";
 
     if (!(await fs.exists(resource))) {
-      await modal.alert(
-        locale.t("TIPS"),
-        locale.t("DEBUG_RESOURCE_NOT_FOUND", { path: resource })
-      );
       return Err(ErrorCode.DEBUG_RESOURCE_NOT_FOUND, { resource });
     }
 
     return fromThrowableAsync(async () => {
       const exe = await process.currentExe();
-      process.exec(
+      await process.exec(
         exe,
         [
           `--debug-config=${configPath}`,

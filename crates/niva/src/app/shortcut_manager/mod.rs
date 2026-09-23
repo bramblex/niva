@@ -16,7 +16,8 @@ pub type NivaShortcutsOptions = Vec<ShortcutOption>;
 
 unsafe_impl_sync_send!(NivaShortcutManager);
 pub struct NivaShortcutManager {
-    manager: GlobalHotKeyManager,
+    manager: Option<GlobalHotKeyManager>,
+    manager_initialization_error: Option<String>,
     /// hotkey id (u32 from global-hotkey) -> (window id, action id, hotkey)
     shortcuts: HashMap<u32, (u8, u8, HotKey)>,
     /// (window id, action id) -> hotkey id, for per-window unregister/list
@@ -25,12 +26,35 @@ pub struct NivaShortcutManager {
 
 impl NivaShortcutManager {
     pub fn new() -> ArcMut<NivaShortcutManager> {
+        let (manager, manager_initialization_error) = match GlobalHotKeyManager::new() {
+            Ok(manager) => (Some(manager), None),
+            Err(err) => {
+                let reason = err.to_string();
+                eprintln!(
+                    "[niva] global shortcuts are disabled because manager initialization failed: {reason}"
+                );
+                (None, Some(reason))
+            }
+        };
+
         let manager = NivaShortcutManager {
-            manager: GlobalHotKeyManager::new().expect("Failed to create global hotkey manager"),
+            manager,
+            manager_initialization_error,
             shortcuts: HashMap::new(),
             index: HashMap::new(),
         };
         arc_mut(manager)
+    }
+
+    fn global_manager(&self) -> Result<&GlobalHotKeyManager> {
+        self.manager.as_ref().ok_or_else(|| {
+            anyhow!(
+                "Global shortcuts are unavailable because manager initialization failed: {}",
+                self.manager_initialization_error
+                    .as_deref()
+                    .unwrap_or("unknown initialization error")
+            )
+        })
     }
 
     pub fn lookup(&self, hotkey_id: u32) -> Option<(u8, u8)> {
@@ -44,6 +68,10 @@ impl NivaShortcutManager {
         window_id: u8,
         options: &NivaShortcutsOptions,
     ) -> Result<()> {
+        if options.is_empty() {
+            return Ok(());
+        }
+        self.global_manager()?;
         for ShortcutOption { accelerator, id } in options {
             self.register_with_id(window_id, *id, accelerator.clone())?;
         }
@@ -56,6 +84,7 @@ impl NivaShortcutManager {
         id: u8,
         accelerator_str: String,
     ) -> Result<()> {
+        let manager = self.global_manager()?;
         if self.index.contains_key(&(window_id, id)) {
             return Err(anyhow!("Shortcut with id {} already registered", id));
         }
@@ -65,7 +94,7 @@ impl NivaShortcutManager {
         if self.shortcuts.contains_key(&hotkey_id) {
             return Err(anyhow!("Shortcut {} already registered", accelerator_str));
         }
-        self.manager.register(hotkey)?;
+        manager.register(hotkey)?;
 
         self.shortcuts.insert(hotkey_id, (window_id, id, hotkey));
         self.index.insert((window_id, id), hotkey_id);
@@ -86,6 +115,7 @@ impl NivaShortcutManager {
     }
 
     pub fn unregister(&mut self, window_id: u8, id: u8) -> Result<()> {
+        self.global_manager()?;
         let hotkey_id = self
             .index
             .remove(&(window_id, id))
@@ -94,11 +124,19 @@ impl NivaShortcutManager {
             .shortcuts
             .remove(&hotkey_id)
             .ok_or(anyhow!("Shortcut with id {} not found", id))?;
-        self.manager.unregister(hotkey)?;
+        self.global_manager()?.unregister(hotkey)?;
         Ok(())
     }
 
     pub fn unregister_all(&mut self, window_id: u8) -> Result<()> {
+        if !self
+            .index
+            .keys()
+            .any(|(owner_id, _)| *owner_id == window_id)
+        {
+            return Ok(());
+        }
+        self.global_manager()?;
         let shortcuts = self
             .index
             .keys()
@@ -112,6 +150,7 @@ impl NivaShortcutManager {
     }
 
     pub fn list(&self, window_id: u8) -> Result<Vec<(u8, String)>> {
+        self.global_manager()?;
         let mut result = Vec::new();
         for ((owner_id, id), hotkey_id) in &self.index {
             if *owner_id == window_id
@@ -121,5 +160,36 @@ impl NivaShortcutManager {
             }
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unavailable_manager() -> NivaShortcutManager {
+        NivaShortcutManager {
+            manager: None,
+            manager_initialization_error: Some("test initialization failure".to_string()),
+            shortcuts: HashMap::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    fn assert_unavailable<T>(result: Result<T>) {
+        let Err(err) = result else {
+            panic!("expected unavailable shortcut manager error");
+        };
+        assert!(err.to_string().contains("test initialization failure"));
+    }
+
+    #[test]
+    fn unavailable_manager_returns_clear_shortcut_api_errors() {
+        let mut manager = unavailable_manager();
+        assert_unavailable(manager.register(1, "invalid accelerator".to_string()));
+        assert!(manager.register_with_options(1, &Vec::new()).is_ok());
+        assert_unavailable(manager.unregister(1, 0));
+        assert!(manager.unregister_all(1).is_ok());
+        assert_unavailable(manager.list(1));
     }
 }

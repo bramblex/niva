@@ -1,26 +1,25 @@
 use anyhow::Result;
 
 #[cfg(target_os = "macos")]
-use tao::platform::macos::WindowExtMacOS;
+use tao::platform::macos::{ActivationPolicy, EventLoopWindowTargetExtMacOS, WindowExtMacOS};
 
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
 
-use tao::{
-    event_loop::ControlFlow,
-    window::{CursorIcon, Fullscreen, Theme, UserAttentionType},
-};
+#[cfg(target_os = "windows")]
+use tao::window::Theme;
 
 use std::sync::Arc;
 
 use crate::app::{
     NivaApp,
     api_manager::{ApiManager, ApiRequest},
-    window_manager::{
-        options::{NivaPosition, NivaSize, NivaWindowOptions, WindowMenuOptions},
-        window::NivaWindow,
-    },
+    main_exec::run_on_main,
+    window_manager::window::NivaWindow,
 };
+
+#[cfg(target_os = "macos")]
+use crate::app::window_manager::options::NivaPosition;
 
 macro_rules! match_window {
     ($app:ident, $window:ident, $id:ident) => {
@@ -41,6 +40,9 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
         api_manager.register_api("windowExtra.beginResizeDrag", begin_resize_drag);
         api_manager.register_api("windowExtra.setSkipTaskbar", set_skip_taskbar);
         api_manager.register_api("windowExtra.setUndecoratedShadow", set_undecorated_shadow);
+        api_manager.register_api("windowExtra.setOverlayIcon", set_overlay_icon);
+        api_manager.register_api("windowExtra.setRtl", set_rtl);
+        api_manager.register_api("windowExtra.hasUndecoratedShadow", has_undecorated_shadow);
     }
 
     #[cfg(target_os = "macos")]
@@ -61,7 +63,125 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
         );
         api_manager.register_api("windowExtra.setTabbingIdentifier", set_tabbing_identifier);
         api_manager.register_api("windowExtra.tabbingIdentifier", tabbing_identifier);
+        api_manager.register_api("windowExtra.setTrafficLightInset", set_traffic_light_inset);
+        api_manager.register_api(
+            "windowExtra.setActivationPolicyAtRuntime",
+            set_activation_policy_at_runtime,
+        );
+        api_manager.register_api("windowExtra.setDockVisibility", set_dock_visibility);
+        api_manager.register_api("windowExtra.setBadgeLabel", set_badge_label);
     }
+}
+
+#[cfg(target_os = "windows")]
+async fn set_overlay_icon(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (icon_path, id) = request.args().optional::<(Option<String>, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        let icon = icon_path
+            .as_deref()
+            .map(|path| app2.resource().load_icon(path))
+            .transpose()?;
+        window.set_overlay_icon(icon.as_ref());
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(target_os = "windows")]
+async fn set_rtl(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (rtl, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_rtl(rtl);
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(target_os = "windows")]
+async fn has_undecorated_shadow(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        Ok(window.has_undecorated_shadow())
+    })
+    .await
+}
+
+#[cfg(target_os = "macos")]
+async fn set_traffic_light_inset(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.set_traffic_light_inset(position);
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(target_os = "macos")]
+async fn set_activation_policy_at_runtime(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (policy,) = request.args().optional::<(String,)>(1)?;
+    let policy = match policy.as_str() {
+        "regular" => ActivationPolicy::Regular,
+        "accessory" => ActivationPolicy::Accessory,
+        "prohibited" => ActivationPolicy::Prohibited,
+        _ => return Err(anyhow::anyhow!("Unknown macOS activation policy: {policy}")),
+    };
+    run_on_main(&app, move |target, _control_flow| {
+        target.set_activation_policy_at_runtime(policy);
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(target_os = "macos")]
+async fn set_dock_visibility(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (visible,) = request.args().optional::<(bool,)>(1)?;
+    run_on_main(&app, move |target, _control_flow| {
+        target.set_dock_visibility(visible);
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(target_os = "macos")]
+async fn set_badge_label(
+    app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (label,) = request.args().optional::<(Option<String>,)>(1)?;
+    run_on_main(&app, move |target, _control_flow| {
+        target.set_badge_label(label);
+        Ok(())
+    })
+    .await
 }
 
 // windows
@@ -127,7 +247,7 @@ async fn set_skip_taskbar(
 ) -> Result<()> {
     let (skip, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_skip_taskbar(skip);
+    window.set_skip_taskbar(skip)?;
     Ok(())
 }
 

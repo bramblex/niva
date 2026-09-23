@@ -15,7 +15,10 @@ import { Modal } from "./modals";
 import {
   Apple,
   BookOne,
+  Computer,
   GithubOne,
+  Moon,
+  Sun,
   Translate,
   Windows,
 } from "@icon-park/react";
@@ -24,6 +27,12 @@ import { ProjectPage } from "./pages/project";
 import { parseArgs, tryOrAlert } from "./common/utils";
 import { pathJoin } from "./common/utils";
 import { getCurrentDir, createPromise } from "./common/utils";
+import {
+  applyThemePreference,
+  readThemePreference,
+  saveThemePreference,
+  type ThemePreference,
+} from "./common/theme";
 
 export const initEndPromise = createPromise();
 
@@ -136,7 +145,7 @@ export function WindowControl(props: { os: string }) {
             aria-label="Fullscreen"
             onClick={() => {
               setMaximized(!isMaximized);
-              Niva.api.window.setMaximized(!true);
+              Niva.api.window.setMaximized(!isMaximized);
             }}
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}
@@ -201,7 +210,10 @@ export function Titlebar(props: { os: string }) {
 }
 
 function WindowFrame(props: PropsWithChildren<{}>) {
+  const app = useApp();
+  useModel(app);
   const [active, setActive] = useState(true);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(readThemePreference);
   const [systemInfo, setSystemInfo] = useState({
     os: "",
     arch: "",
@@ -221,8 +233,36 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     };
   }, []);
 
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemTheme = () => applyThemePreference(themePreference);
+    const handleNativeTheme = (_event: string, theme: "light" | "dark" | "system") => {
+      if (themePreference === "system" && theme !== "system") {
+        applyThemePreference("system", theme);
+      }
+    };
+
+    applyThemePreference(themePreference);
+    void Niva.api.window.setTheme(themePreference).catch((error) => {
+      console.warn("Could not set native Devtools theme", error);
+    });
+    media.addEventListener("change", handleSystemTheme);
+    Niva.addEventListener("window.themeChanged", handleNativeTheme);
+
+    return () => {
+      media.removeEventListener("change", handleSystemTheme);
+      Niva.removeEventListener("window.themeChanged", handleNativeTheme);
+    };
+  }, [themePreference]);
+
   const locale = useLocale();
   const isDevelop = import.meta.env.DEV;
+  const themeOptions = [
+    { value: "system", label: locale.t("THEME_SYSTEM") },
+    { value: "light", label: locale.t("THEME_LIGHT") },
+    { value: "dark", label: locale.t("THEME_DARK") },
+  ] as const;
+  const selectedTheme = themeOptions.find((option) => option.value === themePreference)!;
 
   return (
     <div className={classNames("window", { active }, `os-${platform}`)}>
@@ -234,7 +274,8 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           "status-bar-dev": isDevelop,
         })}
       >
-        <span
+        <button
+          type="button"
           className="status-bar-field"
           onClick={() => {
             if (locale.state.current === "en_US") {
@@ -246,9 +287,10 @@ function WindowFrame(props: PropsWithChildren<{}>) {
         >
           <Translate className="icon-sm" />
           {locale.t("LOCALE")}
-        </span>
+        </button>
 
-        <span
+        <button
+          type="button"
           className="status-bar-field"
           onClick={() => {
             Niva.api.process.open(
@@ -258,9 +300,10 @@ function WindowFrame(props: PropsWithChildren<{}>) {
         >
           <BookOne className="icon-sm" />
           {locale.t("DOCUMENTS")}
-        </span>
+        </button>
 
-        <span
+        <button
+          type="button"
           className="status-bar-field"
           onClick={() => {
             Niva.api.process.open("https://github.com/bramblex/niva");
@@ -268,9 +311,41 @@ function WindowFrame(props: PropsWithChildren<{}>) {
         >
           <GithubOne className="icon-sm" />
           Github
-        </span>
+        </button>
 
-        <span
+        <button
+          type="button"
+          className="status-bar-field status-bar-theme"
+          aria-label={`${locale.t("THEME")}: ${selectedTheme.label}`}
+          onClick={() => {
+            const effectiveTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+            const next: ThemePreference = themePreference === "system"
+              ? (effectiveTheme === "dark" ? "light" : "dark")
+              : themePreference === "light" ? "dark" : "system";
+            saveThemePreference(next);
+            setThemePreference(next);
+          }}
+        >
+          {themePreference === "system" ? <Computer className="icon-sm" />
+            : themePreference === "dark" ? <Moon className="icon-sm" />
+            : <Sun className="icon-sm" />}
+          {selectedTheme.label}
+        </button>
+
+        {app.state.availableVersion && (
+          <button
+            type="button"
+            className="status-bar-field status-bar-update"
+            onClick={() => Niva.api.process.open("https://bramblex.github.io/niva/")}
+          >
+            {locale.t("UPDATE_AVAILABLE", { version: app.state.availableVersion })}
+          </button>
+        )}
+
+        <button
+          type="button"
+          title={locale.t("COPY_SYSTEM_INFO")}
+          aria-label={locale.t("COPY_SYSTEM_INFO")}
           className="status-bar-field flex-end"
           onClick={() => {
             Niva.api.clipboard.write(
@@ -289,7 +364,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
             }[systemInfo.os]
           }
           {systemInfo.os} {systemInfo.arch} {systemInfo.version} | {version}
-        </span>
+        </button>
       </div>
     </div>
   );
@@ -323,11 +398,15 @@ export function App() {
 
         if (args.build && app.state.project) {
           const { project } = app.state;
-          await tryOrAlert(
-            app,
-            project!.build(pathJoin(getCurrentDir(), args.build))
-          );
-          Niva.api.window.close();
+          const result = await project.build(pathJoin(getCurrentDir(), args.build));
+          if (result.isErr()) {
+            await app.state.modal.alert(
+              app.state.locale.t("BUILD_FAILED"),
+              result.error.toLocaleMessage(app)
+            );
+          } else {
+            Niva.api.window.close();
+          }
         }
 
         (window as any).app = app;

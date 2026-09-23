@@ -1,5 +1,5 @@
 import { useApp, useLocale, useProject } from "../../models/app.model";
-import { limitString, tryOrAlert } from "../../common/utils";
+import { tryOrAlert } from "../../common/utils";
 
 import "./style.scss";
 import { useEffect, useState } from "react";
@@ -8,12 +8,16 @@ import { ProjectList } from "./list";
 import { ProjectInfo } from "./info";
 
 function EmptyPage() {
+  const app = useApp();
+  const locale = useLocale();
   return (
     <div className="tabs">
-      <div
-        className="tabs-menu"
-        onMouseDownCapture={() => Niva.api.window.dragWindow()}
-      ></div>
+      <div className="empty-project">
+        <span className="empty-project-mark"><Plus size={23} /></span>
+        <button className="btn btn-primary" onClick={() => tryOrAlert(app, app.openWithPicker())}>
+          {locale.t("OPEN_PROJECT")}
+        </button>
+      </div>
     </div>
   );
 }

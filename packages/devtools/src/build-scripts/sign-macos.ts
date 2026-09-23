@@ -1,5 +1,4 @@
 import { pathJoin } from "../common/utils";
-import { runCmd } from "../common/utils";
 import type { ProjectModel } from "../models/project.model";
 import type { ProgressModel } from "../models/modal.model";
 
@@ -34,7 +33,7 @@ export async function signMacOsApp(params: {
   const entitlementsFlag = sign.entitlements ? ["--entitlements"] : [];
 
   progress.addTask("codesign", async () => {
-    await runCmd("codesign", [
+    await progress.runCommand("codesign", "codesign", [
       "--deep",
       "--force",
       "--options",
@@ -48,7 +47,7 @@ export async function signMacOsApp(params: {
   });
 
   progress.addTask("codesign --verify", async () => {
-    await runCmd("codesign", [
+    await progress.runCommand("codesign --verify", "codesign", [
       "--verify",
       "--deep",
       "--strict",
@@ -60,7 +59,7 @@ export async function signMacOsApp(params: {
   if (sign.notarize) {
     const zipPath = `${appPath}.zip`;
     progress.addTask("ditto (notarization zip)", async () => {
-      await runCmd("ditto", [
+      await progress.runCommand("ditto (notarization zip)", "ditto", [
         "-c",
         "-k",
         "--sequesterRsrc",
@@ -81,7 +80,7 @@ export async function signMacOsApp(params: {
             "--password",
             await applePassword(),
           ];
-      await runCmd("xcrun", [
+      await progress.runCommand("notarytool submit", "xcrun", [
         "notarytool",
         "submit",
         zipPath,
@@ -91,7 +90,7 @@ export async function signMacOsApp(params: {
     });
 
     progress.addTask("stapler staple", async () => {
-      await runCmd("xcrun", ["stapler", "staple", appPath]);
+      await progress.runCommand("stapler staple", "xcrun", ["stapler", "staple", appPath]);
       await fs.remove(zipPath);
     });
   }

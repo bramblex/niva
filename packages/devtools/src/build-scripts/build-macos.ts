@@ -1,5 +1,5 @@
 import { deflateRaw } from "pako";
-import { pathJoin } from "../common/utils";
+import { pathJoin, tempDirWith, uuid } from "../common/utils";
 import {
   appendResource,
   arrayBufferToBase64,
@@ -7,6 +7,7 @@ import {
   indexesKey,
   packageResource,
 } from "./base";
+import { extractNodeCompatFiles, resolveNodeCompatAssets } from "./node-compat";
 import { plistTemplate } from "../templates/macos-plist-template";
 import type { BuildParams } from './base';
 
@@ -34,6 +35,13 @@ export async function buildMacOsApp(params: BuildParams) {
     project.state.path,
     project.state.config.build?.resource
   );
+  const nodeCompatOption = project.state.config.nodeCompat;
+  const nodeCompatSelection = resolveNodeCompatAssets(nodeCompatOption);
+  const nodeCompatStagePath = tempDirWith(
+    "niva-node-compat",
+    project.state.uuid,
+    uuid(),
+  );
   const indexesPath = pathJoin(appResourcesPath, indexesKey);
   const dataPath = pathJoin(appResourcesPath, dataKey);
 
@@ -53,16 +61,26 @@ export async function buildMacOsApp(params: BuildParams) {
   let fileIndexes: Record<string, [number, number]> = {};
   let buffer = new ArrayBuffer(0);
   progress.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
-    const initialResource = await appendResource(
-      project.state.configPath,
-      "niva.json"
-    );
-    const [_fileIndex, _buffer] = await packageResource(
-      projectResourcePath,
-      ...initialResource
-    );
-    fileIndexes = _fileIndex;
-    buffer = _buffer;
+    try {
+      const initialResource = await appendResource(
+        project.state.configPath,
+        "niva.json"
+      );
+      const nodeCompatFiles = nodeCompatSelection.enabled
+        ? await extractNodeCompatFiles(nodeCompatOption, nodeCompatStagePath)
+        : null;
+      const [_fileIndex, _buffer] = await packageResource(
+        projectResourcePath,
+        ...initialResource,
+        nodeCompatFiles?.files ?? [],
+      );
+      fileIndexes = _fileIndex;
+      buffer = _buffer;
+    } finally {
+      if (await fs.exists(nodeCompatStagePath)) {
+        await fs.remove(nodeCompatStagePath);
+      }
+    }
   });
 
   progress.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {
@@ -82,7 +100,7 @@ export async function buildMacOsApp(params: BuildParams) {
     const iconPath = pathJoin(projectResourcePath, project.state.config.icon);
 
     for (let size of [16, 32, 64, 128, 256]) {
-      await process.exec("sips", [
+      await progress.runCommand(locale.t("GENERATING_ICON"), "sips", [
         "-z",
         size.toString(),
         size.toString(),
@@ -92,7 +110,7 @@ export async function buildMacOsApp(params: BuildParams) {
       ]);
     }
 
-    await process.exec("iconutil", [
+    await progress.runCommand(locale.t("GENERATING_ICON"), "iconutil", [
       "-c",
       "icns",
       appIconsetPath,

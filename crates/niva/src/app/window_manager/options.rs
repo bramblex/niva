@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use tao::dpi::{LogicalPosition, LogicalSize};
 
 use crate::app::menu::options::MenuOptions;
@@ -20,6 +21,7 @@ pub type WindowMenuOptions = Vec<WindowRootMenu>;
 #[serde(rename_all = "camelCase")]
 pub struct MacWindowExtraOptions {
     pub parent_window: Option<u8>,
+    pub traffic_light_inset: Option<NivaPosition>,
     pub movable_by_window_background: Option<bool>,
     pub title_bar_transparent: Option<bool>,
     pub title_bar_hidden: Option<bool>,
@@ -50,6 +52,9 @@ pub struct WinWindowExtraOptions {
 pub struct NivaWindowOptions {
     pub entry: Option<String>,
     pub devtools: Option<bool>,
+    /// Exact page origins and the non-stream native methods this window grants.
+    #[serde(default)]
+    pub permissions: HashMap<String, Vec<String>>,
 
     pub title: Option<String>,
     pub icon: Option<String>,

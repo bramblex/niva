@@ -46,11 +46,11 @@ impl EventHandler {
     }
 
     fn dispatch_menu_event(app: &Arc<NivaApp>, event: &muda::MenuEvent) -> Result<()> {
-        let merged_id: u16 = event
-            .id()
-            .0
-            .parse()
-            .map_err(|_| anyhow!("Invalid menu id"))?;
+        // Predefined native menu items use non-numeric muda IDs and are
+        // handled by the OS. Only Niva's generated IDs are app events.
+        let Ok(merged_id) = event.id().0.parse::<u16>() else {
+            return Ok(());
+        };
         let (window_id, id) = split_id(merged_id);
         let window = app.window()?.get_window(window_id)?;
         window.send_ipc_event("menu.clicked", id);

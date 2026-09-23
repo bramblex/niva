@@ -57,10 +57,7 @@ fn append_options(
             } => {
                 let menu_id = merge_id(window_id, *id).to_string();
                 let is_enabled = enabled.unwrap_or(true);
-                #[cfg(target_os = "macos")]
                 let accel = accelerator.as_deref().and_then(parse_accelerator);
-                #[cfg(not(target_os = "macos"))]
-                let accel: Option<muda::accelerator::Accelerator> = None;
 
                 if selected.is_some() {
                     let item = CheckMenuItem::with_id(
@@ -72,35 +69,26 @@ fn append_options(
                     );
                     log_if_err!(append(&item));
                 } else if let Some(icon_path) = icon {
-                    #[cfg(target_os = "macos")]
+                    match app
+                        .resource()
+                        .load(icon_path)
+                        .ok()
+                        .and_then(|data| png_to_muda_icon(&data).ok())
                     {
-                        match app
-                            .resource()
-                            .load(icon_path)
-                            .ok()
-                            .and_then(|data| png_to_muda_icon(&data).ok())
-                        {
-                            Some(icon) => {
-                                let item = IconMenuItem::with_id(
-                                    menu_id,
-                                    label,
-                                    is_enabled,
-                                    Some(icon),
-                                    accel,
-                                );
-                                log_if_err!(append(&item));
-                            }
-                            None => {
-                                let item = MenuItem::with_id(menu_id, label, is_enabled, accel);
-                                log_if_err!(append(&item));
-                            }
+                        Some(icon) => {
+                            let item = IconMenuItem::with_id(
+                                menu_id,
+                                label,
+                                is_enabled,
+                                Some(icon),
+                                accel,
+                            );
+                            log_if_err!(append(&item));
                         }
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        let _ = icon_path;
-                        let item = MenuItem::with_id(menu_id, label, is_enabled, accel);
-                        log_if_err!(append(&item));
+                        None => {
+                            let item = MenuItem::with_id(menu_id, label, is_enabled, accel);
+                            log_if_err!(append(&item));
+                        }
                     }
                 } else {
                     let item = MenuItem::with_id(menu_id, label, is_enabled, accel);

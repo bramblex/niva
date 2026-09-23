@@ -1,7 +1,7 @@
 import "./style.scss";
 import { useApp, useLocale, useProject } from "../../models/app.model";
 import { Logo } from "./logo";
-import { limitString, tryOrAlert } from "../../common/utils";
+import { tryOrAlert } from "../../common/utils";
 import { FolderOpen, Refresh } from "@icon-park/react";
 
 export function ProjectDetails() {
@@ -12,105 +12,59 @@ export function ProjectDetails() {
 
   return (
     <div className="project-detail">
-      <section className="pd-base">
-        <div className="pd-lf">
-          <div className="pd-lf__info-container">
-            <span>
-              <Logo src={state.icon} />
-            </span>
-            <div className="info-container">
-              <h3>{state.name}</h3>
-              <p title={state.path}>
-                {locale.t("PROJECT_PATH")} :{" "}
-                {limitString(state.path, 50)}
-              </p>
-              <p>UUID: {state.uuid}</p>
-            </div>
+      <header className="project-hero">
+        <span className="project-hero-logo"><Logo src={state.icon} /></span>
+        <div className="project-hero-copy">
+          <div className="project-hero-name">
+            <h2>{state.name}</h2>
+            {state.config.version && <span className="version-tag">v{state.config.version}</span>}
           </div>
-          <div>
-            <button
-              className="btn"
-              onClick={async () => {
-                project.debug();
-              }}
-            >
-              {locale.t("DEBUG")}
-            </button>
-
-            <button className="btn btn-primary" onClick={() => project.build()}>
-              {locale.t("BUILD")}
-            </button>
-          </div>
+          <p title={state.path}>{state.path}</p>
         </div>
-        <div className="pd-rt">
-          <button
-            className="btn btn-md btn-info"
-            onClick={async () => {
-              tryOrAlert(app, project.open());
-            }}
-          >
-            <FolderOpen /> {locale.t("OPEN")}
-          </button>
+      </header>
 
-          <button
-            className="btn btn-md btn-info"
-            onClick={async () => {
-              tryOrAlert(app, project.refresh());
-            }}
-          >
-            <Refresh /> {locale.t("REFRESH")}
+      <div className="project-actions">
+        <div className="primary-actions">
+          <button className="btn" onClick={() => tryOrAlert(app, project.debug())}>
+            {locale.t("DEBUG")}
+          </button>
+          <button className="btn btn-primary" onClick={() => tryOrAlert(app, project.build())}>
+            {locale.t("BUILD")}
           </button>
         </div>
-      </section>
-      <section className="pd-more">
-        <div className="fields-section">
-          <h4>{locale.t("BASIC_INFO")}</h4>
-
-          <div className="field-item">
-            <span>{locale.t("ICON")}</span>
-            <span>{state.config.icon || locale.t("NONE")}</span>
-          </div>
-
-          <div className="field-item">
-            <span>{locale.t("CONFIG_FILE_PATH")}</span>
-            <span>{state.configPath}</span>
-          </div>
+        <div className="utility-actions">
+          <button className="btn btn-info" onClick={() => tryOrAlert(app, project.open())}>
+            <FolderOpen size={15} />{locale.t("OPEN")}
+          </button>
+          <button className="btn btn-info" onClick={() => tryOrAlert(app, project.refresh())}>
+            <Refresh size={15} />{locale.t("REFRESH")}
+          </button>
         </div>
+      </div>
 
-        <div className="fields-section">
-          <h4>{locale.t("DEBUG_INFO")}</h4>
-
-          <div className="field-item">
-            <span className="field-name">
-              {locale.t("PROJECT_NAME")}
-            </span>
-            <span>
-              {state.config.debug?.entry || locale.t("NONE")}
-            </span>
-          </div>
-
-          <div className="field-item">
-            <span className="field-name">
-              {locale.t("RESOURCE_PATH")}
-            </span>
-            <span>
-              {state.config.debug?.resource || locale.t("NONE")}
-            </span>
-          </div>
-        </div>
-
-        <div className="fields-section">
-          <h4>{locale.t("BUILD_INFO")}</h4>
-          <div className="field-item">
-            <span className="field-name">
-              {locale.t("RESOURCE_PATH")}
-            </span>
-            <span>
-              {state.config.build?.resource || locale.t("DEFAULT")}
-            </span>
-          </div>
-        </div>
-      </section>
+      <div className="project-facts">
+        <section className="fact-section">
+          <h3>{locale.t("BASIC_INFO")}</h3>
+          <dl>
+            <div><dt>UUID</dt><dd className="mono">{state.uuid}</dd></div>
+            <div><dt>{locale.t("ICON")}</dt><dd>{state.config.icon || locale.t("NONE")}</dd></div>
+            <div><dt>{locale.t("CONFIG_FILE_PATH")}</dt><dd title={state.configPath}>{state.configPath}</dd></div>
+          </dl>
+        </section>
+        <section className="fact-section">
+          <h3>{locale.t("DEBUG_INFO")}</h3>
+          <dl>
+            <div><dt>{locale.t("ENTRY")}</dt><dd>{state.config.debug?.entry || locale.t("NONE")}</dd></div>
+            <div><dt>{locale.t("RESOURCE_PATH")}</dt><dd>{state.config.debug?.resource || locale.t("NONE")}</dd></div>
+          </dl>
+        </section>
+        <section className="fact-section">
+          <h3>{locale.t("BUILD_INFO")}</h3>
+          <dl>
+            <div><dt>{locale.t("RESOURCE_PATH")}</dt><dd>{state.config.build?.resource || locale.t("DEFAULT")}</dd></div>
+          </dl>
+        </section>
+      </div>
     </div>
   );
 }

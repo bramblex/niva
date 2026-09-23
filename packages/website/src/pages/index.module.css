@@ -1,32 +1,53 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
+.hero { padding: clamp(64px, 8vw, 112px) 24px 86px; background: var(--niva-surface-muted); overflow: hidden; }
+.heroInner, .capabilitiesInner { width: min(1180px, 100%); margin: 0 auto; }
+.heroInner { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: clamp(44px, 5vw, 72px); }
+.heroCopy { max-width: 540px; }
+.heroBrand { display: inline-flex; align-items: center; margin-bottom: 34px; }
+.heroBrand img { display: block; width: 48px; height: 48px; object-fit: contain; }
+.hero h1 { max-width: 640px; margin: 0 0 24px; color: var(--niva-ink); font-size: clamp(4.5rem, 7vw, 7rem); font-weight: 740; line-height: 1.05; letter-spacing: -.035em; }
+.heroCopy > p { max-width: 31em; margin: 0; color: var(--niva-ink-soft); font-size: clamp(1.08rem, 1.3vw, 1.22rem); line-height: 1.8; }
+.heroActions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 37px; }
+.heroActions a { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 13px; padding: 0 21px; border-radius: 9px; font-size: 15px; font-weight: 650; text-decoration: none; transition: background-color .18s ease, border-color .18s ease, transform .18s ease; }
+.heroActions a:active { transform: translateY(1px); }
+.heroActions svg { width: 18px; height: 18px; flex: 0 0 auto; transition: transform .18s ease; }
+.heroActions a:hover svg { transform: translateX(3px); }
+.primaryAction { background: var(--niva-brand-vivid); color: #0a2818; border: 1px solid var(--niva-brand-vivid); }
+.primaryAction:hover { background: var(--niva-brand-vivid-hover); color: #0a2818; border-color: var(--niva-brand-vivid-hover); }
+.secondaryAction { background: var(--niva-surface); color: var(--niva-ink); border: 1px solid var(--niva-border); }
+.secondaryAction:hover { background: var(--niva-surface-sunken); color: var(--niva-ink); border-color: var(--niva-brand-line); }
 
-.heroBanner {
-  padding: 4rem 0;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
+.previewScreenshot { display: block; width: 100%; height: auto; aspect-ratio: 968 / 668; object-fit: contain; }
+
+.capabilities { padding: 92px 24px 105px; background: var(--niva-surface); }
+.featureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px 46px; }
+.capability { display: grid; grid-template-columns: minmax(0, 1fr) 148px; align-items: start; gap: 22px; min-width: 0; }
+.capability img { display: block; width: 148px; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; background: #f6f0e7; }
+.featureCopy { min-width: 0; }
+.featureCopy h3 { margin: 0 0 11px; color: var(--niva-ink); font-size: 21px; line-height: 1.35; letter-spacing: -.015em; }
+.featureCopy p { max-width: 54ch; margin: 0; color: var(--niva-ink-soft); font-size: 15px; line-height: 1.8; }
+.featureCopy strong { color: var(--niva-brand); font-weight: 700; }
+
+@media (max-width: 996px) {
+  .heroInner { grid-template-columns: 1fr; }
+  .heroCopy { max-width: 680px; }
+  .hero { padding-top: 70px; }
+  .previewScreenshot { max-width: 720px; }
 }
-
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+@media (max-width: 1100px) {
+  .featureGrid { grid-template-columns: 1fr; gap: 36px; }
+  .capability { grid-template-columns: minmax(0, 1fr) 132px; max-width: 760px; }
+  .capability img { width: 132px; }
 }
-
-.buttons {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+@media (max-width: 700px) {
+  .hero { padding: 52px 20px 60px; }
+  .heroBrand { margin-bottom: 27px; }
+  .hero h1 { font-size: clamp(2.75rem, 10vw, 4rem); }
+  .heroActions a { flex: 1 1 auto; }
+  .capabilities { padding: 64px 20px 75px; }
+  .capability { grid-template-columns: minmax(0, 1fr) 112px; gap: 16px; }
+  .capability img { width: 112px; }
 }
-
-.buttons > * {
-  margin: 0 0.5rem;
-}
-
-.screenshot {
-  margin-top: 2em;
-  box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+@media (max-width: 420px) {
+  .capability { grid-template-columns: 1fr; gap: 14px; }
+  .capability img { width: 112px; }
 }

@@ -7,19 +7,32 @@ set "VERSION=!VERSION:.=_!"
 rd /s /q dist
 mkdir dist
 
-call yarn
-cd packages\devtools
-rd /s /q build
-call yarn build
-cd ..\..
+cargo build --release -p win_packager --target x86_64-pc-windows-msvc
+if errorlevel 1 exit /b 1
+if exist packages\devtools\public\windows\win_packager.exe del /q packages\devtools\public\windows\win_packager.exe
+copy /y target\x86_64-pc-windows-msvc\release\win_packager.exe packages\devtools\public\windows\win_packager.exe >nul
+if errorlevel 1 exit /b 1
 
-rd /s /q target\release
+call npm ci
+if errorlevel 1 (
+	del /q packages\devtools\public\windows\win_packager.exe
+	exit /b 1
+)
+rd /s /q packages\devtools\build
+call npm run build --workspace=packages/devtools
+set "BUILD_RESULT=!errorlevel!"
+del /q packages\devtools\public\windows\win_packager.exe
+if not "!BUILD_RESULT!"=="0" exit /b !BUILD_RESULT!
+
 cargo build --release
+if errorlevel 1 exit /b 1
 
 target\release\niva.exe ^
 	--debug-resource=packages\devtools\build ^
 	--debug-config=packages\devtools\niva.json ^
 	--project=packages\devtools ^
 	--build=dist\NivaDevtools.exe
+if errorlevel 1 exit /b 1
 
 powershell Compress-Archive -Path dist\NivaDevtools.exe -DestinationPath dist\NivaDevtools_%VERSION%_Windows.zip
+if errorlevel 1 exit /b 1

@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
+    fs::File,
     io::{Read, Write},
+    path::Path,
     sync::{Arc, mpsc},
     thread,
     time::Duration,
@@ -11,20 +13,21 @@ use smol::{net::TcpListener, prelude::*};
 
 use super::{
     NivaApp,
+    node_compat::NodeCompat,
     resource_manager::ResourceManager,
     utils::{ArcMut, error_page_html},
 };
 use crate::{lock, log_err};
 
-/// Hand-written async HTTP server (smol) replacing the old `niva://` custom
-/// protocol (custom schemes break iframes; plain http over loopback does
-/// not). Serves static files and hosts the API WebSocket.
+/// Hand-written async loopback server hosting the API WebSocket and the
+/// authenticated `__niva_fs` route. Packaged static assets use Wry's
+/// asynchronous `niva://` protocol; ordinary HTTP static routes are reserved
+/// for explicit debug launches.
 ///
 /// Only GET + `Connection: close` is implemented; that is all the webview
 /// needs. No tokio/axum/hyper: this crate plus tungstenite is everything.
 pub struct NivaHttpServer {
     pub port: u16,
-    pub token: String,
     _state: Arc<ServerState>,
     _driver: thread::JoinHandle<()>,
 }
@@ -32,19 +35,30 @@ pub struct NivaHttpServer {
 struct ServerState {
     app: Arc<NivaApp>,
     resource: Arc<dyn ResourceManager>,
-    token: String,
+    port: u16,
+    node_compat: Option<NodeCompat>,
+    debug_static_enabled: bool,
 }
 
 impl NivaHttpServer {
     pub fn start(app: &Arc<NivaApp>) -> Result<Arc<Self>> {
-        let token = random_token()?;
+        let node_compat = NodeCompat::from_option(&app.launch_info.options.node_compat)?;
+        if node_compat.is_some() && !app.resource().exists("__niva_compat/node-compat.js") {
+            return Err(anyhow!(
+                "nodeCompat enabled but packaged adapter assets are missing"
+            ));
+        }
         let listener = smol::block_on(TcpListener::bind("127.0.0.1:0"))?;
         let port = listener.local_addr()?.port();
 
         let state = Arc::new(ServerState {
             app: app.clone(),
             resource: app.resource(),
-            token: token.clone(),
+            port,
+            node_compat,
+            debug_static_enabled: app.launch_info.arguments.debug_resource.is_some()
+                || app.launch_info.arguments.debug_config.is_some()
+                || app.launch_info.arguments.debug_entry.is_some(),
         });
 
         // Single driver thread pumps the accept loop and all static-file
@@ -57,7 +71,6 @@ impl NivaHttpServer {
 
         Ok(Arc::new(Self {
             port,
-            token,
             _state: state,
             _driver: driver,
         }))
@@ -66,15 +79,6 @@ impl NivaHttpServer {
     pub fn base_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
-}
-
-/// Per-launch token, generated here and injected into both ends:
-/// the server checks it, the page receives it via the bootstrap script.
-/// Never accepted from the environment, args or the network.
-fn random_token() -> Result<String> {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).map_err(|err| anyhow!("RNG failed: {err}"))?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 async fn accept_loop(state: Arc<ServerState>, listener: TcpListener) {
@@ -238,6 +242,15 @@ fn is_document_navigation(headers: &HashMap<String, String>) -> bool {
 async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream) -> Result<()> {
     let (head, raw_head) = read_head(&mut stream).await?;
 
+    let expected_host = format!("127.0.0.1:{}", state.port);
+    if head
+        .headers
+        .get("host")
+        .is_none_or(|host| host != &expected_host)
+    {
+        return write_response(&mut stream, 403, "Forbidden", "text/plain", b"bad host").await;
+    }
+
     if head.method != "GET" {
         return write_response(
             &mut stream,
@@ -251,6 +264,36 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
 
     let (path, query) = split_target(&head.target);
 
+    if let Some(relative) = path.strip_prefix('/')
+        && relative.starts_with("__niva_compat/")
+    {
+        if !state.debug_static_enabled {
+            return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
+        }
+        let Some(compat) = &state.node_compat else {
+            return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
+        };
+        if !compat.allows_asset(relative) {
+            return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
+        }
+        return match state.resource.load(relative) {
+            Ok(content) => {
+                let content = if relative == "__niva_compat/node-compat.js" {
+                    compat.classic_script(&content)?
+                } else {
+                    content
+                };
+                write_response_headers(
+                    &mut stream, 200, "OK", "text/javascript; charset=utf-8", &content,
+                    "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n",
+                ).await
+            }
+            Err(_) => {
+                write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await
+            }
+        };
+    }
+
     if path == "/__niva_ws" {
         if !is_upgrade(&head.headers) {
             return write_response(
@@ -262,12 +305,15 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
             )
             .await;
         }
-        let token_ok = query
-            .and_then(|q| query_value(q, "token"))
-            .map(|t| t == state.token)
-            .unwrap_or(false);
-        if !token_ok {
-            return write_response(&mut stream, 403, "Forbidden", "text/plain", b"bad token").await;
+        if query.and_then(|q| query_value(q, "token")).is_none() {
+            return write_response(
+                &mut stream,
+                403,
+                "Forbidden",
+                "text/plain",
+                b"missing token",
+            )
+            .await;
         }
         // Hand the stream to a blocking pump thread with the consumed head
         // bytes fed back, so tungstenite sees the complete handshake.
@@ -289,6 +335,52 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
     }
 
     if let Some(rest) = path.strip_prefix("/__niva_fs/") {
+        let Some((window_token, rest)) = rest.split_once('/') else {
+            return write_response(
+                &mut stream,
+                403,
+                "Forbidden",
+                "text/plain",
+                b"bad file credential",
+            )
+            .await;
+        };
+        let window = state
+            .app
+            .window()
+            .ok()
+            .and_then(|windows| windows.get_window_by_token(window_token).ok());
+        let Some(window) = window else {
+            return write_response(
+                &mut stream,
+                403,
+                "Forbidden",
+                "text/plain",
+                b"bad file credential",
+            )
+            .await;
+        };
+        // A browser page at the exact origin of the credential's native
+        // window may fetch this bearer URL. Other origins receive no CORS
+        // permission, even if they somehow learn the URL.
+        let cors_origin = head
+            .headers
+            .get("origin")
+            .filter(|origin| window.trusted_ws_origin.as_deref() == Some(origin.as_str()));
+        let rest = match super::resource_manager::percent_decode_path(rest) {
+            Ok(rest) => rest,
+            Err(_) => {
+                return write_response(
+                    &mut stream,
+                    400,
+                    "Bad Request",
+                    "text/plain",
+                    b"bad file path",
+                )
+                .await;
+            }
+        };
+        let rest = rest.as_str();
         // Joined URLs may carry a leading slash before a Windows drive
         // letter (`/__niva_fs//C:/...`); strip it in that case only.
         let bytes = rest.as_bytes();
@@ -301,16 +393,31 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
         } else {
             rest
         };
-        return match std::fs::read(rest) {
+        #[cfg(target_os = "windows")]
+        let file_path = rest.to_string();
+        #[cfg(not(target_os = "windows"))]
+        let file_path = format!("/{rest}");
+        let load_path = file_path.clone();
+        return match smol::unblock(move || read_limited_regular_file(Path::new(&load_path))).await {
             Ok(content) => {
-                let mime = mime_guess::from_path(rest)
+                let mime = mime_guess::from_path(&file_path)
                     .first()
                     .map(|mime| mime.to_string())
                     .unwrap_or_else(|| "application/octet-stream".to_string());
-                write_response(&mut stream, 200, "OK", &mime, &content).await
+                let mut extra_headers = String::from(
+                    "Content-Security-Policy: sandbox\r\nX-Content-Type-Options: nosniff\r\n",
+                );
+                if let Some(origin) = cors_origin {
+                    extra_headers.push_str(&format!(
+                        "Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\n"
+                    ));
+                }
+                write_response_headers(&mut stream, 200, "OK", &mime, &content, &extra_headers)
+                    .await
             }
             Err(err) => {
-                eprintln!("[niva] fs {path} -> 404: {err}");
+                // The request path embeds the per-window credential.
+                eprintln!("[niva] fs response failed: {:?}", err.kind());
                 let (_, body) = error_page_html(404, "Not Found", path, &err.to_string());
                 write_response(
                     &mut stream,
@@ -322,6 +429,10 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
                 .await
             }
         };
+    }
+
+    if !state.debug_static_enabled {
+        return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
     }
 
     // Directory paths serve index.html.
@@ -337,6 +448,55 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
                 .first()
                 .map(|mime| mime.to_string())
                 .unwrap_or_else(|| "application/octet-stream".to_string());
+            let content = if mime == "text/html" && is_document_navigation(&head.headers) {
+                let content = if let Some(compat) = &state.node_compat {
+                    match compat.rewrite_html(&content) {
+                        Ok(content) => content,
+                        Err(_) => {
+                            return write_response(
+                                &mut stream,
+                                500,
+                                "Internal Server Error",
+                                "text/plain",
+                                b"Unable to prepare local page",
+                            )
+                            .await;
+                        }
+                    }
+                } else {
+                    content
+                };
+                match String::from_utf8(content) {
+                    Ok(mut html) => {
+                        if super::custom_protocol::patch_document_csp(&mut html, state.port)
+                            .is_err()
+                        {
+                            return write_response(
+                                &mut stream,
+                                500,
+                                "Internal Server Error",
+                                "text/plain",
+                                b"Unable to prepare local page security policy",
+                            )
+                            .await;
+                        }
+                        html.into_bytes()
+                    }
+                    Err(_) if state.node_compat.is_some() => {
+                        return write_response(
+                            &mut stream,
+                            500,
+                            "Internal Server Error",
+                            "text/plain",
+                            b"NodeCompat requires UTF-8 HTML",
+                        )
+                        .await;
+                    }
+                    Err(error) => error.into_bytes(),
+                }
+            } else {
+                content
+            };
             write_response(&mut stream, 200, "OK", &mime, &content).await
         }
         Err(err) => {
@@ -354,6 +514,28 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
     }
 }
 
+const MAX_FILE_RESPONSE: u64 = 32 * 1024 * 1024;
+
+fn read_limited_regular_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_FILE_RESPONSE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file unavailable",
+        ));
+    }
+    let mut content = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_FILE_RESPONSE + 1).read_to_end(&mut content)?;
+    if content.len() as u64 > MAX_FILE_RESPONSE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file too large",
+        ));
+    }
+    Ok(content)
+}
+
 async fn write_response(
     stream: &mut smol::net::TcpStream,
     status: u16,
@@ -361,8 +543,19 @@ async fn write_response(
     content_type: &str,
     body: &[u8],
 ) -> Result<()> {
+    write_response_headers(stream, status, reason, content_type, body, "").await
+}
+
+async fn write_response_headers(
+    stream: &mut smol::net::TcpStream,
+    status: u16,
+    reason: &str,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &str,
+) -> Result<()> {
     let head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n{extra_headers}Connection: close\r\n\r\n",
         body.len()
     );
     stream.write_all(head.as_bytes()).await?;
@@ -384,18 +577,39 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
         handshake::server::{ErrorResponse, Request, Response},
     };
 
-    let token = state.token.clone();
+    let app = state.app.clone();
+    let expected_host = format!("127.0.0.1:{}", state.port);
+    let selected_window = Arc::new(std::sync::Mutex::new(None));
+    let selected_in_handshake = selected_window.clone();
     // NB: HandshakeError holds the stream type (not Send/Sync-friendly),
     // so map handshake failures to strings immediately.
     let mut ws = accept_hdr(stream, move |req: &Request, response: Response| {
         let path_ok = req.uri().path() == "/__niva_ws";
-        let query_ok = req
-            .uri()
-            .query()
-            .and_then(|q| query_value(q, "token"))
-            .map(|t| t == token)
-            .unwrap_or(false);
-        if path_ok && query_ok {
+        let token = req.uri().query().and_then(|q| query_value(q, "token"));
+        let origin = req
+            .headers()
+            .get("origin")
+            .and_then(|value| value.to_str().ok());
+        let host_ok = req
+            .headers()
+            .get("host")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|host| host == expected_host);
+        let window = token.and_then(|token| {
+            app.window()
+                .ok()
+                .and_then(|windows| windows.get_window_by_token(token).ok())
+        });
+        let origin_ok = window
+            .as_ref()
+            .and_then(|window| window.trusted_ws_origin.as_deref())
+            .is_some_and(|trusted_origin| origin == Some(trusted_origin));
+        if path_ok
+            && origin_ok
+            && host_ok
+            && let Some(window) = window
+        {
+            *selected_in_handshake.lock().unwrap() = Some(window);
             Ok(response)
         } else {
             let mut rejection = ErrorResponse::new(Some("forbidden".to_string()));
@@ -405,30 +619,40 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
     })
     .map_err(|err| anyhow!("ws handshake failed: {err}"))?;
 
+    let window = selected_window
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| anyhow!("missing authenticated window"))?;
+
     ws.get_ref()
         .set_read_timeout(Some(Duration::from_secs(5)))?;
-    let window_id: u8 = match ws.read()? {
+    let claimed_window_id: u8 = match ws.read()? {
         Message::Text(text) => parse_hello(&text).ok_or(anyhow!("Bad hello"))?,
         _ => return Err(anyhow!("Bad hello")),
     };
 
-    let window = state
-        .app
-        .window()
-        .and_then(|windows| windows.get_window(window_id))?;
+    if claimed_window_id != window.id {
+        return Err(anyhow!("WS hello window id does not match credential"));
+    }
 
     let (tx, rx) = mpsc::channel::<crate::app::window_manager::window::WsOut>();
-    window.set_ws_sender(Some(tx));
+    let connection_id = window.register_ws_sender(tx.clone());
+    if window.id == 0
+        && let Some(bridge) = state.app.stdio_bridge()
+    {
+        bridge.send_ready_once()?;
+    }
 
     ws.get_ref()
         .set_read_timeout(Some(Duration::from_millis(200)))?;
     loop {
         match ws.read() {
             Ok(Message::Text(text)) => {
-                handle_ws_request(state, &window, &text);
+                handle_ws_request(state, &window, connection_id, &tx, &text);
             }
             Ok(Message::Binary(bytes)) => {
-                handle_ws_binary(state, &window, &bytes);
+                handle_ws_binary(state, &window, connection_id, &bytes);
             }
             Ok(Message::Close(_)) => break,
             Ok(_) => {}
@@ -455,9 +679,8 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
         }
     }
 
-    window.set_ws_sender(None);
-    // Abort in-flight stateful calls: the page is gone, nobody can consume.
-    state.app.api().cancel_window(window.id);
+    window.remove_ws_sender(connection_id);
+    state.app.api().cancel_connection(window.id, connection_id);
     Ok(())
 }
 
@@ -479,27 +702,30 @@ fn parse_hello(text: &str) -> Option<u8> {
 fn handle_ws_request(
     state: &Arc<ServerState>,
     window: &Arc<crate::app::window_manager::window::NivaWindow>,
+    connection_id: u64,
+    tx: &mpsc::Sender<crate::app::window_manager::window::WsOut>,
     text: &str,
 ) {
-    state.app.api().on_text(window.id, text);
+    state.app.api().on_text(window.id, connection_id, tx, text);
 }
 
 fn handle_ws_binary(
     state: &Arc<ServerState>,
     window: &Arc<crate::app::window_manager::window::NivaWindow>,
+    connection_id: u64,
     bytes: &[u8],
 ) {
-    state.app.api().on_binary(window.id, bytes);
+    state.app.api().on_binary(window.id, connection_id, bytes);
 }
 
 /// Server accessor stored on the app (populated after the Arc exists).
 pub type HttpServerSlot = ArcMut<Option<Arc<NivaHttpServer>>>;
 
-pub fn app_server(app: &Arc<NivaApp>) -> Result<(u16, String)> {
+pub fn app_server(app: &Arc<NivaApp>) -> Result<u16> {
     let slot = app.http_slot();
     let slot = lock!(slot)?;
     let server = slot.as_ref().ok_or(anyhow!("HTTP server not started"))?;
-    Ok((server.port, server.token.clone()))
+    Ok(server.port)
 }
 
 #[cfg(test)]

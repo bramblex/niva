@@ -32,6 +32,9 @@ pub struct NivaOptions {
     // thread-pool `workers` setting is gone).
     pub api: Option<ApiOptions>,
 
+    /// Optional Node-shaped browser adapters; assets are packaged by Devtools.
+    pub node_compat: Option<NodeCompatOption>,
+
     // dev options (also used as defaults when the matching CLI flags are absent)
     pub debug: Option<NivaDebugOptions>,
 
@@ -39,6 +42,20 @@ pub struct NivaOptions {
     #[cfg(target_os = "macos")]
     #[serde(flatten)]
     pub macos_extra: Option<MacExtraOptions>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum NodeCompatOption {
+    Switch(bool),
+    Config(NodeCompatConfig),
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeCompatConfig {
+    pub modules: Option<Vec<String>>,
+    pub importmap: Option<bool>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -8,6 +8,14 @@ declare global {
 }
 
 interface NivaObj {
+  /** 当前原生 Bridge wire 版本。 */
+  readonly bridgeVersion: number;
+  /** 从同步注册表读取 Niva 或 NodeCompat 模块；未注册的名称会抛错。 */
+  require(id: string): any;
+  /** 注册一个页面本地模块。 */
+  registerModule(id: string, implementation: any): void;
+  /** 按当前 NodeCompat 资源映射动态导入，或读取同步注册表。 */
+  import(id: string): Promise<any>;
   /**
    * 绑定事件监听器。
    * @param event 要监听的事件名称，可以用 `*`、`xxxx.*` 等通配符。
@@ -32,19 +40,21 @@ interface NivaObj {
    */
   removeAllEventListeners(event: string): void;
   /**
-   * 内部方法
+   * 发起非流式 API 调用。远程页面通过 IPC 执行此调用。
    */
-  call(methodName: string, args: any): void;
+  call(methodName: string, args: any): Promise<any>;
   /**
-   * 发起流式调用，返回 { promise, cancel, id }。
-   * handlers.onEvent 接收与本次调用关联的推送，onBlob 接收
-   * 按 END 分组的二进制 Blob（onBlob 的第二个参数标识 stderr 子流）。
+   * 发起流式调用，返回 { promise, cancel, id }。仅支持本地 WebSocket 页面。
+   * handlers.onEvent 接收与本次调用关联的推送，onChunk 逐帧接收
+   * 二进制 Uint8Array，onBlob 接收按 END 分组的完整 Blob。
+   * 二进制回调的第二个参数标识 stderr 子流。
    */
   stream(
     methodName: string,
     args: any,
     handlers?: {
       onEvent?: (name: string, data: any) => void;
+      onChunk?: (chunk: Uint8Array, isStderr: boolean) => void;
       onBlob?: (blob: Blob, isStderr: boolean) => void;
     }
   ): {
@@ -53,7 +63,7 @@ interface NivaObj {
     cancel: () => void;
   };
   /**
-   * 向流式调用发送二进制分片（stdin 式输入），end 为 true 表示结束。
+   * 向流式调用发送二进制分片（stdin 式输入），end 为 true 表示结束。仅支持本地 WebSocket 页面。
    */
   streamSend(id: number, data: ArrayBuffer | Uint8Array | string, end?: boolean): boolean;
   /** 接口方法 */
@@ -66,6 +76,8 @@ interface NivaObj {
     extra: NivaExtra;
     /** 文件系统 */
     fs: NivaFs;
+    /** stdio 父进程消息桥，仅 --stdio 启动时可用 */
+    host: NivaHost;
     /** 网络 */
     http: NivaHttp;
     /** 监视器 */
@@ -107,6 +119,11 @@ interface NivaOptions {
 
   /** API 调度器选项（全异步运行时；旧的固定线程池 workers 已移除） */
   api?: NivaApiOptions;
+  /** 可选 Node 形浏览器模块；只打包选中的模块资源。 */
+  nodeCompat?: boolean | {
+    modules?: NivaNodeCompatModule[];
+    importmap?: boolean;
+  };
   /** 应用签名选项（用户自备证书；devtools 在构建成功后自动执行） */
   sign?: NivaSignOptions;
 
@@ -122,6 +139,11 @@ interface NivaOptions {
   /** 专为windows单独使用的配置 */
   windows: NivaOptions;
 }
+
+type NivaNodeCompatModule =
+  | "path" | "os" | "fs" | "child_process" | "events" | "util"
+  | "querystring" | "buffer" | "url" | "crypto" | "zlib"
+  | "http" | "https" | "assert" | "stream";
 
 /** 应用签名选项 */
 type NivaSignOptions = {
@@ -169,6 +191,25 @@ type NivaPosition = {
   y: number;
 };
 
+/** Tao 窗口缩放边方向。 */
+type NivaWindowResizeDirection =
+  | "east" | "north" | "northEast" | "northWest"
+  | "south" | "southEast" | "southWest" | "west";
+
+/** 任务栏进度状态。部分平台会将 indeterminate/paused/error 显示为普通进度。 */
+type NivaWindowProgressState = "none" | "normal" | "indeterminate" | "paused" | "error";
+
+/** Tao 窗口任务栏进度选项。progress 取 0 到 100。 */
+type NivaWindowProgressBar = {
+  state?: NivaWindowProgressState | null;
+  progress?: number | null;
+  /** Unity 桌面环境的 .desktop 文件名，仅 Linux 使用。 */
+  desktopFilename?: string | null;
+};
+
+/** RGBA 颜色分量，取 0 到 255。 */
+type NivaRGBA = [number, number, number, number];
+
 /** 窗口根菜单 */
 interface WindowRootMenu {
   /** 菜单项的名称 */
@@ -188,6 +229,8 @@ interface NivaWindowOptions {
   entry?: string;
   /** 是否启用开发者工具 */
   devtools?: boolean;
+  /** 当前窗口的外源 IPC 授权。键为精确 origin（协议、主机、端口），值为方法名或 namespace.*；默认无权限。流式方法始终不可授权。 */
+  permissions?: Record<string, string[]>;
 
   /** 窗口标题 */
   title?: string;
@@ -240,6 +283,8 @@ interface NivaWindowOptions {
   // macOS extra
   /** 父窗口 ID，仅Mac */
   parentWindow?: number;
+  /** 标题栏交通灯按钮位置，仅Mac */
+  trafficLightInset?: NivaPosition;
   /** 是否可点击窗口背景移动窗口，仅Mac */
   movableByWindowBackground?: boolean;
   /** 标题栏是否透明，仅Mac */
@@ -315,7 +360,7 @@ type MenuItemOption =
       selected?: boolean;
       /** 图标图片，仅支持 png */
       icon?: string;
-      /** 快捷键 */
+      /** 菜单快捷键。Windows 当前仅显示组合键，tao 事件循环未接入 TranslateAcceleratorW，因此不会触发菜单项。 */
       accelerator?: string;
     }
   /** 子菜单选项 */
@@ -357,8 +402,61 @@ interface ShortcutOption {
 /** 全局快捷键的选项集合 */
 type NivaShortcutsOptions = ShortcutOption[];
 
-/** Niva时间集合 */
+/** Wry WebView 权限种类 */
+type NivaWebviewPermissionKind =
+  | "microphone"
+  | "camera"
+  | "geolocation"
+  | "notifications"
+  | "clipboard-read"
+  | "display-capture"
+  | "midi"
+  | "sensors"
+  | "media-key-system-access"
+  | "local-fonts"
+  | "window-management"
+  | "pointer-lock"
+  | "automatic-downloads"
+  | "file-system-access"
+  | "autoplay"
+  | "other";
+
+/** Niva 事件集合 */
 interface NivaEventMap {
+  /** WebView 页面加载完成；由 Wry 的 Finished 回调触发，仅本地 WebSocket 页面可接收。 */
+  "webview.loaded": (eventName: string, payload: { url: string }) => void;
+  /** target=_blank/window.open 请求；Niva 默认拒绝。url 是目标地址，pageUrl 是事件投递时当前顶层页面地址，不能代表 iframe 的实际发起地址。 */
+  "webview.newWindowRequested": (
+    eventName: string,
+    payload: {
+      url: string;
+      pageUrl: string | null;
+      decision: "denied";
+    }
+  ) => void;
+  /** 下载开始请求；Niva 默认拒绝。url 是下载资源地址，pageUrl 是事件投递时当前顶层页面地址。 */
+  "webview.downloadStarted": (
+    eventName: string,
+    payload: {
+      url: string;
+      pageUrl: string | null;
+      decision: "denied";
+    }
+  ) => void;
+  /** Wry 权限请求被 Niva 拒绝。Wry 回调不提供请求来源 URL；pageUrl 是事件投递时当前顶层页面地址。 */
+  "webview.permissionDenied": (
+    eventName: string,
+    payload: {
+      kind: NivaWebviewPermissionKind;
+      pageUrl: string | null;
+      decision: "denied";
+    }
+  ) => void;
+  /** 父进程经 stdin 发送的消息，仅主窗口收到 */
+  "host:message": (
+    eventName: string,
+    message: { name: string; data?: unknown }
+  ) => void;
   /** 窗口焦点事件 */
   "window.focused": (eventName: string, focused: boolean) => void;
   /** 窗口缩放事件 */
@@ -406,6 +504,12 @@ interface NivaEventMap {
   [k: string]: (eventName: string, payload: any) => void;
 }
 
+/** stdio 父进程消息桥 */
+interface NivaHost {
+  /** 向父进程 stdout 发送一条消息。仅主窗口可以调用。 */
+  send(name: string, data?: unknown): Promise<void>;
+}
+
 interface NivaClipboard {
   /**
    * 从系统剪贴板中读取当前所复制的文本内容。
@@ -437,23 +541,36 @@ interface NivaDialog {
   /**
    * 在文件系统中选择一个文件，支持过滤器和起始目录。
    * @param filters 文件类型筛选器。
-   * @param start_dir 文件选择对话框的起始目录。
+   * @param startDir 文件选择对话框的起始目录。
    * @returns 一个 Promise，在选择文件时解析该 Promise 以返回文件名或文件路径，或解析 `null`（如果没有选择文件）。
    */
-  pickFile(filters?: string[], start_dir?: string): Promise<string | null>;
+  pickFile(filters?: string[], startDir?: string): Promise<string | null>;
+  /**
+   * 在文件系统中选择多个文件；取消对话框时解析为 null。
+   * @param filters 文件类型筛选器。
+   * @param startDir 文件选择对话框的起始目录。
+   * @returns 选择的文件路径数组，或在取消时返回 null。
+   */
+  pickFiles(filters?: string[], startDir?: string): Promise<string[] | null>;
   /**
    * 在文件系统中选择一个文件夹，支持起始目录。
-   * @param start_dir 文件夹选择对话框的起始目录。
+   * @param startDir 文件夹选择对话框的起始目录。
    * @returns 一个 Promise，在选择文件夹时解析该 Promise 以返回文件夹路径，或解析 `null`（如果没有选择文件夹）。
    */
-  pickDir(start_dir?: string): Promise<string | null>;
+  pickDir(startDir?: string): Promise<string | null>;
+  /**
+   * 在文件系统中选择多个文件夹；取消对话框时解析为 null。
+   * @param startDir 文件夹选择对话框的起始目录。
+   * @returns 选择的文件夹路径数组，或在取消时返回 null。
+   */
+  pickDirs(startDir?: string): Promise<string[] | null>;
   /**
    * 在文件系统中保存一个文件，支持过滤器和起始目录。
    * @param filters 文件类型筛选器。
-   * @param start_dir 文件保存对话框的起始目录。
+   * @param startDir 文件保存对话框的起始目录。
    * @returns 一个 Promise，在保存文件时解析该 Promise 以返回文件名或文件路径，或解析 `null`（如果没有保存文件）。
    */
-  saveFile(filters?: string[], start_dir?: string): Promise<string | null>;
+  saveFile(filters?: string[], startDir?: string): Promise<string | null>;
 }
 
 interface NivaExtra {
@@ -471,7 +588,7 @@ interface NivaExtra {
    * 隐藏其他应用程序，仅适用于 macOS。
    * @returns 一个 Promise，在其他应用程序成功隐藏时解析该 Promise，如果发生错误则拒绝该 Promise。
    */
-  hideOtherApplication(): Promise<void>;
+  hideOtherApplications(): Promise<void>;
   /**
    * 设置应用程序的激活策略，仅适用于 macOS。
    * @param policy 要设置的激活策略。
@@ -484,17 +601,17 @@ interface NivaExtra {
    * 获取当前活动窗口的 ID，仅适用于 macOS 和 Windows。
    * 对于 macOS，将返回 `process_id_window_id` 的格式，其中 `process_id` 和 `window_id` 为整数。
    * 对于 Windows，将返回窗口句柄的字符串形式。
-   * @returns 一个 Promise，在获取成功时解析该 Promise 以返回当前活动窗口的 ID，或解析 `null`（如果没有活动窗口）。
+   * @returns macOS 返回活动窗口 ID 或无活动窗口时的 null；Windows 始终返回前台窗口句柄字符串。
    */
   getActiveWindowId(): Promise<string | null>;
   /**
    * 将焦点设置到特定 ID 的窗口，仅适用于 macOS 和 Windows。
    * 对于 macOS，ID 应该是 `process_id_window_id` 的格式，其中 `process_id` 和 `window_id` 为整数。
    * 对于 Windows，ID 应该是窗口句柄的字符串形式。
-   * @param id_string 要设置焦点窗口的 ID 字符串。
-   * @returns 一个 Promise，在设置焦点窗口时解析该 Promise，如果无法设置活动窗口则解析 `true`，如果窗口 ID 无效则解析 `false`，如果发生其他错误则拒绝该 Promise。
+   * @param idString 要设置焦点窗口的 ID 字符串。
+   * @returns macOS 返回是否成功激活；Windows 调用 SetForegroundWindow 后解析为 void（Windows API 返回的 BOOL 不会透传）。ID 格式错误或 bridge 错误会拒绝。
    */
-  focusByWindowId(id_string: string): Promise<boolean>;
+  focusByWindowId(idString: string): Promise<boolean | void>;
 }
 
 interface NivaFsStat {
@@ -624,7 +741,7 @@ interface NivaFs {
 interface NivaHttp {
   /**
    * 发送 HTTP(s) 请求并返回响应结果，包括响应状态码、响应头和响应体。
-   * @param options 请求选项，包括方法、URL、请求头、请求体和代理设置。
+   * @param options 请求选项，包括方法、URL、请求头和请求体。原生请求禁用代理。
    * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
    */
   request(options: {
@@ -632,7 +749,6 @@ interface NivaHttp {
     url: string;
     headers?: { [key: string]: string };
     body?: string;
-    proxy?: string;
   }): Promise<{
     status: number;
     headers: { [key: string]: string };
@@ -677,7 +793,6 @@ interface NivaHttp {
     url: string;
     headers?: { [key: string]: string };
     body?: string;
-    proxy?: string;
   }): Promise<{ status: number }>;
 }
 
@@ -771,7 +886,8 @@ interface NivaOs {
 
 interface ExecOptions {
   env?: Record<string, string>;
-  current_dir?: string;
+  /** Rust serde camelCase option used by process.execStream. */
+  currentDir?: string;
   detached?: boolean;
 }
 
@@ -823,7 +939,7 @@ interface NivaProcess {
     cmd: string,
     args?: string[],
     options?: ExecOptions
-  ): Promise<{
+  ): Promise<number | {
     status: number | null;
     stdout: string;
     stderr: string;
@@ -836,7 +952,7 @@ interface NivaProcess {
     cmd: string,
     args?: string[],
     options?: ExecOptions
-  ): Promise<{ status: number | null }>;
+  ): Promise<number | { status: number | null }>;
   /**
    * 打开指定的 URI。
    * @param uri 要打开的 URI。
@@ -948,11 +1064,41 @@ interface NivaTray {
 }
 
 interface NivaWebview {
+  /** 在当前 WebView 主页面执行脚本。仅接受 UTF-8 字节数不超过 64 KiB 的脚本，不返回脚本结果。 */
+  evaluateScript(script: string): Promise<void>;
+  /** 将当前 WebView 导航到绝对 HTTP(S) URL。相对 URL 和其他 scheme 会拒绝；可用 baseUrl() 拼接本地资源地址。 */
+  loadUrl(url: string): Promise<void>;
+  /** 将 HTML 文本加载到当前 WebView；此接口不接收 base URL。 */
+  loadHtml(html: string): Promise<void>;
+  /** 重新加载当前页面。 */
+  reload(): Promise<void>;
+  /** 获取当前页面 URL。 */
+  url(): Promise<string>;
+  /** 打开系统打印流程。 */
+  print(): Promise<void>;
+  /** 后退到上一条历史记录。 */
+  goBack(): Promise<void>;
+  /** 前进到下一条历史记录。 */
+  goForward(): Promise<void>;
+  /** 查询是否可以后退。 */
+  canGoBack(): Promise<boolean>;
+  /** 查询是否可以前进。 */
+  canGoForward(): Promise<boolean>;
+  /** 获取当前 Wry WebContext 共享数据存储中的 Cookie，返回 Set-Cookie 格式字符串。Android 上 Wry 返回空数组。 */
+  cookies(): Promise<string[]>;
+  /** 获取指定 URL 可用的 Cookie，返回 Set-Cookie 格式字符串；筛选遵循各平台 Wry 实现。 */
+  cookiesForUrl(url: string): Promise<string[]>;
+  /** 设置共享 WebContext 中的 Cookie，参数使用 Set-Cookie 格式字符串；其他窗口可能同时看到此 Cookie。Android 上会以不支持错误拒绝。 */
+  setCookie(cookie: string): Promise<void>;
+  /** 从共享 WebContext 删除 Cookie，参数传入含 name、domain、path 的 Set-Cookie 格式字符串；其他窗口可能同时看到此变更。Android 上会以不支持错误拒绝。 */
+  deleteCookie(cookie: string): Promise<void>;
+  /** 请求清理底层 WebView 数据存储的全部浏览数据；同一存储上下文中的其他窗口也可能受影响。 */
+  clearAllBrowsingData(): Promise<void>;
   /**
    * 检查开发工具是否打开。
    * @returns 一个 Promise，在检查成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回布尔值，表示开发工具是否打开。
    */
-  isDevToolsOpen(): Promise<boolean>;
+  isDevtoolsOpen(): Promise<boolean>;
   /**
    * 打开开发工具。
    * @returns 一个 Promise，该 Promise 始终解析。
@@ -962,7 +1108,7 @@ interface NivaWebview {
    * 关闭开发工具。
    * @returns 一个 Promise，该 Promise 始终解析。
    */
-  closeDevTools(): Promise<void>;
+  closeDevtools(): Promise<void>;
   /**
    * 获取应用程序的基本 URL。
    * @returns 一个 Promise，在获取成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回应用程序的基本 URL。
@@ -986,7 +1132,7 @@ interface NivaWindow {
    * @param options 可选的窗口选项，包括宽度、高度、坐标、标题和 URL 等。
    * @returns 一个 Promise，在接收成功响应后返回新窗口的 ID。
    */
-  open(options: NivaWindowOptions): Promise<number>;
+  open(options?: NivaWindowOptions): Promise<number>;
   /**
    * 关闭窗口。
    * @param id 可选的窗口 ID，若不提供，则关闭当前窗口。若 ID 为 0，则退出程序。
@@ -1075,19 +1221,43 @@ interface NivaWindow {
    */
   outerSize(id?: number): Promise<NivaSize>;
   /**
-   * 设置窗口客户区最小大小。
-   * @param size 窗口客户区最小大小。
+   * 设置窗口客户区最小大小；传 null 清除最小尺寸约束。
+   * @param size 窗口客户区最小大小，或 null 清除约束。
    * @param id 需要设置大小的窗口 ID，省略则默认为当前窗口。
    * @returns 一个 Promise，在设置成功后解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  setMinInnerSize(size: NivaSize, id?: number): Promise<void>;
+  setMinInnerSize(size: NivaSize | null, id?: number): Promise<void>;
   /**
-   * 设置窗口客户区最大大小。
-   * @param size 窗口客户区最大大小。
+   * 设置窗口客户区最大大小；传 null 清除最大尺寸约束。
+   * @param size 窗口客户区最大大小，或 null 清除约束。
    * @param id 需要设置大小的窗口 ID，省略则默认为当前窗口。
    * @returns 一个 Promise，在设置成功后解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  setMaxInnerSize(size: NivaSize, id?: number): Promise<void>;
+  setMaxInnerSize(size: NivaSize | null, id?: number): Promise<void>;
+  /**
+   * 设置运行时窗口图标，传 null 清除图标。图标路径位于应用资源中；Tao 在 Windows/Linux 支持此 API，macOS 无窗口图标语义，Niva 在 macOS/iOS/Android 返回不支持错误。
+   */
+  setWindowIcon(iconPath?: string | null, id?: number): Promise<void>;
+  /**
+   * 运行时设置窗口主题。system 或 null 使用系统主题；Linux/macOS 的主题状态由 Tao 按应用级处理；iOS/Android 不支持。
+   */
+  setTheme(theme?: "light" | "dark" | "system" | null, id?: number): Promise<void>;
+  /**
+   * 开始窗口边缘缩放拖动。Tao 在 Windows/Linux 支持；macOS/iOS/Android 返回不支持错误。
+   */
+  dragResizeWindow(direction: NivaWindowResizeDirection, id?: number): Promise<void>;
+  /**
+   * 设置任务栏进度。progress 取 0 到 100；Linux/macOS 的进度是应用级，Linux 需桌面环境提供 libunity 支持；iOS/Android 不支持。
+   */
+  setProgressBar(options: NivaWindowProgressBar, id?: number): Promise<void>;
+  /** 请求原生窗口重绘。Android 的 Tao 0.37 实现不支持，Niva 会返回错误。 */
+  requestRedraw(id?: number): Promise<void>;
+  /** 设置 CJK 输入法候选窗在窗口客户区的逻辑坐标；Linux Tao 实现为空操作，Niva 会返回不支持错误。 */
+  setImePosition(position: NivaPosition, id?: number): Promise<void>;
+  /** 设置窗口背景 RGBA；Windows 会忽略 alpha 分量；iOS/Android 不支持。 */
+  setBackgroundColor(color: NivaRGBA | null, id?: number): Promise<void>;
+  /** 设置窗口是否可聚焦；macOS 已聚焦窗口设为不可聚焦后不能直接取消聚焦；iOS/Android 不支持。 */
+  setFocusable(focusable: boolean, id?: number): Promise<void>;
   /**
    * 设置窗口标题。
    * @param title 窗口标题。
@@ -1197,6 +1367,8 @@ interface NivaWindow {
    * @returns 一个 Promise，在操作成功后解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   setMaximized(maximized: boolean, id?: number): Promise<void>;
+  /** 设置窗口是否可以关闭。 */
+  setClosable(closable: boolean, id?: number): Promise<void>;
   /**
    * 判断窗口是否使用装饰。
    * @param id 判断的窗口 ID，如果省略则默认为当前窗口。
@@ -1215,7 +1387,7 @@ interface NivaWindow {
    * @param id 判断的窗口 ID，如果省略则默认为当前窗口。
    * @returns 一个 Promise，在接收到判断结果后解析该 Promise，或在发生错误时拒绝该 Promise。
    */
-  isFullscreen(id?: number): Promise<boolean>;
+  fullscreen(id?: number): Promise<boolean>;
   /**
    * 全屏或退出全屏窗口。
    * @param isFullscreen 是否全屏。
@@ -1337,11 +1509,11 @@ interface NivaWindowExtra {
   setEnable(enabled: boolean, id?: number): Promise<void>;
   /**
    * 设置任务栏图标。仅适用于 Windows。
-   * @param taskbar_icon 任务栏图标。
+   * @param taskbarIcon 任务栏图标的应用资源路径。
    * @param id 区别不同窗口的可选 ID。
    * @returns 如果成功则返回 Promise.resolve()，否则返回 Promise.reject()。
    */
-  setTaskbarIcon(taskbar_icon: string, id?: number): Promise<void>;
+  setTaskbarIcon(taskbarIcon: string, id?: number): Promise<void>;
   /**
    * 获取窗口的主题。仅适用于 Windows。
    * @param id 区别不同窗口的可选 ID。
@@ -1377,14 +1549,14 @@ interface NivaWindowExtra {
    * @returns 如果成功则返回 Promise.resolve()，否则返回 Promise.reject()。
    */
   setSkipTaskbar(skip: boolean, id?: number): Promise<void>;
-  /**
- * 设置窗口无装饰时是否显示阴影。仅适用于 macOS。
-
- * @param shadow 是否显示窗口阴影。仅适用于 Windows。
- * @param id 区别不同窗口的可选 ID。
- * @returns 如果成功则返回 Promise.resolve()，否则返回 Promise.reject()。
- */
+  /** 设置窗口无装饰时是否显示阴影。仅适用于 Windows。 */
   setUndecoratedShadow(shadow: boolean, id?: number): Promise<void>;
+  /** 设置任务栏覆盖图标；传 null 清除。仅适用于 Windows。 */
+  setOverlayIcon(iconPath: string | null, id?: number): Promise<void>;
+  /** 设置窗口 RTL 样式。仅适用于 Windows。 */
+  setRtl(rtl: boolean, id?: number): Promise<void>;
+  /** 查询无装饰窗口阴影状态。仅适用于 Windows。 */
+  hasUndecoratedShadow(id?: number): Promise<boolean>;
   /**
    * 获取窗口的全屏状态。仅适用于 macOS。
    * @param id 区别不同窗口的可选 ID。
@@ -1398,13 +1570,15 @@ interface NivaWindowExtra {
    * @returns 全屏状态切换成功时返回 true，否则返回 false。成功时返回包含窗口全屏状态的 Promise 对象，否则返回 Promise.reject()。
    */
   setSimpleFullscreen(fullscreen: boolean, id?: number): Promise<boolean>;
+  /** 查询窗口是否显示阴影。仅适用于 macOS。 */
+  hasShadow(id?: number): Promise<boolean>;
   /**
    * 设置窗口是否显示阴影。仅适用于 macOS。
-   * @param has_shadow 是否显示阴影。
+   * @param hasShadow 是否显示阴影。
    * @param id 区分不同窗口的可选 ID。
    * @returns 如果成功则返回 Promise.resolve()，否则返回 Promise.reject()。
    */
-  setHasShadow(has_shadow: boolean, id?: number): Promise<void>;
+  setHasShadow(hasShadow: boolean, id?: number): Promise<void>;
   /**
    * 设置文档是否已编辑。仅适用于 macOS。
    * @param edited 是否已编辑。
@@ -1444,4 +1618,12 @@ interface NivaWindowExtra {
    * @returns 选项卡标识符。成功时返回表示窗口选项卡标识符的 Promise 对象，否则返回 Promise.reject()。
    */
   tabbingIdentifier(id?: number): Promise<string>;
+  /** 设置 macOS 窗口交通灯按钮相对窗口左上角的偏移量。仅适用于 macOS。 */
+  setTrafficLightInset(position: NivaPosition, id?: number): Promise<void>;
+  /** 运行时设置 macOS 应用激活策略。 */
+  setActivationPolicyAtRuntime(policy: "regular" | "accessory" | "prohibited"): Promise<void>;
+  /** 设置 macOS Dock 图标是否可见。 */
+  setDockVisibility(visible: boolean): Promise<void>;
+  /** 设置或清除 macOS Dock 角标。 */
+  setBadgeLabel(label?: string | null): Promise<void>;
 }
