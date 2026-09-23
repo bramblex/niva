@@ -88,7 +88,10 @@ def main():
             assert data["fsStatus"] == 200 and data["fsText"] == "resource-ok", public_data
             assert data["iframe"] == {"kind": "iframe", "id": 0, "origin": "http://niva.app"}, public_data
             assert data["crossIframe"]["origin"] == "null" and data["crossIframe"]["outcome"] != "allowed", public_data
-            assert data["nodeCompat"] == {"path": "a\\b", "fsText": "resource-ok", "assert": "function"}, public_data
+            assert data["nodeCompat"] == {
+                "path": "a\\b", "fsText": "resource-ok", "assert": "function",
+                "fileUrlRoundTrip": True, "namespacedPath": True,
+            }, public_data
             assert data["menu"] == {"shown": True, "hidden": True, "restored": True}, public_data
             assert data["shortcutId"] >= 0, public_data
             assert data["childId"] > 0 and len(data["windows"]) == 2, public_data

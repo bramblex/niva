@@ -41,9 +41,13 @@
       const fsResource = await fetch(fsBase + encodeURIComponent(filePath));
       const pathModule = await import("path");
       const fsModule = await Niva.import("fs/promises");
+      const urlModule = await Niva.import("url");
       const assertModule = require("assert/strict");
       const compatText = (await fsModule.readFile(filePath, "utf8")).trim();
       assertModule.equal(compatText, "resource-ok");
+      const windowsPath = pathModule.default.join(cwd, "examples", "windows-smoke", "probe.txt");
+      const fileUrlRoundTrip = urlModule.fileURLToPath(urlModule.pathToFileURL(windowsPath)) === windowsPath;
+      const namespacedPath = pathModule.default.toNamespacedPath(windowsPath).startsWith("\\\\?\\");
       await Niva.api.window.setMenu([{ label: "Smoke", children: [{ type: "item", id: 7, label: "Ping" }] }]);
       const menuShown = await Niva.api.window.isMenuVisible();
       await Niva.api.window.hideMenu();
@@ -68,6 +72,8 @@
           path: pathModule.default.join("a", "b"),
           fsText: compatText,
           assert: typeof assertModule.equal,
+          fileUrlRoundTrip,
+          namespacedPath,
         },
         menu: { shown: menuShown, hidden: menuHidden, restored: menuRestored },
         shortcutId,
