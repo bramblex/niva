@@ -8,7 +8,7 @@ From the repository root, run `npm ci` once, then:
 
 The script builds packaged Windows apps and checks the WebView2 page origin,
 native calls from the main page and a same-origin iframe, packaged resources,
-NodeCompat (`path`, `fs/promises`, `assert/strict`), file-token HTTP behavior,
+NodeCompat (`path`, `url`, `fs/promises`, `assert/strict`), file-token HTTP behavior,
 cross-origin iframe denial, a strict CSP page, menu show/hide, and the Win32
 owner of a child window. For the native menu click and global shortcut check,
 run `& .\examples\windows-smoke\build.ps1 -Interactive`; when it prints

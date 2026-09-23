@@ -523,7 +523,13 @@ mod tests {
 
         let mut files = read_directory_all(&root, Some(vec!["*ignored-dir*".to_owned()])).unwrap();
         files.sort();
-        assert_eq!(files, ["nested/keep.txt", "top.txt"]);
+        assert_eq!(
+            files,
+            [
+                format!("nested{}keep.txt", std::path::MAIN_SEPARATOR),
+                "top.txt".to_owned(),
+            ]
+        );
     }
 
     #[test]
