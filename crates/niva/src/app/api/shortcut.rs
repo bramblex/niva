@@ -1,4 +1,5 @@
 use anyhow::Result;
+use serde::Serialize;
 
 use crate::app::NivaApp;
 use crate::app::api_manager::ApiManager;
@@ -52,11 +53,40 @@ async fn list(
     app: Arc<NivaApp>,
     window: Arc<NivaWindow>,
     request: ApiRequest,
-) -> Result<Vec<(u8, String)>> {
+) -> Result<Vec<ShortcutEntry>> {
     let app2 = app.clone();
     run_on_main(&app, move |_target, _control_flow| {
         let (window_id,) = request.args().optional::<(Option<u8>,)>(1)?;
-        app2.shortcut()?.list(window_id.unwrap_or(window.id))
+        Ok(shortcut_entries(
+            app2.shortcut()?.list(window_id.unwrap_or(window.id))?,
+        ))
     })
     .await
+}
+
+#[derive(Serialize)]
+struct ShortcutEntry {
+    id: u8,
+    accelerator: String,
+}
+
+fn shortcut_entries(rows: Vec<(u8, String)>) -> Vec<ShortcutEntry> {
+    rows.into_iter()
+        .map(|(id, accelerator)| ShortcutEntry { id, accelerator })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shortcut_entries;
+    use serde_json::json;
+
+    #[test]
+    fn list_serializes_entries_with_the_public_id_and_accelerator_fields() {
+        let entries = shortcut_entries(vec![(7, "shift+control+alt+F10".into())]);
+        assert_eq!(
+            serde_json::to_value(entries).unwrap(),
+            json!([{ "id": 7, "accelerator": "shift+control+alt+F10" }])
+        );
+    }
 }
