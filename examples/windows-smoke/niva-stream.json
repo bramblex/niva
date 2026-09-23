@@ -1,0 +1,10 @@
+{
+  "name": "windows-stream-smoke",
+  "uuid": "f079d6c6-9e61-4db0-bf5e-9b7be6a3fb1b",
+  "window": {
+    "entry": "stream.html",
+    "title": "Niva Windows stream smoke",
+    "size": { "width": 420, "height": 220 },
+    "visible": true
+  }
+}
