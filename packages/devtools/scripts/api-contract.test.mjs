@@ -60,6 +60,14 @@ function pageOverrides() {
   );
 }
 
+function bridgeMethods() {
+  const typePath = path.join(root, "packages/types/Niva_zh.d.ts");
+  const source = ts.createSourceFile(typePath, readFileSync(typePath, "utf8"), ts.ScriptTarget.Latest, true);
+  const object = source.statements.find((statement) => ts.isInterfaceDeclaration(statement) && statement.name.text === "NivaObj");
+  assert.ok(object);
+  return new Set(object.members.filter(ts.isMethodSignature).map((method) => `Niva.${method.name.getText(source)}`));
+}
+
 test("every typed Niva.api method has a native handler or explicit page override", () => {
   const native = registeredMethods();
   const overrides = pageOverrides();
@@ -77,4 +85,15 @@ test("native-only API methods are the internal stream handlers", () => {
     "process.execStream",
     "resource.readStream",
   ]);
+});
+
+test("the coverage matrix tracks each public API and bridge method exactly once", () => {
+  const matrix = readFileSync(path.join(root, "docs/api-test-matrix.md"), "utf8");
+  const rows = [...matrix.matchAll(/^\| `(Niva(?:\.api)?\.[^`]+)` \|/gm)].map((match) => match[1]);
+  const expected = [
+    ...[...publicApiMethods()].map((method) => `Niva.api.${method}`),
+    ...bridgeMethods(),
+  ];
+  assert.equal(rows.length, new Set(rows).size, "coverage matrix contains duplicate methods");
+  assert.deepEqual(rows.sort(), expected.sort());
 });

@@ -32,18 +32,23 @@ pub fn register_apis(api_manager: &mut ApiManager) {
 
 const MAX_EVALUATE_SCRIPT_BYTES: usize = 64 * 1024;
 
-async fn evaluate_script(
-    app: Arc<NivaApp>,
-    window: Arc<NivaWindow>,
-    request: ApiRequest,
-) -> Result<()> {
-    let (script,) = request.args().get::<(String,)>()?;
+fn validate_script_size(script: &str) -> Result<()> {
     if script.len() > MAX_EVALUATE_SCRIPT_BYTES {
         return Err(anyhow!(
             "Script exceeds the {} byte limit",
             MAX_EVALUATE_SCRIPT_BYTES
         ));
     }
+    Ok(())
+}
+
+async fn evaluate_script(
+    app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<()> {
+    let (script,) = request.args().get::<(String,)>()?;
+    validate_script_size(&script)?;
     run_on_main(&app, move |_target, _control_flow| {
         window.webview.evaluate_script(&script)?;
         Ok(())
@@ -152,12 +157,7 @@ async fn cookies(
     _request: ApiRequest,
 ) -> Result<Vec<String>> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window
-            .webview
-            .cookies()?
-            .into_iter()
-            .map(|cookie| cookie.to_string())
-            .collect())
+        Ok(cookies_to_strings(window.webview.cookies()?))
     })
     .await
 }
@@ -169,14 +169,16 @@ async fn cookies_for_url(
 ) -> Result<Vec<String>> {
     let (url,) = request.args().get::<(String,)>()?;
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window
-            .webview
-            .cookies_for_url(&url)?
-            .into_iter()
-            .map(|cookie| cookie.to_string())
-            .collect())
+        Ok(cookies_to_strings(window.webview.cookies_for_url(&url)?))
     })
     .await
+}
+
+fn cookies_to_strings(cookies: Vec<wry::cookie::Cookie<'static>>) -> Vec<String> {
+    cookies
+        .into_iter()
+        .map(|cookie| cookie.to_string())
+        .collect()
 }
 
 async fn set_cookie(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
@@ -280,7 +282,11 @@ async fn base_url(
     _request: ApiRequest,
 ) -> Result<String> {
     let port = app.server_info()?;
-    Ok(format!("http://127.0.0.1:{port}/"))
+    Ok(local_server_base_url(port))
+}
+
+fn local_server_base_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/")
 }
 
 async fn base_filesystem_url(
@@ -289,18 +295,22 @@ async fn base_filesystem_url(
     _request: ApiRequest,
 ) -> Result<String> {
     let port = app.server_info()?;
-    Ok(format!(
-        "http://127.0.0.1:{port}/__niva_fs/{}/",
-        window.token
-    ))
+    Ok(local_file_system_base_url(port, &window.token))
+}
+
+fn local_file_system_base_url(port: u16, token: &str) -> String {
+    format!("{}__niva_fs/{token}/", local_server_base_url(port))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_load_url;
+    use super::{
+        MAX_EVALUATE_SCRIPT_BYTES, cookies_to_strings, local_file_system_base_url,
+        local_server_base_url, parse_cookie, parse_load_url, validate_script_size,
+    };
 
     #[test]
-    fn load_url_requires_an_absolute_http_or_https_url() {
+    fn load_url_accepts_only_absolute_http_or_https_urls() {
         assert_eq!(
             parse_load_url("http://localhost:8080/path").unwrap(),
             "http://localhost:8080/path"
@@ -309,8 +319,50 @@ mod tests {
             parse_load_url("https://example.com/path").unwrap(),
             "https://example.com/path"
         );
+        assert_eq!(
+            parse_load_url("HTTPS://EXAMPLE.COM/path with spaces").unwrap(),
+            "https://example.com/path%20with%20spaces"
+        );
         assert!(parse_load_url("/relative/path").is_err());
+        assert!(parse_load_url("//example.com/path").is_err());
         assert!(parse_load_url("javascript:alert(1)").is_err());
         assert!(parse_load_url("data:text/html,hello").is_err());
+        assert!(parse_load_url("file:///tmp/page.html").is_err());
+        assert!(parse_load_url("niva://app/index.html").is_err());
+        assert!(parse_load_url("ftp://example.com/file").is_err());
+    }
+
+    #[test]
+    fn evaluate_script_limit_counts_utf8_bytes_and_includes_the_boundary() {
+        assert!(validate_script_size(&"x".repeat(MAX_EVALUATE_SCRIPT_BYTES)).is_ok());
+        assert!(validate_script_size(&"x".repeat(MAX_EVALUATE_SCRIPT_BYTES + 1)).is_err());
+
+        let within_limit = "界".repeat(MAX_EVALUATE_SCRIPT_BYTES / "界".len());
+        assert_eq!(within_limit.len(), MAX_EVALUATE_SCRIPT_BYTES - 1);
+        assert!(validate_script_size(&within_limit).is_ok());
+        assert!(validate_script_size(&format!("{within_limit}界")).is_err());
+    }
+
+    #[test]
+    fn cookie_arguments_are_parsed_and_formatted_as_set_cookie_values() {
+        let cookie =
+            parse_cookie("session=hello; Path=/; HttpOnly; SameSite=Lax".to_owned()).unwrap();
+        assert_eq!(cookie.name(), "session");
+        assert_eq!(cookie.value(), "hello");
+        assert_eq!(
+            cookies_to_strings(vec![cookie]),
+            vec!["session=hello; HttpOnly; SameSite=Lax; Path=/"]
+        );
+
+        assert!(parse_cookie("missing-separator".to_owned()).is_err());
+    }
+
+    #[test]
+    fn local_webview_urls_include_the_server_port_and_window_file_token() {
+        assert_eq!(local_server_base_url(43_210), "http://127.0.0.1:43210/");
+        assert_eq!(
+            local_file_system_base_url(43_210, "0123456789abcdef0123456789abcdef"),
+            "http://127.0.0.1:43210/__niva_fs/0123456789abcdef0123456789abcdef/"
+        );
     }
 }

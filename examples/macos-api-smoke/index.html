@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Niva macOS API smoke</title>
+  </head>
+  <body>
+    <main>
+      <h1>Niva macOS native API smoke</h1>
+      <p>This disposable fixture reports checked native state through --stdio.</p>
+    </main>
+    <script>
+      (() => {
+        const covered = [];
+        let dialogHeartbeatTimer = null;
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message);
+        }
+
+        function record(method, assertion) {
+          covered.push({ method, assertion });
+        }
+
+        function equal(actual, expected, message) {
+          assert(actual === expected, `${message}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+        }
+
+        function finitePair(value, label) {
+          assert(value && Number.isFinite(value.x) && Number.isFinite(value.y), `${label} must contain finite x/y`);
+        }
+
+        function validMonitor(value, label) {
+          assert(value && typeof value.name === "string", `${label} must name a monitor`);
+          assert(value.size && value.size.width > 0 && value.size.height > 0, `${label} must have a positive logical size`);
+          assert(value.physicalSize && value.physicalSize.width > 0 && value.physicalSize.height > 0, `${label} must have a positive physical size`);
+          assert(Number.isFinite(value.scaleFactor) && value.scaleFactor > 0, `${label} must have a positive scale factor`);
+        }
+
+        async function waitUntil(predicate, label) {
+          const deadline = Date.now() + 5000;
+          while (Date.now() < deadline) {
+            const value = await predicate();
+            if (value) return value;
+            await new Promise(resolve => setTimeout(resolve, 80));
+          }
+          throw new Error(`timed out waiting for ${label}`);
+        }
+
+        function send(name, data) {
+          return Niva.api.host.send(name, data);
+        }
+
+        async function runAutomaticCases() {
+          const result = {};
+          const win = Niva.api.window;
+          const webview = Niva.api.webview;
+
+          // Monitor APIs: assert populated native geometry and point lookup.
+          const monitors = await Niva.api.monitor.list();
+          assert(Array.isArray(monitors) && monitors.length > 0, "monitor.list must return at least one connected display");
+          monitors.forEach((monitor, index) => validMonitor(monitor, `monitor.list[${index}]`));
+          result.monitorCount = monitors.length;
+          record("monitor.list", "returns one or more monitors with valid logical/physical geometry");
+
+          const currentMonitor = await Niva.api.monitor.current();
+          validMonitor(currentMonitor, "monitor.current");
+          record("monitor.current", "returns monitor geometry for the visible smoke window");
+
+          const primaryMonitor = await Niva.api.monitor.primary();
+          validMonitor(primaryMonitor, "monitor.primary");
+          record("monitor.primary", "returns valid primary monitor geometry");
+
+          const pointX = primaryMonitor.position.x + primaryMonitor.size.width / 2;
+          const pointY = primaryMonitor.position.y + primaryMonitor.size.height / 2;
+          const pointMonitor = await Niva.api.monitor.fromPoint(pointX, pointY);
+          validMonitor(pointMonitor, "monitor.fromPoint");
+          equal(pointMonitor.name, primaryMonitor.name, "monitor.fromPoint at primary center");
+          record("monitor.fromPoint", "center point resolves to the primary monitor");
+
+          // Window APIs: every mutation is read back before the disposable
+          // window is closed by process.exit.
+          const currentId = await win.current();
+          equal(currentId, 0, "window.current");
+          record("window.current", "returns main window id 0");
+
+          const originalTitle = await win.title();
+          assert(typeof originalTitle === "string" && originalTitle.length > 0, "window.title must return the configured title");
+          record("window.title", "returns a non-empty native window title");
+
+          let windows = await win.list();
+          assert(windows.some(item => item.id === 0 && item.title === originalTitle && item.visible), "window.list must include the visible main window and its title");
+          record("window.list", "contains the main window id/title/visible state");
+
+          const originalSize = await win.innerSize();
+          assert(originalSize.width > 0 && originalSize.height > 0, "window.innerSize must be positive");
+          const outerSize = await win.outerSize();
+          assert(outerSize.width >= originalSize.width && outerSize.height >= originalSize.height, "window.outerSize must contain the inner size");
+          record("window.innerSize", "returns positive client dimensions");
+          record("window.outerSize", "returns dimensions at least as large as the client area");
+
+          const innerPosition = await win.innerPosition();
+          const outerPosition = await win.outerPosition();
+          finitePair(innerPosition, "window.innerPosition");
+          finitePair(outerPosition, "window.outerPosition");
+          record("window.innerPosition", "returns finite screen coordinates");
+          record("window.outerPosition", "returns finite screen coordinates");
+
+          const scaleFactor = await win.scaleFactor();
+          assert(Number.isFinite(scaleFactor) && scaleFactor > 0, "window.scaleFactor must be positive");
+          record("window.scaleFactor", "returns a positive native scale factor");
+
+          const originalResizable = await win.isResizable();
+          await win.setResizable(!originalResizable);
+          equal(await win.isResizable(), !originalResizable, "window.setResizable readback");
+          await win.setResizable(originalResizable);
+          equal(await win.isResizable(), originalResizable, "window.setResizable restore");
+          record("window.isResizable", "reads the native resizable flag before and after a change");
+          record("window.setResizable", "toggles the native resizable flag and restores its initial value");
+
+          const initialVisible = await win.isVisible();
+          assert(initialVisible, "main smoke window must start visible");
+          await win.setVisible(false);
+          equal(await win.isVisible(), false, "window.setVisible(false)");
+          await win.setVisible(true);
+          equal(await win.isVisible(), true, "window.setVisible(true)");
+          record("window.isVisible", "reads both hidden and visible native states");
+          record("window.setVisible", "hides and restores the disposable main window");
+
+          await win.setFocus();
+          equal(await win.isFocused(), true, "window.setFocus readback");
+          record("window.setFocus", "requests focus and the focused-state query reads true");
+          record("window.isFocused", "reads focused state after setFocus");
+
+          const changedTitle = `${originalTitle} · verified`;
+          await win.setTitle(changedTitle);
+          equal(await win.title(), changedTitle, "window.setTitle readback");
+          await win.setTitle(originalTitle);
+          equal(await win.title(), originalTitle, "window.setTitle restore");
+          record("window.setTitle", "changes the native title and restores it");
+
+          const requestedSize = { width: 720, height: 480 };
+          await win.setInnerSize(requestedSize);
+          const resized = await waitUntil(async () => {
+            const value = await win.innerSize();
+            return Math.abs(value.width - requestedSize.width) <= 2 && Math.abs(value.height - requestedSize.height) <= 2 ? value : null;
+          }, "window.setInnerSize readback");
+          result.innerSize = resized;
+          await win.setInnerSize({ width: originalSize.width, height: originalSize.height });
+          await waitUntil(async () => {
+            const value = await win.innerSize();
+            return Math.abs(value.width - originalSize.width) <= 2 && Math.abs(value.height - originalSize.height) <= 2;
+          }, "window.setInnerSize restore");
+          record("window.setInnerSize", "sets client dimensions, reads them back, and restores the initial size");
+
+          const childId = await win.open({
+            entry: "child.html",
+            title: "Niva macOS smoke child",
+            size: { width: 300, height: 180 },
+            visible: false,
+          });
+          assert(Number.isInteger(childId) && childId > 0, "window.open must allocate a non-main window id");
+          windows = await win.list();
+          assert(windows.some(item => item.id === childId && !item.visible), "window.list must include the hidden child window");
+          record("window.open", "opens an isolated hidden child window with a fresh id");
+          await win.close(childId);
+          windows = await win.list();
+          assert(!windows.some(item => item.id === childId), "window.close must remove the child from window.list");
+          record("window.close", "closes the child and removes it from window.list");
+
+          // Webview read state plus an evaluation with a host receipt.
+          const baseUrl = await webview.baseUrl();
+          assert(/^http:\/\/127\.0\.0\.1:\d+\/$/.test(baseUrl), "webview.baseUrl must be the isolated loopback server root");
+          record("webview.baseUrl", "returns the per-run loopback origin");
+
+          const fsBaseUrl = await webview.baseFileSystemUrl();
+          assert(/^http:\/\/127\.0\.0\.1:\d+\/__niva_fs\/[^/]+\/$/.test(fsBaseUrl), "webview.baseFileSystemUrl must contain a loopback URL and per-window token");
+          result.fsBaseUrlRedacted = fsBaseUrl.replace(/__niva_fs\/[^/]+\//, "__niva_fs/<redacted>/");
+          record("webview.baseFileSystemUrl", "returns a per-window resource URL with a non-empty token (redacted in output)");
+
+          const pageUrl = await webview.url();
+          assert(pageUrl.startsWith(baseUrl) && pageUrl.endsWith("/index.html"), "webview.url must identify the local fixture page");
+          record("webview.url", "identifies the current fixture document");
+
+          equal(await webview.canGoBack(), false, "webview.canGoBack on first document");
+          equal(await webview.canGoForward(), false, "webview.canGoForward on first document");
+          record("webview.canGoBack", "reports no back history before fixture navigation");
+          record("webview.canGoForward", "reports no forward history before fixture navigation");
+
+          const evalNonce = `eval-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const evalReceipt = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("webview.evaluateScript receipt timed out")), 5000);
+            const listener = (_name, data) => {
+              if (data && data.nonce === evalNonce) {
+                clearTimeout(timer);
+                Niva.removeEventListener("eval-executed", listener);
+                resolve(data);
+              }
+            };
+            Niva.addEventListener("eval-executed", listener);
+          });
+          await webview.evaluateScript(`Niva.api.host.send("eval-executed", { nonce: ${JSON.stringify(evalNonce)}, value: document.querySelector("h1").textContent });`);
+          const evalResult = await evalReceipt;
+          equal(evalResult.value, "Niva macOS native API smoke", "webview.evaluateScript side effect");
+          record("webview.evaluateScript", "executes script in the current document and returns its host receipt");
+
+          result.initialUrl = pageUrl;
+          result.coverage = covered.slice();
+          await send("smoke", result);
+        }
+
+        async function runClipboard(data) {
+          const before = await Niva.api.clipboard.read();
+          await send("clipboard-before", { value: before });
+          await Niva.api.clipboard.write(data.sentinel);
+          await send("clipboard-written", { sentinel: data.sentinel });
+          const after = await Niva.api.clipboard.read();
+          equal(after, data.sentinel, "clipboard.write/read round trip");
+          await send("clipboard-after", { value: after, sentinel: data.sentinel });
+        }
+
+        async function runShortcut(data) {
+          const shortcut = Niva.api.shortcut;
+          const id = await shortcut.register(data.accelerator);
+          const registered = await shortcut.list();
+          const item = registered.find(value => value.id === id);
+          assert(item && item.accelerator.includes(data.key), "shortcut.list must expose the newly registered native hotkey");
+          record("shortcut.register", "registers a native hotkey and returns its action id");
+          record("shortcut.list", "reads the registered action id and key from the native manager");
+
+          await shortcut.unregister(id);
+          assert(!(await shortcut.list()).some(value => value.id === id), "shortcut.unregister must remove the registered hotkey");
+          record("shortcut.unregister", "unregisters the hotkey and removes its id from list");
+
+          const first = await shortcut.register(data.secondAccelerator);
+          const second = await shortcut.register(data.thirdAccelerator);
+          const both = await shortcut.list();
+          assert(both.some(value => value.id === first) && both.some(value => value.id === second), "two independent hotkeys must be listed before unregisterAll");
+          await shortcut.unregisterAll();
+          equal((await shortcut.list()).length, 0, "shortcut.unregisterAll readback");
+          record("shortcut.unregisterAll", "removes every hotkey owned by the smoke window");
+          return { id, accelerator: item.accelerator };
+        }
+
+        async function runTray() {
+          const tray = Niva.api.tray;
+          let id = null;
+          try {
+            id = await tray.create({ icon: "tray.png", title: "NivaSmoke", tooltip: "Temporary Niva API smoke item" });
+            const ids = await tray.list();
+            assert(ids.includes(id), "tray.list must include the created status item id");
+            record("tray.create", "creates a transient macOS status item and returns its id");
+            record("tray.list", "lists the created status item id");
+
+            await tray.update(id, { title: "NivaSmoke2", tooltip: "Updated temporary smoke item" });
+            assert((await tray.list()).includes(id), "tray.update must preserve the status item id");
+            record("tray.update", "updates the status item successfully and leaves it registered");
+          } finally {
+            if (id !== null) await tray.destroy(id);
+          }
+          assert((await tray.list()).length === 0, "tray.destroy must remove the status item");
+          record("tray.destroy", "destroys the created status item");
+
+          const second = await tray.create({ icon: "tray.png", title: "NivaSmoke3" });
+          assert((await tray.list()).includes(second), "tray.destroyAll fixture item must be listed first");
+          await tray.destroyAll();
+          equal((await tray.list()).length, 0, "tray.destroyAll readback");
+          record("tray.destroyAll", "removes all status items owned by the smoke window");
+        }
+
+        async function runWebviewReload() {
+          await Niva.api.webview.reload();
+        }
+
+        async function runDialogs(data) {
+          const { method, startDir } = data;
+          await send("dialog-started", { method });
+          dialogHeartbeatTimer = setInterval(() => {
+            send("dialog-heartbeat", { method, at: Date.now() }).catch(() => {});
+          }, 300);
+          try {
+            let value;
+            if (method === "showMessage") value = await Niva.api.dialog.showMessage("Niva API smoke", "Dismiss this test message to continue", "info");
+            else if (method === "pickFile") value = await Niva.api.dialog.pickFile(["txt"], startDir);
+            else if (method === "saveFile") value = await Niva.api.dialog.saveFile(["txt"], startDir);
+            else throw new Error(`unsupported controlled dialog case: ${method}`);
+            clearInterval(dialogHeartbeatTimer);
+            dialogHeartbeatTimer = null;
+            await send("dialog-result", { method, value: value === undefined ? null : value });
+          } catch (error) {
+            clearInterval(dialogHeartbeatTimer);
+            dialogHeartbeatTimer = null;
+            await send("dialog-error", { method, message: String(error) });
+          }
+        }
+
+        async function handleCommand(data) {
+          if (!data || typeof data.command !== "string") return;
+          try {
+            if (data.command === "clipboard") await runClipboard(data);
+            else if (data.command === "shortcut") await send("shortcut-result", await runShortcut(data));
+            else if (data.command === "tray") {
+              await runTray();
+              await send("tray-result", { ok: true });
+            } else if (data.command === "webview-reload") await runWebviewReload();
+            else if (data.command === "webview-navigate") {
+              const base = await Niva.api.webview.baseUrl();
+              await Niva.api.webview.loadUrl(`${base}secondary.html`);
+            } else if (data.command === "webview-back") {
+              await Niva.api.webview.goBack();
+            } else if (data.command === "webview-forward") {
+              equal(await Niva.api.webview.canGoForward(), true, "webview.canGoForward after back navigation");
+              await Niva.api.webview.goForward();
+            } else if (data.command === "dialog") await runDialogs(data);
+            else if (data.command === "echo") await send("host-echo-result", data);
+            else if (data.command === "exit") {
+              await send("exit-started", { coverage: covered.map(item => item.method) });
+              setTimeout(() => Niva.api.process.exit().catch(() => {}), 250);
+            }
+          } catch (error) {
+            await send("command-error", { command: data.command, message: String(error), stack: error?.stack });
+          }
+        }
+
+        Niva.addEventListener("host:message", (_name, message) => {
+          if (message && message.name === "smoke-command") handleCommand(message.data);
+        });
+
+        const mainBootWasSeen = sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
+        sessionStorage.setItem("niva-macos-smoke-booted", "yes");
+        if (mainBootWasSeen) {
+          setTimeout(async () => {
+            try {
+              const canGoForward = await Niva.api.webview.canGoForward();
+              await send("main-reloaded", { url: await Niva.api.webview.url(), canGoForward });
+            } catch (error) {
+              await send("main-reloaded-error", { message: String(error) });
+            }
+          }, 250);
+        } else {
+          runAutomaticCases().catch(async error => {
+            await send("smoke-error", { message: String(error), stack: error?.stack, coverage: covered });
+          });
+        }
+
+        window.addEventListener("pageshow", event => {
+          if (event.persisted) {
+            setTimeout(async () => {
+              try {
+                await send("main-restored", {
+                  url: await Niva.api.webview.url(),
+                  canGoForward: await Niva.api.webview.canGoForward(),
+                });
+              } catch (error) {
+                await send("main-restored-error", { message: String(error) });
+              }
+            }, 250);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ const script = readFileSync(
 );
 
 function createPage() {
+  const timers = [];
   class FakeWebSocket {
     static OPEN = 1;
 
@@ -38,7 +39,7 @@ function createPage() {
     WebSocket: FakeWebSocket,
     Blob, TextEncoder, TextDecoder, ArrayBuffer, Uint8Array, DataView, Map, URL,
     atob, btoa,
-    setTimeout() {}, clearTimeout() {},
+    setTimeout(callback) { timers.push(callback); return timers.length; }, clearTimeout() {},
     console: { log() {}, error() {} },
   });
 
@@ -63,8 +64,78 @@ function createPage() {
     frame.set(payload, 18);
     socket.emit("message", { data: frame.buffer });
   };
-  return { api: window.Niva.api, socket, call, text, result, chunk };
+  const flushTimers = () => {
+    while (timers.length) timers.shift()();
+  };
+  return { niva: window.Niva, api: window.Niva.api, socket, call, text, result, chunk, flushTimers };
 }
+
+test("Niva event subscriptions match exact, namespace, and wildcard names", () => {
+  const page = createPage();
+  const received = [];
+  const exact = (name, data) => received.push(["exact", name, data.value]);
+  const namespace = (name) => received.push(["namespace", name]);
+  const wildcard = (name) => received.push(["wildcard", name]);
+  page.niva.addEventListener("demo.ready", exact);
+  page.niva.addEventListener("demo.*", namespace);
+  page.niva.addEventListener("*", wildcard);
+  page.text({ t: "event", name: "demo.ready", data: { value: 7 } });
+  page.flushTimers();
+  assert.deepEqual(received, [
+    ["exact", "demo.ready", 7],
+    ["namespace", "demo.ready"],
+    ["wildcard", "demo.ready"],
+  ]);
+
+  page.niva.removeEventListener("demo.ready", exact);
+  page.niva.removeAllEventListeners("demo.*");
+  received.length = 0;
+  page.text({ t: "event", name: "demo.ready", data: { value: 8 } });
+  page.flushTimers();
+  assert.deepEqual(received, [["wildcard", "demo.ready"]]);
+});
+
+test("Niva module registration, require, and import preserve module identity", async () => {
+  const page = createPage();
+  const module = { value: 42 };
+  page.niva.registerModule("test-module", module);
+  assert.equal(page.niva.require("test-module"), module);
+  assert.equal(await page.niva.import("test-module"), module);
+  assert.equal(page.niva.require("niva:fs"), page.api.fs);
+  assert.throws(() => page.niva.require("missing-module"), /unknown module/);
+});
+
+test("Niva.call resolves successful replies and rejects native errors", async () => {
+  const page = createPage();
+  const success = page.niva.call("os.sep", []);
+  const request = page.call();
+  assert.equal(request.method, "os.sep");
+  page.result(request.id, "/");
+  assert.equal(await success, "/");
+
+  page.socket.sent.length = 0;
+  const failure = page.niva.call("os.sep", []);
+  const rejected = page.call();
+  page.text({ t: "result", id: rejected.id, code: -1, message: "native failure", data: null });
+  await assert.rejects(failure, (error) => error.code === -1 && error.message === "native failure");
+});
+
+test("Niva.stream cancellation and streamSend use the call ID and binary frame", () => {
+  const page = createPage();
+  const stream = page.niva.stream("process.execStream", ["tool", [], null]);
+  const request = page.call();
+  assert.equal(stream.id, request.id);
+  assert.equal(page.niva.streamSend(stream.id, "input", true), true);
+  const frame = page.socket.sent.find((value) => value instanceof ArrayBuffer);
+  assert.ok(frame);
+  const view = new DataView(frame);
+  assert.equal(view.getUint8(0), page.niva.bridgeVersion);
+  assert.equal(view.getUint8(1) & 0x03, 0x03);
+  assert.equal(view.getUint32(6), stream.id);
+  assert.equal(new TextDecoder().decode(new Uint8Array(frame, 18)), "input");
+  stream.cancel();
+  assert.ok(page.socket.sent.some((value) => typeof value === "string" && JSON.parse(value).t === "cancel" && JSON.parse(value).id === stream.id));
+});
 
 test("fs.read returns streamed UTF-8 and base64 bytes", async () => {
   const page = createPage();

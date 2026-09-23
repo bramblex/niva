@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Niva macOS API smoke secondary</title>
+  </head>
+  <body>
+    <h1>Secondary navigation page</h1>
+    <script>
+      (() => {
+        async function send(name, data) {
+          return Niva.api.host.send(name, data);
+        }
+
+        async function reportReady() {
+          try {
+            await send("secondary-ready", {
+              url: await Niva.api.webview.url(),
+              canGoBack: await Niva.api.webview.canGoBack(),
+              canGoForward: await Niva.api.webview.canGoForward(),
+            });
+          } catch (error) {
+            await send("secondary-error", { message: String(error) });
+          }
+        }
+
+        Niva.addEventListener("host:message", (_name, message) => {
+          if (!message || message.name !== "smoke-command") return;
+          const data = message.data || {};
+          if (data.command === "webview-back") {
+            Niva.api.webview.goBack().catch(async error => {
+              await send("webview-back-error", { message: String(error) });
+            });
+          } else if (data.command === "webview-forward") {
+            Niva.api.webview.goForward().catch(async error => {
+              await send("webview-forward-error", { message: String(error) });
+            });
+          }
+        });
+
+        window.addEventListener("pageshow", () => {
+          setTimeout(reportReady, 150);
+        });
+      })();
+    </script>
+  </body>
+</html>
