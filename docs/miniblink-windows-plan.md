@@ -4,9 +4,9 @@
 
 ## 结论
 
-可行的最小路线是：**保留 tao 窗口和 Niva 本地 HTTP/WS 服务，另编译一个 Windows x64 MiniBlink 版 exe，旁放固定版本的 MiniBlink 运行时 DLL**。应用需要兼容已确认的低版本 Windows 时，显式选用这个版本；不做启动时自动探测、双内核切换或 WebView2 失败后的隐式回退。这样普通构建和 `<3 MB` 核心包目标不受 MiniBlink 影响。MiniBlink 版交付物的 exe、DLL 和总大小仍要分别记录，供部署者判断；**不拿它和普通版的 3 MB 目标混算**。
+可行的最小路线是：**保留 tao 窗口和 Niva 本地 HTTP/WS 服务，另编译一个 Windows x64 MiniBlink 版 exe，旁放固定版本的 MiniBlink 运行时 DLL**。应用需要兼容已确认的低版本 Windows 时，显式选用这个版本；不做启动时自动探测、双内核切换或 WebView2 失败后的隐式回退。普通 WebView2 构建不包含 MiniBlink 运行库。3 MB 是参考目标，不代表所有当前平台产物都低于该数；Windows release 尺寸尚无实测。MiniBlink 版交付物的 exe、DLL 和总大小仍要分别记录，供部署者判断。
 
-旧规划是“对 Windows 10 低版本增加 MiniBlink 支持”，见 [`README.md`](../README.md)；[`roadmap.md`](roadmap.md) 仍将其列为待排期。规划本身不能证明低版本兼容。先确定目标 Windows 10 版本、架构与补丁级别，在同一机器复现 WebView2 问题并验证 MiniBlink。Win7/XP、x86、ARM64 不自动进入支持范围。
+原始 [`README.md`](../README.md) 曾将“对 Windows 10 低版本增加 MiniBlink 支持”列为待办；当前 [`roadmap.md`](roadmap.md) 按用户决定明确暂缓，本方案没有实施排期。规划本身不能证明低版本兼容。恢复前先确定目标 Windows 10 版本、架构与补丁级别，在同一机器复现 WebView2 问题并验证 MiniBlink。Win7/XP、x86、ARM64 不自动进入支持范围。
 
 MiniBlink 的 [旧 `miniblink49` 仓库](https://github.com/weolar/miniblink49)主要保存较老的 49 内核源码，发行页另有较新 SDK。现有独立的 [MiniBlink 132 源码仓库](https://github.com/weolar/miniblink132)（页面标示 Apache-2.0）以及 [2025-12-12 的 132 SDK](https://github.com/weolar/miniblink49/releases/tag/20251212)。本方案选 132，不选 49 做新应用的浏览器基线。132 源码仓库说明很少；选定 SDK 的二进制再分发、第三方许可和后续安全更新需单独核实。最新 SDK 压缩包为 **64,696,903 字节**，SHA-256 为 `237f5166701780918c27a1a340c3e1249776aee3db0673a3dffc1f9a009e6528`；这个数字是整个下载归档，**不是运行时 DLL 大小**。[发行资产](https://github.com/weolar/miniblink49/releases/expanded_assets/20251212)
 
@@ -47,4 +47,4 @@ Niva 的本地桥能力很大，不能因为跳过 IPC 就跳过鉴权。复测 
 | 窗口与 API | 页面显示、尺寸/DPI、键鼠/输入法、焦点、关闭重开真机通过；20 个公开 WebView 方法的支持表与错误行为经过真机核对。 |
 | 构建与交付 | 对实际改动执行 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace`、`cargo check --target x86_64-pc-windows-msvc`；若改 Devtools/TS，再执行 `npm run build --workspace=packages/devtools`。另记录 SDK 版本/哈希、许可、exe/DLL/目录大小及 Windows 运行结果。 |
 
-Windows target check 只证明条件编译；本方案目前没有实现或真机结果，不能声称 MiniBlink 已解决低版本 Windows 兼容问题。供应商安全更新策略、选定 SDK 二进制许可与运行时 DLL 大小尚待核实。普通版的 `<3 MB` 目标继续单独验收；MiniBlink 版作为额外项单列其交付尺寸。
+Windows target check 只证明条件编译；本方案目前没有实现或真机结果，不能声称 MiniBlink 已解决低版本 Windows 兼容问题。供应商安全更新策略、选定 SDK 二进制许可与运行时 DLL 大小尚待核实。普通 WebView2 版与 MiniBlink 版的 Windows 产物尺寸都尚未实测，后续应分别记录 exe、DLL 和完整交付目录大小；3 MB 作为参考值单独评估。

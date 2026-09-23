@@ -1,6 +1,6 @@
-# Window / Webview API 覆盖审计（2026-09-23，以锁定版本实测为准）
+# Window / Webview API 覆盖审计（2026-09-23，以当前源码和锁定版本为准）
 
-> 基线：`tao 0.37.0` / `wry 0.57.0`（均为 crates.io 最新，无欠账）。
+> 基线：`Cargo.lock` 锁定的 `tao 0.37.0` / `wry 0.57.0`。
 > 方法：registry 源码 `pub fn` 全枚举，对 `window.*` / `windowExtra.*` /
 > `webview.*` 与 `NivaWindowOptions` 逐项打勾。结论：tao 侧约 95%，wry 侧薄。
 
@@ -21,20 +21,18 @@
 | `window.setMinInnerSize(null, id?)` / `window.setMaxInnerSize(null, id?)` | 清除相应尺寸约束；传 `NivaSize` 设置约束。 | Tao 的 `set_min_inner_size` / `set_max_inner_size` 接受 `Option<Size>`；iOS/Android 不支持且由 Niva 返回错误。 |
 | `window.isDecorated(id?)` | 查询窗口装饰状态。 | 修复旧 `window.Decorated` 的大写命名错误；旧 ID 不再注册，统一使用 `isDecorated`。 |
 
-这些接口在 macOS、Windows、Linux 桌面构建中可编译；Tao 的方法存在不等于该平台必定呈现相同系统效果。特别是任务栏进度、IME 候选窗、重绘和原生拖拽受桌面环境及输入时序影响。本轮没有相应平台的真机验收时，不将这些平台行为标记为已验证。
+本仓库当前记录了 macOS 构建和 Windows target check；Linux 未有构建或真机验收证据。Tao 的方法存在不等于该平台必定呈现相同系统效果。特别是任务栏进度、IME 候选窗、重绘和原生拖拽受桌面环境及输入时序影响。本轮没有相应平台的真机验收时，不将这些平台行为标记为已验证。
 
 ## 2. 平台扩展
 
-macOS（`windowExtra.*` 已有 9 个）：缺 `set_badge_label`（dock 角标，P1）、
-`set_traffic_light_inset`（建窗+运行时都没有，P1）、
-`set_activation_policy_at_runtime` / `set_dock_visibility`（P2）。
+macOS 当前注册 14 个 `windowExtra.*` 方法，其中包括 `setTrafficLightInset`、
+`setActivationPolicyAtRuntime`、`setDockVisibility` 和 `setBadgeLabel`。
 
-Windows（已有 7 个）：缺 `set_overlay_icon`（托盘叠加图标，P1）、
-`set_rtl`（P2）；`has_undecorated_shadow` 读缺（顺手）。
+Windows 当前注册 10 个 `windowExtra.*` 方法，其中包括 `setOverlayIcon`、`setRtl`
+和 `hasUndecoratedShadow`。
 
-**Bug（P0，`window-tray-menu-plan.md` §1 已立项）**：
-`builder.rs:155` `with_owner_window` 取的是 `parent_window` 字段，
-`owner_window` 配了也永远不生效且无报错。
+Windows 窗口构建路径当前读取 `owner_window` 并调用 Tao 的 `with_owner_window`；
+此前记录的字段误用已不符合当前源码。Windows 原生 owner 效果仍需真机验证。
 
 ## 3. wry WebView：运行时 API 已补齐基础覆盖
 

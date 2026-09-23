@@ -11,9 +11,11 @@
 
 ## 目标
 
+以下保留原产品定位文案；当前实现、平台验收与体积实测以[路线图](docs/roadmap.md)为准。特别是 macOS 产物为 `.app` 应用包，Windows 产物为 `.exe`；“Electron 的 1/10”尚无本轮可复核的对照记录。
+
 - 超轻量
   - 构建的桌面应用最小只有 3MB，仅有 Electron 的 1/10。
-  - Niva 仅依赖系统原生的 Webview，不依赖 Chromium 或者 Node.js，极致的轻量。
+  - Niva 使用系统 WebView，不随应用打包 Chromium 或 Node.js，极致的轻量。
 - 极易用
   - 仅使用前端技术，不需要学习复杂的 Node.js 和 Electron API 也不需要复杂的配置，即可构建出一个桌面应用。
   - 构建单可执行文件，无需安装，点击即用。
@@ -44,15 +46,15 @@ Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os
 
 - [ ] Niva 1.0
 
-  - [ ] Niva API TypeScript 类型声明。
+  - [x] Niva API TypeScript 类型声明（`packages/types/Niva_zh.d.ts`；仍需持续与实现核对）。
   - [ ] 应用程序签名
     - [ ] MacOS
     - [ ] Windows
-  - [ ] 支持 Node.js 调用，作为 NodeJS 应用程序的 UI 窗口。
+  - [ ] Node.js 宿主完整兼容（当前已有 `--stdio` Host Bridge；Windows 管道行为尚未真机验收）。
   - [ ] 支持系统通知 Notification。
 
 - [ ] Niva 2.0
-  - [ ] 对 Window10 低版本增加 [miniblink](https://github.com/weolar/miniblink49) 支持，解决低版本 Windows 对 Webview2 支持不完善的问题。
+  - [ ] 低版本 Windows 的 [MiniBlink](https://github.com/weolar/miniblink49) 兼容方案（按用户决定暂缓，尚未实现）。
 
 ## Acknowledgments
 

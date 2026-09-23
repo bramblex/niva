@@ -25,9 +25,7 @@
 - [ ] **CI**：`.github/workflows/ci.yml` 已加入双平台检查；待推送后实际运行并处理结果。
 - [ ] **Windows 真机跑一遍**（现仅 target check）。
 
-明确**不出 v1.0**：win_packager 迁移、stdio bridge、node-compat 独立仓、
-wry 能力补齐（`docs/api-coverage.md` §3）、devtools 自身签名（需证书）。MiniBlink
-按用户决定暂缓，本轮不实施也不纳入验收。
+以下能力不作为 v1.0 发布门禁：`win_packager` 迁移已落地，但 Windows PE 写入和生成程序仍需真机验收；stdio bridge 已有实现，macOS 宿主往返已验，Windows 管道仍待验证；NodeCompat 已作为 workspace package 存在，完整兼容性验收和独立仓拆分不纳入本版；wry 能力补齐（`docs/api-coverage.md` §3）与 devtools 自身签名（需证书）。MiniBlink 按用户决定暂缓，本轮不实施也不纳入验收。
 
 ## 产品定位（已定）
 
@@ -40,7 +38,6 @@ wry 能力补齐（`docs/api-coverage.md` §3）、devtools 自身签名（需�
   （2026-09-23，装 target 后首验证；此前从未验证）。覆盖托盘、HWND、窗口菜单挂载、
   `beginResizeDrag`、fs 盘符路径。真机运行仍待一台 Windows。
 - [ ] **`extra.getActiveWindowId` 真机验收**：源码已改用 `x-win`，仍需在 macOS 和 Windows 实际切换窗口并验证返回值。
-- [x] **本轮工作区提交**：将源码、文档与站点资源固化到同一提交；后续改动继续保持可追踪。
 
 ## P1 —— 架构债
 
@@ -67,14 +64,14 @@ wry 能力补齐（`docs/api-coverage.md` §3）、devtools 自身签名（需�
 ## P2 —— 发布与工程
 
 - [ ] **CI 落地验收**：Actions 工作流已写入仓库；仍需在 GitHub 实际运行并留下成功记录。
-- [x] **Mac 双架构打包脚本**：`build_MacOS.sh` 已完整实跑并生成两份 zip；zip 内 Mach-O 架构及压缩包完整性均已核对。最新 arm64 裸二进制为 2,835,264 字节，x86_64 为 3,175,264 字节；两者均低于 3,300,000 字节 Mac release 上限。3,000,000 字节保留为参考目标。
+- [x] **Mac 双架构打包脚本**：本轮文档/版本字段核对后的候选源码已重跑 `build_MacOS.sh`，生成 arm64 和 x86_64 两份 zip；裸二进制分别为 2,835,264 与 3,175,264 字节，均低于 3,300,000 字节上限，3,000,000 字节仍是参考目标。归档完整性、Mach-O 架构和两份 `Info.plist` 的 `0.9.9.0` 版本已核对。产物标记含 `-dirty`，不等于最终提交或已签名发布包；同轮首跑曾卡在自举构建并人工终止，随后手动构建和完整脚本重跑通过，稳定性仍需进一步验收。
 - [x] **签名工具（一站式，证书用户自备）**：devtools 构建成功后按 `sign` 配置自动签名。macOS（codesign deep/runtime + verify，可选 notarytool 公证 + stapler，钥匙串 profile 零秘密）；Windows（signtool + PFX，密码走 env）。秘密永不进 niva.json。
 - [ ] **devtools 自身签名**：用上面这套工具给 devtools 打包签名（需证书）。
 - [ ] **Stdio host bridge 验收**：`--stdio` NDJSON 管道、main-only `host.send` 与 stdout 日志隔离已有实现；macOS Python 宿主往返、坏帧恢复、EOF/BrokenPipe 退出已实测。Windows pipe 继承与退出仍需真机验证，见 `docs/stdio-host-design.md`。
 - [ ] Node.js 支持、系统通知 Notification 按原 README TODO 排期。MiniBlink 按用户决定暂缓，不进入本轮实现与验收。
 - [x] **文档站源码更新**：已升级到 Docusaurus 3.10.2，首页保留原产品文案，采用 Devtools logo/配色、实际 Devtools 示例项目窗口截图及重做的四张介绍图；API 页按当前 Rust 注册名、初始化脚本与 d.ts 核对，新增 Bridge、权限、流式、stdio 和 NodeCompat 入口。本地 `npm run typecheck` 与 `npm run build` 通过；线上发布与浏览器矩阵不由此项证明。
 - [ ] **测试覆盖**：已有 Rust 单测与本机手工 WebView 验证；CI 落地后将关键 e2e 脚本化进仓库。
-- [ ] **首页旧营销文案核对**：保留用户指定的原文案；`3MB`、`Electron 的 1/10`、`单可执行文件` 与“无需额外配置”等表述需按当前平台产物和公开对照证据逐项复核。macOS 交付物是 `.app` 目录，不应把 Windows 单 exe 形式直接当作两平台共同事实。
+- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出仍是未实现的方案（见 `docs/cross-platform-packager-plan.md`）。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
 
 ## P3 —— 体验优化
 
@@ -84,9 +81,9 @@ wry 能力补齐（`docs/api-coverage.md` §3）、devtools 自身签名（需�
 - [ ] **clippy 剩余 warning**（多为历史遗留）。
 - [ ] **JS 封装的 base64 编解码全量进内存**：大文件场景可接受，注明即可。
 
-## 已验证基线（2026-09-23 当前候选）
+## 已验证记录与边界（2026-09-23）
 
-- 最新双架构 `build_MacOS.sh` release 产物：`dist/aarch64/NivaDevtools.app/Contents/MacOS/NivaDevtools` 为 2,835,264 字节，`dist/x86_64/NivaDevtools.app/Contents/MacOS/NivaDevtools` 为 3,175,264 字节。两份 zip 均低于 3,300,000 字节上限，并已通过 `unzip -tq`，内部 Mach-O 架构分别为 arm64 和 x86_64；Windows release 体积未测。此前无 `codegen-units=1` 的本机 arm64 `target/release/niva` 为 2,904,944 字节，不应与本轮双架构产物混为一数。
+- 本轮候选的双架构 zip 名为 `NivaDevtools_v0_9_10-18-gf3f9036-dirty_MacOS_{aarch64,x86_64}.zip`。核对结果为 arm64 裸二进制 2,835,264 字节、x86_64 3,175,264 字节；zip 均通过 `unzip -tq`，内部 Mach-O 架构分别正确。两份 `Info.plist` 的 `CFBundleShortVersionString` 均为 `0.9.9.0`，来自项目顶层 `version: "0.9.9"`。这是带未提交改动的本机候选，不代表已签名/下载的发布包；Windows release 体积未测。此前未启用 `codegen-units=1` 的本机 arm64 `target/release/niva` 为 2,904,944 字节，不应与双架构产物混为一数。
 - macOS 手工 WebView 验证：本地主 frame 与同源 iframe 分别走 WS，跨源顶层页与 iframe 走 IPC；授权/拒绝、CSP `connect-src 'none'`、文件 URL 有无凭据均得到预期结果。Windows 仅完成 target check，未做真机验证。
 - 固定 origin 协议 smoke：以临时 macOS `.app` 实测主页面及同源 iframe 的 `niva://app` origin、WS 原生调用与静态 JS 资源；普通 HTTP 静态路径返回 404。页面用 `webview.baseFileSystemUrl()` 成功 fetch 文件；有效 token 配精确 `niva://app` Origin 得到 ACAO，非匹配 Origin 无 ACAO，缺失/无效 token 为 403。NodeCompat 临时资源包仅选 `path/fs/assert/stream`，实测静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 返回 404；完整模块/API 仍未验收。未实测协议页二进制流、存储跨重启、窗口间 token 隔离或异步压力。Windows `cargo check --target x86_64-pc-windows-msvc` 通过，WebView2 真机仍待验收。
 - CSP 模板 smoke：macOS WKWebView 以 Devtools `generateNewProject()` 的实际输出分别跑过 debug-resource 与临时打包 `.app`。`niva://app` 打包页实测严格模板 CSP 下 NodeCompat 静态 `import path`、`require('assert/strict')`、`Niva.import('fs/promises')`/本机读取、WebSocket `Niva.api`、`baseFileSystemUrl()` fetch/图片和成功 marker；Debug-resource 页验证同样的默认模板和 NodeCompat opt-in。负向对照页的作者 inline importmap 收到 enforcing `securitypolicyviolation`（`script-src`），随后 bare `import('probe')` 拒绝，只有这个分支会创建 `blocked-pass`，无 `unexpected-allowed` 或 fail marker。调试 smoke marker 位于 `/tmp/niva-csp-template-smoke/{default-pass,allowed-pass,blocked-pass}`；打包协议 marker 为 `/tmp/niva-csp-template-smoke/packaged-pass`。这些是本机临时夹具证据，不代替 Windows WebView2 测试；宿主 response-header CSP 未覆盖。

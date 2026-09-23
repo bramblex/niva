@@ -32,7 +32,7 @@ Niva.removeAllEventListeners(event): void;
 
 事件回调形状是 `(eventName, payload)`。受支持事件包括窗口焦点/主题/关闭、窗口间消息、菜单、托盘、快捷键、文件拖放、WebView 导航/下载/权限拒绝以及 stdio 宿主消息。完整 payload 类型见 `packages/types/Niva_zh.d.ts` 的 `NivaEventMap`；逐类事件见[事件文档](../event)。远端 IPC 本身不提供事件订阅或广播。
 
-WebView 相关事件还包括 `webview.loaded`、`webview.newWindowRequested`、`webview.downloadStarted` 和 `webview.permissionDenied`。Niva 当前拒绝新窗口、下载和 WebView 权限请求；后三个事件用于观察被拒绝的请求，不能在事件回调里放行。这些是 WebView 能力请求，与远端 IPC 的 `permissions` 配置不是同一套授权：
+WebView 相关事件还包括 `webview.loaded`、`webview.newWindowRequested`、`webview.downloadStarted` 和 `webview.permissionDenied`。Niva 拒绝新窗口与下载；它只对 `camera`、`microphone`、`display-capture`、`other` 权限种类返回拒绝，`geolocation` 在 Wry 会调用 handler 的平台上也拒绝；macOS Wry 0.57 没有 geolocation 权限回调，无法由此 handler 拦截。其他权限种类返回 Wry `Default`。`webview.permissionDenied` 只观察实际被拒绝的请求，不能在事件回调里放行。这些是 WebView 能力请求，与远端 IPC 的 `permissions` 配置不是同一套授权：
 
 ```ts
 Niva.addEventListener("webview.newWindowRequested", (_eventName, request) => {

@@ -18,11 +18,7 @@ npx create-react-app my-react-app
 
 ## 导入项目
 
-通过 Niva 开着工具导入我们的 React 项目，需要导入的是带有 `package.json` 文件的目录。
-
-![screenshot](@site/static/img/import-project-from-react/screenshot1.png)
-
-打开 Vue 项目后会询问是否生成一个 `niva.json` 项目文件，确认后生成 `niva.json` 配置如下。
+通过 Niva 开发者工具的「选择项目」打开带有 `package.json` 的 React 项目根目录。如果目录中没有 `niva.json`，确认创建后，检测到 `react-scripts` 时会生成以下配置：
 
 ```json
 {
@@ -31,16 +27,16 @@ npx create-react-app my-react-app
 
 	"debug": {
 		"resource": "public",
-		"entry": "http://localhost:3000/",
+		"entry": "http://localhost:3000"
 	},
 
 	"build": {
-		"resource": "build",
-	},
+		"resource": "build"
+	}
 }
 ```
 
-如果是您是使用 Create React App 工具创创建的 React 项目，并且没有改动基础配置，那么这个配置文件也不需要修改可以直接使用。如果修改过 `public` 文件夹或者 `build` 文件夹以及项目调试端口等则需要对应修改配置。
+如果使用默认的 Create React App 配置，通常不需要再修改。若改过 `public`、`build` 目录或开发服务端口，请同步修改 `debug`、`build` 字段。
 
 更多配置可以参考 [选项文档](/docs/options/project)。
 
@@ -53,13 +49,9 @@ npx create-react-app my-react-app
 npm run start
 ```
 
-然后再通过 Niva 开发者工具启动调试：
-
-![screenshot](@site/static/img/import-project-from-react/screenshot2.png)
-
-在 Niva 中启动调试面板，这时候就可以跟正常开发 Vue 应用一样进行开发和调试。
+然后在 Niva 开发者工具的项目信息页点击「调试」。调试窗口会加载开发服务，并启用 WebView 开发者工具。
 
 
 ## 构建应用
 
-Niva 项目构建可以通过 Niva 开发者工具的构建按钮进行构建。构建好后可以直接点击可执行文件打开构建好的可执行文件，打开你的应用。
+先运行 `npm run build` 生成 `build` 目录，再在 Niva 开发者工具点击「构建」。Windows 输出 `.exe`，macOS 输出 `.app` 应用包；请在对应系统上打开产物验证。

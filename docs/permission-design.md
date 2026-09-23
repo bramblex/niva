@@ -11,7 +11,7 @@
   "entry": "https://app.example.com/",
   "permissions": {
     "https://app.example.com": ["window.title", "clipboard.*"],
-    "https://tools.example.com:8443": ["dialog.alert"]
+    "https://tools.example.com:8443": ["dialog.showMessage"]
   }
 }
 ```

@@ -196,8 +196,8 @@
         listenerCount: function (event) { return events.listenerCount(event); },
         emit: function () { return events.emit.apply(events, arguments); },
         kill: function () {
-          // The bridge can cancel delivery, but its native process handler
-          // does not currently terminate the OS child process.
+          // Per-process kill is not wired to the native handler. Use cancel()
+          // to stop an attached child through the bridge call instead.
           return false;
         },
         cancel: function () {

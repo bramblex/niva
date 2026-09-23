@@ -318,9 +318,8 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           className="status-bar-field status-bar-theme"
           aria-label={`${locale.t("THEME")}: ${selectedTheme.label}`}
           onClick={() => {
-            const effectiveTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
             const next: ThemePreference = themePreference === "system"
-              ? (effectiveTheme === "dark" ? "light" : "dark")
+              ? "light"
               : themePreference === "light" ? "dark" : "system";
             saveThemePreference(next);
             setThemePreference(next);

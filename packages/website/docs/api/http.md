@@ -50,10 +50,10 @@ export function post(url: string, body: string, headers?: { [key: string]: strin
 }>;
 ```
 
-## Niva.api.http.requestStream
+## 原生流式 handler：http.requestStream
 
-`request/get/post` 会在 JS 层收集完整响应体。需要直接处理二进制响应时，使用
-[`Niva.stream`](stream.md) 调用 `http.requestStream`：`head` 事件包含状态码和响应头，
+`Niva.api.http.request/get/post` 会在 JS 层收集完整响应体，仅在本地 WebSocket 页面可用；远端 IPC 页面也不能使用这些 wrapper。`http.requestStream` 是原生流式 handler，不是 `Niva.api.http` 上的 unary Promise 方法。需要直接处理二进制响应时，使用
+[`Niva.stream`](stream.md) 调用它：`head` 事件包含状态码和响应头，
 `onChunk` 可逐帧处理正文；`onBlob` 可在 END 后取得完整正文，终局结果包含状态码。
 
 ```ts

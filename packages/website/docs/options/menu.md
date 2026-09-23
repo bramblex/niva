@@ -5,25 +5,11 @@ sidebar_position: 3
 # 窗口菜单选项
 
 ```ts
-// 系统原生菜单项标签枚举类型。
-enum NativeLabel {
-  Hide,              // 显示 "Hide"
-  Services,          // 显示 "Services"
-  HideOthers,        // 显示 "Hide Others"
-  ShowAll,           // 显示 "Show All"
-  CloseWindow,       // 显示 "Close Window"
-  Quit,              // 显示 "Quit"
-  Copy,              // 显示 "Copy"
-  Cut,               // 显示 "Cut"
-  Undo,              // 显示 "Undo"
-  Redo,              // 显示 "Redo"
-  SelectAll,         // 显示 "Select All"
-  Paste,             // 显示 "Paste"
-  EnterFullScreen,   // 显示 "Enter Full Screen"
-  Minimize,          // 显示 "Minimize"
-  Zoom,              // 显示 "Zoom"
-  Separator,         // 表示一个分隔线
-}
+// 系统原生菜单项标签在 niva.json 中使用 camelCase 字符串。
+type NativeLabel =
+  | "hide" | "services" | "hideOthers" | "showAll" | "closeWindow"
+  | "quit" | "copy" | "cut" | "undo" | "redo" | "selectAll"
+  | "paste" | "enterFullScreen" | "minimize" | "zoom" | "separator";
 
 // 菜单项选项枚举类型。
 type MenuItemOption =
@@ -42,3 +28,5 @@ type MenuItemOption =
 // 菜单选项列表。
 type MenuOptions = MenuItemOption[];
 ```
+
+Windows 当前可显示 `accelerator` 组合键，但窗口菜单尚未接入 `TranslateAcceleratorW`，按键不会因此触发该菜单项。

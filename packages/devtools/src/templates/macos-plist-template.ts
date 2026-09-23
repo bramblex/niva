@@ -1,7 +1,7 @@
 import { parseVersion } from "../common/utils";
 
 export function plistTemplate(config: any) {
-  const version = parseVersion(config.meta?.version || "").join(".");
+  const version = parseVersion(config.version || "").join(".");
   return `
 
 <?xml version="1.0" encoding="UTF-8"?>

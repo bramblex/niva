@@ -107,15 +107,24 @@ interface NivaOptions {
   name: string;
   /** 应用唯一标识符 */
   uuid: string;
+  /** Devtools 显示并写入 macOS/Windows 包元数据的应用版本。 */
+  version?: string;
   /** 应用图标文件路径，仅支持 png */
   icon?: string;
+  /** 可选的包元数据；版本从顶层 version 读取。 */
+  meta?: { companyName?: string; description?: string; copyright?: string };
 
   /** 应用程序窗口的选项 */
-  window: NivaWindowOptions;
+  window?: NivaWindowOptions;
   /** 应用程序托盘的选项 */
   tray?: NivaTrayOptions;
   /** 应用程序全局快捷键的选项 */
   shortcuts?: NivaShortcutsOptions;
+
+  /** 显式调试启动使用的资源目录与开发入口；正常打包启动忽略 debug.entry。 */
+  debug?: { resource?: string; entry?: string };
+  /** Devtools 打包时读取的静态资源目录。 */
+  build?: { resource?: string };
 
   /** API 调度器选项（全异步运行时；旧的固定线程池 workers 已移除） */
   api?: NivaApiOptions;
@@ -135,9 +144,9 @@ interface NivaOptions {
   activateIgnoringOtherApps?: boolean;
 
   /** 专为Mac单独使用的配置 */
-  macos: NivaOptions;
+  macos?: Partial<NivaOptions>;
   /** 专为windows单独使用的配置 */
-  windows: NivaOptions;
+  windows?: Partial<NivaOptions>;
 }
 
 type NivaNodeCompatModule =
@@ -225,7 +234,7 @@ type WindowMenuOptions = Array<WindowRootMenu>;
 
 /** 窗口选项 */
 interface NivaWindowOptions {
-  /** 应用程序入口文件路径 */
+  /** 本地入口路径或绝对远端 URL；默认 index.html。远端页面默认没有原生 API 权限。 */
   entry?: string;
   /** 是否启用开发者工具 */
   devtools?: boolean;
@@ -310,7 +319,6 @@ interface NivaWindowOptions {
 
   // windows extra
   /** 父窗口 ID */
-  parentWindow?: number;
   /** 拥有者窗口 ID */
   ownerWindow?: number;
   /** 任务栏图标 */
@@ -324,25 +332,11 @@ interface NivaWindowOptions {
   menu?: WindowMenuOptions;
 }
 
-/** 系统原生菜单项标签枚举类型 */
-enum NativeLabel {
-  Hide, // 显示 "Hide"
-  Services, // 显示 "Services"
-  HideOthers, // 显示 "Hide Others"
-  ShowAll, // 显示 "Show All"
-  CloseWindow, // 显示 "Close Window"
-  Quit, // 显示 "Quit"
-  Copy, // 显示 "Copy"
-  Cut, // 显示 "Cut"
-  Undo, // 显示 "Undo"
-  Redo, // 显示 "Redo"
-  SelectAll, // 显示 "Select All"
-  Paste, // 显示 "Paste"
-  EnterFullScreen, // 显示 "Enter Full Screen"
-  Minimize, // 显示 "Minimize"
-  Zoom, // 显示 "Zoom"
-  Separator, // 表示一个分隔线
-}
+/** 系统原生菜单项标签；序列化为 Rust serde 的 camelCase 字符串。 */
+type NativeLabel =
+  | "hide" | "services" | "hideOthers" | "showAll" | "closeWindow"
+  | "quit" | "copy" | "cut" | "undo" | "redo" | "selectAll"
+  | "paste" | "enterFullScreen" | "minimize" | "zoom" | "separator";
 
 /** 菜单项选项枚举类型 */
 type MenuItemOption =
@@ -384,7 +378,7 @@ interface NivaTrayOptions {
 /** 托盘的更新选项 */
 interface NivaTrayUpdateOptions {
   /** 托盘的图标，仅支持 png */
-  icon: string;
+  icon?: string;
   /** 托盘的标题 */
   title?: string;
   /** 托盘的提示信息 */
@@ -529,7 +523,7 @@ interface NivaDialog {
   /**
    * 显示一个独立消息框。
    * @param title 消息框的标题。
-   * @param content 消息框的内容，如果为空，则使用默认值。
+   * @param content 消息框的内容；省略时传入空字符串。
    * @param level 消息框的级别。
    * @returns 一个 Promise，在消息框关闭时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
@@ -619,13 +613,13 @@ interface NivaFsStat {
   isDir: boolean;
   /** 是否是文件 */
   isFile: boolean;
-  /** 是否是软连接 */
+  /** 当前实现跟随符号链接，不报告路径本身是否为软链接。 */
   isSymlink: boolean;
   /** 尺寸 */
   size: number;
   /** 修改时间 */
   modified: number;
-  /** 是否有访问权限 */
+  /** 最近访问时间，Unix 毫秒时间戳。 */
   accessed: number;
   /** 创建时间 */
   created: number;
@@ -636,7 +630,6 @@ interface NivaFsOption {
   overwrite?: boolean;
   /**  */
   skipExist?: boolean;
-  bufferSize?: number;
   copyInside?: boolean;
   contentOnly?: boolean;
   depth?: number;
@@ -784,16 +777,6 @@ interface NivaHttp {
     headers: { [key: string]: string };
     body: string;
   }>;
-  /**
-   * 流式 HTTP 请求：head 事件带 status/headers，body 以二进制分片到达，
-   * 需配合 Niva.stream 使用。
-   */
-  requestStream(options: {
-    method: string;
-    url: string;
-    headers?: { [key: string]: string };
-    body?: string;
-  }): Promise<{ status: number }>;
 }
 
 interface NivaMonitorInfo {
@@ -945,15 +928,6 @@ interface NivaProcess {
     stderr: string;
   }>;
   /**
-   * 全双工流式执行：stdout/stderr 以二进制分片推送，stdin 通过
-   * Niva.streamSend 以二进制分片喂入，需配合 Niva.stream 使用。
-   */
-  execStream(
-    cmd: string,
-    args?: string[],
-    options?: ExecOptions
-  ): Promise<number | { status: number | null }>;
-  /**
    * 打开指定的 URI。
    * @param uri 要打开的 URI。
    * @returns 一个 Promise，在打开 URI 成功时解析该 Promise，或在发生错误时拒绝该 Promise。
@@ -968,9 +942,9 @@ interface NivaProcess {
 
 interface NivaResource {
   /**
-   * 检查文件或文件夹是否存在于应用程序资源中。
-   * @param path 要检查的文件或文件夹路径。
-   * @returns 一个 Promise，在检查成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回布尔值，表示该文件或文件夹是否存在。
+   * 检查已打包文件是否存在于应用程序资源索引中。
+   * @param path 要检查的文件路径。
+   * @returns 一个 Promise，在检查成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   exists(path: string): Promise<boolean>;
   /**
@@ -980,10 +954,6 @@ interface NivaResource {
    * @returns 一个 Promise，在读取文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回读取的文件内容。
    */
   read(path: string, encode?: "utf8" | "base64"): Promise<string>;
-  /**
-   * 流式读取虚拟文件系统中的文件（二进制分片，需配合 Niva.stream 使用）。
-   */
-  readStream(path: string): Promise<{ size: number }>;
   /**
    * 将虚拟文件系统中的文件提取到本地文件系统上。
    * @param from 要提取的虚拟文件系统中的文件路径。
@@ -997,26 +967,26 @@ interface NivaShortcut {
   /**
    * 注册一个新的窗口快捷键。
    * @param accelerator_str 快捷键的键序列，如 "Ctrl+N" 或 "Shift+Enter"。
-   * @param window_id 要注册窗口快捷键的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要注册窗口快捷键的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在注册成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回新增的快捷键 ID。
    */
   register(accelerator_str: string, window_id?: number): Promise<number>;
   /**
    * 注销指定的窗口快捷键。
    * @param id 要注销的快捷键 ID。
-   * @param window_id 要注销窗口快捷键的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要注销窗口快捷键的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在注销成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   unregister(id: number, window_id?: number): Promise<void>;
   /**
    * 注销指定窗口的所有快捷键。
-   * @param window_id 要注销窗口快捷键的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要注销窗口快捷键的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在注销成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   unregisterAll(window_id?: number): Promise<void>;
   /**
    * 获取指定窗口的所有快捷键列表。
-   * @param window_id 要获取快捷键列表的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要获取快捷键列表的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在获取成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回快捷键列表，列表中的每个元素包含快捷键 ID 和快捷键键序列。
    */
   list(window_id?: number): Promise<{ id: number; accelerator: string }[]>;
@@ -1026,26 +996,26 @@ interface NivaTray {
   /**
    * 在系统托盘中创建一个新的托盘图标。
    * @param options 创建托盘图标的配置项。
-   * @param window_id 要创建托盘图标的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要创建托盘图标的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在创建成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回新创建的托盘图标 ID。
    */
   create(options: NivaTrayOptions, window_id?: number): Promise<number>;
   /**
    * 销毁指定的托盘图标。
    * @param id 要销毁的托盘图标 ID。
-   * @param window_id 要销毁托盘图标的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要销毁托盘图标的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在销毁成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   destroy(id: number, window_id?: number): Promise<void>;
   /**
    * 销毁指定窗口的所有托盘图标。
-   * @param window_id 要销毁托盘图标的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要销毁托盘图标的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在销毁成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   destroyAll(window_id?: number): Promise<void>;
   /**
    * 获取指定窗口当前存在的所有托盘图标 ID。
-   * @param window_id 要获取托盘图标 ID 的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要获取托盘图标 ID 的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在获取成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回托盘图标 ID 的数组。
    */
   list(window_id?: number): Promise<number[]>;
@@ -1053,7 +1023,7 @@ interface NivaTray {
    * 更新指定托盘图标的配置项。
    * @param id 要更新的托盘图标 ID。
    * @param options 新的托盘图标配置项。
-   * @param window_id 要更新托盘图标的窗口 ID，默认为当前活动窗口 ID。
+   * @param window_id 要更新托盘图标的窗口 ID，默认为发起调用的窗口 ID。
    * @returns 一个 Promise，在更新成功时解析该 Promise，或在发生错误时拒绝该 Promise。
    */
   update(

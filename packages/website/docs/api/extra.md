@@ -39,7 +39,7 @@ interface NivaExtra {
    * 对于 macOS，ID 应该是 `process_id_window_id` 的格式，其中 `process_id` 和 `window_id` 为整数。
    * 对于 Windows，ID 应该是窗口句柄的字符串形式。
    * @param id_string 要设置焦点窗口的 ID 字符串。
-   * @returns macOS 返回是否成功激活，Windows 成功时解析为 void；格式错误的 ID 或系统错误会拒绝。
+   * @returns macOS 返回是否成功激活；Windows 调用 SetForegroundWindow 后解析为 void，但操作系统可能拒绝切换焦点而不使调用失败。格式错误的 ID 会拒绝。
    */
   focusByWindowId(idString: string): Promise<boolean | void>;
 }

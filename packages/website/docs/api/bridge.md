@@ -8,7 +8,7 @@ sidebar_position: 1
 
 ## 选择传输
 
-- **打包的本地 Niva 页面**由本地资源协议加载。桌面 WebView 的页面 origin 为 `niva://app`；WebView2 映射成 `http://niva.app`。页面连接的 WebSocket endpoint 仍是 `ws://127.0.0.1:<port>/__niva_ws`。原生端为每个窗口生成随机 token，并在握手时分别校验 token、页面 `Origin`、loopback 服务 `Host` 和 token 对应的窗口 ID。
+- **打包的本地 Niva 页面**由本地资源协议加载。macOS 页面 origin 为 `niva://app`，Windows WebView2 映射成 `http://niva.app`；Linux 源码分支也选择 `niva://app`，但尚无 Linux 构建或运行验收。页面连接的 WebSocket endpoint 仍是 `ws://127.0.0.1:<port>/__niva_ws`。原生端为每个窗口生成随机 token，并在握手时分别校验 token、页面 `Origin`、loopback 服务 `Host` 和 token 对应的窗口 ID。
 - **显式开发启动**可为确切的 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 开放该窗口的 WebSocket 凭据，以连接本地开发服务器。普通打包模式不会因 `debug.entry` 自动开放开发服务。
 - **同源 iframe**可按浏览器同源规则读取顶层页面的本地桥接凭据，因此也可以使用 WebSocket。每条 frame 连接有独立的调用 ID 空间；某个 frame 断开不会取消另一个 frame 的调用。
 - **远端页面或跨源 iframe**没有本地 WebSocket token，走平台 IPC。IPC 每次根据 WebView 提供的 frame 来源 URL 和所属窗口检查授权。默认没有权限；配置见[远端页面权限](./permissions)。
@@ -31,7 +31,7 @@ const title = await Niva.api.window.title();
 
 握手成功后，文本帧采用 JSON 对象。浏览器侧发起 `hello`、`call` 和 `cancel`；服务端返回 `result` 和 `event`。
 
-```json
+```jsonl
 {"t":"hello","wid":0,"v":1}
 {"t":"call","id":1,"method":"window.current","args":[]}
 {"t":"result","id":1,"code":0,"data":0}

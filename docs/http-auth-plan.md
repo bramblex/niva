@@ -26,7 +26,7 @@
 - 显式调试启动仍允许 loopback HTTP 静态资源与 NodeCompat 资源。NodeCompat HTTP 路由
   使用 `Access-Control-Allow-Origin: *`，且没有窗口 token 鉴权；普通静态 HTTP 路由也
   不在 `__niva_fs` 鉴权范围。不要把 `__niva_fs` 已校验表述成所有 HTTP 路由已认证。
-- 打包 HTML 的 CSP meta 会合并当前 WS 与 `__niva_fs` HTTP endpoint 到 `connect-src`。
+- 打包 HTML 文档导航响应中的 CSP meta 会合并当前 WS 与 `__niva_fs` HTTP endpoint 到 `connect-src`。
   当前协议响应不能读取或修改宿主环境另外添加的 CSP response header；这类 header 仍
   可能阻止 WS 或文件 fetch。
 

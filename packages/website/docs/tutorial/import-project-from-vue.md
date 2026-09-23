@@ -8,7 +8,7 @@ sidebar_position: 2
 
 ## 创建一个 Vue 项目（可选）
 
-注：如果你有一个现成 Vue 项目可以跳过本步骤。我们假设您已经有 Vue Cli 的使用经验。
+注：如果你已有 Vue 项目，可以跳过本步骤。下面以 Vue 官方的 Vite 模板为例。
 
 可以通过 Vue 的官方文档创建一个 Vue 项目 [https://cn.vuejs.org/guide/quick-start.html#creating-a-vue-application](https://cn.vuejs.org/guide/quick-start.html#creating-a-vue-application)
 
@@ -18,11 +18,7 @@ npm init vue@latest
 
 ## 导入项目
 
-通过 Niva 开着工具导入我们的 Vue 项目，需要导入的是带有 `package.json` 文件的目录。
-
-![screenshot](@site/static/img/import-project-from-vue/screenshot1.png)
-
-打开 Vue 项目后会询问是否生成一个 `niva.json` 项目文件，确认后生成 `niva.json` 配置如下。
+通过 Niva 开发者工具的「选择项目」打开带有 `package.json` 的 Vue 项目根目录。如果目录中没有 `niva.json`，确认创建后，检测到 Vite 时会生成以下配置：
 
 ```json
 {
@@ -31,16 +27,16 @@ npm init vue@latest
 
 	"debug": {
 		"resource": "public",
-		"entry": "http://localhost:5137/",
+		"entry": "http://localhost:5173"
 	},
 
 	"build": {
-		"resource": "dist",
-	},
+		"resource": "dist"
+	}
 }
 ```
 
-如果是您是使用 Vue Cli 工具创创建的 Vue 项目，并且没有改动基础配置，那么这个配置文件也不需要修改可以直接使用。如果修改过 `public` 文件夹或者 `dist` 文件夹以及项目调试端口等则需要对应修改配置。
+如果使用默认的 Vite 配置，通常不需要再修改。若改过 `public`、`dist` 目录或开发服务端口，请同步修改 `debug`、`build` 字段。旧 Vue CLI 项目不使用 Vite 时，Devtools 的默认开发入口为 `http://localhost:8080`。
 
 更多配置可以参考 [选项文档](/docs/options/project)。
 
@@ -53,11 +49,7 @@ npm init vue@latest
 npm run dev
 ```
 
-然后再通过 Niva 开发者工具启动调试：
-
-![screenshot](@site/static/img/import-project-from-vue/screenshot2.png)
-
-在 Niva 中启动调试面板，这时候就可以跟正常开发 Vue 应用一样进行开发和调试。
+然后在 Niva 开发者工具的项目信息页点击「调试」。调试窗口会加载开发服务，并启用 WebView 开发者工具。
 
 
 ## 构建应用
@@ -68,4 +60,4 @@ npm run dev
 npm run build
 ```
 
-再通过 Niva 开发者工具的构建按钮进行构建，构建好后可以直接点击可执行文件打开构建好的可执行文件，打开你的应用。
+再通过 Niva 开发者工具的「构建」按钮打包。Windows 输出 `.exe`，macOS 输出 `.app` 应用包；请在对应系统上打开产物验证。

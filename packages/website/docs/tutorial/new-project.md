@@ -8,21 +8,11 @@ sidebar_position: 1
 
 ## 通过 Niva 开发者工具创建项目
 
-Niva 可以通过 Niva 开发者工具创建一个新项目：
-
-![screenshot](@site/static/img/new-project/screenshot1.png)
-
-创建好新项目以后，我们可以看到项目基本描述如下：
-
-![screenshot](@site/static/img/new-project/screenshot2.png)
+在 Niva 开发者工具点击「新建项目」，输入项目名，再选择用于存放项目的父目录。工具会在该目录下创建同名文件夹；如果同名文件夹已存在，会提示错误，不会覆盖原有内容。创建完成后会打开项目信息页。
 
 ## 项目基本结构
 
-我们可以通过 Niva 开发者工具打开我们的项目目录：
-
-![screenshot](@site/static/img/new-project/screenshot3.png)
-
-新创建的 Niva 项目项目结构如下：
+新创建的项目结构如下：
 
 ```
 hello-niva
@@ -31,23 +21,12 @@ hello-niva
 	- index.js // index.html 引入 js 文件
 ```
 
-其中 `niva.json` 是 Niva 项目的配置文件，如果需要对项目进行配置，可以参考 [选项文档](/docs/options/project)。 `index.html` 是 Niva 项目的入口文件，Niva 的主窗口将会将 index.html 作为入口。`index.js` 是 `index.html` 文件引入的 index.js。，这时候我们就可以以这个项目作为模板进行开发我们的基础开发工作。
+`niva.json` 包含项目名和 UUID，可按[选项文档](/docs/options/project)继续配置。默认主窗口从 `index.html` 加载，页面以模块脚本引入 `index.js`。模板的 HTML 已包含可编辑的 CSP meta；新增外部资源来源时需要同步调整 CSP。
 
 ## 打开调试窗口
 
-Niva 项目已经创建成功，下一步是通过 Niva 开发者工具上点击调试，打开 hello-niva 项目的调试窗口：
-
-![screenshot](@site/static/img/new-project/screenshot4.png)
-
-在这个窗口中右键，可以打开调试窗口。
-
-![screenshot](@site/static/img/new-project/screenshot5.png)
-![screenshot](@site/static/img/new-project/screenshot6.png)
+在项目信息页点击「调试」，Niva 会启动新的项目窗口，并启用 WebView 开发者工具。调试资源从项目目录读取；如果配置了 `debug.resource`，则从该子目录读取。
 
 ## 构建应用
 
-Niva 项目构建可以通过 Niva 开发者工具的构建按钮进行构建：
-
-![screenshot](@site/static/img/new-project/screenshot7.png)
-
-构建好后可以直接点击可执行文件打开构建好的可执行文件，打开你的应用。
+在项目信息页点击「构建」，选择输出位置并等待构建完成。Windows 输出 `.exe`，macOS 输出 `.app` 应用包；请在目标系统上打开产物验证。

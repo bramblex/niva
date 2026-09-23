@@ -12,9 +12,11 @@
 ### 本地 bridge 与远端 IPC
 
 - 打包本地页面由 Wry 异步自定义协议从 `niva://app/` 加载；macOS 页面 origin 为
-  `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`。只有初始主 frame
-  位于该平台的精确本地入口时，才注入按窗口生成且仅存内存的 WS token。WS 握手继续
-  校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID
+  `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`。非 Windows 源码分支
+  也选择 `niva://app`，但 Linux 尚无构建或运行验收。窗口以本地包启动时才建立可信
+  origin；初始化脚本只在顶层文档的当前 origin 精确匹配该值、且路径不在 `__niva_fs`
+  下时注入按窗口生成且仅存内存的 WS token。同源页面导航仍满足 origin 条件。WS 握手
+  继续校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID
   绑定到该 token。
 - 远端页面和 frame 通过原生 IPC 来源 URL 按窗口 grant 授权。grant 使用精确
   HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 不提供流式调用，且

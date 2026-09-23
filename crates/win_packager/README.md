@@ -94,9 +94,8 @@ RCDATA、图标和版本页，并在签名后启动生成 exe，仍需 Windows �
 新的 devtools 构建脚本不再调用 `icon_creator.exe` 或 `ResourceHacker.exe`。
 `build_Windows.cmd` 从本 crate 生成 `win_packager.exe`，暂时放到
 `packages/devtools/public/windows/` 供 Vite 复制，再移除这个暂存文件；旧两个
-工具从该脚本构建的资源包中剔除。`icon_creator` crate 和
-`public/windows/` 中的旧二进制已从仓库删除；`icon_creator` crate 暂仍保留，
-但新构建链路不调用它。
+工具不再被构建脚本提取或执行。`public/windows/` 中的旧二进制已从仓库删除；
+`crates/icon_creator/` crate 仍保留在 workspace 中，但新构建链路不调用它。
 
 图标尺寸和 Lanczos3 滤波逻辑以 `icon.rs` 为准，与旧 `icon_creator` 保持一致。
 

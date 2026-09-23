@@ -4,8 +4,8 @@
 
 ## 传输选择
 
-- **打包的本地 Niva 页面**由 Wry 异步自定义协议从固定 `niva://app/` 加载。macOS 页面 origin 为 `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`；普通 loopback HTTP 静态路由在打包模式关闭。Native 为每个窗口单独生成随机 token，只保存在内存中，并只在初始主 frame 位于该平台精确打包入口时注入 WS URL、窗口 ID 和 token。WS 握手同时校验路径、token、精确页面 `Origin` 和本地服务 `Host`；缺失或不匹配返回 403。`hello.wid` 必须与 token 绑定的原生窗口 ID 相符。
-- **显式开发启动的本机入口**（`--debug-entry`，或配合 `--debug-config` 的 `debug.entry`）可为精确的 `http://localhost:<port>` / `http://127.0.0.1:<port>` 单独开放同一窗口的 WS token，保留 Vite 的流式 API 与 HMR。普通打包启动忽略 `niva.json` 中的 `debug.entry`，不会开放该例外。
+- **打包的本地 Niva 页面**由 Wry 异步自定义协议从固定 `niva://app/` 加载。macOS 页面 origin 为 `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`；Linux 分支在源码中也选择 `niva://app`，但没有 Linux 构建或运行验收。普通 loopback HTTP 静态路由在打包模式关闭。Native 为每个窗口单独生成随机 token，只保存在内存中；启动入口为本地包的窗口，仅在顶层页面 origin 与该窗口可信 origin 相同、且路径不在 `__niva_fs` 下时注入 WS URL、窗口 ID 和 token，因此同源本地页面导航仍满足注入条件。WS 握手同时校验路径、token、精确页面 `Origin` 和本地服务 `Host`；缺失或不匹配返回 403。`hello.wid` 必须与 token 绑定的原生窗口 ID 相符。
+- **显式开发启动的本机入口**（`--debug-entry`，或配合 `--debug-config` 的 `debug.entry`）可为精确的 `http://localhost:<port>` / `http://127.0.0.1:<port>` origin 单独开放同一窗口的 WS token，保留 Vite 的流式 API 与 HMR。普通打包启动忽略 `niva.json` 中的 `debug.entry`，不会开放该例外。
 - 同源 frame 可按浏览器同源规则读取主 frame 的本地 WS 凭据；跨源 frame 不能读取这些凭据，走远端 IPC 路径。每个连接（包括每个 frame 的连接）拥有独立 call ID 命名空间；断开某个 frame 只清理该连接的调用。事件可广播给该窗口的所有连接。
 - **远端页面**没有本地 WS 凭据，只可使用平台 IPC 发送 unary JSON 调用。macOS 的 `window.webkit.messageHandlers.nivaReply.postMessage()` 返回 Promise；Windows 使用 `window.ipc.postMessage()` 发送请求，并通过 WebView message 事件接收回复。
 - `window.open` 已从初始化脚本移除。远端 IPC 也拒绝 `window.open` 和 `webview.baseFileSystemUrl`，避免远端页面创建窗口或取得本地文件服务入口。

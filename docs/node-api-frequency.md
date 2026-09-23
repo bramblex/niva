@@ -171,11 +171,13 @@ assert.ok(value: any, message?: string): void; assert.throws(fn: Function): void
 
 `packages/node-compat` 当前包含 `path`、`os`、`fs`、`child_process`、`events`、`util`、`querystring`、`buffer`、`url`、`crypto`、`zlib`、`http`、`https`、`assert`、`stream` 共 15 个模块。适配器把 Node 风格 API 映射到浏览器原语及 Niva bridge；这是有边界的子集，不能据模块名称推断 Node 全量兼容。各模块逐项支持签名、不可用 API 和运行限制以 [`packages/node-compat/README.md`](../packages/node-compat/README.md) 为准。
 
-覆盖边界示例：`fs` 提供异步操作，不提供 sync API；`child_process` 不支持 OS 进程终止、超时或 abort signal；`crypto` 仅提供 Web Crypto 支持的异步摘要等子集；`zlib` 依赖浏览器 compression streams。`http`/`https` 仅适配客户端请求，`stream.pipeline` 仅支持本包已有的适配流，不提供通用 Transform 或背压。频率排名中的 `process`、`readline` 等独立 Node builtin 尚未成为 NodeCompat 导出的适配器模块。
+覆盖边界示例：`fs` 提供异步操作，不提供 sync API；`child_process` 不支持 Node 的 `timeout` 选项、`AbortSignal` 或 `child.kill()` 逐进程终止，但取消或超时的 bridge 调用会终止并回收已附加的普通子进程，`detached` 子进程除外；`crypto` 仅提供 Web Crypto 支持的异步摘要等子集；`zlib` 依赖浏览器 compression streams。`http`/`https` 仅适配客户端请求，`stream.pipeline` 仅支持本包已有的适配流，不提供通用 Transform 或背压。频率排名中的 `process`、`readline` 等独立 Node builtin 尚未成为 NodeCompat 导出的适配器模块。
 
 本轮已有 macOS 隔离与打包浏览器验证覆盖路径和文件操作。Windows 真正的 WebView 运行时仍未验证；target 编译检查不构成 Windows 浏览器验收。页面 CSP 也必须允许所需脚本/资源。服务端 HTML 注入仅作用于文档导航，fetch 获取的 HTML 不改写；bundler 已处理的静态导入应由打包配置解决，不能依靠事后 DOM 注入。
 
-## 4. 第三方依赖最小化分析
+## 4. 第三方依赖最小化分析（早期方案，非当前实现）
+
+以下依赖选择记录的是 NodeCompat 落地前的方案比较，不是当前 Rust crate 或浏览器适配器依赖清单。当前覆盖以 §3 和 `packages/node-compat/README.md` 为准。
 
 原则：纯 JS shim > Rust std > 已有 crate 复用 > 新增小 crate > 新增大 crate（拒绝）。
 

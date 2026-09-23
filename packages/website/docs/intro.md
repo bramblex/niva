@@ -6,7 +6,7 @@ sidebar_position: 1
 
 ## 什么是 Niva？
 
-Niva 是一个跨平台（支持 Windows 和 MacOS）的桌面应用开发框架，使用前端技术开发，可用于构建轻量级的桌面应用。它基于系统 Webview 而非 Chromium，体积仅为 3MB ~ 4MB，不需要 Node.js 环境，直接提供系统 API 进行操作。Niva 兼容 React / Vue 等主流框架，对于 Vue 和 React 项目可以直接一键导入。
+Niva 是一个跨平台（支持 Windows 和 macOS）的桌面应用开发框架，使用前端技术开发，可用于构建轻量级的桌面应用。它使用系统 WebView，不随应用打包浏览器内核或 Node.js；Windows 的 WebView2 本身基于 Chromium。Niva 直接提供系统 API，Devtools 可导入 React、Vue 等前端项目。各平台产物体积和验收范围见[路线图](https://github.com/bramblex/niva/blob/main/docs/roadmap.md)。
 
 ## Niva 开发者工具
 
@@ -14,21 +14,18 @@ Niva 开发者工具是一个图形化界面开发者工具，提供图形化界
 
 ## Niva 与 Tauri 和 Electron 的异同
 
-Niva 与 Tauri 和 Electron 定位不同。它是 Tauri 和 Electron 的轻量级替代方案，比它们更加简单易用但同时牺牲了部分生态和能力。
+Niva 与 Tauri、Electron 的运行时和扩展方式不同。下面只列架构差异；不同版本、平台的包体积和学习成本不在这里作无同口径依据的比较。
 
 下表列出了 Niva、Tauri 和 Electron 的主要区别：
 
-|          | Niva                       | Tauri                  | Electron            |
-| -------- | -------------------------- | ---------------------- | ------------------- |
-| 体积     | 3MB                        | 6MB+                   | 85MB+               |
-| 支持系统 | Windows10+/MacOS           | Windows10+/MacOS/Linux | Windows/MacOS/Linux |
-| APP 后端 | 无，但可用隐藏 window 代替 | Rust                   | Node.js             |
-| Webview  | System                     | System                 | Chromium            |
-| 生态     | 前端                       | Rust + 前端            | Node.js + 前端      |
-| 上手难度 | 简单                       | 极难                   | 困难                |
+| 项目 | Niva | Tauri | Electron |
+| --- | --- | --- | --- |
+| 页面运行时 | 系统 WebView（Windows 为 WebView2） | 系统 WebView | 随应用打包 Chromium |
+| 应用逻辑 | 内置 Niva 原生 API；可选 stdio 宿主 | Rust 扩展与前端 | Node.js 与前端 |
+| Niva 当前交付形式 | Windows `.exe`、macOS `.app` | — | — |
 
-Niva 使用了 Tauri 的跨端窗口管理库 tao 和跨端 Webview 库 wry，所以在窗口和 Webview 上面 Niva 和 Tauri 具备相同的能力，以及相同数量级的体积。不同之处在于，Niva 直接为 Webview 提供通用的 API，无需编写 Rust 代码，对前端开发者更加友好。而使用 Electron 则需要 Node.js 和 Chromium 的依赖，体积也更大。
+Niva 与 Tauri 都使用 tao、wry 等底层库，但公开 API、平台适配与验收范围并不相同，不能由底层库相同推定功能完全一致。Niva 直接向 WebView 提供原生 API，常见应用无需自行编写 Rust 扩展；未覆盖与待验收的能力见仓库 `docs/api-coverage.md`。Electron 则随应用携带 Node.js 和 Chromium，交付体积通常更大。
 
-与 Electron 相比，Niva 不依赖 Node.js 和 Chromium，因此能够实现更小的体积，对前端开发者更加友好。Niva 提供了图形化的开发者工具和简单易用的配置，能够快速将前端项目迁移至 Niva 等桌面应用。
+与 Electron 相比，Niva 不随应用打包 Node.js 和 Chromium，因此能够实现更小的交付体积。Niva 提供图形化开发者工具和项目配置，可将前端项目迁移为桌面应用。Windows WebView2 的 Chromium 内核由系统运行时提供，并非应用包的一部分。
 
 总之，Niva 专注于提供更小的体积和更加便捷的开发体验，适合需要快速构建轻量级桌面应用的前端开发者使用。

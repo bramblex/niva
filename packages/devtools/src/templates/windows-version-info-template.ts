@@ -1,7 +1,8 @@
 import { parseVersion } from "../common/utils";
 
 export function versionInfoTemplate(config: any) {
-  const numberVersion = parseVersion(config.meta?.version || "").join(",");
+  const version = config.version || "";
+  const numberVersion = parseVersion(version).join(",");
 
   return `
 1 VERSIONINFO
@@ -16,12 +17,12 @@ BLOCK "StringFileInfo"
   {
     VALUE "CompanyName", ${JSON.stringify(config.meta?.companyName || "")}
     VALUE "FileDescription", ${JSON.stringify(config.meta?.description || "")}
-    VALUE "FileVersion", ${JSON.stringify(config.meta?.version)}
+    VALUE "FileVersion", ${JSON.stringify(version)}
     VALUE "InternalName", "niva.exe"
     VALUE "LegalCopyright", ${JSON.stringify(config.meta?.copyright || "")}
     VALUE "OriginalFilename", "niva.exe"
     VALUE "ProductName", ${JSON.stringify(config.name)}
-    VALUE "ProductVersion", ${JSON.stringify(config.meta?.version)}
+    VALUE "ProductVersion", ${JSON.stringify(version)}
     VALUE "SquirrelAwareVersion", "1"
   }
 }

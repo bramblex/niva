@@ -7,7 +7,7 @@ interface NivaDialog {
   /**
    * 显示一个独立消息框。
    * @param title 消息框的标题。
-   * @param content 消息框的内容，如果为空，则使用默认值。
+   * @param content 消息框的内容；省略时按空字符串显示。
    * @param level 消息框的级别。
    * @returns 一个 Promise，在消息框关闭时解析该 Promise，或在发生错误时拒绝该 Promise。
    */

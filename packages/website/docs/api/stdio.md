@@ -31,7 +31,7 @@ await Niva.api.host.send("page:ready");
 
 每帧是一行 UTF-8 JSON，使用 `\n` 分隔，读取时兼容 `\r\n`：
 
-```json
+```jsonl
 {"t":"ready","v":1}
 {"t":"msg","name":"hello","data":{"name":"Ada"}}
 ```

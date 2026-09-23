@@ -4,32 +4,36 @@ sidebar_position: 1
 
 # 项目选项
 
-Niva 应用选项，可在 `niva.json` 文件中编辑。
+在项目根目录的 `niva.json` 中配置应用。`name` 和 `uuid` 必填；未提供 `window` 时使用默认窗口选项。
 
-* 其中窗口选项 `NivaWindowOptions` 详见 [窗口选项](/docs/options/window)。
-* 其中托盘选项 `NivaTrayOptions` 详见 [托盘选项](/docs/options/tray)。
-* 其中全局快捷键选项 `NivaShortcutsOptions` 详见 [全局快捷键选项](/docs/options/shortcut)。
+| 字段 | 用途 |
+| --- | --- |
+| `name`、`uuid` | 应用名称与唯一标识符。 |
+| `version` | Devtools 显示的应用版本，macOS/Windows 包元数据也从该顶层字段读取。 |
+| `icon` | 应用图标的 PNG 路径。 |
+| `meta` | 可选的公司名、描述、版权信息；不从 `meta.version` 读取版本。 |
+| `window` | 主窗口配置；字段见[窗口选项](/docs/options/window)，包括外源页面的 `permissions`。 |
+| `tray`、`shortcuts` | 可选托盘和全局快捷键配置，见[托盘选项](/docs/options/tray)与[快捷键选项](/docs/options/shortcut)。 |
+| `api` | API 调度配置：`timeoutMs` 默认 30000 毫秒，`maxQueue` 默认 64。旧的固定线程池 `workers` 已移除。 |
+| `nodeCompat` | 可选浏览器 Node 风格模块，默认关闭；见[NodeCompat](/docs/api/node-compat)。它不是完整 Node.js 运行时。 |
+| `debug` | 开发资源目录 `resource` 与开发入口 `entry`。远端/Vite 入口仅在显式调试启动中生效。 |
+| `build` | Devtools 打包时读取的静态资源目录 `resource`。 |
+| `sign` | Devtools 打包后的可选签名配置；证书密码不得写入 `niva.json`。 |
+| `macos`、`windows` | 可选的平台覆盖对象；运行时按当前平台递归合并到顶层配置。 |
 
-```ts
-// Niva应用程序的选项接口
-interface NivaOptions {
-  name: string; // 应用程序的名称
-  uuid: string; // 应用程序的唯一标识符
-  icon?: string; // 应用程序的图标文件路径，仅支持 png，可选
+例如，一个使用 Vite 的项目可写为：
 
-  window: NivaWindowOptions; // 应用程序窗口的选项
-  tray?: NivaTrayOptions; // 应用程序托盘的选项，可选
-  shortcuts?: NivaShortcutsOptions; // 应用程序全局快捷键的选项，可选
-
-  workers?: number; // 应用程序开启的工作线程数量，可选
-
-  // Mac平台特有选项
-  activationPolicy?: "regular" | "accessory" | "prohibited"; // 应用程序的激活策略，可选
-  defaultMenuCreation?: boolean; // 是否使用默认菜单创建方式，可选
-  activateIgnoringOtherApps?: boolean; // 是否忽略其他应用程序的激活状态而强制激活应用程序，可选
-
-  // 为不同平台单独配置
-  macos: NivaOptions,
-  windows: NivaOptions
+```json
+{
+  "name": "HelloNiva",
+  "uuid": "replace-with-a-stable-project-uuid",
+  "version": "1.0.0",
+  "window": { "entry": "index.html" },
+  "debug": { "resource": "public", "entry": "http://localhost:5173" },
+  "build": { "resource": "dist" },
+  "api": { "timeoutMs": 30000, "maxQueue": 64 },
+  "nodeCompat": false
 }
 ```
+
+`macos` / `windows` 覆盖在 Niva 运行时合并。Devtools 的打包脚本直接读取顶层 `build` 和 `sign`，不要把只供打包器使用的字段仅放进平台覆盖对象。macOS 的 `activationPolicy`、`defaultMenuCreation`、`activateIgnoringOtherApps` 可作为顶层或 `macos` 覆盖字段。窗口与来源权限的实际边界见[权限说明](/docs/api/permissions)。

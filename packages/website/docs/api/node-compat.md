@@ -43,7 +43,7 @@ console.log(contents);
 
 - `path` 提供路径字符串操作；`path.resolve()` 所需的当前工作目录来自异步 bridge 初始化，在 `NivaNodeCompatReady` 完成前可能仍是初始目录。
 - `fs` 和 `fs/promises` 提供异步文件 API，不提供同步文件 API。Native `Stats` 不包含 Node 专有的权限、inode 或 owner 语义。
-- `child_process.spawn/exec` 由 `process.execStream` 适配；stdin 可写入。它不是完整 PTY，timeout、AbortSignal、任意 Node stdio 模式、独立进程 ID 与 `child.kill()` 不可用；调用取消会取消 bridge stream 并终止关联的普通子进程，detached 进程除外。
+- `child_process.spawn/exec` 由 `process.execStream` 适配；stdin 可写入。它不是完整 PTY，不支持 Node 的 `timeout` 选项、AbortSignal、任意 Node stdio 模式、附着进程 ID 或 `child.kill()` 逐进程终止；`child.cancel()` 取消 bridge stream 后会终止并回收关联的普通子进程，`detached` 进程除外。项目的 `api.timeoutMs` bridge 截止时间也会生效，默认 30 秒。
 - `http` / `https` 用 Niva `http.requestStream` 传输响应；选项、请求体和事件是包提供的 Node 风格适配，不等同于 Node Agent/Socket。原生侧禁止代理与非公开网络目标（包括重定向到这些地址）；唯一 loopback 例外是当前 Niva 服务的精确端口。二进制流和 HTTP stream 需要本地 WebSocket 页面。
 - `stream` 仅包含包所支持对象上的 `pipeline()` 适配，不提供 Node 的完整 Readable/Writable/Transform 类、背压或通用流构造器。
 - `crypto` 和 `zlib` 使用 Web Crypto、`CompressionStream` / `DecompressionStream` 等浏览器能力，具体可用性取决于当前 WebView。

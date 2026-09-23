@@ -6,7 +6,7 @@
 
 NodeCompat 是独立的可选浏览器包 `packages/node-compat`，为 Niva 页面提供 15 个 Node 风格模块：`path`、`os`、`fs`、`child_process`、`events`、`util`、`querystring`、`buffer`、`url`、`crypto`、`zlib`、`http`、`https`、`assert`、`stream`。实现通过现有 Niva bridge 调用本地能力，库本身不引入新的 Rust 运行时。
 
-它不提供完整 Node/npm 运行时，也不承诺所有 Node 签名、同步文件 API、进程终止或实时子进程输出。精确的支持签名和限制见 [`packages/node-compat/README.md`](../packages/node-compat/README.md)。
+它不提供完整 Node/npm 运行时，也不承诺所有 Node 签名、同步文件 API、`child.kill()` 这类逐进程终止或实时子进程输出。已附加的普通子进程会在所属 bridge 调用取消或超时时被终止并回收；`detached` 子进程可脱离调用继续运行。精确的支持签名和限制见 [`packages/node-compat/README.md`](../packages/node-compat/README.md)。
 
 ## 2. 配置与资源选择
 

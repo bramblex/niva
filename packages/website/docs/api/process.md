@@ -90,14 +90,13 @@ export function exec(
 ```
 
 `exec` 是初始化脚本在本地 WebSocket 模式下提供的 JS wrapper，会收集 stdout/stderr，适合输出较小的命令。远端 IPC 没有 `process.exec` 原生注册项。需要持续输出或向 stdin
-写入数据时，用[流式调用](./stream)中的 `process.execStream`。普通执行在取消、
-超时或连接关闭后会终止并回收子进程；`detached: true` 明确让子进程独立运行。
+写入数据时，用[流式调用](./stream)中的 `process.execStream`。普通执行在所属 bridge 调用取消、项目配置的 `api.timeoutMs` 截止时间到达（默认 30 秒）或连接关闭后会终止并回收子进程；此 wrapper 没有单独的 `timeout` 选项。`detached: true` 明确让子进程独立运行。
 
 `ExecOptions.currentDir` 设置子进程工作目录。
 
-## Niva.api.process.execStream
+## 通过 Niva.stream 调用 `process.execStream`
 
-`execStream` 是原生流式 handler，只能通过本地 WebSocket 的 `Niva.stream` 使用。普通模式的终局结果为 `{ status: number | null }`；若传入 `detached: true`，结果是数字 PID，且不会返回 stdout/stderr 流。stdin 数据通过 `Niva.streamSend` 写入：
+`process.execStream` 是原生流式 handler，只能通过本地 WebSocket 的 `Niva.stream("process.execStream", args, handlers)` 调用。它不是 `Niva.api.process` 下的方法。普通模式的终局结果为 `{ status: number | null }`；若传入 `detached: true`，结果是数字 PID，且不会返回 stdout/stderr 流。stdin 数据通过 `Niva.streamSend` 写入：
 
 ```ts
 const decoders = [new TextDecoder(), new TextDecoder()];

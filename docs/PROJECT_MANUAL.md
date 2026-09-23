@@ -106,7 +106,7 @@ Windows target 编译检查与真机运行是不同的证据。文档或发布�
 
 ## 7. 窗口、菜单、托盘与快捷键状态
 
-`docs/window-tray-menu-plan.md` 跟踪窗口/托盘/菜单整治。当前三个 P0 的源码修复已在工作树中：快捷键管理器初始化不再因 `expect` 直接 panic、Windows owner 使用独立的 `owner_window` 配置字段、窗口菜单 set/hide/show 操作经主线程执行。源码状态不等于平台验收完成：roadmap 仍要求 macOS/Windows 菜单操作验证及 Windows owner 行为真机检查。
+`docs/window-tray-menu-plan.md` 跟踪窗口/托盘/菜单整治。当前源码包含三个 P0 修复：快捷键管理器初始化不再因 `expect` 直接 panic、Windows owner 使用独立的 `owner_window` 配置字段、窗口菜单 set/hide/show 操作经主线程执行。源码状态不等于平台验收完成：roadmap 仍要求 macOS/Windows 菜单操作验证及 Windows owner 行为真机检查。
 
 方案中 P1 的菜单原生项日志处理、跨平台快捷键/菜单图标和 PNG 缩放需要分别按计划文档中源码状态核对；特别是 Windows 菜单快捷键消息循环限制仍需作为平台限制处理。托盘、菜单、快捷键的行为验收要在受影响平台实际操作。
 
@@ -115,6 +115,6 @@ Windows target 编译检查与真机运行是不同的证据。文档或发布�
 - Windows target check 只证明交叉编译检查覆盖通过，不证明 Windows 上窗口、菜单、IPC、stdio 或打包流程可运行。
 - macOS 手工桥接与 stdio 验证有 roadmap 记录；Devtools Vite UI/HMR 的完整实际操作验收仍待补。
 - 固定打包 origin 与普通 HTTP 静态路由隔离已有源码和有限的 macOS smoke 证据；Windows WebView2 真机、CSP response-header 环境和其他 v1.0 门禁仍未完成。不要因本文描述实现存在而宣称 v1.0 发布门禁已关闭。
-- 最新双架构 Devtools 包内的 Niva release 裸二进制为 arm64 2,835,264 字节、x86_64 3,175,264 字节，均低于 3,300,000 字节的当前上限；Windows release 体积尚未测量。较早的本机 arm64 `target/release/niva` 为 2,904,944 字节，不与本轮双架构产物混用。
+- 本轮文档/版本字段核对后的 macOS 双架构 Devtools 候选标记为 `v0.9.10-18-gf3f9036-dirty`；其中 Niva release 裸二进制为 arm64 2,835,264 字节、x86_64 3,175,264 字节。两份 zip 完整性、Mach-O 架构和 `Info.plist` 的应用版本 `0.9.9.0` 已核对。这是带未提交改动的本机候选，不等于签名后的发布包；Windows release 体积尚未测量。较早的本机 arm64 `target/release/niva` 为 2,904,944 字节，不与双架构产物混用。
 
 最新状态以 `docs/roadmap.md`、专题设计文档和对应平台验收证据为准。本手册描述架构与使用路径，不是平台验收清单。

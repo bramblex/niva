@@ -18,6 +18,8 @@ export function stat(path: string): Promise<{
 }>;
 ```
 
+当前 `stat` 使用系统 `metadata()`，会跟随符号链接；`isSymlink` 因此不报告传入路径本身是否为链接。`modified`、`accessed`、`created` 是 Unix 毫秒时间戳，不是权限标志。
+
 ## Niva.api.fs.exists
 ```ts
 /**
@@ -75,7 +77,6 @@ export function append(path: string, content: string, encode?: 'utf8' | 'base64'
 export function move(from: string, to: string, options?: {
     overwrite?: boolean;
     skipExist?: boolean;
-    bufferSize?: number;
     copyInside?: boolean;
     contentOnly?: boolean;
     depth?: number;
@@ -94,7 +95,6 @@ export function move(from: string, to: string, options?: {
 export function copy(from: string, to: string, options?: {
     overwrite?: boolean;
     skipExist?: boolean;
-    bufferSize?: number;
     copyInside?: boolean;
     contentOnly?: boolean;
     depth?: number;

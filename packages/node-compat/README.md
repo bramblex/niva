@@ -104,12 +104,14 @@ through the Niva stream.
 
 The JS bridge groups binary chunks and invokes `onBlob` when each pipe ends, so
 `spawn` data events are buffered per pipe rather than delivered live per chunk.
-Attached process IDs are unavailable. Timeout, abort signals, non-piped stdio,
-and `exec.maxBuffer` are unsupported. `child.kill()` returns `false` because
-there is no per-process kill API; `child.cancel()` cancels the owning bridge call,
-which terminates and reaps an attached native child. Detached processes
-intentionally outlive that call. Streaming fs/process calls require a local Niva WebSocket
-page; remote IPC pages do not support binary streams.
+Attached process IDs are unavailable. The Node `timeout` option, abort signals,
+non-piped stdio, and `exec.maxBuffer` are unsupported. `child.kill()` returns
+`false` because there is no per-process kill API; `child.cancel()` cancels the
+owning bridge call, which terminates and reaps an attached native child. The
+project's `api.timeoutMs` bridge deadline also applies (30 seconds by default).
+Detached processes intentionally outlive that call. Streaming fs/process calls
+require a local Niva WebSocket page; remote IPC pages do not support binary
+streams.
 
 ### `http` and `https`
 

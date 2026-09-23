@@ -10,9 +10,7 @@ sidebar_position: 4
 
 ## 导入一个没有编译构建系统的前端项目
 
-跟前面打开项目类似，只需要找到前端项目 index.html 存在的文件夹，然后通过 Niva 开发者工具打开这个目录即可。
-
-![screenshot](@site/static/img/import-project/screenshot1.png)
+找到包含 `index.html` 的项目目录，再用 Niva 开发者工具的「选择项目」打开。如果尚无 `niva.json`，工具会先询问是否创建配置文件。
 
 后面的步骤可以参考 [创建新项目](/docs/tutorial/new-project)。
 
@@ -21,12 +19,12 @@ sidebar_position: 4
 注：我们默认对 React 和 Vue 的项目做了支持，如果需要导入一个 React 或者 Vue 项目可以看 [从 React 项目中导入](/docs/tutorial/import-project-from-react) 和 [从 Vue 项目中导入](/docs/tutorial/import-project-from-vue)。
 
 
-对于其他项首先在通过 Niva 开发者工具打开项目的根目录，并且自动生成 `niva.json` 文件。
+对于其他项目，先在 Niva 开发者工具中打开项目根目录，并确认创建 `niva.json`。项目名优先读取 `package.json` 的 `name`，否则使用目录名；`uuid` 由工具生成。
 
 ```json
 {
-	"name": "<项目名>", // 如果有 package.json 则自动从 package.json 中读取
-	"uuid": "<项目 uuid>" // 自动生成，不要修改
+	"name": "my-app",
+	"uuid": "replace-with-generated-uuid"
 }
 ```
 
@@ -36,15 +34,14 @@ sidebar_position: 4
 
 ```json
 {
-	// ... 
 	"debug": {
-		"resource": "<调试环境静态文件目录>", // 静态文件目录，一般是项目中 public 目录
-		"entry": "<调试环境入口>", // 开发服务的入口
+		"resource": "public",
+		"entry": "http://localhost:5173"
 	}
 }
 ```
 
-配置好以后，就可以启动开发服务。之后再用 Niva 开发者工具启动项目调试窗口。接下来就跟在浏览器中开发调试一样了。
+把示例目录和端口改成项目实际值。启动开发服务后，在 Niva 开发者工具点击「调试」。`debug.entry` 只在显式调试启动时使用；正常打包启动不会加载开发服务器。
 
 ### 构建配置
 
@@ -53,9 +50,9 @@ sidebar_position: 4
 ```json
 {
 	"build": {
-		"resource": "<构建时的静态文件目录>" // 项目编译后的目标目录，往往包含 index.html
+		"resource": "dist"
 	}
 }
 ```
 
-配置好以后，就可以先构建项目，得到构建后的静态项目文件。之后再用 Niva 开发者工具构建可执行文件。
+把 `dist` 改为实际构建输出目录，且该目录应包含入口 HTML。先运行前端项目自己的构建命令，再在 Niva 开发者工具点击「构建」。Windows 输出 `.exe`，macOS 输出 `.app` 应用包。

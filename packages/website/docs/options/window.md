@@ -19,8 +19,9 @@ interface WindowRootMenu {
 type WindowMenuOptions = Array<WindowRootMenu>;
 
 interface NivaWindowOptions {
-  entry?: string;              // 应用程序入口文件路径
+  entry?: string;              // 本地入口路径或绝对远端 URL；默认 index.html
   devtools?: boolean;          // 是否启用开发者工具
+  permissions?: Record<string, string[]>; // 外源页面的精确 origin -> 允许的非流式 API 方法
 
   title?: string;              // 窗口标题
   icon?: string;               // 窗口图标
@@ -51,6 +52,7 @@ interface NivaWindowOptions {
 
   // macOS extra
   parentWindow?: number;           // 父窗口 ID
+  trafficLightInset?: NivaPosition; // 标题栏交通灯按钮偏移
   movableByWindowBackground?: boolean; // 是否可点击窗口背景移动窗口
   titleBarTransparent?: boolean;   // 标题栏是否透明
   titleBarHidden?: boolean;        // 标题栏是否隐藏
@@ -64,7 +66,6 @@ interface NivaWindowOptions {
   tabbingIdentifier?: string;      // 设置选项卡式浏览的标题
 
   // windows extra
-  parentWindow?: number;           // 父窗口 ID
   ownerWindow?: number;            // 拥有者窗口 ID
   taskbarIcon?: string;            // 任务栏图标
   skipTaskbar?: boolean;           // 在任务栏中是否显示
@@ -73,3 +74,5 @@ interface NivaWindowOptions {
   menu?: WindowMenuOptions;        // 窗口菜单选项
 }
 ```
+
+`permissions` 默认空，即远端页面与跨源 iframe 没有原生 API 权限；可授权的方法及来源匹配规则见[权限说明](/docs/api/permissions)。Windows 菜单快捷键目前只能显示组合键，尚未接入触发所需的原生消息循环。

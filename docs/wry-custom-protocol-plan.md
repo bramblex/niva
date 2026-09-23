@@ -1,6 +1,6 @@
 # Wry 自定义协议本地页面：实现与验收
 
-> 状态：已接入 Niva 源码。打包资源中的相对本地 `entry` 通过 Wry `with_asynchronous_custom_protocol("niva")` 从 `niva://app/` 加载；macOS 页面 origin 为 `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`。loopback HTTP/WS 仍使用动态端口，但打包模式不再通过普通 HTTP 路由提供页面静态资源。2026-09-23 有一组 macOS 临时 app smoke 结果；Windows 只有 target check，尚无 Windows 真机或完整发布包验收。
+> 状态：已接入 Niva 源码。打包资源中的相对本地 `entry` 通过 Wry `with_asynchronous_custom_protocol("niva")` 从 `niva://app/` 加载；macOS 页面 origin 为 `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`，源码的非 Windows 分支也选择 `niva://app`。Linux 尚无构建或运行验收。loopback HTTP/WS 仍使用动态端口，但打包模式不再通过普通 HTTP 路由提供页面静态资源。2026-09-23 有一组 macOS 临时 app smoke 结果；Windows 只有 target check，尚无 Windows 真机或完整发布包验收。
 
 ## 功能与边界
 
@@ -25,10 +25,10 @@
 
 ## 当前源码实现
 
-1. **静态页面入口**：打包资源中的相对本地 `entry` 解析到 `niva://app/`。协议处理器只读取当前 `ResourceManager` 中的资源，不代理任意 URL。根路径和目录路径解析到 `index.html`，按路径选择 MIME；编码后的 `.`/`..`、反斜线及非法 authority 会被拒绝。`__niva_*` 内部路由在协议内统一拒绝，只有 NodeCompat 启用且通过模块 allowlist 的 `__niva_compat/*` 资源可以读取；协议不承载 `__niva_fs` 或 `__niva_ws`。
+1. **静态页面入口**：打包资源中的相对本地 `entry` 解析到 `niva://app/`。协议处理器只读取当前 `ResourceManager` 中的资源，不代理任意 URL。根路径和以 `/` 结尾的目录路径解析到 `index.html`，按路径选择 MIME；编码后的 `.`/`..`、反斜线及非法 authority 会被拒绝。`__niva_*` 内部路由在协议内统一拒绝，只有 NodeCompat 启用且通过模块 allowlist 的 `__niva_compat/*` 资源可以读取；协议不承载 `__niva_fs` 或 `__niva_ws`。
 2. **异步处理**：协议回调只将请求投递到 4 个固定工作线程及容量为 32 的有界队列。队列满返回 503；每个已接收请求有 15 秒超时，超时返回 504；单个响应最多 32 MiB，超限返回 413。方法、URI、资源不存在及 HTML 改写失败均返回明确状态；one-shot gate 确保 Niva 侧最多调用一次 responder。Wry responder 没有取消通知或 delivery result，因此导航/关窗后的平台响应是否被接收无法由当前代码确认，仍待目标 WebView 验收。异步处理避免在 Wry 回调中同步读取资源，但慢资源可能耗尽工作线程，现有 smoke 未验证压力或性能。
-3. **平台 origin 与窗口身份**：本地打包页在 macOS/Linux 使用 Wry 自定义 scheme origin `niva://app`；Windows WebView2 对外显示 `http://niva.app`，Rust 的 Wry 请求回调还原为 `niva://app/...`。只向精确打包入口的主 frame 注入该窗口自己的内存 token、窗口 ID 和动态 WS 地址；同源 iframe 可依同源规则从父 frame 取得凭据，各 frame 建立独立连接。窗口 token 仍按窗口绑定，不能只凭 origin 识别窗口。
-4. **WS 鉴权**：握手仍校验 loopback 服务 `Host`、`/__niva_ws` 路径、窗口 token、窗口绑定、页面 `Origin` 和 hello 窗口 ID。打包页允许的精确 `Origin` 为 macOS `niva://app` 或 Windows `http://niva.app`；显式开发启动只对当前规则允许的本机 Vite origin 开放。浏览器 WS 不使用 HTTP CORS 预检，`Origin` 校验不能代替 token。
+3. **平台 origin 与窗口身份**：源码在非 Windows 分支选择 `niva://app`；Windows WebView2 对外显示 `http://niva.app`，Rust 的 Wry 请求回调还原为 `niva://app/...`。Linux 构建和运行尚未验收。以本地包启动的窗口会安装 origin 检查；顶层文档只有在当前 origin 精确匹配该窗口可信 origin、且路径不在 `__niva_fs` 下时才注入该窗口自己的内存 token、窗口 ID 和动态 WS 地址，同源 iframe 可依同源规则从父 frame 取得凭据，各 frame 建立独立连接。窗口 token 仍按窗口绑定，不能只凭 origin 识别窗口。
+4. **WS 鉴权**：握手仍校验 loopback 服务 `Host`、`/__niva_ws` 路径、窗口 token、窗口绑定、页面 `Origin` 和 hello 窗口 ID。打包页允许的精确 `Origin` 为 macOS `niva://app` 或 Windows `http://niva.app`；非 Windows 源码分支也选择 `niva://app`，但 Linux 未验收。显式开发启动只对当前规则允许的本机 Vite origin 开放。浏览器 WS 不使用 HTTP CORS 预检，`Origin` 校验不能代替 token。
 5. **CSP 与 HTTP**：协议页面 HTML 文档导航会对 HTML 内的 enforcing CSP meta 保留现有 source list，并把当前 `ws://127.0.0.1:<port>` 与 `http://127.0.0.1:<port>` 加到 `connect-src`；文件图片、媒体、字体与样式的精确 HTTP 源也会补入对应 directive。新建简单项目带可编辑的基础 CSP；NodeCompat 启用时，其注入块移到 CSP meta 之后，只有 Niva 注入的脚本获得每次导航随机 nonce，作者内联脚本仍受策略约束。WS 用于常规原生 API；HTTP 源用于页面直接读取 `webview.baseFileSystemUrl` 的 `__niva_fs`。文件路由先校验 token，再仅在请求 `Origin` 与该 token 所属窗口的 `trusted_ws_origin` 精确相同时返回 `Access-Control-Allow-Origin`。非匹配 origin 即使带有效 token 也不返回 CORS allow header；无效 token 返回 403。2026-09-23 macOS smoke 验证了精确 origin 的浏览器 fetch，以及严格 CSP 下的打包页 NodeCompat 和未授权内联 import map 拒绝。Windows 行为仍待真机测试。CSP 改写无法读取或修改 WebView 宿主、代理等另外添加的 CSP response header；若额外 header 限制 loopback 源，页面仍可能无法连接。`Niva.api.http.post` 是原生 API，经 WS 调用，不等于浏览器向 Niva 服务直接发 POST。协议页与 loopback 间的其他跨源 HTTP `fetch` 仍需单独设计 CSP、CORS 和鉴权。
 6. **调试与持久数据**：显式 `--debug-resource` / debug 启动继续使用 loopback 普通 HTTP；显式远端 entry 保持远端来源。打包模式普通 HTTP 静态路由只在调试参数开启时服务，loopback WS 和按 token 验证的 `__niva_fs` 继续存在。新 origin 与旧 `http://127.0.0.1:<port>` 的存储天然隔离，不会自动迁移旧 localStorage。不同窗口可共享页面 origin，权限仍绑定各自窗口 token。
 
