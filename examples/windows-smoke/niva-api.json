@@ -4,6 +4,7 @@
   "window": {
     "entry": "api-safe.html",
     "title": "Niva Windows API smoke",
+    "devtools": true,
     "size": { "width": 520, "height": 340 },
     "visible": true
   }
