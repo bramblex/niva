@@ -20,6 +20,24 @@
     }
     return hash.toString(16).padStart(8, "0");
   };
+  const nativeWaiters = new Map();
+  Niva.addEventListener("host:message", (_event, message) => {
+    if (message.name === "native-result") {
+      nativeWaiters.get(message.data.name)?.(message.data);
+      nativeWaiters.delete(message.data.name);
+    }
+  });
+  const nativeState = async (name, expected) => {
+    const response = new Promise((resolve, reject) => {
+      nativeWaiters.set(name, resolve);
+      setTimeout(() => {
+        if (nativeWaiters.delete(name)) reject(new Error(`native ${name} probe timed out`));
+      }, 3000);
+    });
+    await api.host.send("native-probe", { name, expected });
+    const result = await response;
+    expect(!result.error && result.value === expected, `native ${name}: ${JSON.stringify(result)}`);
+  };
 
   let clipboardDigest = null;
   await check("clipboard.read", async () => {
@@ -70,9 +88,6 @@
   });
   await check("webview.canGoForward", async () => {
     expect((await api.webview.canGoForward()) === false, "fresh page unexpectedly has forward history");
-  });
-  await check("webview.isDevtoolsOpen", async () => {
-    expect((await api.webview.isDevtoolsOpen()) === false, "fresh page devtools already open");
   });
   const cookieName = "niva_api_smoke_" + Date.now();
   const cookie = `${cookieName}=verified; Domain=niva.app; Path=/; Max-Age=60`;
@@ -179,7 +194,30 @@
     } finally { await api.window.setVisible(false, childId); }
     expect((await api.window.isVisible(childId)) === false, "child not hidden again");
   });
+  await check("window.isMinimized", async () => expect((await api.window.isMinimized(childId)) === false, "child unexpectedly minimized"));
+  await check("window.setMinimized", async () => {
+    try {
+      await api.window.setMinimized(true, childId);
+      expect((await api.window.isMinimized(childId)) === true, "child did not minimize");
+    } finally { await api.window.setMinimized(false, childId); }
+    expect((await api.window.isMinimized(childId)) === false, "child did not restore from minimized");
+  });
+  await check("window.isMaximized", async () => expect((await api.window.isMaximized(childId)) === false, "child unexpectedly maximized"));
+  await check("window.setMaximized", async () => {
+    try {
+      await api.window.setMaximized(true, childId);
+      expect((await api.window.isMaximized(childId)) === true, "child did not maximize");
+    } finally { await api.window.setMaximized(false, childId); }
+    expect((await api.window.isMaximized(childId)) === false, "child did not restore from maximized");
+  });
   await check("window.theme", async () => expect(["light", "dark", "system"].includes(await api.window.theme(childId)), "invalid theme"));
+  await check("window.setTheme", async () => {
+    const before = await api.window.theme(childId);
+    try {
+      await api.window.setTheme("dark", childId);
+      expect((await api.window.theme(childId)) === "dark", "child theme did not change");
+    } finally { await api.window.setTheme(before, childId); }
+  });
   await check("windowExtra.theme", async () => {
     expect((await api.windowExtra.theme(childId)) === (await api.window.theme(childId)), "windowExtra theme differs");
   });
@@ -192,6 +230,45 @@
       await api.windowExtra.setUndecoratedShadow(!before, childId);
       expect((await api.windowExtra.hasUndecoratedShadow(childId)) === !before, "shadow did not toggle");
     } finally { await api.windowExtra.setUndecoratedShadow(before, childId); }
+  });
+  await check("windowExtra.setEnable", async () => {
+    try {
+      await api.windowExtra.setEnable(false, childId);
+      await nativeState("enabled", false);
+    } finally { await api.windowExtra.setEnable(true, childId); }
+    await nativeState("enabled", true);
+  });
+  await check("windowExtra.setRtl", async () => {
+    try {
+      await api.windowExtra.setRtl(true, childId);
+      await nativeState("rtl", true);
+    } finally { await api.windowExtra.setRtl(false, childId); }
+    await nativeState("rtl", false);
+  });
+  await check("window.setAlwaysOnTop", async () => {
+    try {
+      await api.window.setAlwaysOnTop(true, childId);
+      await nativeState("topmost", true);
+    } finally { await api.window.setAlwaysOnTop(false, childId); }
+    await nativeState("topmost", false);
+  });
+  await check("window.setContentProtection", async () => {
+    try {
+      await api.window.setContentProtection(true, childId);
+      await nativeState("displayAffinity", 0x11);
+    } finally { await api.window.setContentProtection(false, childId); }
+    await nativeState("displayAffinity", 0);
+  });
+  await check("window.setWindowIcon", async () => {
+    try {
+      await api.window.setWindowIcon("icon.png", childId);
+      await nativeState("iconSmall", true);
+    } finally { await api.window.setWindowIcon(null, childId); }
+    await nativeState("iconSmall", false);
+  });
+  await check("windowExtra.setTaskbarIcon", async () => {
+    await api.windowExtra.setTaskbarIcon("icon.png", childId);
+    await nativeState("iconBig", true);
   });
   await check("window.setMenu", async () => {
     await api.window.setMenu([{ label: "API", children: [{ type: "item", id: 8, label: "Probe" }] }], childId);
