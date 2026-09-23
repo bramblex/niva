@@ -1,0 +1,10 @@
+{
+  "name": "windows-clear-smoke",
+  "uuid": "__UUID__",
+  "window": {
+    "entry": "clear.html",
+    "title": "Niva Windows browsing-data smoke",
+    "size": { "width": 400, "height": 200 },
+    "visible": true
+  }
+}

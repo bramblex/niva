@@ -1,0 +1,10 @@
+{
+  "name": "windows-print-smoke",
+  "uuid": "__UUID__",
+  "window": {
+    "entry": "print.html",
+    "title": "Niva Windows print smoke",
+    "size": { "width": 500, "height": 300 },
+    "visible": true
+  }
+}

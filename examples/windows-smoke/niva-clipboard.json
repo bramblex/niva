@@ -1,0 +1,10 @@
+{
+  "name": "windows-clipboard-smoke",
+  "uuid": "__UUID__",
+  "window": {
+    "entry": "clipboard.html",
+    "title": "Niva Windows clipboard smoke",
+    "size": { "width": 400, "height": 200 },
+    "visible": true
+  }
+}

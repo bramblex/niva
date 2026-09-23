@@ -16,6 +16,7 @@ shortcut.list shortcut.register shortcut.unregister shortcut.unregisterAll
 tray.create tray.destroy tray.destroyAll tray.list
 webview.baseFileSystemUrl webview.baseUrl webview.canGoBack webview.canGoForward
 webview.cookies webview.cookiesForUrl webview.deleteCookie webview.evaluateScript
+webview.goBack webview.goForward webview.loadHtml webview.loadUrl webview.reload
 webview.setCookie webview.url
 window.close window.current window.hideMenu window.innerPosition window.innerSize
 window.isClosable window.isDecorated window.isMaximizable window.isMaximized

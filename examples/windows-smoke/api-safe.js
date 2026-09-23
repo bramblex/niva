@@ -113,11 +113,31 @@
   let childId = null;
   let childReady;
   let childReply;
+  let navWaiter = null;
+  let navQueue = [];
+  let lastNavigation = null;
+  const nextNavigation = async () => {
+    if (navQueue.length) return navQueue.shift();
+    return Promise.race([
+      new Promise(resolve => { navWaiter = resolve; }),
+      sleep(5000).then(() => ({ kind: "nav-timeout" })),
+    ]);
+  };
   const ready = new Promise(resolve => { childReady = resolve; });
   const reply = new Promise(resolve => { childReply = resolve; });
   Niva.addEventListener("window.message", (_event, payload) => {
     if (payload.message === "child-ready") childReady(payload.from);
     if (payload.message === "pong") childReply(payload.from);
+    if (payload.message.startsWith("{")) {
+      const data = JSON.parse(payload.message);
+      if (data.kind === "nav-page" || data.kind === "nav-error") {
+        if (navWaiter) {
+          const resolve = navWaiter;
+          navWaiter = null;
+          resolve(data);
+        } else navQueue.push(data);
+      }
+    }
   });
   await check("window.open", async () => {
     childId = await api.window.open({ entry: "api-child.html", title: "Niva API child", visible: false, size: { width: 300, height: 220 }, ownerWindow: 0 });
@@ -330,6 +350,46 @@
       expect((await api.shortcut.list()).length === 0, "shortcuts remained after unregisterAll");
     });
   } finally { await api.shortcut.unregisterAll().catch(() => {}); }
+
+  await check("webview.loadUrl", async () => {
+    navQueue = [];
+    await api.window.sendMessage(JSON.stringify({ action: "loadUrl", url: "http://niva.app/nav-two.html" }), childId);
+    lastNavigation = await nextNavigation();
+    expect(lastNavigation.kind === "nav-page" && lastNavigation.page === "two" &&
+      lastNavigation.url.startsWith("http://niva.app/nav-two.html") && lastNavigation.canBack,
+      `loadUrl did not navigate: ${JSON.stringify(lastNavigation)}`);
+  });
+  await check("webview.goBack", async () => {
+    navQueue = [];
+    await api.window.sendMessage(JSON.stringify({ action: "goBack" }), childId);
+    lastNavigation = await nextNavigation();
+    expect(lastNavigation.kind === "nav-page" && lastNavigation.page === "one" && lastNavigation.canForward,
+      `goBack did not restore first page: ${JSON.stringify(lastNavigation)}`);
+  });
+  await check("webview.goForward", async () => {
+    navQueue = [];
+    await api.window.sendMessage(JSON.stringify({ action: "goForward" }), childId);
+    lastNavigation = await nextNavigation();
+    expect(lastNavigation.kind === "nav-page" && lastNavigation.page === "two" && lastNavigation.canBack,
+      `goForward did not restore second page: ${JSON.stringify(lastNavigation)}`);
+  });
+  await check("webview.reload", async () => {
+    navQueue = [];
+    await api.window.sendMessage(JSON.stringify({ action: "reload" }), childId);
+    lastNavigation = await nextNavigation();
+    expect(lastNavigation.kind === "nav-page" && lastNavigation.page === "two" && lastNavigation.reloadCount >= 1,
+      `reload did not reload second page: ${JSON.stringify(lastNavigation)}`);
+  });
+  await check("webview.loadHtml", async () => {
+    await api.window.sendMessage(JSON.stringify({ action: "loadHtml", html: "<!doctype html><html><head><title>Niva LoadHtml Marker</title></head><body>loaded</body></html>" }), childId);
+    let title = "";
+    for (let i = 0; i < 40; i++) {
+      title = await api.window.title(childId);
+      if (title === "Niva LoadHtml Marker") break;
+      await sleep(50);
+    }
+    expect(title === "Niva LoadHtml Marker", `loadHtml title marker missing: ${title}`);
+  });
 
   await check("window.close", async () => {
     await api.window.close(childId);
