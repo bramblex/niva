@@ -6,7 +6,7 @@
 
 | Method | unit/JS behavior test pointer | macOS native observed | Windows native observed | remaining case needed |
 |---|---|---|---|---|
-| `Niva.api.clipboard.read` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.clipboard.read` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.clipboard.write` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.dialog.showMessage` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.dialog.pickFile` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
@@ -22,9 +22,9 @@
 | `Niva.api.extra.focusByWindowId` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.fs.stat` | crates/niva/src/app/api/fs.rs — `stat_and_exists_cover_files_directories_and_missing_paths` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.fs.exists` | crates/niva/src/app/api/fs.rs — `stat_and_exists_cover_files_directories_and_missing_paths` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.fs.read` | `bridge-api-overrides.test.mjs` — `fs.read returns streamed UTF-8 and base64 bytes` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.fs.write` | `bridge-api-overrides.test.mjs` — `fs.write sends content through writeStream` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.fs.append` | `bridge-api-overrides.test.mjs` — `fs.append sends content through writeStream` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.fs.read` | `bridge-api-overrides.test.mjs` — `fs.read returns streamed UTF-8 and base64 bytes` | 未观察 | Windows 真机 [run_stream.py](../examples/windows-smoke/run_stream.py) 150 KB 流与输出断言通过 | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.fs.write` | `bridge-api-overrides.test.mjs` — `fs.write sends content through writeStream` | 未观察 | Windows 真机 [run_stream.py](../examples/windows-smoke/run_stream.py) 150 KB 流与输出断言通过 | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.fs.append` | `bridge-api-overrides.test.mjs` — `fs.append sends content through writeStream` | 未观察 | Windows 真机 [run_stream.py](../examples/windows-smoke/run_stream.py) 150 KB 流与输出断言通过 | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.fs.move` | crates/niva/src/app/api/fs.rs — `move_dispatches_files_and_directories_and_removes_sources` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.fs.copy` | crates/niva/src/app/api/fs.rs — `copy_options_apply_camel_case_fields_and_defaults`; `copy_dispatches_files_and_directories_and_applies_skip_exist` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.fs.remove` | crates/niva/src/app/api/fs.rs — `remove_deletes_a_file_or_a_directory_tree` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
@@ -36,10 +36,10 @@
 | `Niva.api.http.request` | `bridge-api-overrides.test.mjs` — `http.request returns response head and streamed body` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.http.get` | `bridge-api-overrides.test.mjs` — `http.get returns response head and streamed body` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.http.post` | `bridge-api-overrides.test.mjs` — `http.post returns response head and streamed body` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.monitor.list` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.monitor.current` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.monitor.primary` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.monitor.fromPoint` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.monitor.list` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.monitor.current` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.monitor.primary` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.monitor.fromPoint` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.os.info` | crates/niva/src/app/api/os.rs — `info_includes_os_architecture_and_version_as_strings` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.os.dirs` | crates/niva/src/app/api/os.rs — `dirs_always_include_app_paths_and_add_user_directories_when_available` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.os.sep` | crates/niva/src/app/api/os.rs — `separator_and_line_ending_match_the_target_platform` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
@@ -52,93 +52,93 @@
 | `Niva.api.process.args` | crates/niva/src/app/api/process.rs — `env_and_args_are_returned_as_json_map_and_ordered_array` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.process.setCurrentDir` | crates/niva/src/app/api/process.rs — `set_current_dir_changes_only_an_isolated_child_process` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.process.exit` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.process.exec` | `bridge-api-overrides.test.mjs` — `process.exec collects stdout and stderr into separate strings`; crates/niva/src/app/api/process.rs — `exec_command_applies_arguments_env_directory_and_preserves_streams_and_status`; `exec_command_reads_detached_option_and_defaults_it_to_false` (helper, not full handler) | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.process.exec` | `bridge-api-overrides.test.mjs` — `process.exec collects stdout and stderr into separate strings`; crates/niva/src/app/api/process.rs — `exec_command_applies_arguments_env_directory_and_preserves_streams_and_status`; `exec_command_reads_detached_option_and_defaults_it_to_false` (helper, not full handler) | 未观察 | Windows 真机 [run_stream.py](../examples/windows-smoke/run_stream.py) 150 KB 流与输出断言通过 | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.process.open` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.process.version` | crates/niva/src/app/api/process.rs — `process_metadata_methods_return_the_current_process_values` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.resource.exists` | crates/niva/src/app/api/resource.rs — `exists_checks_a_resource_path_and_rejects_missing_or_escaping_files` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.resource.read` | `bridge-api-overrides.test.mjs` — `resource.read returns streamed resource bytes` | 未观察 | 未观察 | 补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.resource.read` | `bridge-api-overrides.test.mjs` — `resource.read returns streamed resource bytes` | 未观察 | Windows 真机 [run_stream.py](../examples/windows-smoke/run_stream.py) 150 KB 流与输出断言通过 | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.resource.extract` | crates/niva/src/app/api/resource.rs — `extract_writes_resource_bytes_and_preserves_destination_on_missing_source` (helper, not full handler) | 未观察 | 未观察 | 增加直达 Niva.api 的 handler 行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.shortcut.register` | 未发现逐方法行为断言 | 未观察 | Windows smoke: 注册快捷键后触发预期事件（同上） | 增加逐方法行为测试；补充 macOS 原生调用观察 |
-| `Niva.api.shortcut.unregister` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.shortcut.unregisterAll` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.shortcut.list` | `shortcut.rs` — `list_serializes_entries_with_the_public_id_and_accelerator_fields`（返回结构 helper；未走真实快捷键管理器） | 未观察 | Windows 任务已真机观察对象返回；可重复用例待整合 | 补充 macOS 原生调用观察；整合并复跑 Windows 可重复用例 |
-| `Niva.api.tray.create` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.tray.destroy` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.tray.destroyAll` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.tray.list` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.shortcut.register` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.shortcut.unregister` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.shortcut.unregisterAll` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.shortcut.list` | `shortcut.rs` — `list_serializes_entries_with_the_public_id_and_accelerator_fields`（返回结构 helper；未走真实快捷键管理器） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.tray.create` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.tray.destroy` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.tray.destroyAll` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.tray.list` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.tray.update` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.evaluateScript` | `webview.rs` — `evaluate_script_limit_counts_utf8_bytes_and_includes_the_boundary`（输入验证 helper；未运行 Wry） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 执行与结果观察 |
+| `Niva.api.webview.evaluateScript` | `webview.rs` — `evaluate_script_limit_counts_utf8_bytes_and_includes_the_boundary`（输入验证 helper；未运行 Wry） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.webview.loadUrl` | `webview.rs` — `load_url_accepts_only_absolute_http_or_https_urls`（输入验证 helper；未运行 Wry） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 导航与错误观察 |
 | `Niva.api.webview.loadHtml` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.reload` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.url` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.webview.url` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.webview.print` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.goBack` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.goForward` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.canGoBack` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.canGoForward` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.cookies` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未读 Wry Cookie store） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 读取观察 |
-| `Niva.api.webview.cookiesForUrl` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未测 URL 筛选） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 按 URL 筛选观察 |
-| `Niva.api.webview.setCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未写 Wry Cookie store） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 写入观察 |
-| `Niva.api.webview.deleteCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未删 Wry Cookie） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 删除观察 |
+| `Niva.api.webview.canGoBack` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.canGoForward` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.cookies` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未读 Wry Cookie store） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.cookiesForUrl` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未测 URL 筛选） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.setCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未写 Wry Cookie store） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.deleteCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未删 Wry Cookie） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.webview.clearAllBrowsingData` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.isDevtoolsOpen` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 WebView2 固定返回 false；不能据此验收状态 | macOS 补真实状态检查；Windows 记录 Wry 限制并做受监督 UI 检查 |
 | `Niva.api.webview.openDevtools` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 会请求打开；受监督 UI 结果待记录 | macOS/Windows 补真实开发工具窗口观察 |
 | `Niva.api.webview.closeDevtools` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 WebView2 为空操作；不能验收关闭 | macOS 补真实关闭检查；Windows 记录 Wry 限制并做受监督 UI 检查 |
-| `Niva.api.webview.baseUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走真实服务） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 返回值观察 |
-| `Niva.api.webview.baseFileSystemUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走文件服务） | macOS smoke: 严格 CSP 打包页读取该 API 后检查资源，相关记录（[roadmap](roadmap.md#L92)） | 未观察 | 补充 Windows 文件 token 路由观察 |
-| `Niva.api.window.current` | 未发现逐方法行为断言 | macOS smoke: 主页面及同源 iframe 调用成功（[记录](wry-custom-protocol-plan.md#L42)） | Windows smoke: 主页面和同源 iframe 的 `window.current` 成功（[记录](windows-validation-2026-09-23.md#已通过的检查)） | 增加逐方法行为测试 |
-| `Niva.api.window.open` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.close` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.list` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.sendMessage` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setMenu` | 未发现逐方法行为断言 | 未观察 | Windows smoke: `setMenu` 状态正常，原生菜单点击收到 ID 7（同上） | 增加逐方法行为测试；补充 macOS 原生调用观察 |
-| `Niva.api.window.hideMenu` | 未发现逐方法行为断言 | 未观察 | Windows smoke: `hideMenu` 状态正常（同上） | 增加逐方法行为测试；补充 macOS 原生调用观察 |
-| `Niva.api.window.showMenu` | 未发现逐方法行为断言 | 未观察 | Windows smoke: `showMenu` 状态正常（同上） | 增加逐方法行为测试；补充 macOS 原生调用观察 |
-| `Niva.api.window.isMenuVisible` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.scaleFactor` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.innerPosition` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.outerPosition` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setOuterPosition` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.innerSize` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setInnerSize` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.outerSize` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.webview.baseUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走真实服务） | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.webview.baseFileSystemUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走文件服务） | macOS smoke: 严格 CSP 打包页读取该 API 后检查资源，相关记录（[roadmap](roadmap.md#L92)） | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.current` | 未发现逐方法行为断言 | macOS smoke: 主页面及同源 iframe 调用成功（[记录](wry-custom-protocol-plan.md#L42)） | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.open` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.close` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.list` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.sendMessage` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setMenu` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.hideMenu` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.showMenu` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isMenuVisible` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.scaleFactor` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.innerPosition` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.outerPosition` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setOuterPosition` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.innerSize` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setInnerSize` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.outerSize` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.setMinInnerSize` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setMaxInnerSize` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setWindowIcon` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setTheme` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.setWindowIcon` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setTheme` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.dragResizeWindow` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setProgressBar` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.requestRedraw` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setImePosition` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setBackgroundColor` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setFocusable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setTitle` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.title` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isVisible` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setVisible` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.setTitle` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.title` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isVisible` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setVisible` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.isFocused` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setFocus` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isResizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setResizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isMinimizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setMinimizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isMaximizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setMaximizable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isClosable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isMinimized` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setMinimized` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isMaximized` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setMaximized` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setClosable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.isDecorated` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setDecorated` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.isResizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setResizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isMinimizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setMinimizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isMaximizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setMaximizable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isClosable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isMinimized` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setMinimized` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isMaximized` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setMaximized` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setClosable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.isDecorated` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.window.setDecorated` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.fullscreen` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setFullscreen` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setAlwaysOnTop` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.setAlwaysOnTop` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.setAlwaysOnBottom` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.requestUserAttention` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.setContentProtection` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.setContentProtection` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.setVisibleOnAllWorkspaces` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setCursorIcon` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.cursorPosition` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
@@ -147,18 +147,18 @@
 | `Niva.api.window.setCursorVisible` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.dragWindow` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.setIgnoreCursorEvents` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.window.theme` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.window.theme` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.window.blockCloseRequested` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.setEnable` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.setTaskbarIcon` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.theme` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
+| `Niva.api.windowExtra.setEnable` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.windowExtra.setTaskbarIcon` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.windowExtra.theme` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.windowExtra.resetDeadKeys` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
 | `Niva.api.windowExtra.beginResizeDrag` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
 | `Niva.api.windowExtra.setSkipTaskbar` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.setUndecoratedShadow` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
+| `Niva.api.windowExtra.setUndecoratedShadow` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.windowExtra.setOverlayIcon` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.setRtl` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
-| `Niva.api.windowExtra.hasUndecoratedShadow` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
+| `Niva.api.windowExtra.setRtl` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
+| `Niva.api.windowExtra.hasUndecoratedShadow` | 未发现逐方法行为断言 | 未观察 | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他适用平台与未覆盖选项待测 |
 | `Niva.api.windowExtra.simpleFullscreen` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察 |
 | `Niva.api.windowExtra.setSimpleFullscreen` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察 |
 | `Niva.api.windowExtra.hasShadow` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察 |
@@ -195,5 +195,5 @@
 - 清单行数：167 个 `Niva.api` 方法 + 9 个 `NivaObj` bridge 方法；bridgeVersion 属性另行说明，不算方法。
 - 已找到逐方法 JS 行为测试：8/167 个 `Niva.api` 方法；另有 24 个方法列出 Rust helper 单测（helper 覆盖不等于完整 handler 覆盖）。bridge 方法测试按表中精确用例名标注。
 - macOS 原生观察：3/167 个方法；来源为 [CSP / custom protocol smoke 记录](wry-custom-protocol-plan.md#L42) 与 [roadmap smoke 记录](roadmap.md#L92)。
-- Windows 原生观察：5/167 个方法；来源为 [2026-09-23 Windows smoke](windows-validation-2026-09-23.md#已通过的检查)，仅限表中明确列出的调用。
+- Windows 原生观察：73/167 个方法；68 个来自 [run_api.py](../examples/windows-smoke/run_api.py) 的逐方法行为检查，另 5 个来自 [run_stream.py](../examples/windows-smoke/run_stream.py) 的大流检查。均以 Windows 任务在真机运行整套脚本的记录为准；其他方法不因此通过。
 - “未观察”表示本次查阅的记录未提供该方法的原生观察证据，不代表功能失败。适用平台按类型声明中的 macOS/Windows 限定填写；不要求对明确的平台专属方法在另一平台补测。未发现逐方法行为断言时，也不把契约映射测试或通用代理测试代作覆盖。
