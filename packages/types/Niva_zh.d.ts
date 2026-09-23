@@ -1065,7 +1065,7 @@ interface NivaWebview {
   /** 请求清理底层 WebView 数据存储的全部浏览数据；同一存储上下文中的其他窗口也可能受影响。 */
   clearAllBrowsingData(): Promise<void>;
   /**
-   * 检查开发工具是否打开。
+   * 检查开发工具是否打开。Windows WebView2 的 Wry 0.57 固定返回 false，不能据此判断实际状态。
    * @returns 一个 Promise，在检查成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回布尔值，表示开发工具是否打开。
    */
   isDevtoolsOpen(): Promise<boolean>;
@@ -1075,7 +1075,7 @@ interface NivaWebview {
    */
   openDevtools(): Promise<void>;
   /**
-   * 关闭开发工具。
+   * 关闭开发工具。Windows WebView2 的 Wry 0.57 不执行关闭操作。
    * @returns 一个 Promise，该 Promise 始终解析。
    */
   closeDevtools(): Promise<void>;

@@ -38,6 +38,8 @@ Windows 窗口构建路径当前读取 `owner_window` 并调用 Tao 的 `with_ow
 
 `webview.*` 现在有 20 个 API 方法（原有 devtools×3、baseUrl×2，新增运行时方法 15 个）。WebView 操作通过 `run_on_main` 在事件循环线程调用 Wry。
 
+Windows WebView2 的 Wry 0.57 中 `open_devtools()` 可以打开开发工具，`is_devtools_open()` 固定返回 `false`，`close_devtools()` 是空操作。Niva 当前直接委托 Wry，因此这两项不能作为 Windows 开发工具状态/关闭能力验收；需受监督的 UI 检查。
+
 | 已实现方法 | 行为与边界 |
 |---|---|
 | `evaluateScript(script)` | 在当前 WebView 主页面执行脚本，不读取返回值；UTF-8 字节数上限为 64 KiB。它是单次脚本执行 API，不承载 bridge 消息。 |

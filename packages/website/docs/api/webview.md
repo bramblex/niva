@@ -4,6 +4,8 @@
 
 `baseUrl()` 返回本地服务根 URL；`baseFileSystemUrl()` 返回该窗口的 `__niva_fs` 文件服务根 URL，其中含窗口 token。将后者视为 capability URL，不应传给不受信任页面。远端 IPC 路径始终拒绝 `webview.baseFileSystemUrl`，即使 grant 中列出；见[远端页面权限](./permissions)。
 
+Windows WebView2 所用的 Wry 0.57 能打开开发工具，但其 `is_devtools_open()` 固定返回 `false`，`close_devtools()` 不执行关闭操作。因此 Windows 上不能用 `isDevtoolsOpen()` 判断实际状态，也不能依赖 `closeDevtools()` 关闭窗口；这两项仍需受监督的原生 UI 验收。
+
 ```ts
 interface NivaWebview {
   /** 在当前 WebView 主页面执行脚本。仅接受 UTF-8 字节数不超过 64 KiB 的脚本，不返回脚本结果。 */
@@ -37,7 +39,7 @@ interface NivaWebview {
   /** 请求清理底层 WebView 数据存储的全部浏览数据；同一存储上下文中的其他窗口也可能受影响。 */
   clearAllBrowsingData(): Promise<void>;
   /**
-   * 检查开发工具是否打开。
+   * 检查开发工具是否打开。Windows WebView2 的 Wry 0.57 固定返回 false，不能据此判断实际状态。
    * @returns 一个 Promise，在检查成功时解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回布尔值，表示开发工具是否打开。
    */
   isDevtoolsOpen(): Promise<boolean>;
@@ -47,7 +49,7 @@ interface NivaWebview {
    */
   openDevtools(): Promise<void>;
   /**
-   * 关闭开发工具。
+   * 关闭开发工具。Windows WebView2 的 Wry 0.57 不执行关闭操作。
    * @returns 一个 Promise，该 Promise 始终解析。
    */
   closeDevtools(): Promise<void>;

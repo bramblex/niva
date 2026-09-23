@@ -61,14 +61,14 @@
 | `Niva.api.shortcut.register` | 未发现逐方法行为断言 | 未观察 | Windows smoke: 注册快捷键后触发预期事件（同上） | 增加逐方法行为测试；补充 macOS 原生调用观察 |
 | `Niva.api.shortcut.unregister` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.shortcut.unregisterAll` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.shortcut.list` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.shortcut.list` | `shortcut.rs` — `list_serializes_entries_with_the_public_id_and_accelerator_fields`（返回结构 helper；未走真实快捷键管理器） | 未观察 | Windows 任务已真机观察对象返回；可重复用例待整合 | 补充 macOS 原生调用观察；整合并复跑 Windows 可重复用例 |
 | `Niva.api.tray.create` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.tray.destroy` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.tray.destroyAll` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.tray.list` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.tray.update` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.evaluateScript` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.loadUrl` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.webview.evaluateScript` | `webview.rs` — `evaluate_script_limit_counts_utf8_bytes_and_includes_the_boundary`（输入验证 helper；未运行 Wry） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 执行与结果观察 |
+| `Niva.api.webview.loadUrl` | `webview.rs` — `load_url_accepts_only_absolute_http_or_https_urls`（输入验证 helper；未运行 Wry） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 导航与错误观察 |
 | `Niva.api.webview.loadHtml` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.reload` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.url` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
@@ -77,16 +77,16 @@
 | `Niva.api.webview.goForward` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.canGoBack` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.webview.canGoForward` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.cookies` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.cookiesForUrl` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.setCookie` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.deleteCookie` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
+| `Niva.api.webview.cookies` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未读 Wry Cookie store） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 读取观察 |
+| `Niva.api.webview.cookiesForUrl` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输出格式 helper；未测 URL 筛选） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 按 URL 筛选观察 |
+| `Niva.api.webview.setCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未写 Wry Cookie store） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 写入观察 |
+| `Niva.api.webview.deleteCookie` | `webview.rs` — `cookie_arguments_are_parsed_and_formatted_as_set_cookie_values`（输入解析 helper；未删 Wry Cookie） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView Cookie 删除观察 |
 | `Niva.api.webview.clearAllBrowsingData` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.isDevtoolsOpen` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.openDevtools` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.closeDevtools` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.baseUrl` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
-| `Niva.api.webview.baseFileSystemUrl` | 未发现逐方法行为断言 | macOS smoke: 严格 CSP 打包页读取该 API 后检查资源，相关记录（[roadmap](roadmap.md#L92)） | 未观察 | 增加逐方法行为测试；补充 Windows 原生调用观察 |
+| `Niva.api.webview.isDevtoolsOpen` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 WebView2 固定返回 false；不能据此验收状态 | macOS 补真实状态检查；Windows 记录 Wry 限制并做受监督 UI 检查 |
+| `Niva.api.webview.openDevtools` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 会请求打开；受监督 UI 结果待记录 | macOS/Windows 补真实开发工具窗口观察 |
+| `Niva.api.webview.closeDevtools` | 未发现逐方法行为断言 | 未观察 | Wry 0.57 WebView2 为空操作；不能验收关闭 | macOS 补真实关闭检查；Windows 记录 Wry 限制并做受监督 UI 检查 |
+| `Niva.api.webview.baseUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走真实服务） | 未观察 | 未观察 | 补充 macOS/Windows 真 WebView 返回值观察 |
+| `Niva.api.webview.baseFileSystemUrl` | `webview.rs` — `local_webview_urls_include_the_server_port_and_window_file_token`（URL 构造 helper；未走文件服务） | macOS smoke: 严格 CSP 打包页读取该 API 后检查资源，相关记录（[roadmap](roadmap.md#L92)） | 未观察 | 补充 Windows 文件 token 路由观察 |
 | `Niva.api.window.current` | 未发现逐方法行为断言 | macOS smoke: 主页面及同源 iframe 调用成功（[记录](wry-custom-protocol-plan.md#L42)） | Windows smoke: 主页面和同源 iframe 的 `window.current` 成功（[记录](windows-validation-2026-09-23.md#已通过的检查)） | 增加逐方法行为测试 |
 | `Niva.api.window.open` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
 | `Niva.api.window.close` | 未发现逐方法行为断言 | 未观察 | 未观察 | 增加逐方法行为测试；补充 macOS 原生调用观察；补充 Windows 原生调用观察 |
