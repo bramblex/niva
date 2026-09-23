@@ -24,8 +24,14 @@ set "BUILD_RESULT=!errorlevel!"
 del /q packages\devtools\public\windows\win_packager.exe
 if not "!BUILD_RESULT!"=="0" exit /b !BUILD_RESULT!
 
-cargo build --release
+cargo build --release -p niva
 if errorlevel 1 exit /b 1
+for %%F in (target\release\niva.exe) do set "NIVA_SIZE=%%~zF"
+echo Windows Niva release binary: !NIVA_SIZE! bytes
+if !NIVA_SIZE! GEQ 3500000 (
+	echo Windows Niva release binary exceeds the 3,500,000-byte size limit.
+	exit /b 1
+)
 
 target\release\niva.exe ^
 	--debug-resource=packages\devtools\build ^

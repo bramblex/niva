@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self'">
+  <title>Niva Windows CSP smoke</title>
+</head><body>
+  <h1>Strict CSP smoke</h1>
+  <script>document.documentElement.dataset.authorInline = "ran";</script>
+  <script type="module" src="csp.js"></script>
+</body></html>

@@ -58,7 +58,7 @@ test("resolve uses the configured working directory and validates inputs", () =>
     assert.equal(posix.resolve("src", "index.js"), "/workspace/project/src/index.js");
     setCwd("D:\\workspace\\project");
     assert.equal(win32.resolve("src", "index.js"), "D:\\workspace\\project\\src\\index.js");
-    assert.equal(win32.resolve("\\rooted"), "\\rooted");
+    assert.equal(win32.resolve("\\rooted"), "D:\\rooted");
   } finally {
     setCwd(original);
   }

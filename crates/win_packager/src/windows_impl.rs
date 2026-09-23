@@ -5,14 +5,17 @@
 //!
 use anyhow::{Context, Result, anyhow};
 use std::path::Path;
+use windows::Win32::Foundation::FreeLibrary;
 use windows::Win32::System::LibraryLoader::{
-    BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
+    BeginUpdateResourceW, EndUpdateResourceW, FindResourceExW, LOAD_LIBRARY_AS_DATAFILE,
+    LoadLibraryExW, UpdateResourceW,
 };
-use windows::core::{Error as WindowsError, PCWSTR};
+use windows::core::PCWSTR;
 
 use crate::{PackRequest, PreparedData};
 
 pub(crate) fn apply(req: &PackRequest, data: &PreparedData) -> Result<()> {
+    let existing_icon_ids = existing_icon_ids(req, data)?;
     let exe_path = to_wide_path(&req.output_exe)?;
     // SAFETY: exe_path is NUL-terminated and remains alive for this call.
     let handle = unsafe { BeginUpdateResourceW(PCWSTR(exe_path.as_ptr()), false) }
@@ -20,7 +23,7 @@ pub(crate) fn apply(req: &PackRequest, data: &PreparedData) -> Result<()> {
 
     let update_result = (|| {
         update_rcdata(handle, req, data)?;
-        replace_icon(handle, req, data)?;
+        replace_icon(handle, req, data, &existing_icon_ids)?;
         apply_version(handle, req, data)?;
         Ok(())
     })();
@@ -70,18 +73,16 @@ fn replace_icon(
     handle: windows::Win32::Foundation::HANDLE,
     req: &PackRequest,
     data: &PreparedData,
+    existing_icon_ids: &[u16],
 ) -> Result<()> {
     let Some((ico, group_id)) = &data.icon else {
         return Ok(());
     };
 
     let icon_type = resource_type(3); // RT_ICON
-    for id in &req.delete_icon_ids {
-        if let Err(error) = update_resource(handle, icon_type, resource_id(*id), req.lang, None)
-            && !is_missing_resource(&error)
-        {
-            return Err(error).with_context(|| format!("delete old RT_ICON id {id}"));
-        }
+    for id in existing_icon_ids {
+        update_resource(handle, icon_type, resource_id(*id), req.lang, None)
+            .with_context(|| format!("delete old RT_ICON id {id}"))?;
     }
 
     let entries = crate::icon::split_ico(ico)?;
@@ -130,6 +131,33 @@ fn replace_icon(
         Some(&group),
     )
     .with_context(|| format!("write RT_GROUP_ICON id {group_id}"))
+}
+
+fn existing_icon_ids(req: &PackRequest, data: &PreparedData) -> Result<Vec<u16>> {
+    if data.icon.is_none() || req.delete_icon_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let exe_path = to_wide_path(&req.output_exe)?;
+    // SAFETY: the path is NUL-terminated and remains alive until the call returns.
+    let module =
+        unsafe { LoadLibraryExW(PCWSTR(exe_path.as_ptr()), None, LOAD_LIBRARY_AS_DATAFILE) }
+            .with_context(|| format!("inspect icon resources in {}", req.output_exe.display()))?;
+    let ids = req
+        .delete_icon_ids
+        .iter()
+        .copied()
+        .filter(|id| {
+            // SAFETY: module is a valid data-file handle and the resource IDs
+            // are MAKEINTRESOURCE-compatible integers.
+            let resource = unsafe {
+                FindResourceExW(Some(module), resource_type(3), resource_id(*id), req.lang)
+            };
+            !resource.0.is_null()
+        })
+        .collect();
+    // SAFETY: module was returned by LoadLibraryExW above.
+    unsafe { FreeLibrary(module) }.context("release icon resource inspection handle")?;
+    Ok(ids)
 }
 
 fn apply_version(
@@ -187,17 +215,4 @@ fn to_wide_string(value: &str) -> Result<Vec<u16>> {
         return Err(anyhow!("resource name contains NUL"));
     }
     Ok(value.encode_utf16().chain(Some(0)).collect())
-}
-
-fn is_missing_resource(error: &anyhow::Error) -> bool {
-    let Some(error) = error.downcast_ref::<WindowsError>() else {
-        return false;
-    };
-    let code = error.code().0 as u32;
-    let win32_code = if code & 0xffff_0000 == 0x8007_0000 {
-        code & 0xffff
-    } else {
-        code
-    };
-    matches!(win32_code, 1812 | 1813 | 1814 | 1815)
 }

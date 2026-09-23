@@ -184,6 +184,10 @@
         }
 
         if (windows) {
+          if (!resolvedDevice && resolvedAbsolute) {
+            // Root-relative Windows paths inherit the current drive.
+            resolvedDevice = winRoot(cwd).device;
+          }
           if (resolvedDevice && !resolvedAbsolute) {
             var base = cwd;
             var baseInfo = winRoot(base);

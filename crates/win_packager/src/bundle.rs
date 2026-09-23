@@ -50,6 +50,12 @@ pub fn bundle_resource_package(resource_dir: &Path, config_file: &Path) -> Resul
     collect_files(resource_dir, resource_dir, &mut files)?;
     files.sort();
     for rel in &files {
+        // The explicit config_file is authoritative. A build directory may
+        // also contain niva.json; packing it again would replace the index
+        // entry with an unrelated file while silently wasting the first copy.
+        if rel == CONFIG_KEY {
+            continue;
+        }
         let bytes = std::fs::read(resource_dir.join(rel))
             .map_err(|e| anyhow::anyhow!("read resource {rel}: {e}"))?;
         push(rel.clone(), &bytes);

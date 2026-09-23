@@ -60,7 +60,7 @@ Niva 并非只使用 WebSocket，也并非统一改用 IPC。每个窗口根据�
 - 显式 debug 启动可加载跨端口开发入口并授予该窗口桥接；带 `--debug-resource` 的开发启动继续通过 loopback HTTP 加载静态资源。普通打包启动忽略配置中的 debug entry。每个原生 API 调用仍需在 Rust 侧做窗口、来源与授权校验。
 - WebSocket 断开、事件转发和页面来源边界应以 `docs/bridge.md`、`docs/security.md` 及对应平台代码为准。
 
-当前验收记录：macOS 常规 WebView 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-23 另以临时 app 实测固定协议 origin `niva://app`、主页面/同源 iframe 的 WS 原生调用、静态 JS 资源，以及普通 loopback 静态请求 404。通过 `webview.baseFileSystemUrl()` 在该页 `fetch` 文件成功；有效 token 配非匹配 Origin 时服务端不返回 ACAO，无效 token 返回 403。另用只选 `path/fs/assert/stream` 的临时包验证静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 资源 404。未测 NodeCompat 全模块语义、WS 二进制流、存储迁移或性能。Windows 目前只有 `x86_64-pc-windows-msvc` target check；尚无 Windows 真机运行与 WebView2 行为记录。
+当前验收记录：macOS 常规 WebView 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-23 另以临时 app 实测固定协议 origin `niva://app`、主页面/同源 iframe 的 WS 原生调用、静态 JS 资源，以及普通 loopback 静态请求 404。通过 `webview.baseFileSystemUrl()` 在该页 `fetch` 文件成功；有效 token 配非匹配 Origin 时服务端不返回 ACAO，无效 token 返回 403。另用只选 `path/fs/assert/stream` 的临时包验证静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 资源 404。未测 NodeCompat 全模块语义、WS 二进制流、存储迁移或性能。Windows 已有限实测 WebView2 打包页、同源 iframe、文件 URL 和部分 NodeCompat；详见 `docs/windows-validation-2026-09-23.md`。远端 IPC 与完整行为矩阵仍待验收。
 
 ### 3.2 API 调度与协议
 
@@ -72,7 +72,7 @@ WebSocket wire 协议和二进制帧格式以 `docs/bridge.md` 与 `crates/niva/
 
 `--stdio` 显式启用子进程宿主模式。`crates/niva/src/app/stdio.rs` 在 stdin/stdout 上收发 NDJSON：宿主发 `msg` 帧给主窗口，主窗口可通过 `Niva.api.host.send` 回发；WebSocket 主窗口握手后输出一次 `ready`。stdout 留给协议帧，诊断写 stderr。输入行有 64 MiB 上限，EOF 或管道写失败请求应用退出。接口与限制见 `docs/stdio-host-design.md`，可运行示例位于 `examples/stdio_host.py` 和 `examples/stdio-host/`。
 
-验收边界：roadmap 记录了 macOS Python 宿主往返、坏帧恢复、EOF/BrokenPipe 退出的实际验证；Windows 管道继承与退出仍待 Windows 真机验证。
+验收边界：roadmap 记录了 macOS Python 宿主往返、坏帧恢复、EOF/BrokenPipe 退出的实际验证；Windows Python 宿主的管道继承、坏帧恢复及 EOF 退出已真机验证；BrokenPipe 等边界仍待测。
 
 ## 4. 资源、配置与 NodeCompat
 
@@ -106,7 +106,7 @@ Windows target 编译检查与真机运行是不同的证据。文档或发布�
 
 ## 7. 窗口、菜单、托盘与快捷键状态
 
-`docs/window-tray-menu-plan.md` 跟踪窗口/托盘/菜单整治。当前源码包含三个 P0 修复：快捷键管理器初始化不再因 `expect` 直接 panic、Windows owner 使用独立的 `owner_window` 配置字段、窗口菜单 set/hide/show 操作经主线程执行。源码状态不等于平台验收完成：roadmap 仍要求 macOS/Windows 菜单操作验证及 Windows owner 行为真机检查。
+`docs/window-tray-menu-plan.md` 跟踪窗口/托盘/菜单整治。当前源码包含三个 P0 修复：快捷键管理器初始化不再因 `expect` 直接 panic、Windows owner 使用独立的 `owner_window` 配置字段、窗口菜单 set/hide/show 操作经主线程执行。源码状态不等于平台验收完成：Windows 已有限验证 owner、菜单点击及快捷键；macOS 菜单和更广行为矩阵仍待完成。
 
 方案中 P1 的菜单原生项日志处理、跨平台快捷键/菜单图标和 PNG 缩放需要分别按计划文档中源码状态核对；特别是 Windows 菜单快捷键消息循环限制仍需作为平台限制处理。托盘、菜单、快捷键的行为验收要在受影响平台实际操作。
 
@@ -114,7 +114,7 @@ Windows target 编译检查与真机运行是不同的证据。文档或发布�
 
 - Windows target check 只证明交叉编译检查覆盖通过，不证明 Windows 上窗口、菜单、IPC、stdio 或打包流程可运行。
 - macOS 手工桥接与 stdio 验证有 roadmap 记录；Devtools Vite UI/HMR 的完整实际操作验收仍待补。
-- 固定打包 origin 与普通 HTTP 静态路由隔离已有源码和有限的 macOS smoke 证据；Windows WebView2 真机、CSP response-header 环境和其他 v1.0 门禁仍未完成。不要因本文描述实现存在而宣称 v1.0 发布门禁已关闭。
-- 本轮文档/版本字段核对后的 macOS 双架构 Devtools 候选标记为 `v0.9.10-18-gf3f9036-dirty`；其中 Niva release 裸二进制为 arm64 2,835,264 字节、x86_64 3,175,264 字节。两份 zip 完整性、Mach-O 架构和 `Info.plist` 的应用版本 `0.9.9.0` 已核对。这是带未提交改动的本机候选，不等于签名后的发布包；Windows release 体积尚未测量。较早的本机 arm64 `target/release/niva` 为 2,904,944 字节，不与双架构产物混用。
+- 固定打包 origin 与普通 HTTP 静态路由隔离已有源码和有限的 macOS smoke 证据；Windows WebView2 已有有限真机 smoke；严格 CSP、response-header 环境和其他 v1.0 门禁仍未完成。不要因本文描述实现存在而宣称 v1.0 发布门禁已关闭。
+- 本轮文档/版本字段核对后的 macOS 双架构 Devtools 候选标记为 `v0.9.10-18-gf3f9036-dirty`；其中 Niva release 裸二进制为 arm64 2,835,264 字节、x86_64 3,175,264 字节。两份 zip 完整性、Mach-O 架构和 `Info.plist` 的应用版本 `0.9.9.0` 已核对。这是带未提交改动的本机候选，不等于签名后的发布包；Windows 默认 unwind 裸二进制为 3,877,376 字节；macOS/Windows 共享 release profile 现使用 panic=abort，Windows 裸二进制为 2,450,432 字节，详见 Windows 验证记录。较早的本机 arm64 `target/release/niva` 为 2,904,944 字节，不与双架构产物混用。
 
 最新状态以 `docs/roadmap.md`、专题设计文档和对应平台验收证据为准。本手册描述架构与使用路径，不是平台验收清单。

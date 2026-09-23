@@ -1,0 +1,16 @@
+<!doctype html><html><body><script>
+  (async () => {
+    let outcome = "no-bridge";
+    let code = null;
+    try {
+      if (window.Niva) {
+        await Niva.api.window.current();
+        outcome = "allowed";
+      }
+    } catch (error) {
+      outcome = "denied";
+      code = error.code ?? null;
+    }
+    parent.postMessage({ kind: "cross", origin: location.origin, outcome, code }, "*");
+  })();
+</script></body></html>

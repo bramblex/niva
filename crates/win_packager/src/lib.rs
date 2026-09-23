@@ -228,7 +228,16 @@ pub fn pack(req: &PackRequest) -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        windows_impl::apply(req, &prepared)
+        match windows_impl::apply(req, &prepared) {
+            Ok(()) => Ok(()),
+            Err(error) => match std::fs::remove_file(&req.output_exe) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(anyhow!(
+                    "{error:#}; could not remove incomplete output {}: {cleanup_error}",
+                    req.output_exe.display()
+                )),
+            },
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -303,6 +312,7 @@ mod tests {
         std::fs::create_dir_all(res.join("sub")).unwrap();
         let cfg = br#"{"name":"t"}"#;
         std::fs::write(base.join("niva.json"), cfg).unwrap();
+        std::fs::write(res.join("niva.json"), br#"{"name":"wrong"}"#).unwrap();
         std::fs::write(res.join("a.txt"), b"hello").unwrap();
         std::fs::write(res.join("sub").join("b.bin"), [0u8, 1, 2, 3]).unwrap();
 
@@ -317,6 +327,7 @@ mod tests {
         let mut dec = flate2::read::DeflateDecoder::new(&pkg.data_deflated[..]);
         let mut raw = Vec::new();
         dec.read_to_end(&mut raw).unwrap();
+        assert_eq!(&raw[..cfg.len()], cfg);
         let (off, len) = idx["sub/b.bin"];
         assert_eq!(&raw[off..off + len], &[0u8, 1, 2, 3]);
         let (off, len) = idx["a.txt"];
@@ -364,5 +375,64 @@ mod tests {
             assert_eq!(decoded.width(), *size);
             assert_eq!(decoded.height(), *size);
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn replaces_icons_when_template_ids_are_missing_or_present() {
+        use image::ImageEncoder;
+
+        let base = std::env::temp_dir().join(format!("win_packager_icons_{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let png_path = base.join("icon.png");
+        let mut rgba = image::RgbaImage::new(64, 64);
+        for pixel in rgba.pixels_mut() {
+            *pixel = image::Rgba([20, 80, 180, 255]);
+        }
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&rgba, 64, 64, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        std::fs::write(&png_path, png).unwrap();
+
+        let first = base.join("first.exe");
+        let second = base.join("second.exe");
+        let mut request = PackRequest {
+            template_exe: std::env::current_exe().unwrap(),
+            output_exe: first.clone(),
+            icon_png: Some(png_path),
+            delete_icon_ids: (1..=7).collect(),
+            ..Default::default()
+        };
+        pack(&request).unwrap();
+        request.template_exe = first;
+        request.output_exe = second.clone();
+        request.delete_icon_ids = (8..=14).collect();
+        pack(&request).unwrap();
+        assert!(second.metadata().unwrap().len() > 0);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn failed_resource_update_removes_incomplete_output() {
+        let base =
+            std::env::temp_dir().join(format!("win_packager_failure_{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let template = base.join("invalid.exe");
+        let output = base.join("output.exe");
+        std::fs::write(&template, b"not a PE executable").unwrap();
+        let request = PackRequest {
+            template_exe: template.clone(),
+            output_exe: output.clone(),
+            rcdata: vec![RcDataEntry {
+                name: "TEST".into(),
+                file: template,
+            }],
+            ..Default::default()
+        };
+        assert!(pack(&request).is_err());
+        assert!(!output.exists());
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

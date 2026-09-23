@@ -72,5 +72,9 @@ test("URL helpers preserve URLSearchParams and local file path semantics", () =>
   }
   assert.throws(() => urlModule.fileURLToPath("https://example.test/file"), { code: "ERR_INVALID_URL_SCHEME" });
   assert.throws(() => urlModule.fileURLToPath("file:///tmp/a%2Fb"), { code: "ERR_INVALID_FILE_URL_PATH" });
-  assert.throws(() => urlModule.fileURLToPath("file://server/share/file"), { code: "ERR_INVALID_FILE_URL_HOST" });
+  if (process.platform === "win32") {
+    assert.equal(urlModule.fileURLToPath("file://server/share/file"), nodeUrl.fileURLToPath("file://server/share/file"));
+  } else {
+    assert.throws(() => urlModule.fileURLToPath("file://server/share/file"), { code: "ERR_INVALID_FILE_URL_HOST" });
+  }
 });

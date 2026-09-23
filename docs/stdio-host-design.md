@@ -1,6 +1,6 @@
 # Niva Stdio Host Bridge 设计（niva 当子进程 UI）
 
-> 状态：已实现；Windows 管道继承仍待真机验证。目标：任意程序 A 启动 `niva.exe --stdio` 把它当 UI 窗口，
+> 状态：已实现；Windows 已实测 Python 宿主往返和 EOF 退出，完整边界仍待验收。目标：任意程序 A 启动 `niva.exe --stdio` 把它当 UI 窗口，
 > 双方经 stdin/stdout 换 JSON 消息（A 收到 `sayHello` → 回写 `sayHelloResult` → 前端拿到）。
 >
 > 架构约束（已定）：Niva 是主窗口（id 0）+ 子窗口的多窗口模型，主窗口在主循环、
@@ -56,7 +56,7 @@ A → niva   {"t":"msg","name":string,"data"?:any}
 3. `host.send` 在 Rust 侧校验 `window.id == 0`。子窗口调用返回 `code -1` 和 `host.send is main-window only`。
 4. **stdout 纯洁性**：`--stdio` 下 `log!` 系宏转到 stderr，普通模式仍输出 stdout；HTTP、WebSocket 等运行日志写 stderr。stdout 只含 `ready` 和 `msg` NDJSON 帧。
 5. stdin EOF 或 stdout 写失败时，事件投递回主循环，按 id 0 调用 `close_window_inner + cleanup` 后设置 `ControlFlow::Exit`。在主窗创建前到达的 EOF 会排队，主窗创建后仍走同一关闭路径。
-6. Windows：release 使用 `windows_subsystem = "windows"`（无控制台）；管道继承尚待 Windows 真机确认。输出换行统一为 `\n`。
+6. Windows：release 使用 `windows_subsystem = "windows"`（无控制台）；2026-09-23 已实测 Python 父进程管道继承、坏帧恢复和 EOF 退出。输出换行统一为 `\n`。
 7. 安全：默认信任 stdin 持有者（即启动 Niva 的父进程）；不为终端手输提供额外交互功能。
 
 ## 5. 与现有能力的复用/冲突
@@ -75,4 +75,4 @@ cargo build -p niva
 python examples/stdio_host.py target/debug/niva
 ```
 
-示例会先等待 `ready`，再等页面发出 `page:ready`，完成 `sayHello` 往返，最后关闭 stdin 并等待主窗口走 EOF 退出路径。Windows 真机管道行为仍待验证。
+示例会先等待 `ready`，再等页面发出 `page:ready`，完成 `sayHello` 往返，最后关闭 stdin 并等待主窗口走 EOF 退出路径。Windows 真机已在 2026-09-23 跑通该示例，详情见 [验证记录](windows-validation-2026-09-23.md)；BrokenPipe 和子窗口拒绝仍待专项验证。

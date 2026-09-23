@@ -51,6 +51,7 @@ devtools: win_packager.exe --exe <currentExe> --save-as <target>
 ## 3. 包格式（与前端/读侧对齐）
 
 - 首包永远是配置文件，包内 key 固定 `"niva.json"`；
+- 若资源目录本身也含 `niva.json`，跳过该副本，始终使用显式 `--config` 文件；
 - 文件 key：相对路径，`\` 换 `/`（与前端 `replace(/\\/g,"/")` 一致）；
 - `INDEXES = JSON{path:[offset,length]}`，`DATA = deflate_raw(拼接)`。
 - 有意差异（不影响读取）：遍历排序后打包（前端是 readdir 原生顺序），

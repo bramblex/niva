@@ -30,6 +30,12 @@ jobs:
       - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bytes = (Get-Item target/release/niva.exe).Length
+          Write-Host "Windows release binary: $bytes bytes"
+          if ($bytes -ge 3500000) { exit 1 }
       - if: runner.os == 'macOS'
         shell: bash
         run: |

@@ -78,7 +78,7 @@ function makeFsNiva() {
     },
     write(file, content, encoding) { calls.push(["write", file, content, encoding]); return Promise.resolve(); },
     append(file, content, encoding) { calls.push(["append", file, content, encoding]); return Promise.resolve(); },
-    stat(file) { calls.push(["stat", file]); return stats.has(file) ? Promise.resolve(stats.get(file)) : Promise.reject({ code: -1, message: "No such file or directory" }); },
+    stat(file) { calls.push(["stat", file]); const normalized = file.replaceAll("\\", "/"); return stats.has(normalized) ? Promise.resolve(stats.get(normalized)) : Promise.reject({ code: -1, message: "No such file or directory" }); },
     exists(file) { calls.push(["exists", file]); return Promise.resolve(stats.has(file)); },
     createDir(file) { calls.push(["createDir", file]); return Promise.resolve(); },
     createDirAll(file) { calls.push(["createDirAll", file]); return Promise.resolve(); },
@@ -226,7 +226,7 @@ test("exec runs through the shell and simulates callback errors with captured ou
   });
   const result = await callbackResult;
   assert.equal(calls[0][0], "process.execStream");
-  assert.deepEqual(calls[0][1][1], ["-c", "echo hello"]);
+  assert.deepEqual(calls[0][1][1], process.platform === "win32" ? ["/d", "/s", "/c", "echo hello"] : ["-c", "echo hello"]);
   assert.equal(calls[0][1][2].currentDir, "/work");
   assert.equal(result.error.status, 7);
   assert.equal(result.error.code, 7);

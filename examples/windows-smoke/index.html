@@ -1,0 +1,83 @@
+<!doctype html>
+<html><body><h1>Niva Windows smoke</h1><script>
+  (async () => {
+    try {
+      Niva.addEventListener("menu.clicked", (_name, id) => {
+        Niva.api.host.send("menu-clicked", { id });
+      });
+      Niva.addEventListener("shortcut.emit", (_name, id) => {
+        Niva.api.host.send("shortcut-fired", { id });
+      });
+      const iframeResult = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("iframe timeout")), 10000);
+        const onMessage = event => {
+          if (event.data?.kind === "iframe") {
+            clearTimeout(timer);
+            window.removeEventListener("message", onMessage);
+            resolve(event.data);
+          }
+        };
+        window.addEventListener("message", onMessage);
+      });
+      const frame = document.createElement("iframe");
+      frame.src = "iframe.html";
+      document.body.append(frame);
+      const crossResult = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("cross-origin iframe timeout")), 10000);
+        window.addEventListener("message", event => {
+          if (event.data?.kind === "cross") {
+            clearTimeout(timer);
+            resolve(event.data);
+          }
+        });
+      });
+      const cross = document.createElement("iframe");
+      cross.src = "data:text/html," + encodeURIComponent(await (await fetch("cross.html")).text());
+      document.body.append(cross);
+      const resource = await fetch("probe.txt");
+      const cwd = await Niva.api.process.currentDir();
+      const fsBase = await Niva.api.webview.baseFileSystemUrl();
+      const filePath = cwd.replaceAll("\\", "/") + "/examples/windows-smoke/probe.txt";
+      const fsResource = await fetch(fsBase + encodeURIComponent(filePath));
+      const pathModule = await import("path");
+      const fsModule = await Niva.import("fs/promises");
+      const assertModule = require("assert/strict");
+      const compatText = (await fsModule.readFile(filePath, "utf8")).trim();
+      assertModule.equal(compatText, "resource-ok");
+      await Niva.api.window.setMenu([{ label: "Smoke", children: [{ type: "item", id: 7, label: "Ping" }] }]);
+      const menuShown = await Niva.api.window.isMenuVisible();
+      await Niva.api.window.hideMenu();
+      const menuHidden = !(await Niva.api.window.isMenuVisible());
+      await Niva.api.window.showMenu();
+      const menuRestored = await Niva.api.window.isMenuVisible();
+      const shortcutId = await Niva.api.shortcut.register("Ctrl+Alt+Shift+F12");
+      const childId = await Niva.api.window.open({
+        entry: "child.html", title: "Niva Windows owned child",
+        size: { width: 300, height: 200 }, ownerWindow: 0, visible: false,
+      });
+      await Niva.api.host.send("smoke", {
+        origin: location.origin,
+        windowId: await Niva.api.window.current(),
+        os: (await Niva.api.os.info()).os,
+        resourceStatus: resource.status,
+        resourceText: (await resource.text()).trim(),
+        fsStatus: fsResource.status,
+        fsText: (await fsResource.text()).trim(),
+        fsBase,
+        nodeCompat: {
+          path: pathModule.default.join("a", "b"),
+          fsText: compatText,
+          assert: typeof assertModule.equal,
+        },
+        menu: { shown: menuShown, hidden: menuHidden, restored: menuRestored },
+        shortcutId,
+        childId,
+        windows: await Niva.api.window.list(),
+        iframe: await iframeResult,
+        crossIframe: await crossResult,
+      });
+    } catch (error) {
+      await Niva.api.host.send("smoke-error", { message: String(error), stack: error?.stack });
+    }
+  })();
+</script></body></html>

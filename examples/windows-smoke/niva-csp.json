@@ -1,0 +1,11 @@
+{
+  "name": "windows-csp-smoke",
+  "uuid": "adfbac35-c73b-43c1-809f-c056132a2b33",
+  "nodeCompat": { "modules": ["path", "fs", "assert", "stream"], "importmap": true },
+  "window": {
+    "entry": "csp.html",
+    "title": "Niva Windows CSP smoke",
+    "size": { "width": 480, "height": 240 },
+    "visible": true
+  }
+}

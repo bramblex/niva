@@ -39,7 +39,7 @@ NodeCompat 是独立的可选浏览器包 `packages/node-compat`，为 Niva 页�
 - 页面 HTML 自带 CSP meta 时，运行时会把 Niva 注入的 import map/classic 脚本移到策略之后，并只给这两条脚本加每次导航随机 nonce；作者其他内联脚本不因此获准。模块资源仍受页面策略约束。宿主额外提供的 CSP response header 无法由 Niva 改写，仍可能阻止兼容层加载。
 - Web Crypto、`CompressionStream` / `DecompressionStream` 等能力取决于 WebView 实现；crypto 与 zlib 在能力缺失时会拒绝或不可用。
 - `fs` 和 `child_process` 的二进制流需要本地 Niva WebSocket 页面；远端 IPC 页面不支持这些二进制流。
-- macOS 已验证隔离运行与打包后的浏览器路径；Windows 的真实 WebView 运行时尚未验证。Windows target 编译检查不能替代真机验收。
+- macOS 已验证隔离运行与打包后的浏览器路径；Windows WebView2 已有限实测打包页的 `path`、`fs/promises` 与 `assert/strict`，包括严格 CSP 下的成功路径。完整模块/API 与 CSP 矩阵仍待验收，见 [Windows 验证记录](windows-validation-2026-09-23.md)。
 
 ## 6. 未决 API 冲突
 
@@ -47,4 +47,4 @@ NodeCompat 是独立的可选浏览器包 `packages/node-compat`，为 Niva 页�
 
 ## 7. 验证状态
 
-NodeCompat 包含针对适配器的测试；Devtools 有资源选择/依赖闭包测试。已完成的 macOS 隔离与打包浏览器验证覆盖路径和文件操作。它们不证明 Windows WebView 真机运行，也不消除上述浏览器能力、CSP 和静态模块解析限制。
+NodeCompat 包含针对适配器的测试；Devtools 有资源选择/依赖闭包测试。macOS 和 Windows 均有有限打包浏览器验证；Windows 本轮还修复了根目录相对路径的盘符继承。现有结果不消除浏览器能力、CSP 和完整模块语义的限制。

@@ -1,0 +1,12 @@
+{
+  "name": "windows-smoke",
+  "uuid": "5bb7d071-600d-492b-8a50-d7740cb841c5",
+  "nodeCompat": { "modules": ["path", "fs", "assert", "stream"], "importmap": true },
+  "window": {
+    "entry": "index.html",
+    "title": "Niva Windows smoke",
+    "menu": [{ "label": "Smoke", "children": [{ "type": "item", "id": 7, "label": "Ping" }] }],
+    "size": { "width": 600, "height": 360 },
+    "visible": true
+  }
+}
