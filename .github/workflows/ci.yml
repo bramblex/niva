@@ -27,6 +27,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets
       - run: cargo test --workspace
       - run: npm test --workspace=packages/node-compat
+      - run: node --test packages/devtools/scripts/api-contract.test.mjs
+      - run: node --test packages/devtools/scripts/bridge-api-overrides.test.mjs
       - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva

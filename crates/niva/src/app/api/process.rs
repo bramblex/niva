@@ -5,6 +5,7 @@ use crate::app::window_manager::window::NivaWindow;
 use anyhow::{Ok, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::path::Path;
 use std::sync::Arc;
 use tao::event_loop::ControlFlow;
 
@@ -22,7 +23,11 @@ pub fn register_apis(api_manager: &mut ApiManager) {
 }
 
 async fn pid(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<u32> {
-    Ok(std::process::id())
+    Ok(process_id())
+}
+
+fn process_id() -> u32 {
+    std::process::id()
 }
 
 async fn current_dir(
@@ -30,6 +35,10 @@ async fn current_dir(
     _window: Arc<NivaWindow>,
     _request: ApiRequest,
 ) -> Result<Value> {
+    current_directory_value()
+}
+
+fn current_directory_value() -> Result<Value> {
     Ok(json!(std::env::current_dir()?))
 }
 
@@ -38,17 +47,31 @@ async fn current_exe(
     _window: Arc<NivaWindow>,
     _request: ApiRequest,
 ) -> Result<Value> {
+    current_executable_value()
+}
+
+fn current_executable_value() -> Result<Value> {
     Ok(json!(std::env::current_exe()?))
 }
 
 async fn env(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
-    let env = std::env::vars().collect::<std::collections::HashMap<String, String>>();
-    Ok(json!(env))
+    Ok(environment_value(std::env::vars()))
+}
+
+fn environment_value(variables: impl IntoIterator<Item = (String, String)>) -> Value {
+    json!(
+        variables
+            .into_iter()
+            .collect::<std::collections::HashMap<String, String>>()
+    )
 }
 
 async fn args(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
-    let args = std::env::args().collect::<Vec<String>>();
-    Ok(json!(args))
+    Ok(arguments_value(std::env::args()))
+}
+
+fn arguments_value(arguments: impl IntoIterator<Item = String>) -> Value {
+    json!(arguments.into_iter().collect::<Vec<String>>())
 }
 
 async fn set_current_dir(
@@ -57,6 +80,10 @@ async fn set_current_dir(
     request: ApiRequest,
 ) -> Result<()> {
     let (path,) = request.args().get::<(String,)>()?;
+    set_current_directory(Path::new(&path))
+}
+
+fn set_current_directory(path: &Path) -> Result<()> {
     std::env::set_current_dir(path)?;
     Ok(())
 }
@@ -77,31 +104,12 @@ struct ExecOptions {
     pub detached: Option<bool>,
 }
 
-fn open(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
-    let (uri,) = request.args().get::<(String,)>()?;
-    opener::open(uri)?;
-    Ok(())
-}
-
-async fn version(
-    _app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    _request: ApiRequest,
-) -> Result<String> {
-    Ok(env!("CARGO_PKG_VERSION").to_string())
-}
-
-/// Full-duplex streaming exec: stdout/stderr arrive as `stdout`/`stderr`
-/// stream events, stdin is fed from inbound binary chunks (END closes it),
-/// and the terminal result carries the exit status. Cancellation, timeout,
-/// or loss of the owning connection kills and reaps the child. `detached`
-/// explicitly opts out: the child outlives the stream call.
-async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
-    use std::io::Write;
-
-    let (cmd, args, options): (String, Option<Vec<String>>, Option<ExecOptions>) =
-        request.args().optional(3)?;
-    let mut cmd = std::process::Command::new(cmd);
+fn build_exec_command(
+    program: String,
+    args: Option<Vec<String>>,
+    options: Option<ExecOptions>,
+) -> (std::process::Command, bool) {
+    let mut cmd = std::process::Command::new(program);
     if let Some(args) = args {
         cmd.args(args);
     }
@@ -115,12 +123,42 @@ async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
         }
         detached = options.detached.unwrap_or(false);
     }
-
-    let mut child = cmd
-        .stdin(std::process::Stdio::piped())
+    cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
+        .stderr(std::process::Stdio::piped());
+    (cmd, detached)
+}
+
+fn open(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+    let (uri,) = request.args().get::<(String,)>()?;
+    opener::open(uri)?;
+    Ok(())
+}
+
+async fn version(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<String> {
+    Ok(package_version())
+}
+
+fn package_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Full-duplex streaming exec: stdout/stderr arrive as `stdout`/`stderr`
+/// stream events, stdin is fed from inbound binary chunks (END closes it),
+/// and the terminal result carries the exit status. Cancellation, timeout,
+/// or loss of the owning connection kills and reaps the child. `detached`
+/// explicitly opts out: the child outlives the stream call.
+async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    use std::io::Write;
+
+    let (program, args, options): (String, Option<Vec<String>>, Option<ExecOptions>) =
+        request.args().optional(3)?;
+    let (mut cmd, detached) = build_exec_command(program, args, options);
+    let mut child = cmd.spawn()?;
 
     // Detached: answer child id immediately, no pumps, no wait.
     if detached {
@@ -294,10 +332,107 @@ fn pump_bytes<R: std::io::Read + Send + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
 
     const CHILD_TEST_ENV: &str = "NIVA_PROCESS_SUPERVISOR_CHILD";
+    const SET_CURRENT_DIR_CHILD_ENV: &str = "NIVA_SET_CURRENT_DIR_CHILD";
+    const SET_CURRENT_DIR_TARGET_ENV: &str = "NIVA_SET_CURRENT_DIR_TARGET";
+
+    static NEXT_TEMP_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    struct TestDir(std::path::PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let id = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+            let path =
+                std::env::temp_dir().join(format!("niva-process-api-{}-{id}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn process_metadata_methods_return_the_current_process_values() {
+        assert_eq!(process_id(), std::process::id());
+
+        let current_dir = current_directory_value().unwrap();
+        assert_eq!(
+            serde_json::from_value::<std::path::PathBuf>(current_dir).unwrap(),
+            std::env::current_dir().unwrap()
+        );
+
+        let current_exe = current_executable_value().unwrap();
+        let current_exe = serde_json::from_value::<std::path::PathBuf>(current_exe).unwrap();
+        assert!(current_exe.is_absolute());
+        assert!(current_exe.is_file());
+
+        assert_eq!(package_version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn env_and_args_are_returned_as_json_map_and_ordered_array() {
+        let environment = environment_value([
+            ("NIVA_TEST_A".to_string(), "first value".to_string()),
+            ("NIVA_TEST_B".to_string(), "two".to_string()),
+        ]);
+        assert_eq!(environment["NIVA_TEST_A"], "first value");
+        assert_eq!(environment["NIVA_TEST_B"], "two");
+
+        let arguments = arguments_value(["niva".to_string(), "two words".to_string()]);
+        assert_eq!(arguments, json!(["niva", "two words"]));
+
+        let live_args = arguments_value(std::env::args());
+        assert!(live_args.as_array().is_some_and(|args| {
+            !args.is_empty() && args.iter().all(serde_json::Value::is_string)
+        }));
+    }
+
+    #[test]
+    fn set_current_dir_changes_only_an_isolated_child_process() {
+        if std::env::var_os(SET_CURRENT_DIR_CHILD_ENV).is_some() {
+            let target = std::env::var_os(SET_CURRENT_DIR_TARGET_ENV).unwrap();
+            let target = std::path::PathBuf::from(target).canonicalize().unwrap();
+            set_current_directory(&target).unwrap();
+            assert_eq!(
+                std::env::current_dir().unwrap(),
+                target,
+                "the child process should adopt the requested directory"
+            );
+            return;
+        }
+
+        let temp = TestDir::new();
+        let target = temp.path().join("working-directory");
+        std::fs::create_dir(&target).unwrap();
+        let target = target.canonicalize().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "app::api::process::tests::set_current_dir_changes_only_an_isolated_child_process",
+                "--nocapture",
+            ])
+            .env(SET_CURRENT_DIR_CHILD_ENV, "1")
+            .env(SET_CURRENT_DIR_TARGET_ENV, &target)
+            .status()
+            .unwrap();
+        assert!(status.success(), "child API check exited with {status}");
+
+        assert!(set_current_directory(&temp.path().join("missing")).is_err());
+    }
 
     #[test]
     fn child_process_entrypoint() {
@@ -347,5 +482,48 @@ mod tests {
             elapsed < Duration::from_secs(3),
             "child took {elapsed:?} to stop"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exec_command_applies_arguments_env_directory_and_preserves_streams_and_status() {
+        let temp = TestDir::new();
+        let current_dir = temp.path().canonicalize().unwrap();
+        let options = ExecOptions {
+            env: Some(HashMap::from([(
+                "NIVA_EXEC_TEST_VALUE".to_string(),
+                "provided".to_string(),
+            )])),
+            current_dir: Some(current_dir.to_string_lossy().into_owned()),
+            detached: Some(false),
+        };
+        let script =
+            "printf '%s|' \"$NIVA_EXEC_TEST_VALUE\"; pwd -P; printf 'diagnostic' >&2; exit 7";
+        let (mut command, detached) = build_exec_command(
+            "sh".to_string(),
+            Some(vec!["-c".to_string(), script.to_string()]),
+            Some(options),
+        );
+
+        assert!(!detached);
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(7));
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("provided|{}\n", current_dir.display())
+        );
+        assert_eq!(String::from_utf8(output.stderr).unwrap(), "diagnostic");
+    }
+
+    #[test]
+    fn exec_command_reads_detached_option_and_defaults_it_to_false() {
+        let (command, detached) = build_exec_command("unused".into(), None, None);
+        assert!(!detached);
+        drop(command);
+
+        let options: ExecOptions = serde_json::from_value(json!({ "detached": true })).unwrap();
+        let (command, detached) = build_exec_command("unused".into(), None, Some(options));
+        assert!(detached);
+        drop(command);
     }
 }

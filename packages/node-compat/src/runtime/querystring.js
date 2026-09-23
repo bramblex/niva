@@ -3,13 +3,13 @@
 
   var runtime = root[Symbol.for("niva.node-compat.runtime")];
 
-  function decode(value, decoder) {
-    var plusDecoded = String(value).replace(/\+/g, " ");
-    try { return (decoder || decodeURIComponent)(plusDecoded); }
+  function decode(value, decoder, replacePlus) {
+    var encoded = replacePlus ? String(value).replace(/\+/g, " ") : String(value);
+    try { return (decoder || decodeURIComponent)(encoded); }
     catch (_) {
-      if (decoder && decoder !== decodeURIComponent) return plusDecoded;
+      if (decoder && decoder !== decodeURIComponent) return encoded;
       var bytes = [];
-      var chars = Array.from(plusDecoded);
+      var chars = Array.from(encoded);
       for (var i = 0; i < chars.length; i += 1) {
         if (chars[i] === "%" && /^[0-9a-f]{2}$/i.test(chars[i + 1] + chars[i + 2])) {
           bytes.push(parseInt(chars[i + 1] + chars[i + 2], 16));
@@ -39,8 +39,8 @@
       var index = equals ? part.indexOf(equals) : -1;
       var key = index < 0 ? part : part.slice(0, index);
       var item = index < 0 ? "" : part.slice(index + equals.length);
-      key = decode(key, decoder);
-      item = decode(item, decoder);
+      key = decode(key, decoder, true);
+      item = decode(item, decoder, true);
       if (Object.prototype.hasOwnProperty.call(result, key)) {
         if (Array.isArray(result[key])) result[key].push(item);
         else result[key] = [result[key], item];

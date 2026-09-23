@@ -166,8 +166,13 @@
       options = args[1] && typeof args[1] === "object" ? args[1] : {};
       callback = typeof args[1] === "function" ? args[1] : args[2];
     } else {
-      options = input || {};
-      callback = args[1];
+      var overrides = args[1] && typeof args[1] === "object" ? args[1] : {};
+      options = Object.assign({}, input || {}, overrides);
+      if (input && input.headers && overrides.headers) {
+        options.headers = Object.assign(Object.create(null), normalizeHeaders(input.headers), normalizeHeaders(overrides.headers));
+      }
+      input = options;
+      callback = typeof args[1] === "function" ? args[1] : args[2];
     }
     if (typeof callback !== "function") callback = undefined;
     var built = buildTarget(protocol, input, options);

@@ -322,7 +322,7 @@
 
       function joined(chunks) {
         if (encoding !== null) return chunks.join("");
-        return concatenate(chunks);
+        return runtime.buffer.Buffer.from(concatenate(chunks));
       }
       function execError(status, stdout, stderr) {
         var error = runtime.bridgeError("Command failed with exit code " + status, status == null ? "NIVA_BRIDGE_ERROR" : status);
