@@ -1,8 +1,8 @@
 {
   "date": "2026-09-24",
   "baseCommit": "3787257887eddc31007dbfa57f36181ce93e6abf",
-  "workingTree": "uncommitted implementation; excludes unrelated concurrent edits from acceptance claims",
-  "implementationSourceSha256": "1d11a1308cf99646b3c4e61d63becf6072587fa03be1565e804e0b81baf179cd",
+  "workingTree": "Merged implementation and origin/main window main-thread fixes; source digest identifies the measured implementation",
+  "implementationSourceSha256": "e83894666584c14e2c5773f94b5ed3edb33da1241c0ca0608084c231aaa5bdc8",
   "measurementScope": "Selected API export availability plus explicitly listed tests; not full Node API conformance",
   "moduleEntries": {
     "total": 22,
@@ -131,10 +131,10 @@
     "architecture": "arm64",
     "osVersion": "26.6.2",
     "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
-    "bytes": 2772000,
+    "bytes": 2772208,
     "limitBytesExclusive": 3300000,
-    "headroomBytes": 528000,
-    "sha256": "6087161cb13e6cc6da51c5ae8a80914cf89d25b0d07f86a1d9227284781b9c5a",
+    "headroomBytes": 527792,
+    "sha256": "9e0382a1b23b872f51c74fd2bef8010cd5e98b9fc66a6af1c4aaf5d52ba414a7",
     "includes": [
       "Native code",
       "embedded NodeCompat classic and ESM JS",
@@ -149,7 +149,7 @@
       "failed": 0
     },
     "devtoolsTests": {
-      "passed": 20,
+      "passed": 21,
       "failed": 0
     },
     "rustCommands": [
@@ -192,6 +192,18 @@
     "bridgeProtocolRegressionTests": {
       "passed": 15,
       "failed": 0
+    },
+    "mainThreadWindowSmoke": {
+      "passed": 24,
+      "failed": 0,
+      "platform": "macOS",
+      "artifactSha256": "9e0382a1b23b872f51c74fd2bef8010cd5e98b9fc66a6af1c4aaf5d52ba414a7"
+    },
+    "topLevelBridgeSmoke": {
+      "passed": 11,
+      "failed": 0,
+      "platform": "macOS",
+      "artifactSha256": "9e0382a1b23b872f51c74fd2bef8010cd5e98b9fc66a6af1c4aaf5d52ba414a7"
     }
   },
   "webViewRuns": {
@@ -511,6 +523,59 @@
       "ok": true,
       "nativeReady": true,
       "packaged": true
+    },
+    "mergedRelease": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "assertSourceMessage": true,
+        "asyncBytes": true,
+        "callback": true,
+        "contractAbortResistance": true,
+        "contractBufferBoundaries": true,
+        "contractCwdOverride": true,
+        "contractEventsConstructor": true,
+        "contractQuerystringCodec": true,
+        "contractStringDecoder": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "tlsPkcs1": true,
+        "tlsPkcs1ServerClose": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true,
+        "zlibLazyCommonJS": true,
+        "zlibModuleIdentity": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
     }
   },
   "upstreamConformance": {
@@ -757,6 +822,24 @@
         "asset index and loader"
       ],
       "sizeGatePassed": true
+    },
+    {
+      "artifact": "target/release/niva",
+      "platform": "macOS",
+      "architecture": "arm64",
+      "osVersion": "26.6.2",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "bytes": 2772000,
+      "limitBytesExclusive": 3300000,
+      "headroomBytes": 528000,
+      "sha256": "6087161cb13e6cc6da51c5ae8a80914cf89d25b0d07f86a1d9227284781b9c5a",
+      "includes": [
+        "Native code",
+        "embedded NodeCompat classic and ESM JS",
+        "vendor JS",
+        "asset index and loader"
+      ],
+      "sizeGatePassed": true
     }
   ],
   "previousUpstreamConformance": {
@@ -782,5 +865,12 @@
       "upstream-util-fixture.mjs": "a3bc1677254c3fc5798130804c0a43c85639785099386d90e8bec7442b95f62c",
       "upstream-child-fixtures.cjs": "bd91a512f37d23fdbe454d5b537242a29f9765a39785703400eda28f56f6951f"
     }
+  },
+  "mergeValidation": {
+    "implementationCommit": "7f5d31b62093546f040664a42f2de0d9e0f1962f",
+    "incomingMainCommit": "25ee4b37ccca5461f99c8055cedd47269f711142",
+    "resolution": "Preserved main-thread window dispatch and WebView cursor CSS updates",
+    "artifactSha256": "9e0382a1b23b872f51c74fd2bef8010cd5e98b9fc66a6af1c4aaf5d52ba414a7",
+    "upstreamReport": "node-compat-upstream-results.json"
   }
 }

@@ -17,5 +17,5 @@ test("macOS real-WebView fixture defines all top-level Niva bridge methods", () 
   const actual = [...page.matchAll(/record\("(Niva\.[A-Za-z]+)"/g)].map((match) => match[1]);
   assert.equal(actual.length, new Set(actual).size, "duplicate bridge method case");
   assert.deepEqual(actual.sort(), expected.sort());
-  assert.equal(actual.length, 10);
+  assert.equal(actual.length, 11);
 });

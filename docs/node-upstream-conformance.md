@@ -124,6 +124,6 @@ CI 的纯 JS upstream job 在 macOS 与 Windows host 执行 `--suite js`；macOS
 
 [引擎边界与可复现证据](node-webview-engine-boundaries.md)列出不能用普通 WebView JS 补齐的两处。仅调整了用户明确授权的两处环境豁免。默认适用范围门禁为 **58/58 + 2 处跳过**，退出码 **0**；无豁免原始运行仍是 **56/58**，两种结果分开保存。
 
-本次自有 JS 回归 **109/109**、打包 WebView **45/45**、Rust **120 + 10**。fmt、workspace check、Clippy、Windows target check、TypeScript/Vite 均通过；Clippy/Windows 编译有现存 warning，Windows 真机与远端 CI 未验收。完整 macOS arm64 主程序 **2,772,000 bytes**，剩余 **528,000 bytes**，含 Native、内嵌 JS、索引及加载器。
+本次自有 JS 回归 **109/109**、打包 WebView **45/45**、Rust **120 + 10**。fmt、workspace check、Clippy、Windows target check、TypeScript/Vite 均通过；Clippy/Windows 编译有现存 warning，Windows 真机与远端 CI 未验收。完整 macOS arm64 主程序 **2,772,208 bytes**，剩余 **527,792 bytes**，含 Native、内嵌 JS、索引及加载器。
 
 测试 relay 每个文件使用独立进程、目录与端口。退出清理是有界异步清理，进程可能短暂重叠；未以此证明全局资源零重叠。

@@ -6,7 +6,7 @@
 
 - 已接入 **22 个模块入口、179 个目标 API 入口**。入口计数来自真实 WebView 对固定清单的逐项查找，实例方法按实际对象或 prototype 检查。
 - debug HTTP、打包 `niva://` 两条路径均完成真实调用验证。首版 release 连续两次通过 34 项检查；本轮官方测试扩展后的 release 通过 **45 项布尔检查**。
-- macOS arm64 release 主程序为 **2,772,000 bytes（2.772 MB）**，距离严格小于 3,300,000 bytes 的上限还剩 **528,000 bytes**。
+- macOS arm64 release 主程序为 **2,772,208 bytes（2.772 MB）**，距离严格小于 3,300,000 bytes 的上限还剩 **527,792 bytes**。
 - **官方契约适用范围门禁通过**：固定 Node v22.14.0 的 58 个原始文件，58 pass、0 fail、0 unsupported，另有用户授权的 2 处环境检查点跳过；[完整结果](node-compat-upstream-results.json)记录每个文件及源码校验。范围扩展到 22 个模块族的选定用例；不代表全部 179 项调用契约通过。详见[模块/API/用例索引](node-test-case-index.md)。
 
 [原覆盖盘点](node-api-coverage.md)的 46 基础支持 / 49 部分兼容 / 84 缺失是实施前快照，仍保留供对照。本轮没有仅凭入口或 smoke 通过就把这些状态升级为“Node 已兼容”。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check all ten documented top-level Niva bridge methods in a real WebView."""
+"""Check all eleven documented top-level Niva bridge methods in a real WebView."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from run import Harness, REPO, SmokeError, safe_app_dirs, tail
 
 HERE = Path(__file__).resolve().parent
 EXPECTED = {
-    "Niva.registerModule", "Niva.require", "Niva.import",
+    "Niva.registerModule", "Niva.registerModuleFactory", "Niva.require", "Niva.import",
     "Niva.addEventListener", "Niva.removeEventListener", "Niva.removeAllEventListeners",
     "Niva.call", "Niva.callSync", "Niva.stream", "Niva.streamSend",
 }
@@ -112,7 +112,7 @@ def run(binary: Path) -> int:
         if stderr_tail:
             print("Niva stderr tail:\n" + stderr_tail, file=sys.stderr)
         return 1
-    print("macOS top-level bridge smoke: PASS (10 exact methods)")
+    print("macOS top-level bridge smoke: PASS (11 exact methods)")
     for method, assertion in sorted(evidence.items()):
         print(f"  {method}: {assertion}")
     return 0

@@ -1,2 +1,4 @@
 # Preserve checksum-pinned upstream bytes, including their original license whitespace.
 packages/node-compat/upstream/node-v22.14.0/** -text -whitespace
+# Policy/manifest hashes must also survive Windows core.autocrlf checkouts.
+packages/node-compat/upstream/*.json -text

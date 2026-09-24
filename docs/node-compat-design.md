@@ -41,7 +41,7 @@ NodeCompat 与 `Niva.api` 是两个接口层：`Niva.api` 暴露 Niva 专有原�
 
 ## 4. 实现与验收状态
 
-当前实现与验收以[实施记录](node-compat-implementation.md)和机器证据为准：22 个模块、179 个目标入口可加载；最新 release 打包 WebView 通过 45 项检查，macOS arm64 主程序 2,772,000 bytes。选定 Node 官方契约 58 个文件的适用检查通过，另有 2 处经用户授权的引擎差异跳过；Windows 仅 target check，尚未真机或 release 体积验收。
+当前实现与验收以[实施记录](node-compat-implementation.md)和机器证据为准：22 个模块、179 个目标入口可加载；最新 release 打包 WebView 通过 45 项检查，macOS arm64 主程序 2,772,208 bytes。选定 Node 官方契约 58 个文件的适用检查通过，另有 2 处经用户授权的引擎差异跳过；Windows 仅 target check，尚未真机或 release 体积验收。
 
 这些检查分别覆盖 JS 组件、Native 单测和有限 macOS WebView 路径，不能合并成 179 项 Node 兼容验收。HTTP/HTTPS 客户端与服务端真实网络路径仍有集成工作，特别是 server close 清理；尚未完成完整目标功能的 release 主程序体积测量，也未确认小于 3,300,000 bytes 的发布门禁。完整第三方库和官方 Node 测试子集仍须逐项验收。[实施状态与证据](node-compat-implementation.md)。
 

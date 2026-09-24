@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-09-24T13:35:24.753Z",
+  "startedAt": "2026-09-24T13:52:10.164Z",
   "runnerSha256": "84b8208924fb3de6e44c2d8dae1ea738df1b9ac0ab6dbb0073c629329fd210b6",
   "helperSha256": {
     "upstream-native-bridge.mjs": "093ca5a7240e6b3ab1f5e3fed7fc0bcd6dd50d67b6fbc333fd41f6d9d35a16e5",
@@ -980,7 +980,7 @@
   "outsideSuite": [],
   "native": {
     "binary": "/Users/brambles/Workspace/playground/niva/target/release/niva",
-    "sha256": "6087161cb13e6cc6da51c5ae8a80914cf89d25b0d07f86a1d9227284781b9c5a"
+    "sha256": "9e0382a1b23b872f51c74fd2bef8010cd5e98b9fc66a6af1c4aaf5d52ba414a7"
   },
   "upstream": {
     "version": "v22.14.0",
@@ -1040,7 +1040,7 @@
     "src/runtime/tls.js": "8bd92dfd46ad6437d3b7ccf018bb586a57081a5d94965b49997dafa3bfca9baa",
     "src/runtime/url.js": "8705e3f78cb4c57dd840432ea226fca372232034af5caa346f4e79c2f5bab235",
     "src/runtime/util.js": "cfd87d363acdf63eed35dd3c91e0c6b33ccd6e859a75a5e02432a78c0528a412",
-    "src/runtime/vendor.js": "a45e51fa6a7254294885d0763eb450d8e3b4f495688fb46762307f5f52d06ce1",
+    "src/runtime/vendor.js": "7ef0a24e09c40253ead97b2fd693731dd78a6ccb23a898678a607c621613e1c1",
     "src/runtime/zlib.js": "2cea2267287078f1b8fb7755c00497ff00b69d9df3ca9722f0577351b91c8a2a"
   },
   "counts": {
@@ -1067,5 +1067,5 @@
   ],
   "environmentExclusionCount": 2,
   "passed": true,
-  "finishedAt": "2026-09-24T13:35:39.260Z"
+  "finishedAt": "2026-09-24T13:52:25.128Z"
 }

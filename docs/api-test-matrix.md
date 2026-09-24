@@ -171,14 +171,15 @@
 | `Niva.api.windowExtra.setDockVisibility` | 未发现逐方法行为断言 | macOS 真机 PASS（system-supervised，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.api.windowExtra.setBadgeLabel` | 未发现逐方法行为断言 | macOS 真机 PASS（system-supervised，逐方法） | 未观察 | 其他平台或选项分支待测 |
 
-## NivaObj bridge 方法（9 个）
+## NivaObj bridge 方法（11 个）
 
-9 个方法指函数成员：`require`、`registerModule`、`import`、事件订阅/移除 4 项、`call`、`stream`、`streamSend`；只读属性 `bridgeVersion` 不计入这 9 项。
+11 个方法指函数成员：`require`、`registerModule`、`registerModuleFactory`、`import`、事件订阅/移除 3 项、`call`、`callSync`、`stream`、`streamSend`；只读属性 `bridgeVersion` 不计入这 11 项。
 
 | Method | unit/JS behavior test pointer | macOS native observed | Windows native observed | remaining case needed |
 |---|---|---|---|---|
 | `Niva.require` | `bridge-api-overrides.test.mjs` — `Niva module registration, require, and import preserve module identity` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.registerModule` | `bridge-api-overrides.test.mjs` — `Niva module registration, require, and import preserve module identity` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
+| `Niva.registerModuleFactory` | `bridge-api-overrides.test.mjs` — lazy initialization, memoization and retry after factory failure | macOS 真机 [run_bridge_top_level.py](../examples/macos-api-smoke/run_bridge_top_level.py) — lazy init, require/import identity, failed initialization retry | 未观察 | 其他平台或选项分支待测 |
 | `Niva.import` | `bridge-api-overrides.test.mjs` — `Niva module registration, require, and import preserve module identity` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.addEventListener` | `bridge-api-overrides.test.mjs` — `Niva event subscriptions match exact, namespace, and wildcard names` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.removeEventListener` | `bridge-api-overrides.test.mjs` — `Niva event subscriptions match exact, namespace, and wildcard names` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
@@ -190,7 +191,7 @@
 
 ## 计数口径
 
-- 清单行数：167 个 `Niva.api` 方法 + 9 个 `NivaObj` bridge 方法；bridgeVersion 属性另行说明，不算方法。
+- 清单行数：164 个 `Niva.api` 方法 + 11 个 `NivaObj` bridge 方法；bridgeVersion 属性另行说明，不算方法。
 - 已找到逐方法 JS 行为测试：8/167 个 `Niva.api` 方法；另有 24 个方法列出 Rust helper 单测（helper 覆盖不等于完整 handler 覆盖）。bridge 方法测试按表中精确用例名标注。
 - macOS 原生观察：3/167 个方法；来源为 [CSP / custom protocol smoke 记录](wry-custom-protocol-plan.md#L42) 与 [roadmap smoke 记录](roadmap.md#L92)。
 - Windows 原生观察：73/167 个方法；68 个来自 [run_api.py](../examples/windows-smoke/run_api.py) 的逐方法行为检查，另 5 个来自 [run_stream.py](../examples/windows-smoke/run_stream.py) 的大流检查。均以 Windows 任务在真机运行整套脚本的记录为准；其他方法不因此通过。
