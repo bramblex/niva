@@ -67,4 +67,4 @@ Devtools 中选择可信工具包目录、输出目录和目标；路径存于�
 
 解析 PE 导入表确认两者均无 `VCRUNTIME` / `MSVCP` / `CONCRT` DLL 依赖，只导入 Windows 系统 DLL。更新本地 Mac 工具包中的 Windows runtime 后，再次完成三目标打包与输出哈希、Mac 签名校验。
 
-剩余验收明确保留：Windows 设备在最后一轮静态 CRT 产物的 GUI smoke 前断连；该最终链接配置已通过 Windows CI 编译、单测和完整打包链，但没有把此前动态 CRT 候选的真机启动结果挪作它的最终启动证明。原生 Devtools 点击/文件夹对话框也因 Mac 锁屏未完成；已有浏览器 mock 交互验证。PR 保持草稿，未合并 main。
+剩余验收明确保留：Windows 连接变得不可用，未能取得最终静态 CRT 产物的 GUI smoke 回报；该最终链接配置已通过 Windows CI 编译、单测和完整打包链，但没有把此前动态 CRT 候选的真机启动结果挪作它的最终启动证明。原生 Devtools 点击/文件夹对话框也因 Mac 锁屏未完成；已有浏览器 mock 交互验证。PR 保持草稿，未合并 main。
