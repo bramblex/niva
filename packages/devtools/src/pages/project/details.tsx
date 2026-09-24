@@ -3,12 +3,16 @@ import { useApp, useLocale, useProject } from "../../models/app.model";
 import { Logo } from "./logo";
 import { tryOrAlert } from "../../common/utils";
 import { FolderOpen, Refresh } from "@icon-park/react";
+import { MultiTargetBuildPanel } from "./multi-target-build";
+import { useState } from "react";
 
 export function ProjectDetails() {
   const app = useApp();
   const locale = useLocale();
   const project = useProject();
   const { state } = project;
+  const isPackaging = app.state.packagerBuild === project;
+  const [showMultiTargetBuild, setShowMultiTargetBuild] = useState(false);
 
   return (
     <div className="project-detail">
@@ -25,10 +29,11 @@ export function ProjectDetails() {
 
       <div className="project-actions">
         <div className="primary-actions">
-          <button className="btn" onClick={() => tryOrAlert(app, project.debug())}>
+          <button className="btn" disabled={isPackaging} onClick={() => tryOrAlert(app, project.debug())}>
             {locale.t("DEBUG")}
           </button>
-          <button className="btn btn-primary" onClick={() => tryOrAlert(app, project.build())}>
+          <button className="btn btn-primary" disabled={isPackaging} aria-expanded={showMultiTargetBuild}
+            onClick={() => setShowMultiTargetBuild(true)}>
             {locale.t("BUILD")}
           </button>
         </div>
@@ -36,11 +41,18 @@ export function ProjectDetails() {
           <button className="btn btn-info" onClick={() => tryOrAlert(app, project.open())}>
             <FolderOpen size={15} />{locale.t("OPEN")}
           </button>
-          <button className="btn btn-info" onClick={() => tryOrAlert(app, project.refresh())}>
+          <button className="btn btn-info" disabled={isPackaging} onClick={() => tryOrAlert(app, project.refresh())}>
             <Refresh size={15} />{locale.t("REFRESH")}
           </button>
         </div>
       </div>
+
+      {showMultiTargetBuild && (
+        <MultiTargetBuildPanel
+          project={project}
+          onClose={() => setShowMultiTargetBuild(false)}
+        />
+      )}
 
       <div className="project-facts">
         <section className="fact-section">

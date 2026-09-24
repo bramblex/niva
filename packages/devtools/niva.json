@@ -3,6 +3,9 @@
 	"uuid": "9bef098a-a44f-40cb-9247-86c902f2c410",
 	"icon": "icon.png",
 	"version": "0.9.9",
+	"api": {
+		"timeoutMs": 600000
+	},
 	"debug": {
 		"entry": "http://localhost:3000",
 		"resource": "public"

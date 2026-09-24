@@ -19,6 +19,7 @@ export class AppModel extends StateModel<{
   history: HistoryModel;
   modal: ModalModel;
   project: ProjectModel | null;
+  packagerBuild: ProjectModel | null;
   locale: LocaleModel;
   availableVersion: string | null;
 }> {
@@ -29,6 +30,7 @@ export class AppModel extends StateModel<{
       modal: new ModalModel(this),
       locale: new LocaleModel(this),
       project: null,
+      packagerBuild: null,
       availableVersion: null,
     });
   }
@@ -47,7 +49,20 @@ export class AppModel extends StateModel<{
     })
   }
 
+  beginPackagerBuild(project: ProjectModel): boolean {
+    if (this.state.packagerBuild || this.state.project !== project) return false;
+    this.update({ ...this.state, packagerBuild: project });
+    return true;
+  }
+
+  endPackagerBuild(project: ProjectModel) {
+    if (this.state.packagerBuild === project) {
+      this.update({ ...this.state, packagerBuild: null });
+    }
+  }
+
   async openWithPicker(): Promise<AppResult> {
+    if (this.state.packagerBuild) return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     const { modal } = this.state;
     const path = await modal.showNative<string | null>(() =>
       Niva.api.dialog.pickDir()
@@ -60,6 +75,7 @@ export class AppModel extends StateModel<{
   }
 
   async open(path: string): Promise<AppResult> {
+    if (this.state.packagerBuild) return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     const { modal, locale } = this.state;
 
     // first check if the path is a valid project path
@@ -150,6 +166,10 @@ export class AppModel extends StateModel<{
       }
     }
 
+    if (this.state.packagerBuild) {
+      return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
+    }
+
     this.update({
       ...this.state,
       project,
@@ -160,11 +180,15 @@ export class AppModel extends StateModel<{
   }
 
   async close(): Promise<AppResult> {
+    if (this.state.packagerBuild) return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     const { project } = this.state;
     if (project) {
       const result = await project.dispose();
       if (result.isErr()) {
         return result;
+      }
+      if (this.state.packagerBuild) {
+        return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
       }
       this.update({
         ...this.state,
@@ -175,6 +199,7 @@ export class AppModel extends StateModel<{
   }
 
   async create(): Promise<AppResult> {
+    if (this.state.packagerBuild) return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     const { modal } = this.state;
     const requestedName = await modal.promptProjectName();
     if (requestedName === null) {
@@ -212,6 +237,10 @@ export class AppModel extends StateModel<{
       if (leaveResult.isErr()) {
         return leaveResult;
       }
+    }
+
+    if (this.state.packagerBuild) {
+      return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     }
 
     // createDir is atomic and fails if another item appears after the

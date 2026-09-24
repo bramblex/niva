@@ -11,6 +11,7 @@ export function ConfigEditor() {
   const app = useApp();
   const locale = useLocale();
   const project = useProject();
+  const isPackaging = app.state.packagerBuild === project;
   const editor = project.state.editor;
   useModel(editor);
 
@@ -49,12 +50,13 @@ export function ConfigEditor() {
         value={String(section ? config?.[section]?.[key] ?? "" : config?.[key] ?? "")}
         placeholder={placeholder}
         onChange={(event) => updateField(section, key, event.target.value)}
-        disabled={!config}
+        disabled={!config || isPackaging}
       />
     </label>
   );
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (isPackaging) return;
     if (event.key.toLowerCase() === "s" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       tryOrAlert(app, project.save());
@@ -121,6 +123,7 @@ export function ConfigEditor() {
             height="100%"
             width="100%"
             value={editor.state.content}
+            readOnly={isPackaging}
             onChange={(content) => editor.setContent(content)}
             editorProps={{ $blockScrolling: true }}
           />
@@ -134,6 +137,7 @@ export function ConfigEditor() {
         <button
           type="button"
           className="btn btn-md"
+          disabled={isPackaging}
           onClick={() => tryOrAlert(app, project.reset())}
         >
           {locale.t("RESET")}
@@ -141,7 +145,7 @@ export function ConfigEditor() {
         <button
           type="button"
           className="btn btn-md btn-primary"
-          disabled={!editor.state.isEdit}
+          disabled={isPackaging || !editor.state.isEdit}
           onClick={() => tryOrAlert(app, project.save())}
         >
           {locale.t("SAVE")}

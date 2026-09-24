@@ -32,7 +32,7 @@ pub struct NivaOptions {
     // thread-pool `workers` setting is gone).
     pub api: Option<ApiOptions>,
 
-    /// Optional Node-shaped browser adapters; assets are packaged by Devtools.
+    /// Node-shaped browser adapters; assets are embedded by the Niva runtime.
     pub node_compat: Option<NodeCompatOption>,
 
     // dev options (also used as defaults when the matching CLI flags are absent)

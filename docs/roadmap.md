@@ -74,11 +74,11 @@
 - [ ] Node.js 支持、系统通知 Notification 按原 README TODO 排期。MiniBlink 按用户决定暂缓，不进入本轮实现与验收。
 - [x] **文档站源码更新**：已升级到 Docusaurus 3.10.2，首页保留原产品文案，采用 Devtools logo/配色、实际 Devtools 示例项目窗口截图及重做的四张介绍图；API 页按当前 Rust 注册名、初始化脚本与 d.ts 核对，新增 Bridge、权限、流式、stdio 和 NodeCompat 入口。本地 `npm run typecheck` 与 `npm run build` 通过；线上发布与浏览器矩阵不由此项证明。
 - [ ] **测试覆盖**：已有 Rust 单测、本机 WebView 验证和可重复的 [Windows smoke 示例](../examples/windows-smoke/README.md)；CI 落地后仍需把更多关键 e2e 纳入自动门禁。
-- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出仍是未实现的方案（见 `docs/cross-platform-packager-plan.md`）。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
+- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出已有独立 packager 和 Devtools 多目标入口，具体验收矩阵见 `docs/cross-platform-packager-plan.md`。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
 
 ## P3 —— 体验优化
 
-- [ ] **NodeCompat 能力验收**：可选浏览器包现位于 `packages/node-compat`，已有 15 个模块与 ESM/classic 资源选择；macOS 和 Windows 均有限实测，Windows 覆盖 `path`、`fs/promises`、`assert/strict`。同步 API 范围及完整签名/行为覆盖仍待验收。见 `docs/node-compat-design.md` 和 `docs/node-api-frequency.md`。
+- [ ] **NodeCompat 能力验收**：运行时在构建时嵌入 NodeCompat 资源，默认启用 22 个模块；`nodeCompat: false` 可关闭，对象配置可选择模块子集并控制 importmap。目标清单为 179 项 API 契约，不表示每项行为均已验收；完整 API 行为及平台验收仍待完成。见 `docs/node-compat-design.md`、`docs/node-api-coverage.md` 和 `docs/node-compat-implementation.md`。
 
 - [ ] **Devtools 构建终端跨平台验收**：源码已移除假百分比，显示实际步骤并接入 execStream stdout/stderr/stdin；bridge 已新增逐帧 `onChunk`。macOS 临时 app 已实测进程运行期间 onChunk 先于终局 onBlob 到达，Devtools 构建窗口也完成 stdout/stderr/stdin 往返并显示构建成功；Windows 真机终端行为仍待验证。
 - [ ] **clippy 剩余 warning**（多为历史遗留）。
