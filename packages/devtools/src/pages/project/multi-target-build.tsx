@@ -188,6 +188,10 @@ export function MultiTargetBuildPanel(props: {
       setError(locale.t("PACKAGER_SELECT_TARGET"));
       return;
     }
+    if (!app.beginPackagerBuild(project)) {
+      setError(locale.t("ERR_PACKAGER_BUILD_IN_PROGRESS"));
+      return;
+    }
 
     setIsBuilding(true);
     let compatStageDirectory: string | null = null;
@@ -271,6 +275,7 @@ export function MultiTargetBuildPanel(props: {
         console.warn("Could not clean staged NodeCompat files", cleanupError);
       }
       setIsBuilding(false);
+      app.endPackagerBuild(project);
     }
   };
 

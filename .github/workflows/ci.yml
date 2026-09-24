@@ -22,6 +22,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node scripts/check-packager-node-compat.mjs
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets

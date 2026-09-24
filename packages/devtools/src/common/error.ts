@@ -20,6 +20,7 @@ export enum ErrorCode {
 
   APP_EXIT_PREVENTED_BY_DIALOG,
   PROJECT_ALREADY_EXISTS,
+  PACKAGER_BUILD_IN_PROGRESS,
 }
 
 export class AppError extends Error {
@@ -47,6 +48,7 @@ export class AppError extends Error {
         [ErrorCode.SAVE_CONFIG_VALIDATE_FAILED]: locale.t("ERR_SAVE_CONFIG_VALIDATE_FAILED"),
         [ErrorCode.DEBUG_RESOURCE_NOT_FOUND]: locale.t("ERR_DEBUG_RESOURCE_NOT_FOUND"),
         [ErrorCode.APP_EXIT_PREVENTED_BY_DIALOG]: locale.t("ERR_CLOSE_DIALOG_FIRST"),
+        [ErrorCode.PACKAGER_BUILD_IN_PROGRESS]: locale.t("ERR_PACKAGER_BUILD_IN_PROGRESS"),
       };
 
       let message = messages[this.code] || locale.t("ERR_UNKNOWN");

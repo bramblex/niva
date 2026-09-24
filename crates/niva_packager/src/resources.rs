@@ -16,6 +16,10 @@ pub struct Package {
 // Checking each component also prevents a symlinked directory from escaping.
 pub fn safe_file(root: &Path, relative: &str) -> Result<PathBuf> {
     ensure!(
+        !fs::symlink_metadata(root)?.file_type().is_symlink(),
+        "resource root cannot be a symlink"
+    );
+    ensure!(
         !relative.is_empty() && !relative.contains('\\') && !relative.contains(':'),
         "invalid relative resource path: {relative}"
     );
@@ -80,17 +84,21 @@ pub fn prepare(
     compat: Option<&Path>,
 ) -> Result<Package> {
     ensure!(root.is_dir(), "resource directory does not exist");
+    ensure!(
+        !fs::symlink_metadata(root)?.file_type().is_symlink(),
+        "resource root cannot be a symlink"
+    );
     let mut files = BTreeMap::new();
     collect(root, root, &mut files)?;
     files.remove("niva.json");
-    ensure!(
-        !files.keys().any(|p| p.starts_with("__niva_compat/")),
-        "__niva_compat is reserved; provide adapters via --node-compat-dir"
-    );
     if let Some(option) = config
         .get("nodeCompat")
         .filter(|v| !v.is_null() && **v != Value::Bool(false))
     {
+        ensure!(
+            !files.keys().any(|p| p.starts_with("__niva_compat/")),
+            "__niva_compat conflicts with enabled NodeCompat; provide adapters via --node-compat-dir"
+        );
         let compat =
             compat.context("nodeCompat is enabled: supply --node-compat-dir or use Devtools")?;
         for relative in compat_files(option)? {
@@ -187,6 +195,19 @@ mod tests {
         assert!(!files.contains("src/http.js"));
         assert!(compat_files(&serde_json::json!({"modules":["bogus"]})).is_err());
     }
+    #[cfg(unix)]
+    #[test]
+    fn symlink_root_rejected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::write(real.join("index.html"), b"hello").unwrap();
+        let alias = tmp.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        assert!(prepare(&alias, b"{}", &serde_json::json!({}), None).is_err());
+        assert!(safe_file(&alias, "index.html").is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlink_escape_rejected() {

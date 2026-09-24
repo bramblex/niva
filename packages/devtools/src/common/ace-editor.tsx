@@ -16,6 +16,7 @@ interface AceEditorProps {
   width?: string;
   height?: string;
   value?: string;
+  readOnly?: boolean;
   onChange?: (value: string) => void;
   editorProps?: { $blockScrolling?: boolean };
 }
@@ -39,6 +40,7 @@ export function AceEditor(props: AceEditorProps) {
     const editor = ace.edit(container, {
       mode: mode ? `ace/mode/${mode}` : undefined,
       theme: theme ? `ace/theme/${theme}` : undefined,
+      readOnly: props.readOnly ?? false,
     });
     if (props.editorProps?.$blockScrolling) {
       (editor as unknown as { $blockScrolling: boolean }).$blockScrolling = true;
@@ -84,6 +86,10 @@ export function AceEditor(props: AceEditorProps) {
       editor.setTheme(`ace/theme/${theme}`);
     }
   }, [theme]);
+
+  useEffect(() => {
+    editorRef.current?.setReadOnly(props.readOnly ?? false);
+  }, [props.readOnly]);
 
   return (
     <div

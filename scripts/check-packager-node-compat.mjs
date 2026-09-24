@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { NODE_COMPAT_MODULE_FILES } from '../packages/devtools/src/build-scripts/node-compat-assets.mjs';
+const packaged = JSON.parse(await readFile(new URL('../crates/niva_packager/src/node-compat-files.json', import.meta.url), 'utf8'));
+assert.deepEqual(packaged, NODE_COMPAT_MODULE_FILES, 'Rust packager NodeCompat module/import closure must match Devtools');
+console.log('Packager and Devtools NodeCompat assets match');
+const runtime = await readFile(new URL('../crates/niva/src/app/node_compat.rs', import.meta.url), 'utf8');
+const allowlist = runtime.match(/const AVAILABLE: &\[&str\] = &\[([\s\S]*?)\];/);
+assert.ok(allowlist, 'Runtime NodeCompat allowlist must be found');
+assert.deepEqual([...allowlist[1].matchAll(/"([^"\n]+)"/g)].map(match => match[1]).sort(), Object.keys(packaged).sort(), 'Runtime and packager NodeCompat modules must match');

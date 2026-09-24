@@ -95,6 +95,7 @@ pub fn assemble(
     if strip_signature {
         clear_certificate_directory(&mut bytes)?;
     }
+    update_pe_checksum(&mut bytes)?;
 
     // Parse the final bytes once more before touching the requested output.
     // This catches resource-section/layout errors in the editor on every host.
@@ -166,10 +167,9 @@ fn ensure_table(table: &mut ResourceTable, name: ResourceEntryName) -> Result<&m
 
 fn replace_main_icon(resources: &mut ResourceDirectory, ico: &[u8]) -> Result<()> {
     let entries = split_ico(ico)?;
-    let final_id = FIRST_ICON_ID
+    FIRST_ICON_ID
         .checked_add(u16::try_from(entries.len() - 1).context("ICO has too many images")?)
         .ok_or_else(|| anyhow!("ICO icon resource IDs exceed 65535"))?;
-    let _ = final_id;
 
     // Match the existing ResourceHacker invocation: it removes the runtime's
     // icon IDs 1..7 and writes the new images beginning at ID 8.
@@ -327,25 +327,10 @@ fn remove_resource(
 
 fn version_info_rc(config: &Value) -> Result<String> {
     let version = config.get("version").and_then(Value::as_str).unwrap_or("");
-    let mut components = version
-        .chars()
-        .filter(|ch| ch.is_ascii_digit() || *ch == '.')
-        .collect::<String>()
-        .split('.')
-        .map(|part| {
-            if part.is_empty() {
-                Ok(0)
-            } else {
-                part.parse::<u32>()
-                    .context("version component is out of range")
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
-    components.resize(components.len().max(4), 0);
-    components.truncate(4);
+    let components = version_components(version)?;
     let version_numbers = components
         .iter()
-        .map(u32::to_string)
+        .map(u16::to_string)
         .collect::<Vec<_>>()
         .join(",");
 
@@ -387,6 +372,46 @@ BLOCK "VarFileInfo"
 }}
 }}"#
     ))
+}
+
+fn version_components(version: &str) -> Result<[u16; 4]> {
+    let version = version
+        .strip_prefix('v')
+        .or_else(|| version.strip_prefix('V'))
+        .unwrap_or(version);
+    let prefix_end = version
+        .char_indices()
+        .find_map(|(index, ch)| matches!(ch, '-' | '+').then_some(index))
+        .unwrap_or(version.len());
+    let prefix = &version[..prefix_end];
+    let mut components = [0u16; 4];
+
+    for (index, segment) in prefix.split('.').take(4).enumerate() {
+        let digits = segment
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        if digits.is_empty() {
+            if segment.is_empty() {
+                continue;
+            }
+            break;
+        }
+        let value = digits
+            .parse::<u32>()
+            .map_err(|_| anyhow!("VERSIONINFO version component {digits:?} exceeds 65535"))?;
+        if value > u32::from(u16::MAX) {
+            bail!("VERSIONINFO version component {digits:?} exceeds 65535");
+        }
+        components[index] = value as u16;
+
+        // Ignore suffix text attached to a numeric segment (for example
+        // `1.2.3beta2`) and all following components.
+        if digits.len() != segment.len() {
+            break;
+        }
+    }
+    Ok(components)
 }
 
 fn meta_string<'a>(config: &'a Value, key: &str) -> Option<&'a str> {
@@ -456,22 +481,91 @@ fn verify_required_resources(
 }
 
 fn clear_certificate_directory(bytes: &mut [u8]) -> Result<()> {
-    let pe_offset = usize::try_from(read_u32(bytes, 0x3c)?)?;
-    let optional_header = pe_offset
-        .checked_add(4 + 20)
-        .ok_or_else(|| anyhow!("PE optional-header offset overflow"))?;
-    let magic = read_u16(bytes, optional_header)?;
-    let data_directories = match magic {
-        0x10b => optional_header + 96,
-        0x20b => optional_header + 112,
+    let (optional_header, magic, optional_size, number_of_directories_offset) =
+        pe_optional_header(bytes)?;
+    let data_directories_offset = match magic {
+        0x10b => 96usize,
+        0x20b => 112usize,
         other => bail!("unsupported PE optional-header magic {other:#x}"),
     };
-    let security_entry = data_directories + 4 * 8;
+    if optional_size < data_directories_offset + 5 * 8 {
+        bail!("PE optional header is too short for its certificate directory");
+    }
+    let number_of_directories = read_u32(bytes, number_of_directories_offset)?;
+    if number_of_directories <= 4 {
+        bail!("PE certificate directory is not declared in NumberOfRvaAndSizes");
+    }
+    let security_entry = optional_header + data_directories_offset + 4 * 8;
     let entry = bytes
         .get_mut(security_entry..security_entry + 8)
         .ok_or_else(|| anyhow!("PE security data-directory entry is truncated"))?;
     entry.fill(0);
     Ok(())
+}
+
+fn update_pe_checksum(bytes: &mut [u8]) -> Result<()> {
+    let (optional_header, _, optional_size, _) = pe_optional_header(bytes)?;
+    let checksum_offset = optional_header + 64;
+    if optional_size < 68 {
+        bail!("PE optional header is too short for its checksum field");
+    }
+    let checksum_end = checksum_offset
+        .checked_add(4)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| anyhow!("PE checksum field is truncated"))?;
+    bytes[checksum_offset..checksum_end].fill(0);
+
+    let mut sum = 0u64;
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let value = if offset + 1 < bytes.len() {
+            u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) as u64
+        } else {
+            u64::from(bytes[offset])
+        };
+        let overlaps_checksum = offset < checksum_end && offset + 2 > checksum_offset;
+        if !overlaps_checksum {
+            sum += value;
+            sum = (sum & 0xffff) + (sum >> 16);
+        }
+        offset += 2;
+    }
+    while sum >> 16 != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    let file_size = u32::try_from(bytes.len()).context("PE file exceeds checksum size limit")?;
+    let checksum = (sum + u64::from(file_size)) as u32;
+    bytes[checksum_offset..checksum_end].copy_from_slice(&checksum.to_le_bytes());
+    Ok(())
+}
+
+fn pe_optional_header(bytes: &[u8]) -> Result<(usize, u16, usize, usize)> {
+    let pe_offset = usize::try_from(read_u32(bytes, 0x3c)?)?;
+    let coff_offset = pe_offset
+        .checked_add(4)
+        .ok_or_else(|| anyhow!("PE COFF-header offset overflow"))?;
+    let optional_header = coff_offset
+        .checked_add(20)
+        .ok_or_else(|| anyhow!("PE optional-header offset overflow"))?;
+    let optional_size = usize::from(read_u16(bytes, coff_offset + 16)?);
+    let magic = read_u16(bytes, optional_header)?;
+    let number_of_directories_offset = match magic {
+        0x10b => optional_header + 92,
+        0x20b => optional_header + 108,
+        other => bail!("unsupported PE optional-header magic {other:#x}"),
+    };
+    let optional_end = optional_header
+        .checked_add(optional_size)
+        .ok_or_else(|| anyhow!("PE optional-header end overflow"))?;
+    if optional_end > bytes.len() {
+        bail!("PE optional header is truncated");
+    }
+    Ok((
+        optional_header,
+        magic,
+        optional_size,
+        number_of_directories_offset,
+    ))
 }
 
 fn write_output(output: &Path, bytes: &[u8]) -> Result<()> {
@@ -515,8 +609,10 @@ fn write_output(output: &Path, bytes: &[u8]) -> Result<()> {
         fs::remove_file(&backup)
             .with_context(|| format!("remove previous output backup {}", backup.display()))?;
     } else {
-        fs::rename(&temporary_path, output)
-            .with_context(|| format!("write output PE {}", output.display()))?;
+        if let Err(error) = fs::rename(&temporary_path, output) {
+            let _ = fs::remove_file(&temporary_path);
+            return Err(error).with_context(|| format!("write output PE {}", output.display()));
+        }
     }
     Ok(())
 }
@@ -596,8 +692,30 @@ mod tests {
     use editpe::VersionInfo;
     use serde_json::json;
 
-    const TINY_PNG: &[u8] =
-        include_bytes!("../../../../niva/packages/examples/simple-project/icon.png");
+    const TINY_PNG: &[u8] = include_bytes!("../../../packages/examples/simple-project/icon.png");
+
+    #[test]
+    fn version_info_ignores_prerelease_and_build_suffixes() {
+        for (version, expected) in [
+            ("v1.2.3-beta.4", "1,2,3,0"),
+            ("1.2.3+build.4", "1,2,3,0"),
+            ("1.2.3beta2", "1,2,3,0"),
+            ("1.2.3.4-beta.5", "1,2,3,4"),
+        ] {
+            let source = version_info_rc(&json!({"version": version})).unwrap();
+            assert!(
+                source.contains(&format!("FILEVERSION {expected}")),
+                "{version}"
+            );
+            win_packager::version_info::compile_version_info_rc(&source).unwrap();
+        }
+    }
+
+    #[test]
+    fn version_info_rejects_components_above_windows_limit() {
+        let error = version_info_rc(&json!({"version": "1.2.65536"})).unwrap_err();
+        assert!(error.to_string().contains("exceeds 65535"), "{error:#}");
+    }
 
     #[test]
     fn writes_named_rcdata_icon_and_version_and_can_be_written_again() {
@@ -607,7 +725,7 @@ mod tests {
         let first = base.join("first.exe");
         let second = base.join("second.exe");
         let icon = base.join("icon.png");
-        fs::write(&runtime, pe_with_existing_manifest()).unwrap();
+        fs::write(&runtime, pe_with_existing_manifest_and_certificate()).unwrap();
         fs::write(&icon, TINY_PNG).unwrap();
         let config = json!({
             "name": "Niva Unit Test",
@@ -632,6 +750,7 @@ mod tests {
         assert_existing_manifest(&first);
         assert_icon_resources(&first);
         assert_version_resources(&first);
+        assert_signature_removed_and_checksum_valid(&first);
 
         assemble(
             &first,
@@ -646,6 +765,7 @@ mod tests {
         assert_existing_manifest(&second);
         assert_icon_resources(&second);
         assert_version_resources(&second);
+        assert_signature_removed_and_checksum_valid(&second);
 
         let _ = fs::remove_dir_all(base);
     }
@@ -749,6 +869,24 @@ mod tests {
         assert_eq!(version.info.file_version.minor, 3 << 16);
     }
 
+    fn assert_signature_removed_and_checksum_valid(exe: &Path) {
+        let image = Image::parse_file(exe).unwrap();
+        let security = image
+            .data_directory(DataDirectoryType::CertificateTable)
+            .unwrap();
+        assert_eq!(security.virtual_address, 0);
+        assert_eq!(security.size, 0);
+
+        let bytes = image.data();
+        let (optional_header, _, _, _) = pe_optional_header(bytes).unwrap();
+        let checksum_offset = optional_header + 64;
+        let stored = read_u32(bytes, checksum_offset).unwrap();
+        assert_ne!(stored, 0);
+        let mut recalculated = bytes.to_vec();
+        update_pe_checksum(&mut recalculated).unwrap();
+        assert_eq!(read_u32(&recalculated, checksum_offset).unwrap(), stored);
+    }
+
     fn test_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("niva-packager-{name}-{}", std::process::id()))
     }
@@ -798,7 +936,7 @@ mod tests {
         bytes
     }
 
-    fn pe_with_existing_manifest() -> Vec<u8> {
+    fn pe_with_existing_manifest_and_certificate() -> Vec<u8> {
         let mut image = Image::parse(minimal_pe64()).unwrap();
         let mut resources = ResourceDirectory::default();
         set_resource(
@@ -810,7 +948,13 @@ mod tests {
         )
         .unwrap();
         image.set_resource_directory(resources).unwrap();
-        image.data().to_vec()
+        let mut bytes = image.data().to_vec();
+        let security_entry = 0x98 + 112 + 4 * 8;
+        let certificate_offset = bytes.len() as u32;
+        put_u32(&mut bytes, security_entry, certificate_offset);
+        put_u32(&mut bytes, security_entry + 4, 8);
+        bytes.extend_from_slice(b"certdata");
+        bytes
     }
 
     fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {

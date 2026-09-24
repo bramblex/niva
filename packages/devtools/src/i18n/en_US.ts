@@ -115,6 +115,7 @@ export const en_US = {
   ERR_SAVE_CONFIG_VALIDATE_FAILED: "Check the JSON format, project name, and UUID before saving.",
   ERR_DEBUG_RESOURCE_NOT_FOUND: "The debug resource folder does not exist. Check its path in the configuration.",
   ERR_CLOSE_DIALOG_FIRST: "Finish the open dialog before closing the app.",
+  ERR_PACKAGER_BUILD_IN_PROGRESS: "Wait for the current package build to finish before switching projects or closing Devtools.",
   ERR_BUILD_FAILED: "The build failed. Check the details below.",
   ERR_SIGN_FAILED: "The app was built, but signing failed. Check the signing configuration.",
   ERR_OPEN_OUTPUT_FAILED: "The app was built, but its output folder could not be opened.",

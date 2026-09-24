@@ -11,6 +11,7 @@ export function ProjectDetails() {
   const locale = useLocale();
   const project = useProject();
   const { state } = project;
+  const isPackaging = app.state.packagerBuild === project;
   const [showMultiTargetBuild, setShowMultiTargetBuild] = useState(false);
 
   return (
@@ -28,10 +29,11 @@ export function ProjectDetails() {
 
       <div className="project-actions">
         <div className="primary-actions">
-          <button className="btn" onClick={() => tryOrAlert(app, project.debug())}>
+          <button className="btn" disabled={isPackaging} onClick={() => tryOrAlert(app, project.debug())}>
             {locale.t("DEBUG")}
           </button>
-          <button className="btn btn-primary" onClick={() => setShowMultiTargetBuild((shown) => !shown)}>
+          <button className="btn btn-primary" disabled={isPackaging} aria-expanded={showMultiTargetBuild}
+            onClick={() => setShowMultiTargetBuild(true)}>
             {locale.t("BUILD")}
           </button>
         </div>
@@ -39,7 +41,7 @@ export function ProjectDetails() {
           <button className="btn btn-info" onClick={() => tryOrAlert(app, project.open())}>
             <FolderOpen size={15} />{locale.t("OPEN")}
           </button>
-          <button className="btn btn-info" onClick={() => tryOrAlert(app, project.refresh())}>
+          <button className="btn btn-info" disabled={isPackaging} onClick={() => tryOrAlert(app, project.refresh())}>
             <Refresh size={15} />{locale.t("REFRESH")}
           </button>
         </div>

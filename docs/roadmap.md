@@ -74,7 +74,7 @@
 - [ ] Node.js 支持、系统通知 Notification 按原 README TODO 排期。MiniBlink 按用户决定暂缓，不进入本轮实现与验收。
 - [x] **文档站源码更新**：已升级到 Docusaurus 3.10.2，首页保留原产品文案，采用 Devtools logo/配色、实际 Devtools 示例项目窗口截图及重做的四张介绍图；API 页按当前 Rust 注册名、初始化脚本与 d.ts 核对，新增 Bridge、权限、流式、stdio 和 NodeCompat 入口。本地 `npm run typecheck` 与 `npm run build` 通过；线上发布与浏览器矩阵不由此项证明。
 - [ ] **测试覆盖**：已有 Rust 单测、本机 WebView 验证和可重复的 [Windows smoke 示例](../examples/windows-smoke/README.md)；CI 落地后仍需把更多关键 e2e 纳入自动门禁。
-- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出仍是未实现的方案（见 `docs/cross-platform-packager-plan.md`）。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
+- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出已有独立 packager 和 Devtools 多目标入口，具体验收矩阵见 `docs/cross-platform-packager-plan.md`。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
 
 ## P3 —— 体验优化
 

@@ -1,7 +1,10 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result, bail, ensure};
-use apple_codesign::{BundleSigner, SigningSettings};
+use apple_codesign::{
+    BundleSigner, CodeSignatureFlags, MachFile, SigningSettings, VerificationProblemType,
+    verify_macho_data,
+};
 use icns::{IconFamily, IconType, Image as IcnsImage, PixelFormat};
 use plist::{Dictionary, Value as PlistValue};
 
@@ -116,12 +119,76 @@ pub fn assemble(
         "signer did not write bundle resources seal"
     );
 
+    let signed_indexes = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_INDEXES"))
+        .context("read signed RESOURCE_INDEXES")?;
+    ensure!(
+        signed_indexes.as_slice() == indexes,
+        "signing changed Contents/Resources/RESOURCE_INDEXES"
+    );
+    let signed_data = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_DATA"))
+        .context("read signed RESOURCE_DATA")?;
+    ensure!(
+        signed_data.as_slice() == data,
+        "signing changed Contents/Resources/RESOURCE_DATA"
+    );
+
+    let signed_executable = signed_bundle.join("Contents/MacOS").join(name);
+    verify_signed_executable(&signed_executable)?;
+
     fs::remove_dir_all(output)
         .with_context(|| format!("remove unsigned staging bundle {}", output.display()))?;
     fs::rename(&signed_bundle, output)
         .with_context(|| format!("install signed app bundle at {}", output.display()))?;
 
     Ok(())
+}
+
+fn verify_signed_executable(path: &Path) -> Result<()> {
+    let data = fs::read(path).with_context(|| format!("read signed Mach-O {}", path.display()))?;
+    let problems = verify_macho_data(&data);
+
+    // apple-codesign 0.29.0 represents an ad-hoc signature with an empty CMS
+    // slot. Its verifier reports one CmsError while parsing that empty slot,
+    // even when the CodeDirectory and all code digests are valid. Ignore only
+    // that exact case: every architecture must have an empty CMS slot and the
+    // ADHOC flag, and the verifier must report no other problems.
+    let expected_adhoc_cms_problem = is_adhoc_with_empty_cms(&data)
+        && problems.len() == 1
+        && matches!(&problems[0].problem, VerificationProblemType::CmsError(_));
+
+    if !problems.is_empty() && !expected_adhoc_cms_problem {
+        let details = problems
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n  ");
+        bail!(
+            "apple-codesign Mach-O verification failed for {}:\n  {details}",
+            path.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn is_adhoc_with_empty_cms(data: &[u8]) -> bool {
+    let Ok(file) = MachFile::parse(data) else {
+        return false;
+    };
+    let binaries = file.iter_macho().collect::<Vec<_>>();
+    !binaries.is_empty()
+        && binaries.into_iter().all(|binary| {
+            let Ok(Some(signature)) = binary.code_signature() else {
+                return false;
+            };
+            let Ok(Some(cms)) = signature.signature_data() else {
+                return false;
+            };
+            if !cms.is_empty() {
+                return false;
+            }
+            matches!(signature.code_directory(), Ok(Some(directory)) if directory.flags.contains(CodeSignatureFlags::ADHOC))
+        })
 }
 
 fn validate_executable_name(name: &str) -> Result<()> {

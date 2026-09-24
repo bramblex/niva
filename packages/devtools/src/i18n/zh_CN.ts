@@ -117,6 +117,7 @@ export const zh_CN: typeof en_US = {
   ERR_SAVE_CONFIG_VALIDATE_FAILED: "保存前请检查 JSON 格式、项目名称和 UUID。",
   ERR_DEBUG_RESOURCE_NOT_FOUND: "调试资源目录不存在，请检查配置中的路径。",
   ERR_CLOSE_DIALOG_FIRST: "请先完成当前弹窗操作，再关闭应用。",
+  ERR_PACKAGER_BUILD_IN_PROGRESS: "当前打包尚未完成，请等待后再切换项目或关闭 Devtools。",
   ERR_BUILD_FAILED: "构建失败，请查看下方详情。",
   ERR_SIGN_FAILED: "应用已构建，但签名失败，请检查签名配置。",
   ERR_OPEN_OUTPUT_FAILED: "应用已构建，但无法打开产物目录。",

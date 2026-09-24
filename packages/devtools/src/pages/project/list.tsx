@@ -27,6 +27,7 @@ function Highlighter({ text, highlight }: { text: string; highlight: string }) {
 export function ProjectList() {
   const app = useApp();
   const { project, modal } = app.state;
+  const isPackaging = Boolean(app.state.packagerBuild);
 
   const history = useHistory();
   const locale = useLocale();
@@ -62,6 +63,7 @@ export function ProjectList() {
             <button
               type="button"
               className="text-btn"
+              disabled={isPackaging}
               onClick={() => tryOrAlert(app, app.create())}
             >
               {/* <i className="icon-sm icon-plus-primary"></i> */}
@@ -73,6 +75,7 @@ export function ProjectList() {
             <button
               type="button"
               className="text-btn"
+              disabled={isPackaging}
               onClick={() => tryOrAlert(app, app.openWithPicker())}
             >
               {/* <i className="icon-sm icon-folder-primary"></i> */}
@@ -88,6 +91,7 @@ export function ProjectList() {
           <button
           type="button"
           className="text-btn clear-history"
+          disabled={isPackaging}
           onClick={async () => {
             if (
               await modal.confirm(
@@ -113,6 +117,7 @@ export function ProjectList() {
                   className={classNames("history-item", {
                     active: item.uuid === project?.state.uuid,
                   })}
+                  disabled={isPackaging}
                   onClick={() => tryOrAlert(app, app.open(item.path))}
                   aria-label={`${locale.t("OPEN_PROJECT")}: ${item.name}`}
                 >
@@ -129,6 +134,7 @@ export function ProjectList() {
                 <button
                   type="button"
                   className="icon-sm icon-delete"
+                  disabled={isPackaging}
                   aria-label={`${locale.t("REMOVE_HISTORY_ITEM")}: ${item.name}`}
                   onClick={async () => {
                     if (

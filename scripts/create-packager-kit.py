@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ def main():
     parser.add_argument('--packager', type=pathlib.Path, required=True)
     parser.add_argument('--output', type=pathlib.Path, required=True)
     args = parser.parse_args()
+    subprocess.run(['node', str(ROOT / 'scripts/check-packager-node-compat.mjs')], check=True, cwd=ROOT)
     if args.output.exists():
         raise SystemExit('Output already exists')
     version = json.loads((ROOT / 'packages/devtools/niva.json').read_text())['version']
@@ -84,8 +86,7 @@ def main():
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, file.read_bytes())
         # Exclusive destination creation prevents an accidental overwrite.
-        with args.output.open('xb') as dest, archive.open('rb') as source:
-            shutil.copyfileobj(source, dest)
+        os.link(archive, args.output)
     print(args.output)
 
 if __name__ == '__main__': main()

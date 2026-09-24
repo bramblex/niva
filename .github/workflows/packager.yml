@@ -29,6 +29,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.1
@@ -67,6 +70,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           pattern: native-*
@@ -78,11 +84,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: node scripts/check-packager-node-compat.mjs
       - name: Assemble offline kit
         shell: bash
         run: |
           chmod +x native-artifacts/niva-packager-${{ matrix.host }}${{ matrix.exe }}
           python scripts/create-packager-kit.py --runtime-dir native-artifacts --packager native-artifacts/niva-packager-${{ matrix.host }}${{ matrix.exe }} --output dist/niva-build-kit-${{ matrix.host }}.zip
+      - run: python scripts/check-packager-kit.py --kit dist/niva-build-kit-${{ matrix.host }}.zip
       - uses: actions/upload-artifact@v4
         with:
           name: niva-build-kit-${{ matrix.host }}
