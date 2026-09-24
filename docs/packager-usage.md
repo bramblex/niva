@@ -1,6 +1,6 @@
 # 跨平台打包
 
-`niva-packager` 是独立构建工具，使用预编译的运行时，在 macOS 或 Windows 上打包 Windows x64、macOS Apple Silicon 与 macOS Intel 应用。用户项目不需要 Rust 编译器。MiniBlink 暂不支持。
+`niva-packager` 是独立构建工具，使用预编译的运行时，在 macOS 或 Windows 上打包 Windows x64、macOS Apple Silicon 与 macOS Intel 应用。用户项目不需要 Rust 编译器。Windows 构建通过仓库 `.cargo/config.toml` 静态链接 CRT，避免工具或应用额外依赖 VC Runtime DLL。MiniBlink 暂不支持。
 
 ## Devtools
 
@@ -27,7 +27,7 @@ Windows 使用 `niva-packager.exe`。目标参数可以重复传入。NodeCompat
 
 标准输出最后一行为 JSON：`results` 数组包含每个目标的 `target`、`status`、成功时的 `path`、`sha256`、`signature`、`runtimeVersion`，失败时的 `error`。任一目标失败返回退出码 1，其他已成功目标保留。输入预检失败返回空 `results` 与顶层 `error`。
 
-Windows 产物为 `.exe`，签名状态为 `unsigned`；Mac 产物为 `.zip`，其中包含完整 `.app`，签名状态为 `ad-hoc`。ZIP 显式保存执行权限，Windows 生成的 Mac 包解压后也应可执行。资源目录中的符号链接、开启 NodeCompat 时冲突的 `__niva_compat/` 前缀、越界路径与不适合跨系统使用的应用名称会被拒绝。
+Windows 目标使用 WebView2，目标机需要可用的 WebView2 Runtime。Windows 产物为 `.exe`，签名状态为 `unsigned`；Mac 产物为 `.zip`，其中包含完整 `.app`，签名状态为 `ad-hoc`。ZIP 显式保存执行权限，Windows 生成的 Mac 包解压后也应可执行。资源目录中的符号链接、开启 NodeCompat 时冲突的 `__niva_compat/` 前缀、越界路径与不适合跨系统使用的应用名称会被拒绝。
 
 `ad-hoc` 只保障代码签名完整性，不代表 Apple 信任的开发者身份，也不等于公证。Windows 包不会获得 Niva 的签名身份。正式签名需应用作者自己的证书及目标平台流程；跨平台入口不会默默套用 `sign.macos` 或 `sign.windows`。
 

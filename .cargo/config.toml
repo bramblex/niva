@@ -1,0 +1,4 @@
+# Build Windows tools and applications without a separate VC runtime install.
+# This is target-scoped and does not change the user's shell environment.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
