@@ -53,3 +53,18 @@ Devtools 中选择可信工具包目录、输出目录和目标；路径存于�
 - Mac 到 Windows 的全工作区 target check 被 packager 加密依赖的 MSVC C 头文件缺失阻断；`cargo check -p niva --target x86_64-pc-windows-msvc` 通过。packager 的 Windows 构建必须在 Windows 原生工具链验证。
 
 可复用的真实包验证脚本：`scripts/packager-smoke.py --fixture <dir>` 生成测试项目，打包后用 `--artifact <exe或zip>` 在对应宿主启动与验收。测试覆盖普通 app，不宣称覆盖所有第三方嵌套 framework、操作系统版本、Gatekeeper 下载首开或企业策略。
+
+## 最终代码候选与离线依赖（2026-09-24）
+
+代码候选 `228c9afc33fcfc46ed13cbb7e09685156c2e6ebc` 的 [常规 CI](https://github.com/bramblex/niva/actions/runs/35955733263) 与 [三宿主工具包工作流](https://github.com/bramblex/niva/actions/runs/35955733328) 均已通过。三个宿主各自解压工具包、校验文件哈希，并生成 Windows x64、Mac ARM 和 Mac Intel 三目标；Mac runner 另做 Apple 签名校验。
+
+`.cargo/config.toml` 对 Windows x64 固定静态 CRT，避免此前产物对 VC Runtime DLL 的依赖。由上述 CI 生成并下载核对的文件：
+
+| 文件 | 字节数 | SHA256 |
+| --- | ---: | --- |
+| Windows runtime | 2,590,208 | `0997338b707b41823e0ec5df0c700f79b1c99226959ba6ba242d557291045091` |
+| Windows packager | 4,845,568 | `81581b8e0564b802f8f570a0568bd8dab6e71e8bb6d6ff35f92a5d551603f576` |
+
+解析 PE 导入表确认两者均无 `VCRUNTIME` / `MSVCP` / `CONCRT` DLL 依赖，只导入 Windows 系统 DLL。更新本地 Mac 工具包中的 Windows runtime 后，再次完成三目标打包与输出哈希、Mac 签名校验。
+
+剩余验收明确保留：Windows 设备在最后一轮静态 CRT 产物的 GUI smoke 前断连；该最终链接配置已通过 Windows CI 编译、单测和完整打包链，但没有把此前动态 CRT 候选的真机启动结果挪作它的最终启动证明。原生 Devtools 点击/文件夹对话框也因 Mac 锁屏未完成；已有浏览器 mock 交互验证。PR 保持草稿，未合并 main。
