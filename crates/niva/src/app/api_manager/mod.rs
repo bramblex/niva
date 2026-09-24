@@ -151,7 +151,7 @@ impl CallContext {
     pub fn respond<T: Serialize>(&self, result: Result<T>) {
         let (code, message, data) = match result {
             Ok(data) => (0, "ok".to_string(), json!(data)),
-            Err(err) => (-1, err.to_string(), json!(null)),
+            Err(err) => (-1, err.to_string(), native_error_data(&err)),
         };
         let msg = ServerMsg::result(self.id, code, message, data);
         if self.ws_tx.send(WsOut::Text(msg.encode())).is_err() {
@@ -357,6 +357,40 @@ impl ApiManager {
         Ok(encoded)
     }
 
+    /// Called only after the loopback HTTP endpoint authenticates window token
+    /// and exact origin. UI/main-thread handlers must never run while XHR blocks
+    /// that thread; socket streams likewise require their WS connection identity.
+    pub async fn sync_call(&self, window_id: u8, request: ApiRequest) -> Result<String> {
+        let app = self
+            .app
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow!("API manager not ready"))?;
+        let window = app.window()?.get_window(window_id)?;
+        let response = if !sync_method_allowed(&request.1) {
+            request.err(-4, "API unavailable over synchronous XHR")
+        } else if let Some(HandlerEntry {
+            handler: HandlerKind::Unary(handler),
+            ..
+        }) = self.handlers.get(&request.1)
+        {
+            let previous = self.ipc_active.fetch_add(1, Ordering::AcqRel);
+            if previous >= self.max_ipc_active {
+                self.ipc_active.fetch_sub(1, Ordering::AcqRel);
+                request.err(-3, "API server busy")
+            } else {
+                let _permit = IpcPermit(&self.ipc_active);
+                // Blocking OS calls run on the existing blocking pool. A
+                // timeout is not cancellation and could leave a mutation
+                // running, so wait for a definitive result here.
+                handler(app, window, request.clone()).await
+            }
+        } else {
+            request.err(-4, "API is not a synchronous unary handler")
+        };
+        Ok(serde_json::to_string(&response)?)
+    }
+
     /// Register a unary API: plain `async fn`, result auto-delivered.
     pub fn register_api<S, F, Fut, T>(&mut self, name: S, f: F)
     where
@@ -387,7 +421,9 @@ impl ApiManager {
             Box::pin(async move {
                 match fut.await {
                     Ok(data) => request.ok(data),
-                    Err(err) => request.err(-1, err.to_string()),
+                    Err(err) => {
+                        ApiResponse(request.0, -1, err.to_string(), native_error_data(&err))
+                    }
                 }
             }) as ApiFuture
         });
@@ -437,13 +473,26 @@ impl ApiManager {
         F: Fn(CallContext, ApiRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
     {
+        self.register_stream_api_with(name, None, f);
+    }
+
+    pub fn register_stream_api_with<S, F, Fut>(
+        &mut self,
+        name: S,
+        timeout: Option<Option<Duration>>,
+        f: F,
+    ) where
+        S: Into<String>,
+        F: Fn(CallContext, ApiRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
         let handler: StreamHandler =
             Arc::new(move |ctx, request| Box::pin(f(ctx, request)) as StreamFuture);
         self.handlers.insert(
             name.into(),
             HandlerEntry {
                 handler: HandlerKind::Stream(handler),
-                timeout: None,
+                timeout,
             },
         );
     }
@@ -713,9 +762,77 @@ async fn run_job(job: DispatchJob, active: Arc<Mutex<HashMap<(u8, u64, u64), Act
     // Cancelled: client went away, nothing to answer.
 }
 
+fn native_error_data(error: &anyhow::Error) -> Value {
+    use std::io::ErrorKind;
+    if let Some(error) = error.downcast_ref::<std::io::Error>() {
+        let code = match error.kind() {
+            ErrorKind::NotFound => "ENOENT",
+            ErrorKind::PermissionDenied => "EACCES",
+            ErrorKind::AlreadyExists => "EEXIST",
+            ErrorKind::NotADirectory => "ENOTDIR",
+            ErrorKind::IsADirectory => "EISDIR",
+            ErrorKind::DirectoryNotEmpty => "ENOTEMPTY",
+            ErrorKind::InvalidInput => "EINVAL",
+            ErrorKind::BrokenPipe => "EPIPE",
+            ErrorKind::ConnectionRefused => "ECONNREFUSED",
+            ErrorKind::ConnectionReset => "ECONNRESET",
+            ErrorKind::TimedOut => "ETIMEDOUT",
+            ErrorKind::AddrInUse => "EADDRINUSE",
+            ErrorKind::AddrNotAvailable => "EADDRNOTAVAIL",
+            ErrorKind::NotConnected => "ENOTCONN",
+            ErrorKind::ConnectionAborted => "ECONNABORTED",
+            ErrorKind::WouldBlock => "EAGAIN",
+            ErrorKind::Unsupported => "ENOTSUP",
+            _ => "EIO",
+        };
+        json!({"code":code,"errno":error.raw_os_error()})
+    } else {
+        json!(null)
+    }
+}
+
+fn sync_method_allowed(method: &str) -> bool {
+    method.starts_with("fs.")
+        || method.starts_with("os.")
+        || matches!(
+            method,
+            "process.currentDir"
+                | "process.setCurrentDir"
+                | "process.execSync"
+                | "process.execFileSync"
+                | "process.spawnSync"
+                | "process.uptime"
+                | "process.memoryUsage"
+                | "process.cpuUsage"
+        )
+}
+
 #[cfg(test)]
 mod ipc_tests {
     use super::*;
+
+    #[test]
+    fn synchronous_transport_excludes_ui_and_connection_owned_apis() {
+        for method in [
+            "window.open",
+            "process.exit",
+            "socket.control",
+            "socket.tcpConnect",
+            "webview.eval",
+            "process.env",
+        ] {
+            assert!(!sync_method_allowed(method), "{method}");
+        }
+        for method in [
+            "fs.stat",
+            "fs.readFile",
+            "os.freemem",
+            "process.currentDir",
+            "process.spawnSync",
+        ] {
+            assert!(sync_method_allowed(method), "{method}");
+        }
+    }
 
     #[test]
     fn error_reply_keeps_the_call_id() {

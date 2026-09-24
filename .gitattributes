@@ -1,0 +1,2 @@
+# Preserve checksum-pinned upstream bytes, including their original license whitespace.
+packages/node-compat/upstream/node-v22.14.0/** -text -whitespace

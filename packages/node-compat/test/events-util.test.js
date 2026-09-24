@@ -26,7 +26,7 @@ test("EventEmitter handles order, once, removal, symbols, and unhandled errors",
   const nodeEmitter = new EventEmitter();
   assert.equal(new events.EventEmitter().setMaxListeners(0).getMaxListeners(), 0);
   assert.equal(events.EventEmitter.listenerCount(nodeEmitter, "none"), 0);
-  assert.throws(() => new events.EventEmitter({ captureRejections: true }), /not supported/);
+  assert.equal(new events.EventEmitter({ captureRejections: true })._captureRejections, true);
 });
 
 test("util.format covers common placeholders and extra inspected arguments", () => {
@@ -82,18 +82,14 @@ test("deep equality checks cycles, prototypes, maps, sets, and typed arrays", ()
   assert.equal(nodeUtil.isDeepStrictEqual(new URL("https://a.test"), new URL("https://b.test")), false);
 });
 
-test("deprecate warns once while preserving return value and receiver", () => {
-  const oldWarn = console.warn;
-  const warnings = [];
-  console.warn = (warning) => warnings.push(warning);
-  try {
-    const wrapped = nodeUtil.deprecate(function (value) { return this.base + value; }, "use replacement", "DEP_TEST");
-    const receiver = { base: 2, wrapped };
-    assert.equal(receiver.wrapped(3), 5);
-    assert.equal(receiver.wrapped(4), 6);
-    assert.equal(warnings.length, 1);
-    assert.equal(warnings[0].code, "DEP_TEST");
-  } finally {
-    console.warn = oldWarn;
-  }
+test("deprecate emits one process warning while preserving return value and receiver", async () => {
+  const warningPromise = new Promise((resolve) => process.once("warning", resolve));
+  const wrapped = nodeUtil.deprecate(function (value) { return this.base + value; }, "use replacement", "DEP_TEST");
+  const receiver = { base: 2, wrapped };
+  assert.equal(receiver.wrapped(3), 5);
+  assert.equal(receiver.wrapped(4), 6);
+  const warning = await warningPromise;
+  assert.equal(warning.name, "DeprecationWarning");
+  assert.equal(warning.message, "use replacement");
+  assert.equal(warning.code, "DEP_TEST");
 });

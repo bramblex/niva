@@ -1,407 +1,294 @@
 (function (root) {
-  "use strict";
-
-  var runtime = root[Symbol.for("niva.node-compat.runtime")];
-  var reasonPhrases = {
-    200: "OK", 201: "Created", 202: "Accepted", 204: "No Content", 301: "Moved Permanently",
-    302: "Found", 304: "Not Modified", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
-    404: "Not Found", 405: "Method Not Allowed", 408: "Request Timeout", 409: "Conflict",
-    418: "I'm a teapot", 429: "Too Many Requests", 500: "Internal Server Error", 501: "Not Implemented",
-    502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout",
-  };
-
-  function byteData(value, encoding) {
-    if (typeof value === "string") return new TextEncoder().encode(value);
-    if (value instanceof ArrayBuffer) return new Uint8Array(value);
-    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
-    throw new TypeError("HTTP request body chunks must be strings or byte arrays");
-  }
-
-  function bodyText(value) {
-    if (typeof value === "string") return value;
-    var bytes = byteData(value);
-    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-    catch (_) { throw runtime.bridgeError("The Niva HTTP bridge accepts UTF-8 text request bodies only", "ERR_HTTP_BODY_ENCODING"); }
-  }
-
-  function normalizeHeaders(headers) {
-    if (!headers) return null;
-    var normalized = Object.create(null);
-    var entries;
-    if (typeof Headers !== "undefined" && headers instanceof Headers) entries = Array.from(headers.entries());
-    else if (Array.isArray(headers)) entries = headers;
-    else if (typeof headers === "object") entries = Object.keys(headers).map(function (key) { return [key, headers[key]]; });
-    else throw new TypeError("headers must be an object, Headers, or a list of name/value pairs");
-    entries.forEach(function (entry) {
-      if (!entry || entry.length < 2) throw new TypeError("header entries must contain a name and value");
-      var name = String(entry[0]).toLowerCase();
-      var value = entry[1];
-      if (Array.isArray(value)) value = value.join(", ");
-      if (value === undefined || value === null) return;
-      if (!name || /[^!#$%&'*+.^_`|~0-9a-z-]/i.test(name)) throw new TypeError("Invalid HTTP header name: " + name);
-      normalized[name] = String(value);
-      if (/[\r\n]/.test(normalized[name])) throw new TypeError("Invalid HTTP header value for " + name);
-    });
-    return normalized;
-  }
-
-  function buildTarget(protocol, input, options) {
-    var inputUrl = typeof input === "string" || (typeof URL !== "undefined" && input instanceof URL);
-    var target;
-    if (inputUrl) {
-      target = input instanceof URL ? new URL(input.href) : new URL(input);
-      options = options || {};
-    } else {
-      options = input || {};
-      if (typeof options.url === "string" || (typeof URL !== "undefined" && options.url instanceof URL)) {
-        target = options.url instanceof URL ? new URL(options.url.href) : new URL(options.url);
-      } else {
-        var hostname = options.hostname || options.host;
-        if (typeof hostname !== "string" || !hostname) throw new TypeError("options.hostname or options.host is required");
-        if (hostname.indexOf(":") >= 0 && hostname.charAt(0) !== "[") hostname = "[" + hostname + "]";
-        var port = options.port === undefined || options.port === null || options.port === "" ? "" : ":" + String(options.port);
-        var pathname = options.path || "/";
-        if (pathname.charAt(0) !== "/") pathname = "/" + pathname;
-        target = new URL(protocol + "://" + hostname + port + pathname);
-      }
+    "use strict";
+    var runtime = root[Symbol.for("niva.node-compat.runtime")], Buffer = runtime.vendor.Buffer;
+    var Readable = runtime.vendor.stream.Readable, Writable = runtime.vendor.stream.Writable, Parser = runtime.vendor.HTTPParser;
+    var token = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var STATUS_CODES = { 100: "Continue", 101: "Switching Protocols", 200: "OK", 201: "Created", 202: "Accepted", 204: "No Content", 206: "Partial Content", 301: "Moved Permanently", 302: "Found", 304: "Not Modified", 307: "Temporary Redirect", 308: "Permanent Redirect", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 408: "Request Timeout", 413: "Payload Too Large", 418: "I'm a Teapot", 429: "Too Many Requests", 500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Unavailable" };
+    function fail(message, code) { return runtime.bridgeError(message, code || "HPE_INVALID_HEADER_TOKEN"); }
+    function header(name, value) { if (!token.test(name))
+        throw fail("Invalid HTTP header name", "ERR_INVALID_HTTP_TOKEN"); value = String(value); if (/[^\t\x20-\x7e\x80-\xff]/.test(value))
+        throw fail("Invalid HTTP header value", "ERR_INVALID_CHAR"); return value; }
+    function headers(raw) {
+        var result = Object.create(null), seen = Object.create(null);
+        for (var i = 0; i < raw.length; i += 2) {
+            var name = raw[i].toLowerCase(), value = header(raw[i], raw[i + 1]);
+            seen[name] = (seen[name] || 0) + 1;
+            if (name === "set-cookie")
+                (result[name] || (result[name] = [])).push(value);
+            else
+                result[name] = result[name] === undefined ? value : result[name] + (name === "cookie" ? "; " : ", ") + value;
+        }
+        if (seen["content-length"] > 1 || (seen["content-length"] && seen["transfer-encoding"]))
+            throw fail("Ambiguous HTTP framing", "HPE_UNEXPECTED_CONTENT_LENGTH");
+        if (result["content-length"] !== undefined && !/^\d+$/.test(result["content-length"]))
+            throw fail("Invalid Content-Length", "HPE_INVALID_CONTENT_LENGTH");
+        if (result["transfer-encoding"] !== undefined && result["transfer-encoding"].toLowerCase() !== "chunked")
+            throw fail("Unsupported Transfer-Encoding", "HPE_INVALID_TRANSFER_ENCODING");
+        return result;
     }
-    if (target.protocol !== protocol + ":") {
-      throw runtime.bridgeError("Protocol " + target.protocol + " is not supported by the " + protocol + " module", "ERR_INVALID_PROTOCOL");
+    class IncomingMessage extends Readable {
+        constructor(socket) { super(); this.socket = this.connection = socket; this.headers = {}; this.rawHeaders = []; this.trailers = {}; this.rawTrailers = []; this.complete = false; this.aborted = false; }
+        _read() { this.socket.resume(); }
+        _destroy(error, callback) { if (!this.complete)
+            this.socket.destroy(error); callback(error); }
+        setTimeout(timeout, callback) { this.socket.setTimeout(timeout, callback); return this; }
     }
-    if (target.username || target.password) throw runtime.bridgeError("URL credentials are unsupported; set an Authorization header instead", "ENOTSUP");
-    if (inputUrl && options.path !== undefined) {
-      var pathValue = String(options.path);
-      target.pathname = pathValue.split("?")[0] || "/";
-      target.search = pathValue.indexOf("?") >= 0 ? pathValue.slice(pathValue.indexOf("?")) : "";
-    }
-    target.hash = "";
-    return { url: target.href, options: options };
-  }
-
-  function makeIncomingMessage(head, method, requestUrl, cancelRequest) {
-    var message = runtime.createEmitter();
-    var resolveBody;
-    var rejectBody;
-    var bodyPromise = new Promise(function (resolve, reject) { resolveBody = resolve; rejectBody = reject; });
-    bodyPromise.catch(function () {});
-    var headers = Object.create(null);
-    Object.keys(head.headers || {}).forEach(function (name) { headers[name.toLowerCase()] = String(head.headers[name]); });
-    var rawHeaders = [];
-    Object.keys(headers).forEach(function (name) { rawHeaders.push(name, headers[name]); });
-    var encoding = null;
-
-    message.statusCode = Number(head.status);
-    message.statusMessage = reasonPhrases[message.statusCode] || "";
-    message.headers = headers;
-    message.headersDistinct = Object.create(null);
-    Object.keys(headers).forEach(function (name) { message.headersDistinct[name] = [headers[name]]; });
-    message.rawHeaders = rawHeaders;
-    message.httpVersion = "1.1";
-    message.httpVersionMajor = 1;
-    message.httpVersionMinor = 1;
-    message.method = method;
-    message.url = requestUrl;
-    message.complete = false;
-    message.aborted = false;
-    message.readable = true;
-    message.body = null;
-    message.bodyPromise = bodyPromise;
-
-    message.setEncoding = function (value) {
-      if (value !== "utf8" && value !== "utf-8" && value !== "latin1" && value !== "base64" && value !== "hex") {
-        throw new TypeError("HTTP response streams support utf8, latin1, base64, and hex encodings");
-      }
-      encoding = value;
-      return message;
-    };
-    message.text = function () { return bodyPromise.then(function (body) { return body.toString("utf8"); }); };
-    message.json = function () { return message.text().then(function (text) { return JSON.parse(text); }); };
-    message.arrayBuffer = function () {
-      return bodyPromise.then(function (body) { return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength); });
-    };
-    message.buffer = function () { return bodyPromise; };
-    message.pipe = function (destination) {
-      bodyPromise.then(function (body) {
-        if (body.length) destination.write(encoding ? body.toString(encoding) : body);
-        if (typeof destination.end === "function") destination.end();
-      }, function (error) {
-        if (typeof destination.destroy === "function") destination.destroy(error);
-      });
-      return destination;
-    };
-    message.destroy = function (error) {
-      if (message.complete) return message;
-      var converted = error || runtime.bridgeError("The HTTP response was aborted", "ABORT_ERR");
-      if (typeof cancelRequest === "function") cancelRequest(converted);
-      else message._fail(converted);
-      return message;
-    };
-    message._finish = function (body) {
-      if (message.complete) return;
-      message.body = body;
-      message.complete = true;
-      if (body.length) message.emit("data", encoding ? body.toString(encoding) : body);
-      message.emit("end");
-      message.readable = false;
-      message.emit("close");
-      resolveBody(body);
-    };
-    message._fail = function (error) {
-      if (message.aborted || message.complete) return;
-      message.aborted = true;
-      message.readable = false;
-      message.emit("aborted");
-      message.emit("error", error);
-      message.emit("close");
-      rejectBody(error);
-    };
-    return message;
-  }
-
-  function parseRequestArgs(protocol, defaultMethod, args) {
-    var input = args[0];
-    var options;
-    var callback;
-    if (typeof input === "string" || (typeof URL !== "undefined" && input instanceof URL)) {
-      options = args[1] && typeof args[1] === "object" ? args[1] : {};
-      callback = typeof args[1] === "function" ? args[1] : args[2];
-    } else {
-      var overrides = args[1] && typeof args[1] === "object" ? args[1] : {};
-      options = Object.assign({}, input || {}, overrides);
-      if (input && input.headers && overrides.headers) {
-        options.headers = Object.assign(Object.create(null), normalizeHeaders(input.headers), normalizeHeaders(overrides.headers));
-      }
-      input = options;
-      callback = typeof args[1] === "function" ? args[1] : args[2];
-    }
-    if (typeof callback !== "function") callback = undefined;
-    var built = buildTarget(protocol, input, options);
-    options = built.options;
-    ["agent", "signal", "timeout", "lookup", "createConnection", "socketPath", "localAddress", "auth", "proxy"].forEach(function (key) {
-      if (options[key] !== undefined) throw runtime.bridgeError("http option is unsupported by Niva: " + key, "ENOTSUP");
-    });
-    var method = String(options.method || defaultMethod).toUpperCase();
-    if (!/^[A-Z!#$%&'*+.^_`|~-]+$/.test(method)) throw new TypeError("Invalid HTTP method");
-    var body = options.body === undefined ? undefined : bodyText(options.body);
-    return {
-      callback: callback,
-      options: {
-        method: method,
-        url: built.url,
-        headers: normalizeHeaders(options.headers),
-        body: body,
-      },
-    };
-  }
-
-  function createHttpModule(protocol, niva) {
-    function request() {
-      var parsed = parseRequestArgs(protocol, "GET", arguments);
-      var callback = parsed.callback;
-      var options = parsed.options;
-      var emitter = runtime.createEmitter();
-      var requestBody = options.body === undefined ? [] : [options.body];
-      var hasBody = options.body !== undefined;
-      var ended = false;
-      var bridgeCall = null;
-      var responseMessage = null;
-      var failRequest = null;
-      var requestDone = false;
-      var headerSettled = false;
-      var resolveHeaders;
-      var rejectHeaders;
-      var resolveResult;
-      var rejectResult;
-      var headerPromise = new Promise(function (resolve, reject) { resolveHeaders = resolve; rejectHeaders = reject; });
-      var resultPromise = new Promise(function (resolve, reject) { resolveResult = resolve; rejectResult = reject; });
-      headerPromise.catch(function () {});
-      resultPromise.catch(function () {});
-
-      var clientRequest = emitter;
-      Object.assign(clientRequest, {
-        method: options.method,
-        path: new URL(options.url).pathname + new URL(options.url).search,
-        host: new URL(options.url).host,
-        protocol: protocol + ":",
-        headers: Object.assign(Object.create(null), options.headers || {}),
-        writable: true,
-        finished: false,
-        response: headerPromise,
-        result: resultPromise,
-        completion: resultPromise,
-        setHeader: function (name, value) {
-          if (ended) throw runtime.bridgeError("Cannot set headers after request end", "ERR_HTTP_HEADERS_SENT");
-          var key = String(name).toLowerCase();
-          normalizeHeaders([[key, value]]);
-          clientRequest.headers[key] = Array.isArray(value) ? value.join(", ") : String(value);
-          return clientRequest;
-        },
-        getHeader: function (name) { return clientRequest.headers[String(name).toLowerCase()]; },
-        getHeaders: function () { return Object.assign(Object.create(null), clientRequest.headers); },
-        hasHeader: function (name) { return Object.prototype.hasOwnProperty.call(clientRequest.headers, String(name).toLowerCase()); },
-        removeHeader: function (name) { delete clientRequest.headers[String(name).toLowerCase()]; },
-        write: function (data, encoding, callback) {
-          if (typeof encoding === "function") callback = encoding;
-          else if (encoding !== undefined && String(encoding).toLowerCase() !== "utf8" && String(encoding).toLowerCase() !== "utf-8") {
-            throw runtime.bridgeError("The Niva HTTP bridge accepts UTF-8 request strings only", "ERR_HTTP_BODY_ENCODING");
-          }
-          if (ended) throw runtime.bridgeError("write after end", "ERR_STREAM_WRITE_AFTER_END");
-          requestBody.push(bodyText(data));
-          hasBody = true;
-          if (callback) Promise.resolve().then(callback);
-          return true;
-        },
-        end: function (data, encoding, callback) {
-          if (typeof data === "function") { callback = data; data = undefined; }
-          else if (typeof encoding === "function") callback = encoding;
-          else if (encoding !== undefined && String(encoding).toLowerCase() !== "utf8" && String(encoding).toLowerCase() !== "utf-8") {
-            throw runtime.bridgeError("The Niva HTTP bridge accepts UTF-8 request strings only", "ERR_HTTP_BODY_ENCODING");
-          }
-          if (ended) {
-            if (callback) Promise.resolve().then(callback);
-            return clientRequest;
-          }
-          if (data !== undefined) {
-            requestBody.push(bodyText(data));
-            hasBody = true;
-          }
-          ended = true;
-          clientRequest.finished = true;
-          clientRequest.writable = false;
-          emitter.emit("finish");
-          if (callback) Promise.resolve().then(callback);
-          var requestOptions = {
-            method: options.method,
-            url: options.url,
-            headers: normalizeHeaders(clientRequest.headers),
-          };
-          if (requestOptions.headers && Object.keys(requestOptions.headers).length === 0) requestOptions.headers = null;
-          if (hasBody) requestOptions.body = requestBody.join("");
-          var bodyChunks = [];
-          var bodyChain = Promise.resolve();
-          function fail(error) {
-            if (requestDone) return;
-            requestDone = true;
-            var converted = runtime.nativeError(error);
-            if (bridgeCall && typeof bridgeCall.cancel === "function") bridgeCall.cancel();
-            if (!headerSettled) { headerSettled = true; rejectHeaders(converted); }
-            if (responseMessage) {
-              responseMessage._fail(converted);
-              rejectResult(converted);
-            } else {
-              rejectResult(converted);
+    class OutgoingMessage extends Writable {
+        constructor(socket, options) { super(options); this.socket = this.connection = socket; this.headersSent = false; this._headers = Object.create(null); this._chunked = false; this._sent = 0; this._expected = null; this._trailers = []; }
+        setHeader(name, value) { if (this.headersSent)
+            throw fail("Headers already sent", "ERR_HTTP_HEADERS_SENT"); var values = Array.isArray(value) ? value.map(function (item) { return header(name, item); }) : header(name, value); this._headers[name.toLowerCase()] = { name: name, value: values }; return this; }
+        getHeader(name) { return this._headers[String(name).toLowerCase()]?.value; }
+        getHeaders() { var result = Object.create(null); Object.keys(this._headers).forEach(name => result[name] = this._headers[name].value); return result; }
+        getHeaderNames() { return Object.keys(this._headers); }
+        hasHeader(name) { return this.getHeader(name) !== undefined; }
+        removeHeader(name) { if (this.headersSent)
+            throw fail("Headers already sent", "ERR_HTTP_HEADERS_SENT"); delete this._headers[String(name).toLowerCase()]; }
+        addTrailers(values) { Object.keys(values).forEach(name => { this._trailers.push(name + ": " + header(name, values[name])); }); }
+        flushHeaders() { if (this.headersSent)
+            return; this._sendHeaders(); }
+        _sendHeaders() {
+            if (!this.hasHeader("connection"))
+                this.setHeader("Connection", "close");
+            if (this._noBody) {
+                this._chunked = false;
             }
-            emitter.emit("error", converted);
-            emitter.emit("close");
-          }
-          failRequest = fail;
-          try {
-            bridgeCall = runtime.stream(niva, "http.requestStream", [requestOptions], {
-              onEvent: function (name, data) {
-                if (name !== "head" || responseMessage) return;
-                responseMessage = makeIncomingMessage(data, options.method, new URL(options.url).pathname + new URL(options.url).search, function (error) {
-                  if (bridgeCall && typeof bridgeCall.cancel === "function") bridgeCall.cancel();
-                  if (failRequest) failRequest(error);
+            else if (this.hasHeader("content-length")) {
+                var length = String(this.getHeader("content-length"));
+                if (!/^\d+$/.test(length))
+                    throw fail("Invalid Content-Length");
+                this._expected = Number(length);
+                if (!Number.isSafeInteger(this._expected))
+                    throw fail("Content-Length out of range");
+                if (this.hasHeader("transfer-encoding"))
+                    throw fail("Ambiguous HTTP framing");
+            }
+            else {
+                if (this.hasHeader("transfer-encoding") && String(this.getHeader("transfer-encoding")).toLowerCase() !== "chunked")
+                    throw fail("Unsupported Transfer-Encoding");
+                this.setHeader("Transfer-Encoding", "chunked");
+                this._chunked = true;
+            }
+            var lines = [this._startLine()];
+            Object.keys(this._headers).forEach(name => { var entry = this._headers[name]; (Array.isArray(entry.value) ? entry.value : [entry.value]).forEach(value => lines.push(entry.name + ": " + value)); });
+            this.headersSent = true;
+            this.socket.write(Buffer.from(lines.join("\r\n") + "\r\n\r\n", "latin1"));
+        }
+        _write(chunk, encoding, callback) { try {
+            this.flushHeaders();
+            if (this._noBody || chunk.length === 0) {
+                callback();
+                return;
+            }
+            this._sent += chunk.length;
+            if (this._expected !== null && this._sent > this._expected)
+                throw fail("Body exceeds Content-Length", "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
+            var bytes = this._chunked ? Buffer.concat([Buffer.from(chunk.length.toString(16) + "\r\n"), chunk, Buffer.from("\r\n")]) : chunk;
+            this.socket.write(bytes, callback);
+        }
+        catch (error) {
+            callback(error);
+        } }
+        _final(callback) { try {
+            this.flushHeaders();
+            if (!this._noBody && this._expected !== null && this._sent !== this._expected)
+                throw fail("Body does not match Content-Length", "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
+            if (this._chunked)
+                this.socket.write(Buffer.from("0\r\n" + this._trailers.join("\r\n") + (this._trailers.length ? "\r\n" : "") + "\r\n"), callback);
+            else
+                callback();
+        }
+        catch (error) {
+            callback(error);
+        } }
+        _destroy(error, callback) { if (error)
+            this.socket.destroy(error); callback(error); }
+        setTimeout(timeout, callback) { this.socket.setTimeout(timeout, callback); return this; }
+    }
+    class ServerResponse extends OutgoingMessage {
+        constructor(request) { super(request.socket, { autoDestroy: false }); this.req = request; this.statusCode = 200; this.statusMessage = undefined; this.sendDate = true; this.once("finish", () => this.socket.end()); }
+        _startLine() { if (!Number.isInteger(this.statusCode) || this.statusCode < 100 || this.statusCode > 999)
+            throw new RangeError("Invalid statusCode"); return "HTTP/1.1 " + this.statusCode + " " + header("status", this.statusMessage || STATUS_CODES[this.statusCode] || "unknown"); }
+        _sendHeaders() { this._noBody = this.req.method === "HEAD" || this.statusCode === 204 || this.statusCode === 304 || this.statusCode < 200; if (this.sendDate && !this.hasHeader("date"))
+            this.setHeader("Date", new Date().toUTCString()); super._sendHeaders(); }
+        writeHead(status, message, values) { if (typeof message !== "string") {
+            values = message;
+            message = undefined;
+        } if (!Number.isInteger(status) || status < 100 || status > 999)
+            throw new RangeError("Invalid statusCode"); this.statusCode = status; if (message !== undefined)
+            this.statusMessage = header("status", message); if (values)
+            Object.keys(values).forEach(name => this.setHeader(name, values[name])); this.flushHeaders(); return this; }
+        writeContinue(callback) { this.socket.write(Buffer.from("HTTP/1.1 100 Continue\r\n\r\n"), callback); }
+    }
+    function parseSocket(socket, type, onMessage, onError, headMethod) {
+        var parser = new Parser(type), message, initial = Buffer.alloc(0), validated = false, count = 0;
+        parser.maxHeaderSize = 16384;
+        parser[Parser.kOnHeadersComplete] = function (info) {
+            var values = headers(info.headers);
+            if (info.upgrade)
+                throw fail("HTTP upgrade is not implemented", "HPE_UNSUPPORTED_UPGRADE");
+            if (type === Parser.REQUEST && ++count > 1)
+                throw fail("Pipelining is unavailable on a closing connection");
+            message = new IncomingMessage(socket);
+            message.headers = values;
+            message.rawHeaders = info.headers.slice();
+            message.httpVersion = info.versionMajor + "." + info.versionMinor;
+            message.httpVersionMajor = info.versionMajor;
+            message.httpVersionMinor = info.versionMinor;
+            if (type === Parser.REQUEST) {
+                message.method = Parser.methods[info.method];
+                message.url = info.url;
+            }
+            else {
+                message.statusCode = info.statusCode;
+                message.statusMessage = info.statusMessage;
+            }
+            if (type === Parser.RESPONSE && info.statusCode < 200) {
+                message = null;
+                return true;
+            }
+            onMessage(message);
+            return headMethod || info.statusCode === 204 || info.statusCode === 304;
+        };
+        parser[Parser.kOnBody] = function (chunk, offset, length) { if (message && !message.push(Buffer.from(chunk.subarray(offset, offset + length))))
+            socket.pause(); };
+        parser[Parser.kOnHeaders] = function (raw) { if (message) {
+            message.rawTrailers = raw.slice();
+            message.trailers = headers(raw);
+        } };
+        parser[Parser.kOnMessageComplete] = function () { if (message) {
+            message.complete = true;
+            message.push(null);
+            message = null;
+        } };
+        socket.on("data", function (chunk) {
+            try {
+                if (!validated) {
+                    initial = Buffer.concat([initial, chunk]);
+                    var end = initial.indexOf("\r\n\r\n");
+                    if (end < 0) {
+                        if (initial.length > 16384)
+                            throw fail("HTTP headers too large", "HPE_HEADER_OVERFLOW");
+                        return;
+                    }
+                    if (end > 16384)
+                        throw fail("HTTP headers too large", "HPE_HEADER_OVERFLOW");
+                    var lines = initial.subarray(0, end).toString("latin1").split("\r\n");
+                    var first = lines.shift();
+                    if (type === Parser.REQUEST ? !/^[A-Z-]+ [^\x00-\x20]+ HTTP\/1\.[01]$/.test(first) : !/^HTTP\/1\.[01] \d{3}(?: [^\r\n]*)?$/.test(first))
+                        throw fail("Invalid HTTP start line");
+                    lines.forEach(function (line) { var index = line.indexOf(":"); if (index <= 0 || !token.test(line.slice(0, index)))
+                        throw fail("Malformed HTTP header"); header(line.slice(0, index), line.slice(index + 1)); });
+                    chunk = initial;
+                    initial = null;
+                    validated = true;
+                }
+                var result = parser.execute(chunk);
+                if (result instanceof Error)
+                    throw result;
+            }
+            catch (error) {
+                onError(error);
+            }
+        });
+        socket.on("end", function () { try {
+            var result = parser.finish();
+            if (result instanceof Error)
+                throw result;
+        }
+        catch (error) {
+            onError(error);
+        } });
+        socket.on("close", function () { if (message && !message.complete) {
+            message.aborted = true;
+            message.emit("aborted");
+            message.destroy(fail("Premature HTTP close", "ECONNRESET"));
+        } });
+    }
+    function createHttpModule(protocol, niva) {
+        function transport() { return protocol === "https" ? runtime.createTlsModule(niva) : runtime.createNetModule(niva); }
+        class ClientRequest extends OutgoingMessage {
+            constructor(input, options, callback) {
+                if (typeof options === "function") {
+                    callback = options;
+                    options = {};
+                }
+                var opts = Object.assign({}, typeof input === "object" && !(input instanceof URL) ? input : {}, options);
+                if (opts.protocol && opts.protocol !== protocol + ":")
+                    throw fail("Unexpected protocol", "ERR_INVALID_PROTOCOL");
+                var url = typeof input === "string" || input instanceof URL ? new URL(input) : null;
+                if (url && url.protocol !== protocol + ":")
+                    throw fail("Unexpected protocol", "ERR_INVALID_PROTOCOL");
+                var authority = typeof input === "string" ? /^[a-z]+:\/\/([^/?#]*)/i.exec(input) : null;
+                if (url && (url.username || url.password || authority && authority[1].includes("@")))
+                    throw fail("URL credentials are unsupported", "ERR_INVALID_URL");
+                var hostname = opts.hostname || (url && url.hostname) || opts.host || "localhost";
+                hostname = hostname.replace(/^\[|\]$/g, "");
+                var port = Number(opts.port || (url && url.port) || (protocol === "https" ? 443 : 80));
+                if (!Number.isInteger(port) || port < 1 || port > 65535)
+                    throw new RangeError("Invalid port");
+                if (opts.createConnection || opts.socketPath)
+                    throw fail("Custom HTTP connections are unsupported", "ENOTSUP");
+                var method = String(opts.method || "GET").toUpperCase();
+                if (!token.test(method)) throw fail("Invalid HTTP method", "ERR_INVALID_HTTP_TOKEN");
+                var requestPath = opts.path || (url ? url.pathname + url.search : "/");
+                if (typeof requestPath !== "string" || /[^\x21-\x7e\x80-\xff]/.test(requestPath)) throw fail("Invalid request path", "ERR_UNESCAPED_CHARACTERS");
+                if (opts.headers && (typeof opts.headers !== "object" || Array.isArray(opts.headers))) throw fail("HTTP headers must be an object", "ENOTSUP");
+                Object.keys(opts.headers || {}).forEach(name => {
+                    var values = Array.isArray(opts.headers[name]) ? opts.headers[name] : [opts.headers[name]];
+                    values.forEach(value => header(name, value));
                 });
-                headerSettled = true;
-                resolveHeaders(responseMessage);
-                emitter.emit("response", responseMessage);
-              },
-              onBlob: function (blob) {
-                bodyChain = bodyChain.then(function () {
-                  var bufferPromise = blob && typeof blob.arrayBuffer === "function"
-                    ? blob.arrayBuffer()
-                    : Promise.resolve(blob instanceof Uint8Array ? blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength) : blob);
-                  return Promise.resolve(bufferPromise).then(function (buffer) { bodyChunks.push(runtime.buffer.Buffer.from(buffer)); });
-                });
-              },
+                var socketOptions = Object.assign({}, opts, { host: hostname, port: port, scheme: protocol });
+                delete socketOptions.path;
+                delete socketOptions.method;
+                delete socketOptions.headers;
+                var socket = transport().connectGuarded(socketOptions);
+                super(socket, { autoDestroy: false });
+                this.method = method;
+                this.path = requestPath;
+                this.host = hostname;
+                this.protocol = protocol + ":";
+                this.aborted = false;
+                Object.keys(opts.headers || {}).forEach(name => this.setHeader(name, opts.headers[name]));
+                if (!this.hasHeader("host"))
+                    this.setHeader("Host", (hostname.indexOf(":") >= 0 ? "[" + hostname + "]" : hostname) + ((protocol === "https" ? 443 : 80) !== port ? ":" + port : ""));
+                if (callback)
+                    this.once("response", callback);
+                parseSocket(socket, Parser.RESPONSE, response => { this.res = response; this.emit("response", response); }, error => this.destroy(error), this.method === "HEAD");
+                socket.on("error", error => this.destroy(error));
+                socket.on("close", () => { if (!this.res && !this.destroyed)
+                    this.destroy(fail("socket hang up", "ECONNRESET")); this.emit("close"); });
+                queueMicrotask(() => this.emit("socket", socket));
+                if (opts.timeout)
+                    socket.setTimeout(opts.timeout, () => this.emit("timeout"));
+            }
+            _startLine() { return this.method + " " + this.path + " HTTP/1.1"; }
+            abort() { this.aborted = true; this.emit("abort"); this.destroy(); }
+            _destroy(error, callback) { this.socket.destroy(); callback(error); }
+        }
+        function request(input, options, callback) { return new ClientRequest(input, options, callback); }
+        function get(input, options, callback) { var req = request(input, options, callback); req.end(); return req; }
+        function createServer(options, listener) {
+            if (typeof options === "function") {
+                listener = options;
+                options = {};
+            }
+            options = options || {};
+            var server = transport().createServer(options, function (socket) {
+                socket.on("error", function (error) { if (server.listenerCount("clientError"))
+                    server.emit("clientError", error, socket); });
+                parseSocket(socket, Parser.REQUEST, function (req) { var res = new ServerResponse(req); if (req.headers.expect && req.headers.expect.toLowerCase() === "100-continue")
+                    res.writeContinue(); server.emit("request", req, res); }, function (error) { if (server.listenerCount("clientError"))
+                    server.emit("clientError", error, socket);
+                else
+                    socket.destroy(); });
             });
-          } catch (error) {
-            Promise.resolve().then(function () { fail(error); });
-            return clientRequest;
-          }
-          Promise.resolve(bridgeCall.promise).then(function (terminal) {
-            return bodyChain.then(function () {
-              if (!responseMessage) throw runtime.bridgeError("Niva HTTP response did not include a head event", "ERR_HTTP_INVALID_RESPONSE");
-              var body = runtime.buffer.Buffer.concat(bodyChunks);
-              if (terminal && terminal.status !== undefined && Number(terminal.status) !== responseMessage.statusCode) {
-                throw runtime.bridgeError("Niva HTTP terminal status did not match its response head", "ERR_HTTP_INVALID_RESPONSE");
-              }
-              responseMessage._finish(body);
-              requestDone = true;
-              resolveResult(responseMessage);
-              emitter.emit("close");
-            });
-          }).catch(fail);
-          return clientRequest;
-        },
-        abort: function () {
-          var error = runtime.bridgeError("The HTTP request was aborted", "ABORT_ERR");
-          if (failRequest) failRequest(error);
-          else {
-            ended = true;
-            clientRequest.finished = true;
-            clientRequest.writable = false;
-            headerSettled = true;
-            rejectHeaders(error);
-            rejectResult(error);
-            emitter.emit("abort");
-            emitter.emit("error", error);
-            emitter.emit("close");
-          }
-          return clientRequest;
-        },
-        destroy: function (error) {
-          var converted = runtime.nativeError(error || runtime.bridgeError("The HTTP request was destroyed", "ABORT_ERR"));
-          if (failRequest) failRequest(converted);
-          else {
-            ended = true;
-            clientRequest.finished = true;
-            clientRequest.writable = false;
-            headerSettled = true;
-            rejectHeaders(converted);
-            rejectResult(converted);
-            emitter.emit("error", converted);
-            emitter.emit("close");
-          }
-          return clientRequest;
-        },
-        setTimeout: function () { throw runtime.bridgeError("HTTP request timeouts are not supported by the Niva bridge", "ENOTSUP"); },
-      });
-      if (callback) emitter.once("response", callback);
-      return clientRequest;
+            if (listener)
+                server.on("request", listener);
+            return server;
+        }
+        return { request: request, get: get, createServer: createServer, IncomingMessage: IncomingMessage, ServerResponse: ServerResponse, ClientRequest: ClientRequest, METHODS: Parser.methods.slice(), STATUS_CODES: STATUS_CODES };
     }
-
-    function get() {
-      var req = request.apply(null, arguments);
-      req.end();
-      return req;
-    }
-
-    function post(input, body, options, callback) {
-      if (typeof body === "function") { callback = body; body = undefined; options = {}; }
-      else if (body && typeof body === "object" && !(body instanceof ArrayBuffer) && !ArrayBuffer.isView(body)) {
-        callback = typeof options === "function" ? options : callback;
-        options = body;
-        body = undefined;
-      }
-      else if (typeof options === "function") { callback = options; options = {}; }
-      if (body === null) body = undefined;
-      options = Object.assign({}, options || {}, { method: "POST" });
-      var requestInput = input;
-      if (input && typeof input === "object" && !(typeof URL !== "undefined" && input instanceof URL)) {
-        requestInput = Object.assign({}, input, options);
-        return request(requestInput, callback).end(body);
-      }
-      var req = request(requestInput, options, callback);
-      req.end(body);
-      return req;
-    }
-
-    return { request: request, get: get, post: post };
-  }
-
-  runtime.createHttpModule = createHttpModule;
-  runtime.http = createHttpModule("http");
-  runtime.https = createHttpModule("https");
+    runtime.createHttpModule = createHttpModule;
+    runtime.http = createHttpModule("http");
+    runtime.https = createHttpModule("https");
 })(globalThis);

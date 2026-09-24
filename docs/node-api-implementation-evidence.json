@@ -1,0 +1,786 @@
+{
+  "date": "2026-09-24",
+  "baseCommit": "3787257887eddc31007dbfa57f36181ce93e6abf",
+  "workingTree": "uncommitted implementation; excludes unrelated concurrent edits from acceptance claims",
+  "implementationSourceSha256": "1d11a1308cf99646b3c4e61d63becf6072587fa03be1565e804e0b81baf179cd",
+  "measurementScope": "Selected API export availability plus explicitly listed tests; not full Node API conformance",
+  "moduleEntries": {
+    "total": 22,
+    "available": 22,
+    "modules": [
+      {
+        "module": "fs",
+        "targetApis": 40,
+        "loaded": true
+      },
+      {
+        "module": "path",
+        "targetApis": 16,
+        "loaded": true
+      },
+      {
+        "module": "events",
+        "targetApis": 11,
+        "loaded": true
+      },
+      {
+        "module": "process",
+        "targetApis": 17,
+        "loaded": true
+      },
+      {
+        "module": "http",
+        "targetApis": 4,
+        "loaded": true
+      },
+      {
+        "module": "https",
+        "targetApis": 3,
+        "loaded": true
+      },
+      {
+        "module": "util",
+        "targetApis": 6,
+        "loaded": true
+      },
+      {
+        "module": "os",
+        "targetApis": 15,
+        "loaded": true
+      },
+      {
+        "module": "crypto",
+        "targetApis": 8,
+        "loaded": true
+      },
+      {
+        "module": "child_process",
+        "targetApis": 7,
+        "loaded": true
+      },
+      {
+        "module": "stream",
+        "targetApis": 7,
+        "loaded": true
+      },
+      {
+        "module": "url",
+        "targetApis": 4,
+        "loaded": true
+      },
+      {
+        "module": "buffer",
+        "targetApis": 14,
+        "loaded": true
+      },
+      {
+        "module": "querystring",
+        "targetApis": 2,
+        "loaded": true
+      },
+      {
+        "module": "net",
+        "targetApis": 3,
+        "loaded": true
+      },
+      {
+        "module": "tls",
+        "targetApis": 2,
+        "loaded": true
+      },
+      {
+        "module": "dns",
+        "targetApis": 3,
+        "loaded": true
+      },
+      {
+        "module": "dgram",
+        "targetApis": 1,
+        "loaded": true
+      },
+      {
+        "module": "zlib",
+        "targetApis": 4,
+        "loaded": true
+      },
+      {
+        "module": "assert",
+        "targetApis": 5,
+        "loaded": true
+      },
+      {
+        "module": "string_decoder",
+        "targetApis": 1,
+        "loaded": true
+      },
+      {
+        "module": "timers",
+        "targetApis": 6,
+        "loaded": true
+      }
+    ]
+  },
+  "apiEntries": {
+    "total": 179,
+    "available": 179,
+    "basis": "Real WebView lookup of the fixed inventory; instance APIs checked on class prototypes or real constructed instances"
+  },
+  "release": {
+    "artifact": "target/release/niva",
+    "platform": "macOS",
+    "architecture": "arm64",
+    "osVersion": "26.6.2",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "bytes": 2772000,
+    "limitBytesExclusive": 3300000,
+    "headroomBytes": 528000,
+    "sha256": "6087161cb13e6cc6da51c5ae8a80914cf89d25b0d07f86a1d9227284781b9c5a",
+    "includes": [
+      "Native code",
+      "embedded NodeCompat classic and ESM JS",
+      "vendor JS",
+      "asset index and loader"
+    ],
+    "sizeGatePassed": true
+  },
+  "checks": {
+    "javascriptTests": {
+      "passed": 109,
+      "failed": 0
+    },
+    "devtoolsTests": {
+      "passed": 20,
+      "failed": 0
+    },
+    "rustCommands": [
+      {
+        "command": "cargo fmt --all -- --check",
+        "exitCode": 0
+      },
+      {
+        "command": "cargo check --workspace",
+        "exitCode": 0
+      },
+      {
+        "command": "cargo clippy --workspace --all-targets",
+        "exitCode": 0
+      },
+      {
+        "command": "cargo test --workspace",
+        "exitCode": 0
+      },
+      {
+        "command": "cargo check --target x86_64-pc-windows-msvc",
+        "exitCode": 0
+      },
+      {
+        "command": "cargo build --release -p niva",
+        "exitCode": 0
+      }
+    ],
+    "nativeUnitTests": 120,
+    "packagerUnitTests": 10,
+    "devtoolsBuild": "passed (TypeScript/Vite rerun)",
+    "websiteBuild": "passed",
+    "websiteTypecheck": "passed",
+    "upstreamHarnessSelfTests": 27,
+    "embeddedModuleAssetTests": {
+      "passed": 6,
+      "failed": 0
+    },
+    "nativeFullChecksNote": "Reran cargo fmt --all -- --check, cargo check --workspace, cargo clippy --workspace --all-targets, cargo test --workspace, Windows x86_64-pc-windows-msvc target check, and full macOS release build. All exit 0; Clippy/Windows build retain warnings. Windows runtime and Windows release size remain unverified.",
+    "bridgeProtocolRegressionTests": {
+      "passed": 15,
+      "failed": 0
+    }
+  },
+  "webViewRuns": {
+    "debug": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": false
+    },
+    "packagedDebug": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    },
+    "packagedRelease1": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    },
+    "packagedRelease2": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    },
+    "contractRelease": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "contractAbortResistance": true,
+        "contractBufferBoundaries": true,
+        "contractCwdOverride": true,
+        "contractEventsConstructor": true,
+        "contractQuerystringCodec": true,
+        "contractStringDecoder": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    },
+    "officialExpansionRelease": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "asyncBytes": true,
+        "callback": true,
+        "contractAbortResistance": true,
+        "contractBufferBoundaries": true,
+        "contractCwdOverride": true,
+        "contractEventsConstructor": true,
+        "contractQuerystringCodec": true,
+        "contractStringDecoder": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "tlsPkcs1": true,
+        "tlsPkcs1ServerClose": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    },
+    "fixEightRelease": {
+      "checks": {
+        "apiSurface": true,
+        "apiSurfaceCount": 179,
+        "assertSourceMessage": true,
+        "asyncBytes": true,
+        "callback": true,
+        "contractAbortResistance": true,
+        "contractBufferBoundaries": true,
+        "contractCwdOverride": true,
+        "contractEventsConstructor": true,
+        "contractQuerystringCodec": true,
+        "contractStringDecoder": true,
+        "dnsResolve4Ttl": true,
+        "dnsResolveTxt": true,
+        "dnsTcpFallback": true,
+        "dnsTcpServerClose": true,
+        "dnsTransportErrorFree": true,
+        "dnsUdpServerClose": true,
+        "dynamicCwd": true,
+        "execFile": true,
+        "fileHandle": true,
+        "hash": true,
+        "http": true,
+        "https": true,
+        "httpsServerClose": true,
+        "httpsSocketsClosedNaturally": true,
+        "kill": true,
+        "localUdpEcho": true,
+        "mainProcess": true,
+        "osDynamic": true,
+        "osStatic": true,
+        "rawTcpHalfOpen": true,
+        "readStream": true,
+        "rejectUI": true,
+        "spawnSync": true,
+        "syncBytes": true,
+        "tcpHalfOpenServerClose": true,
+        "timingSafeEqual": true,
+        "tlsPkcs1": true,
+        "tlsPkcs1ServerClose": true,
+        "udpEchoClientClose": true,
+        "udpEchoServerClose": true,
+        "watch": true,
+        "wrapperModuleIdentity": true,
+        "writeStream": true,
+        "zlibLazyCommonJS": true,
+        "zlibModuleIdentity": true
+      },
+      "ok": true,
+      "nativeReady": true,
+      "packaged": true
+    }
+  },
+  "upstreamConformance": {
+    "version": "Node v22.14.0",
+    "counts": {
+      "total": 58,
+      "pass": 58,
+      "fail": 0,
+      "unsupported": 0
+    },
+    "passed": true,
+    "report": "node-compat-upstream-results.json",
+    "manifestSha256": "4daa582a0a347db764cae3e5d09de8a0ac16f54ed3b34e09a509090ac8e1a350",
+    "runnerSha256": "84b8208924fb3de6e44c2d8dae1ea738df1b9ac0ab6dbb0073c629329fd210b6",
+    "moduleFamilies": 22,
+    "executionSuites": {
+      "js": 48,
+      "native": 10
+    },
+    "helperSha256": {
+      "upstream-native-bridge.mjs": "093ca5a7240e6b3ab1f5e3fed7fc0bcd6dd50d67b6fbc333fd41f6d9d35a16e5",
+      "upstream-native-relay.py": "610f1fe91823d24c1b55c8a41f542a88044223f9e43d441b3da138f5926f6240",
+      "upstream-util-fixture.mjs": "a3bc1677254c3fc5798130804c0a43c85639785099386d90e8bec7442b95f62c",
+      "upstream-child-fixtures.cjs": "bd91a512f37d23fdbe454d5b537242a29f9765a39785703400eda28f56f6951f",
+      "upstream-environment-exclusions.mjs": "0a6a7307cc3f24422403d2bd03520fd5432262d06e5f6060e725199f51ee9ce8"
+    },
+    "environmentExclusionCount": 2,
+    "environmentExclusions": [
+      {
+        "id": "v8-erased-constructor-name",
+        "file": "test/parallel/test-util-format.js",
+        "startLine": 196,
+        "endLine": 199,
+        "reason": "V8 retains an erased constructor name that standard WebView reflection does not expose."
+      },
+      {
+        "id": "native-cryptokey-material-equality",
+        "file": "test/parallel/test-assert-deep.js",
+        "startLine": 1365,
+        "endLine": 1365,
+        "reason": "Node compares native CryptoKey material through private handles; the portable synchronous comparator cannot read it."
+      }
+    ],
+    "environmentPolicy": {
+      "mode": "approved-exclusions",
+      "sha256": "607ac4076ac99a8915c452071f37b3429db78d5cecb8eb0353cb05a5cd9092f1"
+    },
+    "unfilteredReport": "node-upstream-unfiltered-results.json"
+  },
+  "notVerified": [
+    "Windows native runtime",
+    "Windows release artifact size",
+    "remote CI run",
+    "All behavioral combinations of the 179 target APIs beyond the selected contracts"
+  ],
+  "knownLimits": [
+    "TLS allowHalfOpen=true rejected; system TLS uses full-session shutdown",
+    "setNoDelay and setKeepAlive report ENOTSUP",
+    "ref/unref do not control Niva process liveness",
+    "HTTP uses closing connections; full Agent/keepalive/upgrade semantics are not implemented",
+    "child_process.fork excluded",
+    "stdin/stdout reserved for host protocol in --stdio mode",
+    "V8 removed-prototype constructor names cannot be recovered through public JS reflection.",
+    "Distinct native CryptoKeys with identical public metadata cannot be synchronously compared by private key material using the public Web Crypto API; native CryptoKeys use identity-only comparison after public metadata checks.",
+    "TLS multi-identity server options pass construction validation but listen reports ENOTSUP; no silent first-key selection.",
+    "Unforwarded TLS policy/session/custom-verifier options report ENOTSUP in both raw and guarded JS connections."
+  ],
+  "sourceHashRule": "Sort sourceHashInputs; hash relative UTF-8 path + NUL + file bytes + NUL for each entry",
+  "sourceHashInputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/niva/Cargo.toml",
+    "crates/niva/assets/initialize_script.js",
+    "crates/niva/build.rs",
+    "crates/niva/src/app/api/clipboard.rs",
+    "crates/niva/src/app/api/dialog.rs",
+    "crates/niva/src/app/api/extra.rs",
+    "crates/niva/src/app/api/fs.rs",
+    "crates/niva/src/app/api/host.rs",
+    "crates/niva/src/app/api/mod.rs",
+    "crates/niva/src/app/api/monitor.rs",
+    "crates/niva/src/app/api/os.rs",
+    "crates/niva/src/app/api/process.rs",
+    "crates/niva/src/app/api/resource.rs",
+    "crates/niva/src/app/api/shortcut.rs",
+    "crates/niva/src/app/api/socket.rs",
+    "crates/niva/src/app/api/tray.rs",
+    "crates/niva/src/app/api/webview.rs",
+    "crates/niva/src/app/api/window.rs",
+    "crates/niva/src/app/api/window_extra.rs",
+    "crates/niva/src/app/api_manager/mod.rs",
+    "crates/niva/src/app/api_manager/protocol.rs",
+    "crates/niva/src/app/api_manager/thread_pool.rs",
+    "crates/niva/src/app/assets.rs",
+    "crates/niva/src/app/custom_protocol.rs",
+    "crates/niva/src/app/event_handler.rs",
+    "crates/niva/src/app/fs_ops.rs",
+    "crates/niva/src/app/http_server/mod.rs",
+    "crates/niva/src/app/ipc_macos.rs",
+    "crates/niva/src/app/ipc_windows_frames.rs",
+    "crates/niva/src/app/main_exec.rs",
+    "crates/niva/src/app/menu/mod.rs",
+    "crates/niva/src/app/menu/options.rs",
+    "crates/niva/src/app/mod.rs",
+    "crates/niva/src/app/node_bootstrap.rs",
+    "crates/niva/src/app/node_compat.rs",
+    "crates/niva/src/app/options.rs",
+    "crates/niva/src/app/os_native.rs",
+    "crates/niva/src/app/resource_manager/image_utils.rs",
+    "crates/niva/src/app/resource_manager/mod.rs",
+    "crates/niva/src/app/resource_manager/win_utils.rs",
+    "crates/niva/src/app/shortcut_manager/mod.rs",
+    "crates/niva/src/app/stdio.rs",
+    "crates/niva/src/app/tray_manager/mod.rs",
+    "crates/niva/src/app/utils.rs",
+    "crates/niva/src/app/window_manager/builder.rs",
+    "crates/niva/src/app/window_manager/mod.rs",
+    "crates/niva/src/app/window_manager/options.rs",
+    "crates/niva/src/app/window_manager/permissions.rs",
+    "crates/niva/src/app/window_manager/window.rs",
+    "crates/niva/src/main.rs",
+    "package-lock.json",
+    "packages/node-compat/package.json",
+    "packages/node-compat/runtime-files.json",
+    "packages/node-compat/scripts/build-classic.mjs",
+    "packages/node-compat/scripts/build-vendor.mjs",
+    "packages/node-compat/src/assert-strict.js",
+    "packages/node-compat/src/assert.js",
+    "packages/node-compat/src/buffer.js",
+    "packages/node-compat/src/child_process.js",
+    "packages/node-compat/src/crypto.js",
+    "packages/node-compat/src/dgram.js",
+    "packages/node-compat/src/dns-promises.js",
+    "packages/node-compat/src/dns.js",
+    "packages/node-compat/src/events.js",
+    "packages/node-compat/src/fs-promises.js",
+    "packages/node-compat/src/fs.js",
+    "packages/node-compat/src/http.js",
+    "packages/node-compat/src/https.js",
+    "packages/node-compat/src/index.js",
+    "packages/node-compat/src/net.js",
+    "packages/node-compat/src/os.js",
+    "packages/node-compat/src/path.js",
+    "packages/node-compat/src/process.js",
+    "packages/node-compat/src/querystring.js",
+    "packages/node-compat/src/runtime/assert.js",
+    "packages/node-compat/src/runtime/bridge.js",
+    "packages/node-compat/src/runtime/buffer.js",
+    "packages/node-compat/src/runtime/child_process.js",
+    "packages/node-compat/src/runtime/crypto.js",
+    "packages/node-compat/src/runtime/dgram.js",
+    "packages/node-compat/src/runtime/dns.js",
+    "packages/node-compat/src/runtime/events.js",
+    "packages/node-compat/src/runtime/fs.js",
+    "packages/node-compat/src/runtime/http.js",
+    "packages/node-compat/src/runtime/net.js",
+    "packages/node-compat/src/runtime/os.js",
+    "packages/node-compat/src/runtime/path.js",
+    "packages/node-compat/src/runtime/process.js",
+    "packages/node-compat/src/runtime/querystring.js",
+    "packages/node-compat/src/runtime/registration.js",
+    "packages/node-compat/src/runtime/source.js",
+    "packages/node-compat/src/runtime/stream.js",
+    "packages/node-compat/src/runtime/string_decoder.js",
+    "packages/node-compat/src/runtime/timers.js",
+    "packages/node-compat/src/runtime/tls.js",
+    "packages/node-compat/src/runtime/url.js",
+    "packages/node-compat/src/runtime/util.js",
+    "packages/node-compat/src/runtime/vendor.js",
+    "packages/node-compat/src/runtime/zlib.js",
+    "packages/node-compat/src/stream-promises.js",
+    "packages/node-compat/src/stream.js",
+    "packages/node-compat/src/string_decoder.js",
+    "packages/node-compat/src/timers-promises.js",
+    "packages/node-compat/src/timers.js",
+    "packages/node-compat/src/tls.js",
+    "packages/node-compat/src/url.js",
+    "packages/node-compat/src/util.js",
+    "packages/node-compat/src/vendor/index.js",
+    "packages/node-compat/src/zlib.js"
+  ],
+  "fixtureSourceSha256": {
+    "examples/node-compat-integration/index.html": "0f2368f0a9c0a07d3add7cc90a144a6a7dece81641fb5f81d7d81b7ccf09014f",
+    "examples/node-compat-integration/run.py": "929c8dfa28f37749447e29be4012ae65a4dd9c50cf9b486ab547e62147fadc0b"
+  },
+  "notes": [
+    "Release fixture diagnostics initially filled the bounded stdio output queue. Progress is now opt-in; assertions and final result remain mandatory. Two packaged release runs passed on the unchanged binary.",
+    "Fixed 30-file upstream gate now passes on Node v22.14.0; upstream test/fixture contents and selection unchanged. Release WebView includes six regression checks for the corrected contracts.",
+    "Official selection expanded from 30 files/5 families to 58 files/22 families without modifying originals. 50 pass, 8 fail; hard gate remains red. Source and manifest hashes frozen. New packaged release passed 42 behavior checks, including short-lived CA + PKCS1 TLS key normalization.",
+    "Fix-eight follow-up: six original failures fixed; full frozen gate is now 56 pass / 2 fail / 0 unsupported. All test bytes/manifest selection unchanged. Packaged WebView 45/45; generic same-origin source recovery for assert.ok verified on JSC, with no expected-message stubs. New TLS verification is reviewed and negative-tested; no global trust-store changes or disabled peer authentication.",
+    "User explicitly authorized the two engine-specific exclusions. The default gate now passes 58/58 files with exactly two recorded statement-site exclusions; 27/27 runner probes pass. Original source bytes and the 58-file selection remain pinned. --include-environment-specific restores the full unfiltered run (56/58)."
+  ],
+  "previousReleaseMeasurements": [
+    {
+      "artifact": "target/release/niva",
+      "platform": "macOS",
+      "architecture": "arm64",
+      "osVersion": "26.6.2",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "bytes": 2506416,
+      "limitBytesExclusive": 3300000,
+      "headroomBytes": 793584,
+      "sha256": "fe2f06f2d86750aa613a10c8660d66e56dedafbdb39d05b1f6a568fc6597b58b",
+      "includes": [
+        "Native code",
+        "embedded NodeCompat classic and ESM JS",
+        "vendor JS",
+        "asset index and loader"
+      ],
+      "sizeGatePassed": true
+    },
+    {
+      "artifact": "target/release/niva",
+      "platform": "macOS",
+      "architecture": "arm64",
+      "osVersion": "26.6.2",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "bytes": 2522928,
+      "limitBytesExclusive": 3300000,
+      "headroomBytes": 777072,
+      "sha256": "ff5c9ffe219c1fb21813a5f07d2b2eb658515872f3d2b5d7ae97c237111191a3",
+      "includes": [
+        "Native code",
+        "embedded NodeCompat classic and ESM JS",
+        "vendor JS",
+        "asset index and loader"
+      ],
+      "sizeGatePassed": true
+    },
+    {
+      "artifact": "target/release/niva",
+      "platform": "macOS",
+      "architecture": "arm64",
+      "osVersion": "26.6.2",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "bytes": 2522928,
+      "limitBytesExclusive": 3300000,
+      "headroomBytes": 777072,
+      "sha256": "08e8c97bdf2a3326af2a8894374ccb03ce7ca349251d92f7ef97bbcfcd677cfa",
+      "includes": [
+        "Native code",
+        "embedded NodeCompat classic and ESM JS",
+        "vendor JS",
+        "asset index and loader"
+      ],
+      "sizeGatePassed": true
+    }
+  ],
+  "previousUpstreamConformance": {
+    "version": "Node v22.14.0",
+    "counts": {
+      "total": 58,
+      "pass": 50,
+      "fail": 8,
+      "unsupported": 0
+    },
+    "passed": false,
+    "report": "node-compat-upstream-results.json",
+    "manifestSha256": "4daa582a0a347db764cae3e5d09de8a0ac16f54ed3b34e09a509090ac8e1a350",
+    "runnerSha256": "959e9a5c0626b3462b4cf4e9009d9530fe319ae69ad6d682bd0c42041336bf49",
+    "moduleFamilies": 22,
+    "executionSuites": {
+      "js": 48,
+      "native": 10
+    },
+    "helperSha256": {
+      "upstream-native-bridge.mjs": "093ca5a7240e6b3ab1f5e3fed7fc0bcd6dd50d67b6fbc333fd41f6d9d35a16e5",
+      "upstream-native-relay.py": "610f1fe91823d24c1b55c8a41f542a88044223f9e43d441b3da138f5926f6240",
+      "upstream-util-fixture.mjs": "a3bc1677254c3fc5798130804c0a43c85639785099386d90e8bec7442b95f62c",
+      "upstream-child-fixtures.cjs": "bd91a512f37d23fdbe454d5b537242a29f9765a39785703400eda28f56f6951f"
+    }
+  }
+}

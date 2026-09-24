@@ -63,258 +63,62 @@ test("package ESM exports resolve and registration enforces the bridge version",
   assert.throws(() => runtime.registerNodeCompat({ bridgeVersion: 0, registerModule() {} }), /version 1 or newer/);
 });
 
-function makeFsNiva() {
-  const calls = [];
-  const stats = new Map([
-    ["/file.bin", { isFile: true, isDir: false, isSymlink: false, size: 3, modified: 20, accessed: 10, created: 1 }],
-    ["/folder", { isFile: false, isDir: true, isSymlink: false, size: 0, modified: 20, accessed: 10, created: 1 }],
-    ["/folder/a.txt", { isFile: true, isDir: false, isSymlink: false, size: 1, modified: 20, accessed: 10, created: 1 }],
-  ]);
-  const fs = {
-    read(file, encoding) {
-      calls.push(["read", file, encoding]);
-      const bytes = Uint8Array.from([0, 255, 65]);
-      return Promise.resolve(encoding === "base64" ? Buffer.from(bytes).toString("base64") : "read text");
-    },
-    write(file, content, encoding) { calls.push(["write", file, content, encoding]); return Promise.resolve(); },
-    append(file, content, encoding) { calls.push(["append", file, content, encoding]); return Promise.resolve(); },
-    stat(file) { calls.push(["stat", file]); const normalized = file.replaceAll("\\", "/"); return stats.has(normalized) ? Promise.resolve(stats.get(normalized)) : Promise.reject({ code: -1, message: "No such file or directory" }); },
-    exists(file) { calls.push(["exists", file]); return Promise.resolve(stats.has(file)); },
-    createDir(file) { calls.push(["createDir", file]); return Promise.resolve(); },
-    createDirAll(file) { calls.push(["createDirAll", file]); return Promise.resolve(); },
-    readDir(file) { calls.push(["readDir", file]); return Promise.resolve(file === "/folder" ? ["a.txt"] : []); },
-    move(from, to, options) { calls.push(["move", from, to, options]); return Promise.resolve(); },
-    remove(file) { calls.push(["remove", file]); return Promise.resolve(); },
-    copy(from, to, options) { calls.push(["copy", from, to, options]); return Promise.resolve(); },
-  };
-  return { niva: { api: { fs } }, calls };
-}
 
-test("fs promise adapters bridge text, bytes, writes, stats, and directory entries", async () => {
-  const { niva, calls } = makeFsNiva();
-  const fs = runtime.createFsModule(niva);
-
-  assert.equal(await fs.readFile("/note.txt", "utf8"), "read text");
-  const binary = await fs.readFile("/file.bin", { encoding: null });
-  assert.equal(runtime.buffer.Buffer.isBuffer(binary), true);
-  assert.deepEqual([...binary], [0, 255, 65]);
-  assert.equal(runtime.buffer.Buffer.isBuffer(await fs.readFile("/file.bin", null)), true);
-  assert.equal(runtime.buffer.Buffer.isBuffer(await fs.readFile("/file.bin")), true);
-  await fs.writeFile("/note.txt", "hello");
-  await fs.writeFile("/file.bin", Uint8Array.from([0, 255, 65]));
-  await fs.appendFile("/note.txt", "!");
-  await assert.rejects(fs.writeFile("/note.txt", "hello", { mode: 0o600 }), { code: "ENOTSUP" });
-  assert.deepEqual(calls.filter((call) => ["read", "write", "append"].includes(call[0])), [
-    ["read", "/note.txt", "utf8"],
-    ["read", "/file.bin", "base64"],
-    ["read", "/file.bin", "base64"],
-    ["read", "/file.bin", "base64"],
-    ["write", "/note.txt", "hello", "utf8"],
-    ["write", "/file.bin", "AP9B", "base64"],
-    ["append", "/note.txt", "!", "utf8"],
-  ]);
-
-  await fs.mkdir("/new");
-  await fs.mkdir("/new/deep", { recursive: true });
-  await assert.rejects(fs.mkdir("/private", { mode: 0o700 }), { code: "ENOTSUP" });
-  assert.deepEqual(calls.slice(-2), [["createDir", "/new"], ["createDirAll", "/new/deep"]]);
-  const stats = await fs.stat("/file.bin");
-  assert.equal(stats.size, 3);
-  assert.equal(stats.isFile(), true);
-  assert.equal(stats.isDirectory(), false);
-  assert.equal(stats.mtimeMs, 20);
-  assert.equal((await fs.readdir("/folder"))[0], "a.txt");
-  const [entry] = await fs.readdir("/folder", { withFileTypes: true });
-  assert.equal(entry.name, "a.txt");
-  assert.equal(entry.parentPath, "/folder");
-  assert.equal(entry.isFile(), true);
-  await fs.access("/file.bin");
-  await assert.rejects(fs.access("/file.bin", fs.constants.R_OK), { code: "ENOTSUP" });
-  await assert.rejects(fs.stat("/missing"));
-});
-
-test("fs mutation adapters preserve bridge semantics and reject unsupported rm/cp cases", async () => {
-  const { niva, calls } = makeFsNiva();
-  const fs = runtime.createFsModule(niva);
-
-  await fs.rename("/file.bin", "/renamed.bin");
-  assert.deepEqual(calls.at(-1), ["move", "/file.bin", "/renamed.bin", { contentOnly: true, overwrite: true }]);
-  await assert.rejects(fs.rm("/folder"), { code: "ERR_FS_EISDIR" });
-  await fs.rm("/folder", { recursive: true });
-  assert.deepEqual(calls.at(-1), ["remove", "/folder"]);
-  const beforeForce = calls.length;
-  await fs.rm("/missing", { force: true });
-  assert.equal(calls.length, beforeForce + 1);
-  await assert.rejects(fs.cp("/folder", "/copy"), { code: "ERR_FS_CP_DIR_TO_NON_DIR" });
-  await fs.cp("/folder", "/copy", { recursive: true });
-  assert.deepEqual(calls.at(-1), ["copy", "/folder", "/copy", { contentOnly: true, overwrite: true, skipExist: false }]);
-  await fs.copyFile("/file.bin", "/copy.bin");
-  assert.deepEqual(calls.at(-1), ["copy", "/file.bin", "/copy.bin", { overwrite: true, contentOnly: true }]);
-  await fs.copyFile("/file.bin", "/exclusive.bin", fs.constants.COPYFILE_EXCL);
-  assert.deepEqual(calls.at(-1), ["copy", "/file.bin", "/exclusive.bin", { overwrite: false, contentOnly: true }]);
-  assert.notEqual(fs.promises, fs);
-  assert.equal(fs.promises.readFile, fs.readFile);
-  await assert.rejects(fs.stat("/file.bin", { bigint: true }), { code: "ENOTSUP" });
-});
-
-test("os maps Niva native values to Node platform and architecture names", async () => {
-  const os = runtime.createOsModule({
-    api: {
-      os: {
-        info: () => Promise.resolve({ os: "Mac OS X", arch: "aarch64", version: "15" }),
-        dirs: () => Promise.resolve({ temp: "/tmp", home: "/Users/test" }),
-      },
-    },
-  });
-  assert.equal(await os.platform(), "darwin");
-  assert.equal(await os.arch(), "arm64");
-  assert.equal(await os.homedir(), "/Users/test");
-  assert.equal(await os.tmpdir(), "/tmp");
-  assert.equal((await os.info()).version, "15");
-  assert.equal((await os.dirs()).temp, "/tmp");
-});
-
-function makeProcessNiva(status = 0) {
-  const calls = [];
-  const sent = [];
-  const niva = {
-    stream(method, args, handlers) {
-      calls.push([method, args]);
-      return {
-        id: 7,
-        cancel() { calls.push(["cancel"]); },
-        promise: Promise.resolve().then(async () => {
-          handlers.onBlob(new Blob(["hello "]), false);
-          handlers.onBlob(new Blob(["world"]), false);
-          handlers.onBlob(new Blob(["warn"]), true);
-          await Promise.resolve();
-          return { status };
-        }),
-      };
-    },
-    streamSend(id, data, end) { sent.push([id, [...data], end]); return true; },
-  };
-  return { niva, calls, sent };
-}
-
-test("spawn exposes event streams, stdin, status, and bridge limitations", async () => {
-  const { niva, calls, sent } = makeProcessNiva();
-  const childProcess = runtime.createChildProcessModule(niva);
-  const child = childProcess.spawn("cat", [], { cwd: "/work", env: { MODE: "test" } });
-  const stdout = [];
-  const stderr = [];
-  const events = [];
-  child.stdout.on("data", (chunk) => stdout.push(chunk));
-  child.stderr.on("data", (chunk) => stderr.push(chunk));
-  child.on("spawn", () => events.push("spawn"));
-  child.on("close", (code) => events.push(["close", code]));
-  assert.equal(child.stdin.write("input"), true);
-  child.stdin.end();
-  assert.deepEqual(await child.completion, { status: 0, detached: false });
-  assert.equal(runtime.buffer.Buffer.isBuffer(stdout[0]), true);
-  assert.deepEqual(stdout.map((chunk) => [...chunk]), [[104, 101, 108, 108, 111, 32], [119, 111, 114, 108, 100]]);
-  assert.deepEqual(stderr.map((chunk) => [...chunk]), [[119, 97, 114, 110]]);
-  assert.deepEqual(sent, [[7, [105, 110, 112, 117, 116], false], [7, [], true]]);
-  assert.deepEqual(events, ["spawn", ["close", 0]]);
-  assert.deepEqual(calls[0], ["process.execStream", ["cat", [], { currentDir: "/work", env: { MODE: "test" } }]]);
-  assert.equal(child.kill(), false);
-  assert.throws(() => childProcess.spawn("cat", [], { timeout: 20 }), { code: "ENOTSUP" });
-});
-
-test("exec runs through the shell and simulates callback errors with captured output", async () => {
-  const { niva, calls, sent } = makeProcessNiva(7);
-  const childProcess = runtime.createChildProcessModule(niva);
-  const callbackResult = new Promise((resolve) => {
-    const child = childProcess.exec("echo hello", { cwd: "/work" }, (error, stdout, stderr) => resolve({ error, stdout, stderr }));
-    child.result.catch(() => {});
-  });
-  const result = await callbackResult;
-  assert.equal(calls[0][0], "process.execStream");
-  assert.deepEqual(calls[0][1][1], process.platform === "win32" ? ["/d", "/s", "/c", "echo hello"] : ["-c", "echo hello"]);
-  assert.equal(calls[0][1][2].currentDir, "/work");
-  assert.equal(result.error.status, 7);
-  assert.equal(result.error.code, 7);
-  assert.equal(result.stdout, "hello world");
-  assert.equal(result.stderr, "warn");
-  assert.deepEqual(sent, [[7, [], true]]);
-  assert.throws(() => childProcess.exec("echo", { timeout: 1 }), { code: "ENOTSUP" });
-});
-
-test("classic entry registers the four modules and async cwd bootstrap", async () => {
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const source = await readFile(path.join(packageRoot, "dist/niva-node-compat.js"), "utf8");
-  const modules = new Map();
-  const niva = {
-    bridgeVersion: 1,
-    registerModule(name, value) { modules.set(name, value); },
-    require(name) {
-      if (!modules.has(name)) throw new Error("unknown module: " + name);
-      return modules.get(name);
-    },
-    api: { process: { currentDir: () => Promise.resolve("/workspace/app") } },
-  };
-  const context = vm.createContext({ Niva: niva, Symbol, Promise, Map, Set, TextEncoder, TextDecoder, Blob });
-  vm.runInContext(source, context, { filename: "niva-node-compat.js" });
-  await context.NivaNodeCompatReady;
-  for (const name of ["path", "os", "fs", "fs/promises", "child_process", "events", "util", "querystring", "buffer", "url", "crypto", "zlib", "http", "https", "assert", "assert/strict", "stream", "stream/promises", "node:path", "node:os", "node:fs", "node:child_process", "node:events", "node:util", "node:querystring", "node:buffer", "node:url", "node:crypto", "node:zlib", "node:http", "node:https", "node:assert", "node:assert/strict", "node:stream", "node:stream/promises"]) {
-    assert.ok(modules.has(name), `registered ${name}`);
+test('fs uses native operations for callbacks, promises and synchronous binary data', async () => {
+  const files=new Map(),calls=[];
+  function dispatch(method,[op,args]){
+    assert.equal(method,'fs.node');calls.push([op,args]);
+    if(op==='writeFile'){files.set(args.path,args.data);return null;}
+    if(op==='readFile'){if(!files.has(args.path))throw {code:-1,message:'missing',data:{code:'ENOENT'}};return files.get(args.path);}
+    if(op==='stat')return {isFile:true,size:3,mtimeMs:20,mode:0o100600};
+    if(op==='access'){if(!files.has(args.path))throw {code:-1,message:'missing',data:{code:'ENOENT'}};return null;}
+    if(op==='copyFile'){files.set(args.destination,files.get(args.path));return null;}
+    return null;
   }
-  assert.equal(modules.get("path").resolve("notes.txt"), "/workspace/app/notes.txt");
-  assert.notEqual(modules.get("fs/promises"), modules.get("fs"));
-  assert.equal(modules.get("fs/promises").readFile, modules.get("fs").readFile);
-  assert.equal(niva.require("child_process"), modules.get("child_process"));
-  assert.equal(context.Buffer, modules.get("buffer").Buffer);
+  const niva={call:(...args)=>Promise.resolve().then(()=>dispatch(...args)),callSync:dispatch};
+  const fs=runtime.createFsModule(niva);
+  fs.writeFileSync('/bytes',Uint8Array.of(0,255,65),{mode:0o600,flag:'wx'});
+  assert.deepEqual([...fs.readFileSync('/bytes')],[0,255,65]);
+  assert.deepEqual([...await fs.promises.readFile('/bytes')],[0,255,65]);
+  assert.equal(await new Promise((resolve,reject)=>fs.readFile('/bytes','hex',(error,data)=>error?reject(error):resolve(data))),'00ff41');
+  assert.equal(fs.statSync('/bytes').mtimeMs,20);
+  assert.equal(fs.existsSync('/absent'),false);
+  await assert.rejects(fs.promises.readFile('/absent'),{code:'ENOENT'});
+  assert.throws(()=>fs.readFile('/bytes'),TypeError);
+  await fs.promises.copyFile('/bytes','/copy',fs.constants.COPYFILE_EXCL);
+  assert.deepEqual(calls.find(([op])=>op==='copyFile')[1],{path:'/bytes',destination:'/copy',flags:1});
+  assert.equal(calls[0][1].mode,0o600);assert.equal(calls[0][1].flag,'wx');
 });
 
-test("classic child_process sends stdin through the global Niva bridge", async () => {
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const source = await readFile(path.join(packageRoot, "dist/niva-node-compat.js"), "utf8");
-  const modules = new Map();
-  const sent = [];
-  const niva = {
-    bridgeVersion: 1,
-    registerModule(name, value) { modules.set(name, value); },
-    stream() { return { id: 77, promise: Promise.resolve({ status: 0 }) }; },
-    streamSend(id, bytes, end) { sent.push([id, Array.from(bytes), end]); return true; },
-    api: { process: { currentDir: () => Promise.resolve("/workspace/app") } },
-  };
-  const context = vm.createContext({ Niva: niva, Symbol, Promise, Map, Set, TextEncoder, TextDecoder, Blob });
-  vm.runInContext(source, context, { filename: "niva-node-compat.js" });
-  await context.NivaNodeCompatReady;
-  const child = modules.get("child_process").spawn("/bin/cat");
-  assert.equal(child.stdin.write("ping"), true);
-  child.stdin.end();
-  await child.completion;
-  assert.deepEqual(sent, [[77, [112, 105, 110, 103], false], [77, [], true]]);
+test('OS static information avoids bridge calls and dynamic values query each time',()=>{
+  let queries=0;
+  const os=runtime.createOsModule({bootstrap:{os:{platform:'darwin',arch:'arm64',homedir:'/home/u',tmpdir:'/tmp',EOL:'\n'}},callSync(method,args){assert.equal(method,'os.freemem');assert.deepEqual(args,[]);return ++queries;}});
+  assert.equal(os.platform(),'darwin');assert.equal(os.arch(),'arm64');assert.equal(os.EOL,'\n');assert.equal(queries,0);
+  assert.equal(os.freemem(),1);assert.equal(os.freemem(),2);
 });
 
-test("child_process without Niva reports its bridge error after spawn returns", async () => {
-  assert.equal(globalThis.Niva, undefined);
-  const child = runtime.createChildProcessModule().spawn("/bin/echo", ["test"]);
-  let emittedError;
-  child.on("error", (error) => { emittedError = error; });
-  await assert.rejects(child.completion, /Niva is not available/);
-  assert.match(emittedError.message, /Niva is not available/);
+function processBridge(status=0){
+  const calls=[],sent=[];
+  return {calls,sent,stream(method,args,handlers){calls.push([method,args]);if(method==='process.signal')return {promise:Promise.resolve(true)};return {id:7,cancel(){},promise:Promise.resolve().then(()=>{
+    handlers.onEvent('spawn',{pid:42});handlers.onChunk(Uint8Array.from([0xe4,0xbd]),false);handlers.onChunk(Uint8Array.from([0xa0]),false);handlers.onChunk(new TextEncoder().encode('warn'),true);return {status};
+  })};},streamSend(id,bytes,end){sent.push([id,[...bytes],end]);return true;}};
+}
+test('child output uses real streams, decodes split UTF-8, and signals the owned call',async()=>{
+  const bridge=processBridge(),cp=runtime.createChildProcessModule(bridge),child=cp.spawn('cat',[]);let text='';
+  child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>text+=chunk);
+  const ended=new Promise(resolve=>child.stdout.once('end',resolve));
+  child.on('spawn',()=>{assert.equal(child.pid,42);assert.equal(child.kill('SIGTERM'),true);});
+  child.stdin.end('hello');await child.completion;await ended;
+  assert.equal(text,'你');assert.deepEqual(bridge.calls[1],['process.signal',[7,'SIGTERM']]);assert.deepEqual(bridge.sent[0],[7,[104,101,108,108,111],false]);
 });
-
-test("classic registration honors the selected-module allowlist", async () => {
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const source = await readFile(path.join(packageRoot, "dist/niva-node-compat.js"), "utf8");
-  const modules = new Map();
-  const niva = {
-    bridgeVersion: 1,
-    registerModule(name, value) { modules.set(name, value); },
-    require(name) {
-      if (!modules.has(name)) throw new Error("niva: unknown module '" + name + "'");
-      return modules.get(name);
-    },
-    api: { process: { currentDir: () => Promise.resolve("/workspace/app") } },
-  };
-  const context = vm.createContext({ Niva: niva, __niva_node_compat_modules: ["path", "http"], Symbol, Promise, Map, Set, TextEncoder, TextDecoder, Blob });
-  vm.runInContext(source, context, { filename: "niva-node-compat.js" });
-  await context.NivaNodeCompatReady;
-  assert.deepEqual([...modules.keys()], ["path", "node:path", "http", "node:http"]);
-  assert.equal(context.Buffer, undefined);
-  assert.throws(() => niva.require("fs"), /unknown module/);
-  assert.throws(() => niva.require("node:https"), /unknown module/);
+test('exec callbacks receive buffered stderr and nonzero exit errors',async()=>{
+  const cp=runtime.createChildProcessModule(processBridge(7));
+  const result=await new Promise(resolve=>cp.exec('printf ignored',(error,stdout,stderr)=>resolve({error,stdout,stderr})));
+  assert.equal(result.error.status,7);assert.equal(result.stdout,'你');assert.equal(result.stderr,'warn');
+});
+test('classic registration honors module selection without injecting host process',async()=>{
+  const modules=new Map();const context=vm.createContext({console,URL,URLSearchParams,TextEncoder,TextDecoder,AbortController,setTimeout,clearTimeout,setInterval,clearInterval,queueMicrotask,Niva:{bridgeVersion:1,registerModule:(name,value)=>modules.set(name,value)},__niva_node_compat_modules:['buffer','path']});
+  context.window=context;context.self=context;context.AbortSignal=AbortSignal;
+  const classic=await readFile(new URL('../dist/niva-node-compat.js',import.meta.url),'utf8');vm.runInContext(classic,context);await context.NivaNodeCompatReady;
+  assert.deepEqual([...modules.keys()].sort(),['buffer','node:buffer','node:path','path']);assert.equal(context.process,undefined);assert.equal(typeof context.Buffer.from,'function');
 });

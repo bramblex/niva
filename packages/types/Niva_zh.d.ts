@@ -10,10 +10,16 @@ declare global {
 interface NivaObj {
   /** 当前原生 Bridge wire 版本。 */
   readonly bridgeVersion: number;
+  /** 启动时注入的静态数据；process 仅主窗口顶层页面可用。 */
+  readonly bootstrap: { os?: Record<string, any>; process?: Record<string, any> };
+  /** 本地可信页面的同步 XHR；仅文件、系统及选定进程操作，禁止 UI/流式方法。 */
+  callSync(methodName: string, args: any[]): any;
   /** 从同步注册表读取 Niva 或 NodeCompat 模块；未注册的名称会抛错。 */
   require(id: string): any;
   /** 注册一个页面本地模块。 */
   registerModule(id: string, implementation: any): void;
+  /** 首次 require/import 时初始化并缓存模块；初始化抛错时不缓存。 */
+  registerModuleFactory(id: string, factory: () => any): void;
   /** 按当前 NodeCompat 资源映射动态导入，或读取同步注册表。 */
   import(id: string): Promise<any>;
   /**
@@ -78,8 +84,6 @@ interface NivaObj {
     fs: NivaFs;
     /** stdio 父进程消息桥，仅 --stdio 启动时可用 */
     host: NivaHost;
-    /** 网络 */
-    http: NivaHttp;
     /** 监视器 */
     monitor: NivaMonitor;
     /** 系统 */
@@ -128,7 +132,7 @@ interface NivaOptions {
 
   /** API 调度器选项（全异步运行时；旧的固定线程池 workers 已移除） */
   api?: NivaApiOptions;
-  /** 可选 Node 形浏览器模块；只打包选中的模块资源。 */
+  /** 内置 Node 形浏览器模块；默认启用，false 关闭，对象配置可筛选模块。 */
   nodeCompat?: boolean | {
     modules?: NivaNodeCompatModule[];
     importmap?: boolean;
@@ -152,7 +156,8 @@ interface NivaOptions {
 type NivaNodeCompatModule =
   | "path" | "os" | "fs" | "child_process" | "events" | "util"
   | "querystring" | "buffer" | "url" | "crypto" | "zlib"
-  | "http" | "https" | "assert" | "stream";
+  | "http" | "https" | "assert" | "stream" | "process"
+  | "net" | "dgram" | "tls" | "dns" | "string_decoder" | "timers";
 
 /** 应用签名选项 */
 type NivaSignOptions = {
@@ -729,54 +734,6 @@ interface NivaFs {
    * @returns 一个 Promise，在读取目录中的所有文件成功时解析该 Promise 以返回所有文件的相对路径组成的字符串数组，或在发生错误时拒绝该 Promise。
    */
   readDirAll(path: string, excludes?: string[]): Promise<string[]>;
-}
-
-interface NivaHttp {
-  /**
-   * 发送 HTTP(s) 请求并返回响应结果，包括响应状态码、响应头和响应体。
-   * @param options 请求选项，包括方法、URL、请求头和请求体。原生请求禁用代理。
-   * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
-   */
-  request(options: {
-    method: string;
-    url: string;
-    headers?: { [key: string]: string };
-    body?: string;
-  }): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-  }>;
-  /**
-   * 发送 HTTP(s) GET 请求并返回响应结果，包括响应状态码、响应头和响应体。
-   * @param url 请求的 URL。
-   * @param headers 如果有，指定请求头。
-   * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
-   */
-  get(
-    url: string,
-    headers?: { [key: string]: string }
-  ): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-  }>;
-  /**
-   * 发送 HTTP(s) POST 请求并返回响应结果，包括响应状态码、响应头和响应体。
-   * @param url 请求的 URL。
-   * @param body 请求体。
-   * @param headers 如果有，指定请求头。
-   * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
-   */
-  post(
-    url: string,
-    body: string,
-    headers?: { [key: string]: string }
-  ): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-  }>;
 }
 
 interface NivaMonitorInfo {

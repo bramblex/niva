@@ -127,7 +127,7 @@ class HeadlessGroupRegistryTests(unittest.TestCase):
         self.assertEqual(set(methods["systemSupervised"]), RUNNER.EXTENDED_SYSTEM_SUPERVISED)
         self.assertEqual(len(methods["window"]), len(set(methods["window"])))
         self.assertEqual(len(methods["system"]), len(set(methods["system"])))
-        self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 62)
+        self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 59)
         default_methods = set(RUNNER.AUTOMATIC_METHODS) | RUNNER.WEBVIEW_HISTORY_METHODS | RUNNER.TRAY_METHODS | {"host.send", "process.exit"}
         self.assertTrue(default_methods.isdisjoint(RUNNER.EXTENDED_AUTOMATIC_METHODS))
 
@@ -159,7 +159,7 @@ class HeadlessGroupRegistryTests(unittest.TestCase):
         self.assertEqual(set(methods["systemSupervised"]), RUNNER.EXTENDED_SYSTEM_SUPERVISED)
         self.assertEqual(len(methods["window"]), len(set(methods["window"])))
         self.assertEqual(len(methods["system"]), len(set(methods["system"])))
-        self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 62)
+        self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 59)
 
     def test_wait_one_of_reads_a_fresh_frame_after_an_unrelated_message(self):
         unrelated = {"t": "msg", "name": "unrelated"}

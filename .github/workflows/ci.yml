@@ -5,6 +5,30 @@ on:
   pull_request:
 
 jobs:
+  node-upstream:
+    name: Node upstream contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm ci
+      - run: npm run build:vendor --workspace=packages/node-compat
+      - run: npm run test:upstream:harness --workspace=packages/node-compat
+      - run: npm run test:upstream --workspace=packages/node-compat -- --suite js --report upstream-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-upstream-${{ matrix.os }}
+          path: packages/node-compat/upstream-results.json
+          if-no-files-found: warn
+
   check:
     strategy:
       fail-fast: false
@@ -40,12 +64,25 @@ jobs:
       - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva
+      - if: runner.os == 'macOS'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+      - if: runner.os == 'macOS'
+        name: Official contracts through real Native bridge
+        run: NIVA_UPSTREAM_BINARY="$GITHUB_WORKSPACE/target/release/niva" npm run test:upstream --workspace=packages/node-compat -- --suite native --report upstream-native-results.json
+      - if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-upstream-native-macos
+          path: packages/node-compat/upstream-native-results.json
+          if-no-files-found: warn
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $bytes = (Get-Item target/release/niva.exe).Length
           Write-Host "Windows release binary: $bytes bytes"
-          if ($bytes -ge 3500000) { exit 1 }
+          if ($bytes -ge 3300000) { exit 1 }
       - if: runner.os == 'macOS'
         shell: bash
         run: |

@@ -8,7 +8,7 @@
 - Devtools 或 TypeScript 改动完成后，运行 `npm run build --workspace=packages/devtools`，其中包含 `tsc --noEmit` 和 Vite 构建。不能把 `.husky/pre-commit` 的 TS 检查视为通过证据：该 hook 当前即使类型检查失败也可能继续提交。仓库已有 `.github/workflows/ci.yml`，远端运行结果仍需另行核对。
 - 改动 bridge、原生 API 或打包格式时，同步检查 Rust 实现、`crates/niva/assets/initialize_script.js`、`packages/types/Niva_zh.d.ts`、`docs/bridge.md` 与相关资源打包/读取代码；协议版本、帧格式、错误码和公开类型必须一致。对受影响的调用路径补有意义的测试或实际调用验证。
 - 涉及窗口、托盘、菜单、快捷键、对话框或平台原生行为的改动，除编译和单测外，还要在受影响的平台做真机操作验证。无法取得平台设备时，不把该平台标为已验收。
-- 改动依赖、资源打包或发布产物时，复测对应平台的 release 二进制体积；当前目标为小于 3 MB，并记录产物、平台和实测大小。签名所需证书和密码由下游提供，秘密不得进入 `niva.json` 或仓库。
+- 改动依赖、资源打包或发布产物时，复测对应平台的完整 release 主程序体积；当前门禁为小于 3.3 MB（3,300,000 bytes，与现有 CI/构建脚本一致）。体积需包含全部已确定目标功能的 Native 代码、内嵌 NodeCompat JS 及加载/索引开销，不能只量裸 Native 或库样本；记录产物、平台和实测大小。签名所需证书和密码由下游提供，秘密不得进入 `niva.json` 或仓库。
 
 ## 安全边界
 

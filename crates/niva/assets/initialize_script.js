@@ -83,6 +83,7 @@
         window.__niva_ws_url = topWindow.__niva_ws_url;
         window.__niva_token = topWindow.__niva_token;
         window.__niva_window_id = topWindow.__niva_window_id;
+        window.__niva_node_bootstrap = { os: topWindow.__niva_node_bootstrap && topWindow.__niva_node_bootstrap.os };
       }
     } catch (e) {}
     return !!window.__niva_ws_url;
@@ -248,29 +249,24 @@
     if (!pending) {
       return;
     }
-    // Groups are keyed by sub-stream (stderr flag): pipes interleave chunks
-    // but each END flushes only its own group.
     var isStderr = (flags & 0x04) !== 0;
-    pending.groups = pending.groups || new Map();
-    var group = pending.groups.get(isStderr);
-    if (!group) {
-      group = new Map();
-      pending.groups.set(isStderr, group);
-    }
     var payload = buffer.slice(18);
-    group.set(seq, payload);
+    var blobPayload = pending.onBlob && pending.onChunk ? payload.slice(0) : payload;
     if (pending.onChunk && payload.byteLength > 0) {
-      // WebSocket preserves frame order. Deliver a copy so consumers cannot
-      // mutate the bytes later assembled for the legacy onBlob callback.
-      try { pending.onChunk(new Uint8Array(payload.slice(0)), isStderr); }
+      try { pending.onChunk(new Uint8Array(payload), isStderr); }
       catch (error) { console.error(error); }
     }
-    if (flags & 0x02) {
-      // END: concatenate in seq order and flush one blob per group
-      var keys = Array.from(group.keys()).sort(function (a, b) { return a - b; });
-      var parts = keys.map(function (k) { return group.get(k); });
-      pending.groups.delete(isStderr);
-      if (pending.onBlob) {
+    // A socket may live indefinitely. Only Blob subscribers require retained
+    // chunks; chunk-only streams must release each frame after delivery.
+    if (pending.onBlob) {
+      pending.groups = pending.groups || new Map();
+      var group = pending.groups.get(isStderr);
+      if (!group) { group = new Map(); pending.groups.set(isStderr, group); }
+      group.set(seq, blobPayload);
+      if (flags & 0x02) {
+        var keys = Array.from(group.keys()).sort(function (a, b) { return a - b; });
+        var parts = keys.map(function (k) { return group.get(k); });
+        pending.groups.delete(isStderr);
         pending.onBlob(new Blob(parts), isStderr);
       }
     }
@@ -306,7 +302,15 @@
     });
     socket.addEventListener("close", function () {
       socket = null;
-      // Reconnect (e.g. dev-server HMR should not kill the bridge).
+      // Calls belong to this exact connection. Its native streams/handles
+      // were cancelled; they cannot resume on the next connection identity.
+      Object.keys(pendings).forEach(function (id) {
+        var pending = pendings[id];
+        delete pendings[id];
+        if (pending.reject) pending.reject({ code: -5, message: "Niva WebSocket connection closed", data: { code: "ECONNRESET" } });
+      });
+      sendQueue = [];
+      binQueue = [];
       setTimeout(connectSocket, 1000);
     });
   }
@@ -531,34 +535,6 @@
     return st.promise.then(function () { return null; });
   });
 
-  // http.get/post/request over http.requestStream.
-  function httpStreamCollect(options) {
-    var head = null;
-    return collectStream("http.requestStream", [options], {
-      onEvent: function (name, data) {
-        if (name === "head") {
-          head = data;
-        }
-      },
-    }).then(function (out) {
-      return out.blob.text().then(function (body) {
-        return { status: head.status, headers: head.headers, body: body };
-      });
-    });
-  }
-
-  overrideApi("http", "get", function (url, headers) {
-    return httpStreamCollect({ method: "GET", url: url, headers: headers || null });
-  });
-
-  overrideApi("http", "post", function (url, body, headers) {
-    return httpStreamCollect({ method: "POST", url: url, body: body, headers: headers || null });
-  });
-
-  overrideApi("http", "request", function (options) {
-    return httpStreamCollect(options);
-  });
-
   // process.exec over process.execStream (byte-exact stdout/stderr).
   overrideApi("process", "exec", function (cmd, args, options) {
     options = options || {};
@@ -596,6 +572,18 @@
     });
   });
 
+  Niva.callSync = function (method, args) {
+    if (!hasLocalWebSocket) throw new Error("Synchronous APIs require a trusted local Niva page");
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", window.__niva_server_origin + "/__niva_sync", false);
+    xhr.setRequestHeader("Content-Type", "text/plain;charset=UTF-8");
+    xhr.send(JSON.stringify({ token: window.__niva_token, request: [0, method, args || []] }));
+    if (xhr.status !== 200) throw new Error("Synchronous bridge HTTP " + xhr.status);
+    var response = JSON.parse(xhr.responseText);
+    if (response[1] !== 0) throw { code: response[1], message: response[2], data: response[3] };
+    return response[3];
+  };
+  Niva.bootstrap = window.__niva_node_bootstrap || {};
   Niva.call = call;
   Niva.stream = streamCall;
   Niva.streamSend = streamSend;
@@ -610,12 +598,12 @@
   // Static bare imports are resolved by the server's opt-in importmap before
   // module evaluation. Dynamic Niva.import uses the same URL mapping when
   // NodeCompat is enabled; built projects may also import the npm package.
-  var moduleRegistry = {};
+  var moduleRegistry = Object.create(null);
 
   function builtinNamespaces() {
     // Snapshot the live Niva.api namespaces (overrides included).
     var out = {};
-    ["fs", "http", "process", "os", "resource", "dialog", "window",
+    ["fs", "process", "os", "resource", "dialog", "window",
      "clipboard", "tray", "shortcut", "monitor", "webview", "extra",
      "windowExtra"].forEach(function (ns) {
       try {
@@ -626,7 +614,16 @@
   }
 
   Niva.registerModule = function (id, impl) {
-    moduleRegistry[id] = impl;
+    Object.defineProperty(moduleRegistry, id, {__proto__: null, value: impl, writable: true, enumerable: true, configurable: true});
+  };
+
+  Niva.registerModuleFactory = function (id, factory) {
+    if (typeof factory !== "function") throw new TypeError("Module factory must be a function");
+    Object.defineProperty(moduleRegistry, id, {__proto__: null, enumerable: true, configurable: true, get: function () {
+      var implementation = factory();
+      Niva.registerModule(id, implementation);
+      return implementation;
+    }});
   };
 
   function nivaRequire(id) {
@@ -643,7 +640,7 @@
     throw new Error(
       "niva: unknown module '" + id + "'. " +
       "Available: niva:<namespace> (fs, os, ...) or modules added via Niva.registerModule(). " +
-      "For Node-shaped APIs, load the node-compat package."
+      "Select the builtin with nodeCompat; bundle application dependencies before loading them."
     );
   }
 
@@ -654,6 +651,9 @@
 
   // Async module shape for single-file pages: `await Niva.import(id)`.
   Niva.import = function (id) {
+    if (Object.prototype.hasOwnProperty.call(moduleRegistry, id)) {
+      return Promise.resolve().then(function () { return nivaRequire(id); });
+    }
     var imports = window.__niva_compat_imports;
     if (imports && Object.prototype.hasOwnProperty.call(imports, id)) {
       var base = window.__niva_compat_origin || window.__niva_server_origin || location.origin;

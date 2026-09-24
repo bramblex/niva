@@ -1,0 +1,211 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><script>
+(async function(){
+ const checks={};
+ const trace=__TRACE__;
+ const stage=label=>trace?Niva.api.host.send("implementation-progress",{label}):Promise.resolve();
+ const within=(promise,label,ms=10000)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(label+' timeout')),ms);Promise.resolve(promise).then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
+ try {
+  await window.NivaNodeCompatReady;
+  const bufferModuleForLimit=require('buffer'), originalMax=bufferModuleForLimit.kMaxLength;
+  bufferModuleForLimit.kMaxLength=64;
+  const lazyZlib=require('zlib');
+  bufferModuleForLimit.kMaxLength=originalMax;
+  try { lazyZlib.gunzipSync(Buffer.from('H4sIAAAAAAAAA0tMHFgAAIw2K/GAAAAA','base64'));checks.zlibLazyCommonJS=false; }
+  catch(error) { checks.zlibLazyCommonJS=error instanceof RangeError; }
+  checks.zlibModuleIdentity=lazyZlib===require('node:zlib')&&lazyZlib===await Niva.import('zlib')&&lazyZlib===(await import('/__niva_compat/src/zlib.js')).default;
+  const nivaAssert=require('assert'), missingFeature=false, sourceReads=[];
+  const SourceXHR=window.XMLHttpRequest;
+  window.XMLHttpRequest=function(){const xhr=new SourceXHR(),open=xhr.open,send=xhr.send;let entry;
+   xhr.open=function(...args){entry={method:args[0],url:args[1],async:args[2]};sourceReads.push(entry);return open.apply(this,args);};
+   xhr.send=function(...args){try{const value=send.apply(this,args);entry.status=this.status;entry.length=this.responseText.length;return value;}catch(error){entry.error=String(error);throw error;}};return xhr;};
+  try { nivaAssert.ok(missingFeature); checks.assertSourceMessage=false; }
+  catch (error) { checks.assertSourceMessage=error.message.includes('nivaAssert.ok(missingFeature)')&&error.generatedMessage===true;
+   if(!checks.assertSourceMessage)checks.assertSourceDiagnostic={message:error.message,stack:error.stack,sourceReads,hasCapture:typeof Error.captureStackTrace}; }
+  finally { window.XMLHttpRequest=SourceXHR; }
+  const fs=require('fs'), cp=require('child_process'), crypto=require('crypto');
+  const fsModule=await import('/__niva_compat/src/fs.js');
+  const bufferModule=await import('/__niva_compat/src/buffer.js');
+  checks.wrapperModuleIdentity=fsModule.default===fs && bufferModule.Buffer===require('buffer').Buffer;
+  const file=__SMOKE_DIR__+'/bytes.bin';
+  checks.mainProcess=!!window.process && process.pid===Niva.bootstrap.process.pid;
+  checks.dynamicCwd=process.cwd()===Niva.callSync('process.currentDir',[]);
+  fs.writeFileSync(file,Buffer.from([0,255,254,97]));
+  checks.syncBytes=fs.readFileSync(file).toString('hex')==='00fffe61';
+  fs.appendFileSync(file,'b');
+  checks.asyncBytes=(await fs.promises.readFile(file)).toString('hex')==='00fffe6162';
+  const handle=await fs.promises.open(file,'r+');const bytes=Buffer.alloc(2);
+  checks.fileHandle=(await handle.read(bytes,0,2,1)).bytesRead===2 && bytes.toString('hex')==='fffe';await handle.close();
+  checks.callback=await new Promise((resolve,reject)=>fs.stat(file,(error,stat)=>error?reject(error):resolve(stat.isFile()&&stat.size===5)));
+  checks.spawnSync=cp.execFileSync('/bin/sh',['-c','printf hello']).toString()==='hello';
+  checks.hash=crypto.createHash('sha256').update('abc').digest('hex')==='ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+  checks.timingSafeEqual=crypto.timingSafeEqual(Buffer.from('same'),Buffer.from('same'));
+  try{Niva.callSync('window.open',[{}]);checks.rejectUI=false;}catch(_){checks.rejectUI=true;}
+  checks.readStream=await new Promise((resolve,reject)=>{let chunks=[];const stream=fs.createReadStream(file,{highWaterMark:2});stream.on('data',chunk=>chunks.push(chunk));stream.on('end',()=>resolve(Buffer.concat(chunks).toString('hex')==='00fffe6162'));stream.on('error',reject);});
+  const written=__SMOKE_DIR__+'/stream.bin';
+  await new Promise((resolve,reject)=>{const stream=fs.createWriteStream(written);stream.on('finish',resolve);stream.on('error',reject);stream.write(Buffer.from([0,255]));stream.end(Buffer.from([97]));});
+  checks.writeStream=fs.readFileSync(written).toString('hex')==='00ff61';
+  checks.execFile=await new Promise((resolve,reject)=>cp.execFile('/bin/sh',['-c','printf async; printf error >&2'],(error,stdout,stderr)=>error?reject(error):resolve(stdout==='async'&&stderr==='error')));
+  const child=cp.spawn('/bin/sh',['-c','sleep 10']);child.on('error',()=>{});child.on('spawn',()=>child.kill());
+  const outcome=await child.completion;checks.kill=outcome.signal==='SIGTERM';
+  checks.watch=await new Promise((resolve,reject)=>{let writes=0;const watcher=fs.watch(file,()=>{clearInterval(timer);watcher.close();resolve(true);});watcher.on('error',reject);const timer=setInterval(()=>{fs.appendFileSync(file,'w');if(++writes>20){clearInterval(timer);watcher.close();resolve(false);}},50);});
+  await stage('core-complete');
+  const http=require('http');
+  const payload='hello'.repeat(120000);
+  const server=http.createServer((req,res)=>{let body='';req.setEncoding('utf8');req.on('data',chunk=>body+=chunk);req.on('end',()=>{res.setHeader('X-Niva','js');res.end('echo:'+body);});});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  await stage('http-listening');
+  checks.http=await new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:server.address().port,method:'POST',path:'/echo'},res=>{let body='';res.setEncoding('utf8');res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve(body==='echo:'+payload&&res.headers['x-niva']==='js'));res.on('error',reject);});req.on('error',reject);req.setTimeout(10000,()=>req.destroy(new Error('HTTP fixture timeout')));req.end(payload);});
+  await stage("http-body-complete");
+  await new Promise(resolve=>server.close(resolve));
+  await stage("http-close-complete");
+  const https=require('https');
+  let httpsServerRequest=false,httpsClientSecure=false,httpsAcceptedSocket,httpsClientSocket;
+  let resolveHttpsServerSocketClose,resolveHttpsClientSocketClose;
+  const httpsServerSocketClosed=new Promise(resolve=>resolveHttpsServerSocketClose=resolve);
+  const httpsClientSocketClosed=new Promise(resolve=>resolveHttpsClientSocketClose=resolve);
+  const secure=https.createServer({key:fs.readFileSync(__SMOKE_DIR__+'/server.key'),cert:fs.readFileSync(__SMOKE_DIR__+'/server.crt')},(req,res)=>{httpsServerRequest=true;httpsAcceptedSocket=req.socket;httpsAcceptedSocket.once('close',()=>resolveHttpsServerSocketClose(true));res.end('secure');});
+  await new Promise((resolve,reject)=>{secure.once('error',reject);secure.listen(0,'127.0.0.1',resolve);});
+  await stage('https-listening');
+  checks.https=await new Promise((resolve,reject)=>{
+   const req=https.get({host:'127.0.0.1',port:secure.address().port,ca:fs.readFileSync(__SMOKE_DIR__+'/ca.crt')},res=>{
+    let body='';res.setEncoding('utf8');res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve(body==='secure'&&httpsServerRequest&&httpsClientSecure));res.on('error',reject);
+   });
+   req.on('socket',socket=>{httpsClientSocket=socket;socket.once('close',()=>resolveHttpsClientSocketClose(true));socket.once('secureConnect',()=>{httpsClientSecure=true;});});
+   req.on('error',reject);
+   req.setTimeout(10000,()=>req.destroy(new Error('HTTPS fixture timeout')));
+  });
+  const httpsSocketCloseStates=await Promise.all([
+   within(httpsClientSocketClosed,'HTTPS client socket close',3000).then(Boolean,()=>false),
+   within(httpsServerSocketClosed,'HTTPS server socket close',3000).then(Boolean,()=>false),
+  ]);
+  checks.httpsSocketsClosedNaturally=httpsSocketCloseStates.every(Boolean);
+  await stage('https-sockets-closed-before-server-close-'+httpsSocketCloseStates.join('-'));
+  const openHttpsConnections=await new Promise(resolve=>secure.getConnections((error,count)=>resolve(error?-1:count)));
+  await stage('https-before-close-connections-'+openHttpsConnections+'-client-'+!!(httpsClientSocket&&httpsClientSocket.destroyed)+'-server-'+!!(httpsAcceptedSocket&&httpsAcceptedSocket.destroyed));
+  const secureCloseResult=await within(new Promise(resolve=>secure.close(error=>resolve(!error))),'HTTPS server.close',5000).catch(()=>false);
+  checks.httpsServerClose=secureCloseResult;
+  await stage(secureCloseResult?'https-close-complete':'https-close-timeout');
+  // Independent regression: a fresh short-lived cert with a PKCS#1 private key.
+  const pkcs1=https.createServer({key:fs.readFileSync(__SMOKE_DIR__+'/server-pkcs1.key'),cert:fs.readFileSync(__SMOKE_DIR__+'/server.crt')},(req,res)=>res.end('pkcs1'));
+  await within(new Promise((resolve,reject)=>{pkcs1.once('error',reject);pkcs1.listen(0,'127.0.0.1',resolve);}), 'PKCS1 listen');
+  checks.tlsPkcs1=await within(new Promise((resolve,reject)=>{
+   const request=https.get({host:'127.0.0.1',port:pkcs1.address().port,ca:fs.readFileSync(__SMOKE_DIR__+'/ca.crt')},response=>{
+    let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);response.on('end',()=>resolve(body==='pkcs1'));response.on('error',reject);
+   });request.on('error',reject);
+  }), 'PKCS1 HTTPS');
+  checks.tlsPkcs1ServerClose=await within(new Promise(resolve=>pkcs1.close(error=>resolve(!error))), 'PKCS1 close');
+  const net=require('net'), dgram=require('dgram'), dns=require('dns');
+  const dnsPacket=globalThis[Symbol.for('niva.node-compat.runtime')].vendor.dnsPacket;
+  const resolver=new dns.Resolver({timeout:3000,tries:1});
+  let dnsUdpCount=0,dnsTcpCount=0;
+  let dnsTransportError;
+  const dnsTcp=net.createServer(socket=>{
+   let input=Buffer.alloc(0);
+   socket.on('data',chunk=>{
+    input=Buffer.concat([input,chunk]);
+    if(input.length<2||input.length<input.readUInt16BE(0)+2)return;
+    const query=dnsPacket.streamDecode(input),question=query.questions[0];dnsTcpCount++;
+    const response={type:'response',id:query.id,flags:dnsPacket.RECURSION_DESIRED|dnsPacket.RECURSION_AVAILABLE,questions:query.questions,answers:[{name:question.name,type:'AAAA',ttl:77,data:'2001:db8::23'}]};
+    socket.end(dnsPacket.streamEncode(response));
+   });
+  });
+  dnsTcp.on('error',error=>{dnsTransportError=error;});
+  await within(new Promise((resolve,reject)=>{dnsTcp.once('error',reject);dnsTcp.listen(0,'127.0.0.1',resolve);}),'DNS TCP listen');
+  const dnsPort=dnsTcp.address().port;
+  await stage('dns-tcp-listening-'+dnsPort);
+  const dnsUdp=dgram.createSocket('udp4');
+  dnsUdp.on('message',(message,peer)=>{
+   const query=dnsPacket.decode(message),question=query.questions[0];dnsUdpCount++;
+   const type=question.type;
+   const truncated=type==='AAAA';
+   const data=type==='A'?'198.51.100.23':type==='TXT'?['niva','dns-fixture']:undefined;
+   const response={type:'response',id:query.id,flags:dnsPacket.RECURSION_DESIRED|dnsPacket.RECURSION_AVAILABLE|(truncated?dnsPacket.TRUNCATED_RESPONSE:0),questions:query.questions,answers:truncated?[]:[{name:question.name,type,ttl:123,data}]};
+   dnsUdp.send(dnsPacket.encode(response),peer.port,peer.address,error=>{if(error)dnsTransportError=error;});
+  });
+  dnsUdp.on('error',error=>{dnsTransportError=error;});
+  await within(new Promise((resolve,reject)=>{dnsUdp.once('error',reject);dnsUdp.bind(dnsPort,'127.0.0.1',resolve);}), 'DNS UDP bind');
+  await stage('dns-udp-listening-'+dnsPort);
+  resolver.setServers(['127.0.0.1:'+dnsPort]);
+  const dnsA=await within(new Promise((resolve,reject)=>resolver.resolve4('niva-integration.test',{ttl:true},(error,records)=>error?reject(error):resolve(records))),'DNS A query');
+  checks.dnsResolve4Ttl=dnsA.length===1&&dnsA[0].address==='198.51.100.23'&&dnsA[0].ttl===123;
+  await stage('dns-a-complete');
+  const dnsTxt=await within(new Promise((resolve,reject)=>resolver.resolveTxt('niva-integration.test',(error,records)=>error?reject(error):resolve(records))),'DNS TXT query');
+  checks.dnsResolveTxt=JSON.stringify(dnsTxt)==='[["niva","dns-fixture"]]';
+  await stage('dns-txt-complete');
+  const dnsAaaa=await within(new Promise((resolve,reject)=>resolver.resolve6('niva-integration.test',(error,records)=>error?reject(error):resolve(records))),'DNS AAAA query');
+  checks.dnsTcpFallback=dnsAaaa[0]==='2001:db8::23'&&dnsTcpCount===1&&dnsUdpCount===3&&dnsUdp.address().port===dnsTcp.address().port;
+  checks.dnsTransportErrorFree=!dnsTransportError;
+  await stage('dns-aaaa-complete');
+  const echoServer=dgram.createSocket('udp4');
+  echoServer.on('message',(message,peer)=>echoServer.send(message,peer.port,peer.address));
+  await within(new Promise((resolve,reject)=>{echoServer.once('error',reject);echoServer.bind(0,'127.0.0.1',resolve);}), 'UDP echo server bind');
+  await stage('udp-echo-server-listening');
+  const echoClient=dgram.createSocket('udp4');
+  await within(new Promise((resolve,reject)=>{echoClient.once('error',reject);echoClient.bind(0,'127.0.0.1',resolve);}), 'UDP echo client bind');
+  const echoReply=new Promise((resolve,reject)=>{echoClient.once('error',reject);echoClient.once('message',message=>resolve(message.toString()));});
+  echoClient.send(Buffer.from('udp-echo'),echoServer.address().port,'127.0.0.1');
+  checks.localUdpEcho=await within(echoReply,'UDP echo exchange')==='udp-echo';
+  await stage('udp-echo-complete');
+  let rawRequest='';
+  const halfOpenServer=net.createServer({allowHalfOpen:true},socket=>{
+   socket.setEncoding('utf8');
+   socket.on('data',chunk=>rawRequest+=chunk);
+   socket.on('end',()=>socket.end('reply:'+rawRequest));
+  });
+  await within(new Promise((resolve,reject)=>{halfOpenServer.once('error',reject);halfOpenServer.listen(0,'127.0.0.1',resolve);}), 'TCP half-close server listen');
+  await stage('tcp-halfclose-server-listening');
+  const rawClient=net.connect({host:'127.0.0.1',port:halfOpenServer.address().port});
+  const rawReply=new Promise((resolve,reject)=>{
+   let reply='';
+   rawClient.setEncoding('utf8');
+   rawClient.on('data',chunk=>reply+=chunk);
+   rawClient.once('end',()=>resolve(reply));
+   rawClient.once('error',reject);
+  });
+  await within(new Promise((resolve,reject)=>{rawClient.once('connect',resolve);rawClient.once('error',reject);}), 'TCP half-close client connect');
+  rawClient.end('request-before-fin');
+  checks.rawTcpHalfOpen=(await within(rawReply,'TCP half-close reply'))==='reply:request-before-fin'&&rawRequest==='request-before-fin';
+  await stage('tcp-halfclose-complete');
+  const closeFixtureResource=async(label,close)=>{const ok=await within(new Promise(resolve=>close(error=>resolve(!error))),label,5000).catch(()=>false);checks[label]=ok;await stage(label+'-'+(ok?'complete':'timeout'));return ok;};
+  await closeFixtureResource('udpEchoClientClose',callback=>echoClient.close(callback));
+  await closeFixtureResource('udpEchoServerClose',callback=>echoServer.close(callback));
+  await closeFixtureResource('dnsUdpServerClose',callback=>dnsUdp.close(callback));
+  await closeFixtureResource('dnsTcpServerClose',callback=>dnsTcp.close(callback));
+  await closeFixtureResource('tcpHalfOpenServerClose',callback=>halfOpenServer.close(callback));
+  await stage('dns-udp-tcp-complete');
+  const os=require('os');checks.osStatic=typeof os.hostname()==='string'&&os.totalmem()>0&&!!os.userInfo().username;
+  checks.osDynamic=os.cpus().length>0&&os.freemem()>0&&os.uptime()>0&&Object.keys(os.networkInterfaces()).length>0;
+  const Events=require('events');
+  checks.contractEventsConstructor=typeof Events==='function'&&Events.EventEmitter===Events&&new Events() instanceof Events;
+  const abortController=new AbortController();
+  abortController.signal.addEventListener('abort',event=>event.stopImmediatePropagation(),{once:true});
+  const abortObserved=Events.once(new Events(),'never',{signal:abortController.signal});
+  abortController.abort();
+  checks.contractAbortResistance=await Promise.race([abortObserved.then(()=>false,error=>error.name==='AbortError'),new Promise(resolve=>setTimeout(()=>resolve(false),1000))]);
+  const originalCwd=process.cwd;
+  try {process.cwd=()=>'';checks.contractCwdOverride=require('path').resolve()==='.';}finally{process.cwd=originalCwd;}
+  const decoderInputs=[];
+  require('querystring').parse('a+b=%41','&','=',{decodeURIComponent(value){decoderInputs.push(value);return value;}});
+  checks.contractQuerystringCodec=JSON.stringify(decoderInputs)==='["a%20b","%41"]';
+  let boundaryCode;
+  try{Buffer.from(new ArrayBuffer(1),2);}catch(error){boundaryCode=error.code;}
+  checks.contractBufferBoundaries=boundaryCode==='ERR_BUFFER_OUT_OF_BOUNDS'&&Buffer.copyBytesFrom(new Uint16Array([0x1234,0xffff]),1,1).toString('hex')==='ffff';
+  const Decoder=require('string_decoder').StringDecoder, utf8Decoder=new Decoder('utf8'), urlDecoder=new Decoder('base64url');
+  checks.contractStringDecoder=utf8Decoder.write(Buffer.from('f0b8','hex'))===''&&utf8Decoder.write(Buffer.from('41','hex'))==='\ufffdA'&&utf8Decoder.end()===''&&urlDecoder.write(Buffer.from([0xfb]))===''&&urlDecoder.end(Buffer.from([0xff]))==='-_8';
+  const specs=__API_SPECS__,missing=[];
+  for(const spec of specs){try{
+    let value,parts;
+    if(spec.api==='ChildProcess.kill')value=child.kill;
+    else if(spec.api==='http.Server.listen')value=server.listen;
+    else if(spec.api.startsWith('Buffer.')){value=require('buffer').Buffer;parts=spec.api.split('.').slice(1);}
+    else {const dot=spec.api.indexOf('.');value=require(spec.api.slice(0,dot));parts=spec.api.slice(dot+1).split('.');}
+    if(parts)for(const part of parts){if(value!=null&&value[part]!==undefined)value=value[part];else if(typeof value==='function'&&value.prototype&&value.prototype[part]!==undefined)value=value.prototype[part];else value=undefined;}
+    if(value===undefined||value===null)missing.push(spec.api);
+  }catch(_){missing.push(spec.api);}}
+  checks.apiSurface=missing.length===0;
+  checks.apiSurfaceCount=specs.length-missing.length;
+  if(missing.length)throw new Error('Missing API entries: '+missing.join(', '));
+  await Niva.api.host.send('implementation-result',{checks,ok:Object.values(checks).every(Boolean)});
+ }catch(error){await Niva.api.host.send('implementation-result',{checks,error:error&&error.message||String(error),code:error&&error.code,data:error&&error.data,stack:error&&error.stack});}
+})();
+</script></body></html>

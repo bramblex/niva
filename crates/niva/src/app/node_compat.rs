@@ -5,9 +5,8 @@ use serde_json::{Map, Value, json};
 
 use super::options::{NodeCompatConfig, NodeCompatOption};
 
-// Only these modules have browser adapters in packages/node-compat. Keep this
-// list in step with the packaged module entrypoints.
-const AVAILABLE: &[&str] = &[
+// Keep this selection list aligned with runtime-files.json and package exports.
+const AVAILABLE_MODULES: &[&str] = &[
     "path",
     "os",
     "fs",
@@ -23,9 +22,20 @@ const AVAILABLE: &[&str] = &[
     "https",
     "assert",
     "stream",
+    "process",
+    "net",
+    "dgram",
+    "tls",
+    "dns",
+    "string_decoder",
+    "timers",
 ];
 const PREFIX: &str = "__niva_compat/";
 const MARKER: &str = "<!-- niva-node-compat -->";
+
+include!(concat!(env!("OUT_DIR"), "/node_compat_assets.rs"));
+static NODE_COMPAT_ASSET_DATA: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/node_compat_assets.deflate"));
 
 #[derive(Clone, Debug)]
 pub struct NodeCompat {
@@ -36,7 +46,8 @@ pub struct NodeCompat {
 impl NodeCompat {
     pub fn from_option(option: &Option<NodeCompatOption>) -> Result<Option<Self>> {
         let (modules, importmap) = match option {
-            None | Some(NodeCompatOption::Switch(false)) => return Ok(None),
+            None => (None, true),
+            Some(NodeCompatOption::Switch(false)) => return Ok(None),
             Some(NodeCompatOption::Switch(true)) => (None, true),
             Some(NodeCompatOption::Config(NodeCompatConfig { modules, importmap })) => {
                 (modules.as_ref(), importmap.unwrap_or(true))
@@ -44,13 +55,13 @@ impl NodeCompat {
         };
         let mut selected = BTreeSet::new();
         let selected_names = modules.cloned().unwrap_or_else(|| {
-            AVAILABLE
+            AVAILABLE_MODULES
                 .iter()
                 .map(|module| (*module).to_string())
                 .collect()
         });
         for module in selected_names {
-            if !AVAILABLE.contains(&module.as_str()) {
+            if !AVAILABLE_MODULES.contains(&module.as_str()) {
                 return Err(anyhow!("unknown nodeCompat module {module:?}"));
             }
             selected.insert(module);
@@ -68,23 +79,28 @@ impl NodeCompat {
         if relative == "node-compat.js" {
             return true;
         }
-        let Some(relative) = relative.strip_prefix("src/") else {
-            return false;
-        };
-        if matches!(relative, "runtime/bridge.js" | "runtime/registration.js") {
-            return true;
-        }
-        if let Some(runtime) = relative.strip_prefix("runtime/") {
-            return AVAILABLE
-                .iter()
-                .any(|module| runtime == format!("{module}.js"));
-        }
-        self.modules.iter().any(|module| {
-            relative == format!("{module}.js")
-                || (module == "stream" && relative == "stream-promises.js")
-                || (module == "fs" && relative == "fs-promises.js")
-                || (module == "assert" && relative == "assert-strict.js")
-        })
+        (!self.modules.is_empty() && NODE_COMPAT_SHARED_ASSETS.contains(&relative))
+            || NODE_COMPAT_MODULE_ASSETS.iter().any(|(module, assets)| {
+                self.modules.contains(*module) && assets.contains(&relative)
+            })
+    }
+
+    /// Return one checked-in NodeCompat asset from the compressed build-time
+    /// archive. The caller must enforce `allows_asset` before serving it.
+    pub fn embedded_asset(path: &str) -> Option<Vec<u8>> {
+        use std::io::Read;
+
+        let path = path.trim_start_matches('/');
+        let relative = path.strip_prefix(PREFIX).unwrap_or(path);
+        let entry = EMBEDDED_NODE_COMPAT_ASSETS
+            .iter()
+            .find(|entry| entry.path == relative)?;
+        let end = entry.offset.checked_add(entry.compressed_len)?;
+        let compressed = NODE_COMPAT_ASSET_DATA.get(entry.offset..end)?;
+        let mut decoder = flate2::read::DeflateDecoder::new(compressed);
+        let mut asset = Vec::with_capacity(entry.raw_len);
+        decoder.read_to_end(&mut asset).ok()?;
+        (asset.len() == entry.raw_len).then_some(asset)
     }
 
     pub fn imports(&self) -> BTreeMap<String, String> {
@@ -107,6 +123,16 @@ impl NodeCompat {
                 let promises = format!("/{PREFIX}src/stream-promises.js");
                 imports.insert("stream/promises".into(), promises.clone());
                 imports.insert("node:stream/promises".into(), promises);
+            }
+            if module == "dns" {
+                let promises = format!("/{PREFIX}src/dns-promises.js");
+                imports.insert("dns/promises".into(), promises.clone());
+                imports.insert("node:dns/promises".into(), promises);
+            }
+            if module == "timers" {
+                let promises = format!("/{PREFIX}src/timers-promises.js");
+                imports.insert("timers/promises".into(), promises.clone());
+                imports.insert("node:timers/promises".into(), promises);
             }
         }
         imports
@@ -287,14 +313,54 @@ mod tests {
         let compat = path_only();
         assert!(compat.allows_asset("__niva_compat/node-compat.js"));
         assert!(compat.allows_asset("__niva_compat/src/path.js"));
+        assert!(compat.allows_asset("__niva_compat/src/runtime/vendor.js"));
         assert!(!compat.allows_asset("__niva_compat/src/fs.js"));
         assert_eq!(compat.imports()["node:path"], "/__niva_compat/src/path.js");
     }
 
     #[test]
+    fn absent_option_enables_all_available_modules_and_embedded_bootstrap() {
+        let compat = NodeCompat::from_option(&None).unwrap().unwrap();
+        assert_eq!(compat.modules.len(), AVAILABLE_MODULES.len());
+        for module in AVAILABLE_MODULES {
+            assert!(
+                compat.modules.contains(*module),
+                "missing default module {module}"
+            );
+        }
+        assert_eq!(AVAILABLE_MODULES.len(), 22);
+        assert!(compat.allows_asset("__niva_compat/src/net.js"));
+        assert!(compat.allows_asset("__niva_compat/src/runtime/vendor.js"));
+
+        let classic = NodeCompat::embedded_asset("__niva_compat/node-compat.js").unwrap();
+        let classic = String::from_utf8(classic).unwrap();
+        assert!(classic.contains("root.NivaNodeCompatReady"));
+        assert!(classic.contains("runtime.vendor"));
+
+        let vendor = NodeCompat::embedded_asset("__niva_compat/src/runtime/vendor.js").unwrap();
+        let vendor = String::from_utf8(vendor).unwrap();
+        assert!(vendor.contains("niva.node-compat.runtime"));
+    }
+
+    #[test]
+    fn explicit_false_disables_default_node_compat() {
+        assert!(
+            NodeCompat::from_option(&Some(NodeCompatOption::Switch(false)))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn subpath_modules_map_to_dedicated_wrappers() {
         let compat = NodeCompat::from_option(&Some(NodeCompatOption::Config(NodeCompatConfig {
-            modules: Some(vec!["fs".into(), "assert".into(), "stream".into()]),
+            modules: Some(vec![
+                "fs".into(),
+                "assert".into(),
+                "stream".into(),
+                "dns".into(),
+                "timers".into(),
+            ]),
             importmap: Some(true),
         })))
         .unwrap()
@@ -312,7 +378,21 @@ mod tests {
             imports["node:stream/promises"],
             "/__niva_compat/src/stream-promises.js"
         );
-        for asset in ["fs-promises.js", "assert-strict.js", "stream-promises.js"] {
+        assert_eq!(
+            imports["node:dns/promises"],
+            "/__niva_compat/src/dns-promises.js"
+        );
+        assert_eq!(
+            imports["node:timers/promises"],
+            "/__niva_compat/src/timers-promises.js"
+        );
+        for asset in [
+            "fs-promises.js",
+            "assert-strict.js",
+            "stream-promises.js",
+            "dns-promises.js",
+            "timers-promises.js",
+        ] {
             assert!(compat.allows_asset(&format!("__niva_compat/src/{asset}")));
         }
     }

@@ -1,360 +1,249 @@
 (function (root) {
-  "use strict";
-
-  var runtime = root[Symbol.for("niva.node-compat.runtime")];
-
-  function bytesOf(value) {
-    if (value instanceof Uint8Array) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    if (value instanceof ArrayBuffer) return new Uint8Array(value);
-    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    if (typeof value === "string") return new TextEncoder().encode(value);
-    throw new TypeError("stdin data must be a string, Buffer, Uint8Array, or ArrayBuffer");
-  }
-
-  function concatenate(chunks) {
-    var length = chunks.reduce(function (total, chunk) { return total + chunk.length; }, 0);
-    var output = new Uint8Array(length);
-    var offset = 0;
-    chunks.forEach(function (chunk) { output.set(chunk, offset); offset += chunk.length; });
-    return output;
-  }
-
-  function decode(chunks, encoding) {
-    if (encoding === null) return concatenate(chunks);
-    var decoder;
-    try { decoder = new TextDecoder(encoding || "utf-8"); }
-    catch (_) { throw new TypeError("Unsupported output encoding: " + encoding); }
-    return decoder.decode(concatenate(chunks));
-  }
-
-  function createOutputStream(encoding) {
-    var emitter = runtime.createEmitter();
-    var chunks = [];
-    var ended = false;
-    var decoder = encoding === null ? null : new TextDecoder("utf-8");
-    var readable = {
-      readable: true,
-      on: function (event, listener) { emitter.on(event, listener); return readable; },
-      addListener: function (event, listener) { return readable.on(event, listener); },
-      once: function (event, listener) { emitter.once(event, listener); return readable; },
-      off: function (event, listener) { emitter.off(event, listener); return readable; },
-      removeListener: function (event, listener) { return readable.off(event, listener); },
-      removeAllListeners: function (event) { emitter.removeAllListeners(event); return readable; },
-      listeners: function (event) { return emitter.listeners(event); },
-      listenerCount: function (event) { return emitter.listenerCount(event); },
-      setEncoding: function (value) {
-        if (value !== null && value !== "utf8" && value !== "utf-8") throw new TypeError("Only UTF-8 and binary child output are supported");
-        encoding = value === null ? null : "utf8";
-        decoder = encoding === null ? null : new TextDecoder("utf-8");
-        return readable;
-      },
-      pipe: function (destination) {
-        readable.on("data", function (chunk) { destination.write(chunk); });
-        readable.once("end", function () { if (typeof destination.end === "function") destination.end(); });
-        return destination;
-      },
-      _push: function (bytes) {
-        var chunk = encoding === null
-          ? (runtime.buffer ? runtime.buffer.Buffer.from(bytes) : new Uint8Array(bytes))
-          : decoder.decode(bytes, { stream: true });
-        if (chunk.length === 0) return;
-        if (emitter.listenerCount("data") > 0) emitter.emit("data", chunk);
-        else chunks.push(chunk);
-      },
-      _finish: function () {
-        if (ended) return;
-        ended = true;
-        if (decoder) {
-          var tail = decoder.decode();
-          if (tail) {
-            if (emitter.listenerCount("data") > 0) emitter.emit("data", tail);
-            else chunks.push(tail);
-          }
-        }
-        if (chunks.length) chunks.splice(0).forEach(function (chunk) { emitter.emit("data", chunk); });
-        emitter.emit("end");
-        emitter.emit("close");
-      },
-    };
-    return readable;
-  }
-
-  function createStdin(niva, streamRef, isDetached) {
-    var emitter = runtime.createEmitter();
-    var ended = false;
-    var stdin = {
-      writable: true,
-      destroyed: false,
-      on: function (event, listener) { emitter.on(event, listener); return stdin; },
-      addListener: function (event, listener) { return stdin.on(event, listener); },
-      once: function (event, listener) { emitter.once(event, listener); return stdin; },
-      off: function (event, listener) { emitter.off(event, listener); return stdin; },
-      removeListener: function (event, listener) { return stdin.off(event, listener); },
-      end: function (chunk, encoding, callback) {
-        if (typeof chunk === "function") { callback = chunk; chunk = undefined; }
-        else if (typeof encoding === "function") { callback = encoding; }
-        if (ended) { if (callback) callback(); return stdin; }
-        ended = true;
-        if (!isDetached && streamRef.current) {
-          try {
-            var bytes = chunk === undefined ? new Uint8Array(0) : bytesOf(chunk);
-            runtime.resolveNiva(niva).streamSend(streamRef.current.id, bytes, true);
-          } catch (error) {
-            emitter.emit("error", runtime.nativeError(error));
-          }
-        }
-        stdin.writable = false;
-        if (callback) Promise.resolve().then(callback);
-        emitter.emit("finish");
-        return stdin;
-      },
-      write: function (chunk, encoding, callback) {
-        if (typeof encoding === "function") callback = encoding;
-        if (ended || isDetached || !streamRef.current) return false;
-        try {
-          var ok = runtime.resolveNiva(niva).streamSend(streamRef.current.id, bytesOf(chunk), false);
-          if (callback) Promise.resolve().then(callback);
-          return ok;
-        } catch (error) {
-          var converted = runtime.nativeError(error);
-          emitter.emit("error", converted);
-          if (callback) Promise.resolve().then(function () { callback(converted); });
-          return false;
-        }
-      },
-      destroy: function (error) {
-        stdin.destroyed = true;
-        stdin.writable = false;
-        if (error) emitter.emit("error", error);
-        if (streamRef.current && typeof streamRef.current.cancel === "function") streamRef.current.cancel();
-        return stdin;
-      },
-    };
-    return stdin;
-  }
-
-  function checkStdio(value) {
-    if (value === undefined || value === "pipe") return;
-    if (Array.isArray(value) && value.length === 3 && value.every(function (entry) { return entry === "pipe"; })) return;
-    throw runtime.bridgeError("Niva child_process supports piped stdio only", "ENOTSUP");
-  }
-
-  function shellInvocation(command, shell) {
-    var windows = runtime.path && runtime.path.sep === "\\";
-    if (shell === false) return { command: command, args: [] };
-    var executable = typeof shell === "string" ? shell : (windows ? "cmd.exe" : "/bin/sh");
-    return windows
-      ? { command: executable, args: ["/d", "/s", "/c", command] }
-      : { command: executable, args: ["-c", command] };
-  }
-
-  function createChildProcessModule(niva) {
-    function spawn(command, args, options) {
-      if (typeof command !== "string" || command.length === 0) throw new TypeError("command must be a non-empty string");
-      if (args === undefined || args === null) args = [];
-      if (!Array.isArray(args) || args.some(function (value) { return typeof value !== "string"; })) {
-        throw new TypeError("args must be an array of strings");
-      }
-      options = options || {};
-      checkStdio(options.stdio);
-      if (options.signal) throw runtime.bridgeError("AbortSignal is not supported by the Niva process bridge", "ENOTSUP");
-      if (options.timeout) throw runtime.bridgeError("Process timeouts are not supported by the Niva process bridge", "ENOTSUP");
-      var encoding = options.encoding === undefined ? null : options.encoding;
-      if (encoding !== null && encoding !== "utf8" && encoding !== "utf-8") {
-        throw new TypeError("Only UTF-8 and binary child output are supported");
-      }
-      var invocation = options.shell ? shellInvocation(args.length ? command : command, options.shell) : { command: command, args: args };
-      if (options.shell && args.length > 0) throw new TypeError("shell: true with an args array is not supported");
-      var execOptions = {};
-      if (options.cwd !== undefined) execOptions.currentDir = options.cwd;
-      else if (options.currentDir !== undefined) execOptions.currentDir = options.currentDir;
-      if (options.env !== undefined) execOptions.env = options.env;
-      if (options.detached !== undefined) execOptions.detached = !!options.detached;
-
-      var events = runtime.createEmitter();
-      var streamRef = { current: null };
-      var detached = !!options.detached;
-      var child = {
-        stdin: null,
-        stdout: createOutputStream(encoding),
-        stderr: createOutputStream(encoding),
-        stdio: null,
-        pid: undefined,
-        killed: false,
-        connected: false,
-        exitCode: null,
-        signalCode: null,
-        spawnargs: [invocation.command].concat(invocation.args),
-        spawnfile: invocation.command,
-        on: function (event, listener) { events.on(event, listener); return child; },
-        addListener: function (event, listener) { return child.on(event, listener); },
-        once: function (event, listener) { events.once(event, listener); return child; },
-        off: function (event, listener) { events.off(event, listener); return child; },
-        removeListener: function (event, listener) { events.off(event, listener); return child; },
-        removeAllListeners: function (event) { events.removeAllListeners(event); return child; },
-        listeners: function (event) { return events.listeners(event); },
-        listenerCount: function (event) { return events.listenerCount(event); },
-        emit: function () { return events.emit.apply(events, arguments); },
-        kill: function () {
-          // Per-process kill is not wired to the native handler. Use cancel()
-          // to stop an attached child through the bridge call instead.
-          return false;
-        },
-        cancel: function () {
-          if (!streamRef.current || typeof streamRef.current.cancel !== "function") return false;
-          streamRef.current.cancel();
-          return true;
-        },
-      };
-      child.stdin = createStdin(niva, streamRef, detached);
-      child.stdio = [child.stdin, child.stdout, child.stderr];
-
-      var byteChain = Promise.resolve();
-      var stdoutChunks = [];
-      var stderrChunks = [];
-      var requestError = null;
-      var st;
-      try {
-        st = runtime.stream(niva, "process.execStream", [invocation.command, invocation.args, Object.keys(execOptions).length ? execOptions : null], {
-        onBlob: function (blob, isStderr) {
-          byteChain = byteChain.then(function () {
-              var arrayBuffer = blob && typeof blob.arrayBuffer === "function"
-                ? blob.arrayBuffer()
-                : Promise.resolve(blob instanceof Uint8Array ? blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength) : blob);
-              return Promise.resolve(arrayBuffer).then(function (buffer) {
-                var bytes = new Uint8Array(buffer);
-                if (isStderr) {
-                  stderrChunks.push(bytes);
-                  child.stderr._push(bytes);
-                } else {
-                  stdoutChunks.push(bytes);
-                  child.stdout._push(bytes);
-                }
-              });
-            });
-          },
-          onEvent: function (name, data) { events.emit(name, data); },
-        });
-        streamRef.current = st;
-      } catch (error) {
-        requestError = runtime.nativeError(error);
-      }
-
-      var completion = new Promise(function (resolve, reject) {
-        Promise.resolve().then(function () {
-          if (!requestError) events.emit("spawn");
-        });
-        if (requestError) {
-          Promise.resolve().then(function () {
-            child.stdout._finish();
-            child.stderr._finish();
-            events.emit("error", requestError);
-            events.emit("close", null, null);
-            reject(requestError);
-          });
-          return;
-        }
-        Promise.resolve(st.promise).then(function (result) {
-          return byteChain.then(function () {
-            if (typeof result === "number") {
-              child.pid = result;
-              child.stdout._finish();
-              child.stderr._finish();
-              resolve({ pid: result, status: null, detached: true });
-              return;
-            }
-            var status = result && result.status;
-            child.exitCode = status == null ? null : status;
-            child.stdout._finish();
-            child.stderr._finish();
-            events.emit("exit", child.exitCode, null);
-            events.emit("close", child.exitCode, null);
-            resolve({ status: child.exitCode, detached: false });
-          });
-        }, function (error) {
-          var converted = runtime.nativeError(error);
-          byteChain.then(function () {
-            child.stdout._finish();
-            child.stderr._finish();
-            events.emit("error", converted);
-            events.emit("close", null, null);
-            reject(converted);
-          }, reject);
-        }).catch(function (error) {
-          var converted = runtime.nativeError(error);
-          child.stdout._finish();
-          child.stderr._finish();
-          events.emit("error", converted);
-          events.emit("close", null, null);
-          reject(converted);
-        });
-      });
-      completion.catch(function () {});
-      child.completion = completion;
-      child._stdoutChunks = stdoutChunks;
-      child._stderrChunks = stderrChunks;
-      child._stream = streamRef;
-      return child;
+    "use strict";
+    var runtime = root[Symbol.for("niva.node-compat.runtime")], Buffer = runtime.vendor.Buffer, Readable = runtime.vendor.stream.Readable, Writable = runtime.vendor.stream.Writable;
+  if (typeof runtime.createChildProcessModule === "function") return;
+    function checkStdio(value) { if (value === undefined || value === "pipe")
+        return; if (Array.isArray(value) && value.length === 3 && value.every(item => item === "pipe"))
+        return; throw runtime.bridgeError("Only piped child stdio is supported", "ENOTSUP"); }
+    function shellInvocation(command, shell) { var windows = runtime.path.sep === "\\", file = typeof shell === "string" ? shell : windows ? "cmd.exe" : "/bin/sh"; return { command: file, args: windows ? ["/d", "/s", "/c", command] : ["-c", command] }; }
+    var commonErrnoNames = { 1: "EPERM", 2: "ENOENT", 3: "ESRCH", 4: "EINTR", 5: "EIO", 6: "ENXIO", 7: "E2BIG", 8: "ENOEXEC", 9: "EBADF", 10: "ECHILD", 12: "ENOMEM", 13: "EACCES", 14: "EFAULT", 16: "EBUSY", 17: "EEXIST", 18: "EXDEV", 19: "ENODEV", 20: "ENOTDIR", 21: "EISDIR", 22: "EINVAL", 23: "ENFILE", 24: "EMFILE", 25: "ENOTTY", 27: "EFBIG", 28: "ENOSPC", 29: "ESPIPE", 30: "EROFS", 31: "EMLINK", 32: "EPIPE", 33: "EDOM", 34: "ERANGE" };
+    var linuxErrnoNames = { 11: "EAGAIN", 35: "EDEADLK", 36: "ENAMETOOLONG", 37: "ENOLCK", 38: "ENOSYS", 39: "ENOTEMPTY", 40: "ELOOP", 98: "EADDRINUSE", 99: "EADDRNOTAVAIL", 100: "ENETDOWN", 101: "ENETUNREACH", 102: "ENETRESET", 103: "ECONNABORTED", 104: "ECONNRESET", 105: "ENOBUFS", 106: "EISCONN", 107: "ENOTCONN", 108: "ESHUTDOWN", 110: "ETIMEDOUT", 111: "ECONNREFUSED", 112: "EHOSTDOWN", 113: "EHOSTUNREACH", 114: "EALREADY", 115: "EINPROGRESS" };
+    var darwinErrnoNames = { 11: "EDEADLK", 35: "EAGAIN", 36: "EINPROGRESS", 37: "EALREADY", 38: "ENOTSOCK", 39: "EDESTADDRREQ", 40: "EMSGSIZE", 41: "EPROTOTYPE", 42: "ENOPROTOOPT", 43: "EPROTONOSUPPORT", 44: "ESOCKTNOSUPPORT", 45: "EOPNOTSUPP", 46: "EPFNOSUPPORT", 47: "EAFNOSUPPORT", 48: "EADDRINUSE", 49: "EADDRNOTAVAIL", 50: "ENETDOWN", 51: "ENETUNREACH", 52: "ENETRESET", 53: "ECONNABORTED", 54: "ECONNRESET", 55: "ENOBUFS", 56: "EISCONN", 57: "ENOTCONN", 60: "ETIMEDOUT", 61: "ECONNREFUSED", 64: "EHOSTDOWN", 65: "EHOSTUNREACH", 66: "ENOTEMPTY", 70: "ESTALE", 78: "ENOSYS" };
+    // libuv assigns its own error numbers on Windows; they are not the host
+    // errno values used by POSIX builds. These values follow Node 22's pinned
+    // deps/uv/include/uv/errno.h and UV_ERRNO_MAP.
+    var windowsUvErrorNames = { 3000: "EAI_ADDRFAMILY", 3001: "EAI_AGAIN", 3002: "EAI_BADFLAGS", 3003: "EAI_CANCELED", 3004: "EAI_FAIL", 3005: "EAI_FAMILY", 3006: "EAI_MEMORY", 3007: "EAI_NODATA", 3008: "EAI_NONAME", 3009: "EAI_OVERFLOW", 3010: "EAI_SERVICE", 3011: "EAI_SOCKTYPE", 3013: "EAI_BADHINTS", 3014: "EAI_PROTOCOL", 4023: "EUNATCH", 4024: "ENODATA", 4025: "ESOCKTNOSUPPORT", 4026: "EOVERFLOW", 4027: "EILSEQ", 4028: "EFTYPE", 4029: "ENOTTY", 4030: "EREMOTEIO", 4031: "EHOSTDOWN", 4032: "EMLINK", 4033: "ENXIO", 4034: "ERANGE", 4035: "ENOPROTOOPT", 4036: "EFBIG", 4037: "EXDEV", 4038: "ETXTBSY", 4039: "ETIMEDOUT", 4040: "ESRCH", 4041: "ESPIPE", 4042: "ESHUTDOWN", 4043: "EROFS", 4044: "EPROTOTYPE", 4045: "EPROTONOSUPPORT", 4046: "EPROTO", 4047: "EPIPE", 4048: "EPERM", 4049: "ENOTSUP", 4050: "ENOTSOCK", 4051: "ENOTEMPTY", 4052: "ENOTDIR", 4053: "ENOTCONN", 4054: "ENOSYS", 4055: "ENOSPC", 4056: "ENONET", 4057: "ENOMEM", 4058: "ENOENT", 4059: "ENODEV", 4060: "ENOBUFS", 4061: "ENFILE", 4062: "ENETUNREACH", 4063: "ENETDOWN", 4064: "ENAMETOOLONG", 4065: "EMSGSIZE", 4066: "EMFILE", 4067: "ELOOP", 4068: "EISDIR", 4069: "EISCONN", 4070: "EIO", 4071: "EINVAL", 4072: "EINTR", 4073: "EHOSTUNREACH", 4074: "EFAULT", 4075: "EEXIST", 4076: "EDESTADDRREQ", 4077: "ECONNRESET", 4078: "ECONNREFUSED", 4079: "ECONNABORTED", 4080: "ECHARSET", 4081: "ECANCELED", 4082: "EBUSY", 4083: "EBADF", 4084: "EALREADY", 4088: "EAGAIN", 4089: "EAFNOSUPPORT", 4090: "EADDRNOTAVAIL", 4091: "EADDRINUSE", 4092: "EACCES", 4093: "E2BIG", 4094: "UNKNOWN", 4095: "EOF" };
+    function systemErrorName(code, niva) {
+        var platform = "";
+        try { platform = runtime.resolveNiva(niva).bootstrap.os.platform; } catch (_) { platform = root.process && root.process.platform || ""; }
+        if (platform === "win32") return windowsUvErrorNames[Math.abs(code)] || "Unknown system error " + code;
+        var names = platform === "darwin" ? darwinErrnoNames : linuxErrnoNames;
+        return commonErrnoNames[Math.abs(code)] || names[Math.abs(code)] || "Unknown system error " + code;
     }
-
-    function exec(command, options, callback) {
-      if (typeof options === "function") { callback = options; options = {}; }
-      options = options || {};
-      if (options.detached) throw runtime.bridgeError("child_process.exec does not support detached processes", "ENOTSUP");
-      if (options.timeout) throw runtime.bridgeError("Process timeouts are not supported by the Niva process bridge", "ENOTSUP");
-      if (options.maxBuffer !== undefined) throw runtime.bridgeError("maxBuffer is not supported by the Niva process bridge", "ENOTSUP");
-      var encoding = options.encoding === undefined ? "utf8" : options.encoding;
-      if (encoding !== null && encoding !== "utf8" && encoding !== "utf-8") throw new TypeError("Only UTF-8 and binary exec output are supported");
-      var invocation = shellInvocation(command, options.shell === undefined ? true : options.shell);
-      var child = spawn(invocation.command, invocation.args, {
-        cwd: options.cwd,
-        env: options.env,
-        stdio: options.stdio,
-        encoding: encoding,
-      });
-      // exec is non-interactive by default; close the bridge's piped stdin so
-      // commands that read until EOF can finish. spawn leaves it caller-owned.
-      child.stdin.end();
-      var out = [];
-      var err = [];
-      child.stdout.on("data", function (chunk) { out.push(chunk instanceof Uint8Array ? new Uint8Array(chunk) : chunk); });
-      child.stderr.on("data", function (chunk) { err.push(chunk instanceof Uint8Array ? new Uint8Array(chunk) : chunk); });
-
-      function joined(chunks) {
-        if (encoding !== null) return chunks.join("");
-        return runtime.buffer.Buffer.from(concatenate(chunks));
-      }
-      function execError(status, stdout, stderr) {
-        var error = runtime.bridgeError("Command failed with exit code " + status, status == null ? "NIVA_BRIDGE_ERROR" : status);
-        error.status = status;
-        error.code = status;
-        error.stdout = stdout;
-        error.stderr = stderr;
+    function abortError(signal) {
+        var error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        error.code = "ABORT_ERR";
+        if (signal && signal.reason !== undefined) error.cause = signal.reason;
         return error;
-      }
-
-      var result = child.completion.then(function (exit) {
-        var stdout = joined(out);
-        var stderr = joined(err);
-        if (exit.status !== 0) throw execError(exit.status, stdout, stderr);
-        return { status: exit.status, stdout: stdout, stderr: stderr };
-      }, function (error) {
-        error.stdout = joined(out);
-        error.stderr = joined(err);
-        throw error;
-      });
-      result.catch(function () {});
-      child.result = result;
-      child.completion = result;
-      if (typeof callback === "function") {
-        result.then(function (value) { callback(null, value.stdout, value.stderr); }, function (error) { callback(error, error.stdout, error.stderr); });
-      }
-      return child;
     }
-
-    return { spawn: spawn, exec: exec };
-  }
-
-  runtime.createChildProcessModule = createChildProcessModule;
-  runtime.child_process = createChildProcessModule();
+    function createChildProcessModule(niva) {
+        function spawn(command, args, options) {
+            if (typeof command !== "string" || !command)
+                throw new TypeError("command must be a non-empty string");
+            if (!Array.isArray(args)) {
+                options = args || {};
+                args = [];
+            }
+            options = options || {};
+            checkStdio(options.stdio);
+            if (options.signal !== undefined && (options.signal === null || typeof options.signal.aborted !== "boolean" || typeof options.signal.addEventListener !== "function" || typeof options.signal.removeEventListener !== "function"))
+                throw Object.assign(new TypeError('The "options.signal" property must be an instance of AbortSignal'), {code: "ERR_INVALID_ARG_TYPE"});
+            args = args.map(String);
+            if (args.some(arg => arg.includes("\0"))) throw Object.assign(new TypeError("args must not contain null bytes"), {code: "ERR_INVALID_ARG_VALUE"});
+            var invocation = options.shell ? shellInvocation([command].concat(args).join(" "), options.shell) : { command: command, args: args };
+            var preAborted = !!(options.signal && options.signal.aborted);
+            var child = new runtime.events.EventEmitter();
+            Object.assign(child, { pid: undefined, killed: false, connected: false, exitCode: null, signalCode: null, spawnfile: invocation.command, spawnargs: [invocation.command].concat(invocation.args) });
+            var call, pendingKill, settled = false, timer, signalListener;
+            child.stdout = new Readable({ read: function () { } });
+            child.stderr = new Readable({ read: function () { } });
+            child.stdin = new Writable({ write: function (chunk, encoding, callback) { try {
+                    if (!call || call.id === undefined) { callback(); return; }
+                    if (!runtime.resolveNiva(niva).streamSend(call.id, chunk, false))
+                        throw runtime.bridgeError("Child input bridge is full", "ENOBUFS");
+                    callback();
+                }
+                catch (error) {
+                    callback(error);
+                } }, final: function (callback) { try {
+                    if (!call || call.id === undefined) { callback(); return; }
+                    runtime.resolveNiva(niva).streamSend(call.id, new Uint8Array(0), true);
+                    callback();
+                }
+                catch (error) {
+                    callback(error);
+                } } });
+            child.stdio = [child.stdin, child.stdout, child.stderr];
+            function sendSignal(signal) { if (!call || call.id === undefined) return; runtime.stream(niva, "process.signal", [call.id, String(signal)]).promise.catch(error => { if (!child._abortError) child.emit("error", runtime.nativeError(error)); }); }
+            child.kill = function (signal) { signal = signal === undefined ? "SIGTERM" : signal; if (settled)
+                return false; if (!["SIGTERM", "SIGKILL", "SIGINT", "SIGHUP", 0, "0"].includes(signal))
+                throw new TypeError("Unsupported signal"); if (!call || call.id === undefined)
+                return false; child.killed = signal !== 0 && signal !== "0"; if (child.pid)
+                sendSignal(signal);
+            else
+                pendingKill = signal; return true; };
+            child.cancel = function () { if (settled)
+                return false; call.cancel(); return true; };
+            child.ref = child.unref = function () { return child; };
+            function cleanup() { settled = true; if (timer)
+                clearTimeout(timer); if (options.signal && signalListener)
+                options.signal.removeEventListener("abort", signalListener); child.stdout.push(null); child.stderr.push(null); }
+            if (preAborted) {
+                child._abortError = abortError(options.signal);
+                call = { id: undefined, promise: Promise.reject(child._abortError), cancel: function () { return false; } };
+            }
+            else {
+                try {
+                    call = runtime.stream(niva, "process.execStream", [invocation.command, invocation.args, { currentDir: options.cwd, env: options.env, detached: !!options.detached }], {
+                        onChunk: function (bytes, isStderr) { if (bytes.length)
+                            (isStderr ? child.stderr : child.stdout).push(Buffer.from(bytes)); },
+                        onEvent: function (name, data) { if (name === "spawn") {
+                            child.pid = data.pid;
+                            if (pendingKill !== undefined)
+                                sendSignal(pendingKill);
+                            child.emit("spawn");
+                        }
+                        else
+                            child.emit(name, data); }
+                    });
+                }
+                catch (error) {
+                    call = { id: undefined, promise: Promise.reject(error), cancel: function () { return false; } };
+                }
+            }
+            child.completion = call.promise.then(function (result) { cleanup(); if (typeof result === "number") {
+                child.pid = result;
+                return { pid: result, status: null, detached: true };
+            } child.exitCode = result.status; child.signalCode = ({ 1: "SIGHUP", 2: "SIGINT", 9: "SIGKILL", 15: "SIGTERM" })[result.signal] || null; child.emit("exit", child.exitCode, child.signalCode); if (child._abortError) {
+                child.emit("error", child._abortError);
+                child.emit("close", child.exitCode, child.signalCode);
+                throw child._abortError;
+            } child.emit("close", child.exitCode, child.signalCode); return { status: child.exitCode, signal: child.signalCode }; }, function (error) { cleanup(); error = child._abortError || runtime.nativeError(error); child.emit("error", error); child.emit("close", null, null); throw error; });
+            child.completion.catch(function () { });
+            if (options.timeout > 0)
+                timer = setTimeout(() => child.kill(options.killSignal), options.timeout);
+            if (options.signal && !preAborted) {
+                signalListener = function () { if (!settled) { child._abortError = child._abortError || abortError(options.signal); child.kill(options.killSignal); } };
+                options.signal.addEventListener("abort", signalListener, { once: true });
+            }
+            return child;
+        }
+        function execFile(file, args, options, callback) {
+            if (typeof args === "function") {
+                callback = args;
+                args = [];
+                options = {};
+            }
+            else if (!Array.isArray(args)) {
+                callback = options;
+                options = args;
+                args = [];
+            }
+            if (typeof options === "function") {
+                callback = options;
+                options = {};
+            }
+            options = options || {};
+            var child = spawn(file, args, options), out = [], err = [], outSize = 0, errSize = 0, overflow = false, max = options.maxBuffer === undefined ? 1024 * 1024 : options.maxBuffer;
+            var command = [file].concat(args || []).join(" "), closeInfo, childError;
+            function collect(target, isErr) { return function (chunk) { if (overflow)
+                return; var size = isErr ? (errSize += chunk.length) : (outSize += chunk.length); if (size > max) {
+                overflow = true;
+                child.kill();
+                return;
+            } target.push(Buffer.from(chunk)); }; }
+            child.stdout.on("data", collect(out, false));
+            child.stderr.on("data", collect(err, true));
+            var closed = new Promise(resolve => child.once("close", function (code, signal) {
+                closeInfo = { status: code, signal: signal };
+                resolve(closeInfo);
+            }));
+            var drained = Promise.all([child.stdout, child.stderr].map(stream => new Promise(resolve => stream.once("end", resolve))));
+            child.on("error", function (error) { childError = error; });
+            child.stdin.end();
+            function formattedOutput() {
+                var stdout = Buffer.concat(out), stderr = Buffer.concat(err);
+                if (options.encoding !== null && options.encoding !== "buffer") {
+                    stdout = stdout.toString(options.encoding || "utf8");
+                    stderr = stderr.toString(options.encoding || "utf8");
+                }
+                return { stdout: stdout, stderr: stderr };
+            }
+            function completionError(exit, output) {
+                var status = exit.status;
+                var code = typeof status === "number" && status < 0 ? systemErrorName(status, niva) : status;
+                var error = runtime.bridgeError("Command failed: " + command, overflow ? "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" : code);
+                error.stdout = output.stdout;
+                error.stderr = output.stderr;
+                error.status = status;
+                error.killed = child.killed;
+                error.signal = exit.signal;
+                error.cmd = command;
+                return error;
+            }
+            function attachOutput(error, output) {
+                if (error.stdout === undefined) error.stdout = output.stdout;
+                if (error.stderr === undefined) error.stderr = output.stderr;
+                if (error.killed === undefined) error.killed = child.killed;
+                if (error.cmd === undefined) error.cmd = command;
+                if (error.name !== "AbortError" && error.signal === undefined && closeInfo) error.signal = closeInfo.signal;
+                return error;
+            }
+            child.result = closed.then(async function (exit) {
+                await drained;
+                var output = formattedOutput();
+                if (child._abortError) throw attachOutput(child._abortError, output);
+                if (childError) throw attachOutput(runtime.nativeError(childError), output);
+                if (overflow || exit.status !== 0 || exit.signal) throw completionError(exit, output);
+                return output;
+            });
+            child.result.catch(function () { });
+            if (typeof callback === "function")
+                child.result.then(value => callback(null, value.stdout, value.stderr), error => callback(error, error.stdout, error.stderr));
+            return child;
+        }
+        function exec(command, options, callback) { if (typeof options === "function") {
+            callback = options;
+            options = {};
+        } options = options || {}; var invocation = shellInvocation(command, options.shell); return execFile(invocation.command, invocation.args, Object.assign({}, options, { shell: false }), callback); }
+        function spawnSync(command, args, options) {
+            if (!Array.isArray(args)) {
+                options = args || {};
+                args = [];
+            }
+            options = options || {};
+            checkStdio(options.stdio);
+            var invocation = options.shell ? shellInvocation(command + (args.length ? " " + args.join(" ") : ""), options.shell) : { command: command, args: args };
+            var payload = Object.assign({}, options);
+            if (options.input !== undefined)
+                payload.input = runtime.vendor.Buffer.from(options.input, options.encoding || "utf8").toString("base64");
+            var result;
+            try {
+                result = runtime.callSync(niva, "process.spawnSync", [invocation.command, invocation.args, payload]);
+            }
+            catch (error) {
+                return { pid: 0, status: null, signal: null, output: null, stdout: null, stderr: null, error: runtime.nativeError(error) };
+            }
+            var stdout = runtime.vendor.Buffer.from(result.stdout, "base64"), stderr = runtime.vendor.Buffer.from(result.stderr, "base64");
+            if (options.encoding && options.encoding !== "buffer") {
+                stdout = stdout.toString(options.encoding);
+                stderr = stderr.toString(options.encoding);
+            }
+            result.stdout = stdout;
+            result.stderr = stderr;
+            result.output = [null, stdout, stderr];
+            if (result.signal)
+                result.signal = ({ 2: "SIGINT", 9: "SIGKILL", 15: "SIGTERM" })[result.signal] || "SIG" + result.signal;
+            if (result.error)
+                result.error = runtime.bridgeError("spawnSync " + result.error, result.error);
+            else
+                delete result.error;
+            return result;
+        }
+        function execFileSync(file, args, options) {
+            if (!Array.isArray(args)) {
+                options = args || {};
+                args = [];
+            }
+            var result = spawnSync(file, args, options);
+            if (result.error || result.status !== 0)
+                throw Object.assign(result.error || new Error("Command failed: " + file), result);
+            return result.stdout;
+        }
+        function execSync(command, options) { return execFileSync(command, [], Object.assign({}, options, { shell: options && options.shell || true })); }
+        return { spawn, exec, execFile, spawnSync, execFileSync, execSync };
+    }
+    runtime.createChildProcessModule = createChildProcessModule;
+    runtime.child_process = createChildProcessModule();
 })(globalThis);

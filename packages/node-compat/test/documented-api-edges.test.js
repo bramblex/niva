@@ -56,17 +56,20 @@ test("callable assert, AssertionError and assert/strict aliases keep their publi
   strictAssert(true);
 });
 
-test("crypto and zlib reject clearly when browser primitives are unavailable", async () => {
-  const sandbox = { ArrayBuffer, DataView, Uint8Array, TextEncoder, TextDecoder, Symbol };
+test("vendor hash and compression work without Web Crypto or CompressionStream", async () => {
+  const sandbox = { ArrayBuffer, DataView, Uint8Array, TextEncoder, TextDecoder, Symbol, AbortController, AbortSignal, setTimeout, clearTimeout, queueMicrotask, console };
   const context = vm.createContext(sandbox);
+  vm.runInContext("globalThis.self = globalThis; globalThis.window = globalThis;", context);
+  const vendor = readFileSync(new URL("../src/runtime/vendor.js", import.meta.url), "utf8");
+  vm.runInContext(vendor, context);
   for (const name of ["bridge", "buffer", "crypto", "zlib"]) {
     const source = readFileSync(new URL(`../src/runtime/${name}.js`, import.meta.url), "utf8");
     vm.runInContext(source, context);
   }
   const runtime = vm.runInContext('globalThis[Symbol.for("niva.node-compat.runtime")]', context);
-  await assert.rejects(runtime.crypto.randomBytes(4), { code: "ENOTSUP" });
-  await assert.rejects(runtime.crypto.randomUUID(), { code: "ENOTSUP" });
-  await assert.rejects(runtime.crypto.createHash("sha256").update("data").digest(), { code: "ENOTSUP" });
-  await assert.rejects(runtime.zlib.gzip("data"), { code: "ENOTSUP" });
-  await assert.rejects(runtime.zlib.gunzip("data"), { code: "ENOTSUP" });
+  assert.throws(() => runtime.crypto.randomBytes(4), { code: "ENOTSUP" });
+  assert.throws(() => runtime.crypto.randomUUID(), { code: "ENOTSUP" });
+  assert.equal(runtime.crypto.createHash("sha256").update("data").digest("hex"), "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7");
+  const compressed = runtime.zlib.gzipSync("data");
+  assert.equal(runtime.zlib.gunzipSync(compressed).toString(), "data");
 });

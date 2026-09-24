@@ -1,5 +1,5 @@
 import { deflateRaw } from "pako";
-import { pathJoin, tempDirWith, uuid } from "../common/utils";
+import { pathJoin } from "../common/utils";
 import {
   appendResource,
   arrayBufferToBase64,
@@ -7,7 +7,6 @@ import {
   indexesKey,
   packageResource,
 } from "./base";
-import { extractNodeCompatFiles, resolveNodeCompatAssets } from "./node-compat";
 import { plistTemplate } from "../templates/macos-plist-template";
 import type { BuildParams } from './base';
 
@@ -35,13 +34,6 @@ export async function buildMacOsApp(params: BuildParams) {
     project.state.path,
     project.state.config.build?.resource
   );
-  const nodeCompatOption = project.state.config.nodeCompat;
-  const nodeCompatSelection = resolveNodeCompatAssets(nodeCompatOption);
-  const nodeCompatStagePath = tempDirWith(
-    "niva-node-compat",
-    project.state.uuid,
-    uuid(),
-  );
   const indexesPath = pathJoin(appResourcesPath, indexesKey);
   const dataPath = pathJoin(appResourcesPath, dataKey);
 
@@ -61,26 +53,16 @@ export async function buildMacOsApp(params: BuildParams) {
   let fileIndexes: Record<string, [number, number]> = {};
   let buffer = new ArrayBuffer(0);
   progress.addTask(locale.t("PACKAGING_RESOURCES"), async () => {
-    try {
-      const initialResource = await appendResource(
-        project.state.configPath,
-        "niva.json"
-      );
-      const nodeCompatFiles = nodeCompatSelection.enabled
-        ? await extractNodeCompatFiles(nodeCompatOption, nodeCompatStagePath)
-        : null;
-      const [_fileIndex, _buffer] = await packageResource(
-        projectResourcePath,
-        ...initialResource,
-        nodeCompatFiles?.files ?? [],
-      );
-      fileIndexes = _fileIndex;
-      buffer = _buffer;
-    } finally {
-      if (await fs.exists(nodeCompatStagePath)) {
-        await fs.remove(nodeCompatStagePath);
-      }
-    }
+    const initialResource = await appendResource(
+      project.state.configPath,
+      "niva.json"
+    );
+    const [_fileIndex, _buffer] = await packageResource(
+      projectResourcePath,
+      ...initialResource,
+    );
+    fileIndexes = _fileIndex;
+    buffer = _buffer;
   });
 
   progress.addTask(locale.t("COMPRESSING_RESOURCES"), async () => {

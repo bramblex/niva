@@ -1,6 +1,8 @@
 import "./runtime/bridge.js";
+import "./runtime/vendor.js";
 import "./runtime/buffer.js";
 import "./runtime/util.js";
+import "./runtime/source.js";
 import "./runtime/assert.js";
 
 const assert = globalThis[Symbol.for("niva.node-compat.runtime")].assert;

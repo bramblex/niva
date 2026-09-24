@@ -13,11 +13,6 @@ muda = "0.20.0"
 tray-icon = "0.25.1"
 global-hotkey = "0.8.0"
 arboard = "3.6.1"
-ureq = { version = "3.4.2", default-features = false, features = [
-	"native-tls",
-	"native-tls-webpki-roots",
-	"gzip",
-] }
 native-tls = "0.2.18"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -39,8 +34,18 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 sys-locale = "0.3.2"
 url = "2.5.8"
 glob = "0.3.4"
+base64 = "0.22.1"
+libc = "0.2"
+notify = { version = "8.2.0", default-features = false, features = ["macos_kqueue"] }
+subtle = "2.6.1"
+
+[build-dependencies]
+flate2 = "1.1.10"
+serde_json = "1.0.151"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7.0"
+x509-parser = "0.18.1"
 objc2 = "0.6.4"
 objc2-foundation = "0.3.2"
 objc2-app-kit = "0.3.2"
@@ -49,5 +54,5 @@ block2 = "0.6.2"
 x-win = "5.8.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_IO", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
 webview2-com = "0.39.1"

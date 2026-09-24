@@ -47,6 +47,11 @@
 
           assert(await Niva.call("os.sep", []) === "/", "direct native call returned the wrong separator");
           record("Niva.call", "dispatches a direct native call and resolves its result");
+          assert(Niva.callSync("os.sep", []) === "/", "sync native call returned the wrong separator");
+          let deniedSyncUi = false;
+          try { Niva.callSync("window.current", []); } catch (_) { deniedSyncUi = true; }
+          assert(deniedSyncUi, "sync bridge must reject UI methods");
+          record("Niva.callSync", "returns synchronous OS values and rejects UI handlers");
 
           const blobs = [];
           const readStream = Niva.stream("resource.readStream", ["probe.txt"], {

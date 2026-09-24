@@ -30,6 +30,7 @@ function createPage() {
     __niva_ws_url: "ws://127.0.0.1:1/__niva_ws",
     __niva_token: "test-token",
     __niva_window_id: 0,
+    __niva_compat_imports: { "test-module": "/should-not-reload-registered-module.js" },
   };
   window.top = window;
   vm.runInNewContext(script, {
@@ -173,27 +174,6 @@ for (const [method, expectedArgs] of [
   });
 }
 
-for (const [method, invoke, expected] of [
-  ["get", (api) => api.http.get("https://example.test/a"), { method: "GET", url: "https://example.test/a", headers: null }],
-  ["post", (api) => api.http.post("https://example.test/a", "payload"), { method: "POST", url: "https://example.test/a", body: "payload", headers: null }],
-  ["request", (api) => api.http.request({ method: "PUT", url: "https://example.test/a" }), { method: "PUT", url: "https://example.test/a" }],
-]) {
-  test(`http.${method} returns response head and streamed body`, async () => {
-    const page = createPage();
-    const operation = invoke(page.api);
-    const request = page.call();
-    assert.equal(request.method, "http.requestStream");
-    assert.deepEqual(request.args[0], expected);
-    page.text({ t: "event", id: request.id, name: "head", data: { status: 201, headers: { "x-test": "yes" } } });
-    page.chunk(request.id, "done");
-    page.result(request.id, { status: 201 });
-    const response = await operation;
-    assert.equal(response.status, 201);
-    assert.equal(response.headers["x-test"], "yes");
-    assert.equal(response.body, "done");
-  });
-}
-
 test("process.exec collects stdout and stderr into separate strings", async () => {
   const page = createPage();
   const operation = page.api.process.exec("tool", ["--version"]);
@@ -253,4 +233,48 @@ test("a file upload after many unary calls keeps its call ID and END frame", asy
   assert.equal(new TextDecoder().decode(new Uint8Array(frame, 18)), "content");
   page.result(19, { bytes: 7 });
   assert.equal(await operation, null);
+});
+
+test("chunk consumers cannot mutate the bytes retained for Blob subscribers", async () => {
+  const page = createPage();
+  let complete;
+  const body = new Promise((resolve) => { complete = resolve; });
+  const operation = page.niva.stream("test.bytes", [], {
+    onChunk(bytes) { bytes.fill(0); },
+    onBlob(blob) { complete(blob.text()); },
+  });
+  const request = page.call();
+  page.chunk(request.id, "unchanged");
+  page.result(request.id, null);
+  await operation.promise;
+  assert.equal(await body, "unchanged");
+});
+
+test("disconnect rejects connection-owned calls rather than replaying them", async () => {
+  const page = createPage();
+  const unary = page.niva.call("os.sep", []);
+  const stream = page.niva.stream("socket.tcpConnect", [{host: "example.test", port: 80}]);
+  const unaryRejected = assert.rejects(unary, error => error.data.code === "ECONNRESET");
+  const streamRejected = assert.rejects(stream.promise, error => error.data.code === "ECONNRESET");
+  page.socket.emit("close");
+  await Promise.all([unaryRejected, streamRejected]);
+  assert.equal(page.niva.streamSend(stream.id, new Uint8Array([1]), false), false);
+});
+
+test('module factories initialize on first require/import, memoize and retry failures', async () => {
+  const { niva } = createPage();
+  let calls = 0;
+  const value = {};
+  niva.registerModuleFactory('lazy', () => { calls++; return value; });
+  assert.equal(calls, 0);
+  assert.equal(await niva.import('lazy'), value);
+  assert.equal(niva.require('lazy'), value);
+  assert.equal(calls, 1);
+  niva.registerModule('lazy', 7);
+  assert.equal(niva.require('lazy'), 7);
+  let failures = 0;
+  niva.registerModuleFactory('retry', () => { if (!failures++) throw new Error('retry'); return value; });
+  await assert.rejects(niva.import('retry'), /retry/);
+  assert.equal(niva.require('retry'), value);
+  assert.equal(failures, 2);
 });

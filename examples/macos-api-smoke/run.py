@@ -139,7 +139,6 @@ EXTENDED_WINDOW_METHODS = {
     "windowExtra.hasUndecoratedShadow",
 }
 EXTENDED_SYSTEM_METHODS = {
-    "http.get", "http.request", "http.post",
     "process.env", "process.setCurrentDir", "process.exec", "resource.extract",
     "extra.getActiveWindowId", "extra.focusByWindowId",
     "webview.setCookie", "webview.cookies", "webview.cookiesForUrl", "webview.deleteCookie",

@@ -1,10 +1,12 @@
 import "./runtime/bridge.js";
+import "./runtime/vendor.js";
+import "./runtime/events.js";
 import "./runtime/path.js";
 import "./runtime/buffer.js";
+import "./runtime/url.js";
 import "./runtime/fs.js";
 
 const fs = globalThis[Symbol.for("niva.node-compat.runtime")].fs;
-
 export const constants = fs.constants;
 export const readFile = fs.readFile;
 export const writeFile = fs.writeFile;
@@ -12,11 +14,30 @@ export const appendFile = fs.appendFile;
 export const mkdir = fs.mkdir;
 export const readdir = fs.readdir;
 export const stat = fs.stat;
-export const access = fs.access;
+export const lstat = fs.lstat;
+export const realpath = fs.realpath;
 export const rename = fs.rename;
-export const rm = fs.rm;
-export const cp = fs.cp;
 export const copyFile = fs.copyFile;
+export const access = fs.access;
+export const rm = fs.rm;
+export const unlink = fs.unlink;
+export const cp = fs.cp;
+export const readFileSync = fs.readFileSync;
+export const writeFileSync = fs.writeFileSync;
+export const appendFileSync = fs.appendFileSync;
+export const mkdirSync = fs.mkdirSync;
+export const readdirSync = fs.readdirSync;
+export const statSync = fs.statSync;
+export const lstatSync = fs.lstatSync;
+export const realpathSync = fs.realpathSync;
+export const renameSync = fs.renameSync;
+export const copyFileSync = fs.copyFileSync;
+export const accessSync = fs.accessSync;
+export const rmSync = fs.rmSync;
+export const unlinkSync = fs.unlinkSync;
+export const existsSync = fs.existsSync;
 export const promises = fs.promises;
-
+export const createReadStream = fs.createReadStream;
+export const createWriteStream = fs.createWriteStream;
+export const watch = fs.watch;
 export default fs;

@@ -50,6 +50,7 @@ Niva.addEventListener("webview.permissionDenied", (_eventName, request) => {
 
 ```ts
 Niva.call(methodName: string, args: any): Promise<any>;
+Niva.callSync(methodName: string, args: any[]): any;
 Niva.stream(methodName, args, handlers?: {
   onEvent?: (name: string, data: any) => void;
   onChunk?: (chunk: Uint8Array, isStderr: boolean) => void;
@@ -62,7 +63,7 @@ Niva.stream(methodName, args, handlers?: {
 Niva.streamSend(id, data, end?): boolean;
 ```
 
-`Niva.stream` / `streamSend` 仅用于本地 WebSocket 页面。流式方法、二进制帧和 stdin 发送示例见[流式调用](./stream)。
+`Niva.callSync` 仅用于可信本地页面，范围限于文件、系统和选定进程操作；不支持 UI 或流式方法。`Niva.stream` / `streamSend` 仅用于本地 WebSocket 页面。流式方法、二进制帧和 stdin 发送示例见[流式调用](./stream)。
 
 ### 模块注册
 
@@ -73,7 +74,7 @@ Niva.require(id: string): any;
 Niva.import(id: string): Promise<any>;
 ```
 
-`Niva.require("niva:fs")` 读取内置的 Niva API 命名空间；`Niva.registerModule(id, value)` 可注册页面自己的同步模块。NodeCompat classic 入口加载后，也能按已选模块名称调用 `Niva.require("path")`。`Niva.import(id)` 会优先按 NodeCompat 资源映射动态导入，未命中时读取同步模块注册表。Niva 不会默认注册 Node.js 核心模块；宿主桥通过 `Niva.api.host` 使用。参见[NodeCompat](./node-compat)。
+`Niva.require("niva:fs")` 读取内置的 Niva API 命名空间；`Niva.registerModule(id, value)` 可注册页面自己的同步模块。NodeCompat classic 入口加载后，也能按已选模块名称调用 `Niva.require("path")`。`Niva.import(id)` 优先复用已注册对象，未注册时按 NodeCompat 资源映射动态导入。NodeCompat 默认注册所选 Node 风格模块；宿主桥通过 `Niva.api.host` 使用。参见[NodeCompat](./node-compat)。
 
 ## 原生 API 命名空间
 
@@ -83,7 +84,6 @@ Niva.import(id: string): Promise<any>;
 | [对话框](./dialog) | `dialog` | 消息框、文件与目录选择。 |
 | [系统额外 API](./extra) | `extra` | 应用级窗口焦点和 macOS 应用控制。 |
 | [文件系统](./fs) | `fs` | 路径文件操作与流式读写。 |
-| [HTTP](./http) | `http` | HTTP(S) 请求和响应流。 |
 | [监视器](./monitor) | `monitor` | 显示器枚举与位置。 |
 | [操作系统](./os) | `os` | 平台、目录和区域信息。 |
 | [进程](./process) | `process` | 当前进程信息、命令执行和打开 URI。 |

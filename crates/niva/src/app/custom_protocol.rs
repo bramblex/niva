@@ -243,10 +243,26 @@ fn response_for_request(
         .first()
         .map(|mime| mime.to_string())
         .unwrap_or_else(|| "application/octet-stream".to_string());
-    let mut body = match resources.load_capped(&path, MAX_RESPONSE_BYTES) {
-        Ok(Some(body)) => body,
-        Ok(None) => return error_response(StatusCode::PAYLOAD_TOO_LARGE, "Resource too large"),
-        Err(_) => return error_response(StatusCode::NOT_FOUND, "Not found"),
+    let mut body = if path.starts_with("__niva_compat/") {
+        let Some(body) = NodeCompat::embedded_asset(&path) else {
+            return error_response(StatusCode::NOT_FOUND, "Not found");
+        };
+        if path == "__niva_compat/node-compat.js" {
+            match node_compat.unwrap().classic_script(&body) {
+                Ok(body) => body,
+                Err(_) => {
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Invalid adapter");
+                }
+            }
+        } else {
+            body
+        }
+    } else {
+        match resources.load_capped(&path, MAX_RESPONSE_BYTES) {
+            Ok(Some(body)) => body,
+            Ok(None) => return error_response(StatusCode::PAYLOAD_TOO_LARGE, "Resource too large"),
+            Err(_) => return error_response(StatusCode::NOT_FOUND, "Not found"),
+        }
     };
 
     if mime == "text/html" && is_document_navigation(request) {
@@ -981,7 +997,7 @@ mod tests {
         assert!(
             String::from_utf8(classic.into_body())
                 .unwrap()
-                .contains("window.__adapter_loaded=true;")
+                .contains("window.__niva_node_compat_modules=[\"path\"]")
         );
 
         let selected = response_for_request(
@@ -991,7 +1007,7 @@ mod tests {
             43123,
         );
         assert_eq!(selected.status(), StatusCode::OK);
-        assert_eq!(selected.body(), b"export default {};");
+        assert!(!selected.body().is_empty());
 
         let unselected = response_for_request(
             &get_request("niva://app/__niva_compat/src/fs.js", &[]),

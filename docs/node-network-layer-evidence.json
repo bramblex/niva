@@ -1,0 +1,1545 @@
+{
+  "asOf": "2026-09-24",
+  "scope": "architecture/source audit, isolated library bundles and synthetic codec tests; no Niva implementation or full-platform acceptance",
+  "nativeNetworkAudit": {
+    "reviewScope": "Read-only Rust network/dependency architecture audit. No source/dependency edits and no builds.",
+    "currentNativeHttp": {
+      "outboundClient": {
+        "api": "http.requestStream",
+        "implementation": "ureq 3.4.2 on smol blocking pool; accepts URL/method/headers and UTF-8 string body; emits response head plus binary body chunks over WS.",
+        "evidence": [
+          "crates/niva/src/app/api/http.rs:10",
+          "crates/niva/src/app/api/http.rs:16",
+          "crates/niva/src/app/api/http.rs:25",
+          "crates/niva/src/app/api/http.rs:39",
+          "crates/niva/src/app/api/http.rs:74"
+        ]
+      },
+      "securityPolicy": {
+        "rustEnforced": true,
+        "rules": [
+          "Only absolute http/https URLs; reject URL userinfo.",
+          "Disable environment proxy so a proxy cannot resolve outside the policy.",
+          "Resolver checks each redirect hop, validates every DNS candidate, rejects a mixed safe/private address set, and passes exact vetted SocketAddrs to connector without re-resolution.",
+          "Deny private, loopback, link-local, multicast, reserved, documentation and other special-use IPv4/IPv6 destinations; allow only the exact current Niva loopback service endpoint as an exception."
+        ],
+        "evidence": [
+          "crates/niva/src/app/api/http.rs:94",
+          "crates/niva/src/app/api/http.rs:146",
+          "crates/niva/src/app/api/http.rs:165",
+          "crates/niva/src/app/api/http.rs:175",
+          "crates/niva/src/app/api/http.rs:192",
+          "crates/niva/src/app/api/http.rs:217",
+          "crates/niva/src/app/api/http.rs:232",
+          "crates/niva/src/app/api/http.rs:402"
+        ]
+      },
+      "internalBootstrapServer": {
+        "purpose": [
+          "Serves packaged/debug static files and NodeCompat assets.",
+          "Hosts the Niva API WebSocket.",
+          "Hosts authenticated __niva_fs resource route."
+        ],
+        "notNodeHttpServer": true,
+        "currentConstraints": "Loopback 127.0.0.1 ephemeral port; ordinary handler only GET + Connection: close. It is app bootstrap/resource transport, not Node http.createServer/listen. Preserve it if the outbound client is removed.",
+        "evidence": [
+          "crates/niva/src/app/http_server/mod.rs:22",
+          "crates/niva/src/app/http_server/mod.rs:27",
+          "crates/niva/src/app/http_server/mod.rs:43",
+          "crates/niva/src/app/http_server/mod.rs:51",
+          "crates/niva/src/app/http_server/mod.rs:242",
+          "crates/niva/src/app/http_server/mod.rs:254",
+          "crates/niva/src/app/http_server/mod.rs:313",
+          "crates/niva/src/app/http_server/mod.rs:353"
+        ]
+      }
+    },
+    "currentCallers": [
+      {
+        "caller": "NodeCompat http/https client",
+        "path": "packages/node-compat/src/runtime/http.js:299",
+        "uses": "Calls Niva.stream(\"http.requestStream\") directly; it does not use browser fetch or the unary Niva.api.http override."
+      },
+      {
+        "caller": "Niva API legacy get/post/request overrides",
+        "path": "crates/niva/assets/initialize_script.js:534",
+        "uses": "Maps Niva.api.http.get/post/request onto the same Native requestStream."
+      },
+      {
+        "caller": "Devtools version check",
+        "path": "packages/devtools/src/common/utils.ts:159",
+        "uses": "Calls Niva.api.http.get to GitHub releases; moving only NodeCompat HTTP to JS does not remove this Native caller."
+      },
+      {
+        "caller": "Smoke/tests/public contract",
+        "path": "examples/macos-api-smoke/system-cases.js:22",
+        "uses": "Exercises Niva.api.http.get/request/post; api-test-matrix.md records all three."
+      },
+      {
+        "caller": "stdio host API",
+        "path": "crates/niva/src/app/api/host.rs:12",
+        "uses": "host.send is an NDJSON stdio message API, not an HTTP client/server dependency."
+      }
+    ],
+    "minimumNativePrimitiveContract": [
+      {
+        "primitive": "TCP client/server (net)",
+        "minimum": [
+          "Connect to vetted address or bind/listen/accept.",
+          "Stable per-socket handle/connection ID and per-connection cancellation.",
+          "Binary read chunks and binary writes with queue/backpressure result.",
+          "Half-close/end, full destroy/close, EOF, error and timeout events with stable ordering.",
+          "Peer/local address and port; caller cannot provide an unchecked resolved IP that bypasses Rust destination policy."
+        ],
+        "layering": "JS owns Node Socket/Server, HTTP/1.1 parsing, headers, request/response events and stream semantics over this byte transport.",
+        "security": "Hostname resolution and address authorization must remain Rust-side before connect; connect to the exact vetted SocketAddr without a second DNS resolution.",
+        "sharedSizeBudgetKiB": [
+          16,
+          120
+        ],
+        "evidence": [
+          "crates/niva/src/app/api_manager/mod.rs:97",
+          "crates/niva/src/app/api_manager/mod.rs:125",
+          "crates/niva/src/app/http_server/mod.rs:12",
+          "docs/node-api-size-estimates.md:27"
+        ]
+      },
+      {
+        "primitive": "UDP client/server (dgram)",
+        "minimum": [
+          "Bind/close a datagram socket.",
+          "Send one datagram to an authorized peer and receive datagram boundaries plus remote/local address.",
+          "Per-socket events, cancellation, errors and bounded receive queues.",
+          "If multicast/broadcast APIs are included, add explicit Native option and destination policy."
+        ],
+        "layering": "JS DNS packet encoding/decoding and Node dgram Socket behavior can sit above UDP primitives. DNS traffic may need an explicit permitted resolver endpoint policy; do not treat arbitrary RFC1918 destinations as allowed.",
+        "sharedSizeBudgetKiB": [
+          8,
+          48
+        ],
+        "evidence": [
+          "crates/niva/Cargo.toml:32",
+          "crates/niva/src/app/http_server/mod.rs:12",
+          "docs/node-api-size-estimates.md:30"
+        ]
+      },
+      {
+        "primitive": "TLS client/server (tls)",
+        "minimum": [
+          "Wrap a connected TCP stream for client handshake and a listening/accepted stream for server handshake.",
+          "Validate certificate chain and hostname against an explicit trust policy; preserve SNI and surface handshake/certificate errors.",
+          "Server certificates/private keys supplied through an explicit configuration path.",
+          "Expose decrypted bytes through the same bounded read/write/half-close/backpressure/cancel contract.",
+          "If Node baseline includes ALPN/session options, implement or explicitly reject them."
+        ],
+        "layering": "JS implements Node tls.TLSSocket semantics and HTTPS protocol over TLS streams; Native retains cryptographic handshake and certificate validation.",
+        "security": "Do not disable verification by default. Address filtering remains in the Native TCP connect path before TLS starts.",
+        "sharedSizeBudgetKiB": [
+          8,
+          72
+        ],
+        "evidence": [
+          "crates/niva/Cargo.toml:16",
+          "crates/niva/Cargo.toml:21",
+          "crates/niva/src/app/api/http.rs:170",
+          "docs/node-api-size-estimates.md:28"
+        ]
+      }
+    ],
+    "dependencyAudit": [
+      {
+        "dependency": "ureq 3.4.2",
+        "kind": "direct",
+        "currentSourceUse": [
+          "crates/niva/src/app/api/http.rs:39",
+          "crates/niva/src/app/api/http.rs:45",
+          "crates/niva/src/app/api/http.rs:140",
+          "crates/niva/src/app/api/http.rs:181"
+        ],
+        "candidateRemoval": "Remove only after no Native http.requestStream/Niva.api.http caller remains, or after its security-sensitive client behavior is replaced by JS over Native sockets with the same Rust-side destination guard. Moving NodeCompat alone is insufficient because Devtools checkVersion and public Niva.api.http examples/tests still call it.",
+        "otherBlockers": [
+          "Current Native public Niva.api.http.get/request/post contract and existing tests/examples.",
+          "Browser Fetch changes CORS/CSP and request/response semantics; JS code cannot enforce the existing resolved-address denylist.",
+          "If raw TCP client is used instead, Native connect must preserve URL validation, redirect-hop revalidation and vetted-address/no-re-resolve policy."
+        ],
+        "potentialTransitiveRemovals": [
+          "ureq-proto 0.6.4 (cargo tree shows only ureq parent)",
+          "utf8-zero 0.8.1 (only ureq parent)",
+          "der 0.8.2 (only ureq parent)",
+          "webpki-root-certs 1.0.9 (only ureq parent; see TLS roots caveat)",
+          "rustls-pki-types 1.15.1 (ureq and webpki-root-certs parents)"
+        ],
+        "doNotClaim": "No binary savings measured; lockfile reachability is not a size measurement."
+      },
+      {
+        "dependency": "ureq gzip feature / flate2",
+        "kind": "feature + shared direct dependency",
+        "currentSourceUse": [
+          "crates/niva/Cargo.toml:16",
+          "crates/niva/Cargo.toml:19",
+          "crates/niva/Cargo.toml:36",
+          "crates/niva/src/app/resource_manager/mod.rs:251"
+        ],
+        "candidateRemoval": "The ureq gzip feature can be removed if ureq goes away. Do not remove direct flate2 solely for this change: Native resource package decompression already uses it.",
+        "otherBlockers": [
+          "Resource Manager still decodes Deflate-compressed app resources."
+        ],
+        "doNotClaim": "No feature-level or binary savings measured."
+      },
+      {
+        "dependency": "native-tls 0.2.18",
+        "kind": "direct + ureq transitive",
+        "currentSourceUse": [
+          "crates/niva/Cargo.toml:17",
+          "crates/niva/Cargo.toml:21",
+          "crates/niva/src/app/api/http.rs:170",
+          "Cargo.lock:2165"
+        ],
+        "candidateRemoval": "Keep for the proposed Native TLS primitive layer. Source currently configures ureq to use its NativeTls provider; no direct native_tls:: API call exists yet.",
+        "otherBlockers": [
+          "The planned TLS socket layer still needs handshake/certificate-validation implementation."
+        ],
+        "doNotClaim": "Do not count the existing dependency as incremental TLS-layer bytes."
+      },
+      {
+        "dependency": "native-tls-webpki-roots feature / webpki-root-certs",
+        "kind": "ureq feature dependency",
+        "currentSourceUse": [
+          "crates/niva/Cargo.toml:18",
+          "Cargo.lock:4011",
+          "Cargo.lock:4248"
+        ],
+        "candidateRemoval": "Potentially removable with ureq if replacement TLS clients use platform trust roots and that trust behavior is accepted. If preserving the current Mozilla WebPKI root set, explicitly carry equivalent roots into the new TLS policy.",
+        "otherBlockers": [
+          "Changing to OS trust roots changes trust-store behavior across Windows/macOS/Linux.",
+          "Native TLS client/server contract has not yet specified root-store parity."
+        ],
+        "doNotClaim": "No webpki-root-certs savings measured."
+      },
+      {
+        "dependency": "smol + tungstenite",
+        "kind": "direct internal transport dependencies",
+        "currentSourceUse": [
+          "crates/niva/Cargo.toml:32",
+          "crates/niva/Cargo.toml:33",
+          "crates/niva/src/app/http_server/mod.rs:12",
+          "crates/niva/src/app/http_server/mod.rs:313"
+        ],
+        "candidateRemoval": "Not removable when moving Node HTTP: smol/TCP and tungstenite continue to run the internal static/resource/WebSocket bootstrap; smol is also the proposed socket primitive base.",
+        "otherBlockers": [
+          "Internal WSS/API bootstrap must remain separate from user Node HTTP server support."
+        ],
+        "doNotClaim": "No sizes measured."
+      },
+      {
+        "dependency": "url",
+        "kind": "direct shared dependency",
+        "currentSourceUse": [
+          "crates/niva/Cargo.toml:40",
+          "crates/niva/src/app/api/http.rs:6",
+          "crates/niva/src/app/api_manager/mod.rs:309",
+          "crates/niva/src/app/window_manager/builder.rs:275"
+        ],
+        "candidateRemoval": "Not removable with HTTP client migration: URL parsing is used by IPC origin checks, WebView entry/origin logic and permissions as well as HTTP validation.",
+        "otherBlockers": [],
+        "doNotClaim": "No savings measured."
+      }
+    ],
+    "existingHttpCallsites": {
+      "RustOnlyClientUses": "rg source audit found ureq calls confined to crates/niva/src/app/api/http.rs; the registered Native endpoint is http.requestStream.",
+      "OtherConsumers": [
+        "packages/devtools/src/common/utils.ts:161 calls Niva.api.http.get.",
+        "crates/niva/assets/initialize_script.js:550 exposes http.get/post/request as overrides over http.requestStream.",
+        "packages/node-compat/src/runtime/http.js:299 consumes http.requestStream for NodeCompat http/https.",
+        "examples/macos-api-smoke/system-cases.js:22 uses Niva.api.http get/request/post; docs/api-test-matrix.md:36 tracks them."
+      ],
+      "host": "crates/niva/src/app/api/host.rs:12-30 is only host.send over the stdio message bridge; no HTTP client use."
+    },
+    "sharedSizeAccounting": {
+      "existingInventoryBudgetsKiB": {
+        "net": [
+          16,
+          120
+        ],
+        "tls": [
+          8,
+          72
+        ],
+        "dgram": [
+          8,
+          48
+        ]
+      },
+      "evidence": "docs/node-api-size-estimates.md:27-30",
+      "accounting": "Count Native TCP, UDP and TLS primitive budgets once. JS Node HTTP/HTTPS protocol work atop net/tls has no separate Native HTTP parser budget. If the existing ureq-based Native HTTP client remains for Devtools/public Niva.api.http, do not count it again as net/tls primitive code. HTTP/HTTPS server Node semantics are JS on net.createServer; the Niva bootstrap HTTP/WS server is retained independently.",
+      "measurement": "These are existing documentation estimates, not measured outputs. This review performed no builds and makes no dependency-removal size claim."
+    },
+    "commands": [
+      "rg -n \"ureq::|native_tls|native-tls|webpki|http.requestStream|Niva.api.http|api.http\" ...",
+      "cargo tree -p niva -e features -i ureq --offline",
+      "cargo tree -p niva -i ureq-proto/utf8-zero/webpki-root-certs/rustls-pki-types/base64@0.23.1/percent-encoding/der --offline"
+    ]
+  },
+  "jsHttp": {
+    "schemaVersion": 1,
+    "measuredAt": "2026-09-24T06:42:09.049Z",
+    "isolation": {
+      "tempProject": "/private/tmp/niva-node-size-20260924",
+      "repositoryModified": false,
+      "dependenciesAdded": "http-parser-js@0.5.10 in temporary project only; existing versions of buffer/readable-stream/dns-packet reused"
+    },
+    "primaryURLs": {
+      "repository": "https://github.com/creationix/http-parser-js",
+      "readme": "https://github.com/creationix/http-parser-js/blob/master/README.md",
+      "packageJson": "https://github.com/creationix/http-parser-js/blob/master/package.json",
+      "source": "https://github.com/creationix/http-parser-js/blob/master/http-parser.js"
+    },
+    "versions": {
+      "httpParserJs": "0.5.10",
+      "buffer": "6.0.3",
+      "readableStream": "4.7.0",
+      "dnsPacket": "5.6.1",
+      "ipCodec": "2.0.5",
+      "esbuild": "0.28.2",
+      "node": "v24.10.0"
+    },
+    "packageShape": {
+      "main": "/private/tmp/niva-node-size-20260924/node_modules/http-parser-js/http-parser.js",
+      "dependencies": {},
+      "browserField": null,
+      "pureJavaScript": true
+    },
+    "buildSettings": {
+      "command": "esbuild entries/http-parser-js.mjs entries/http-parser-js-with-buffer.mjs entries/http-dns-stream-combined.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --metafile=dist/http-layer-metafile.json --outdir=dist/http-layer",
+      "target": "browser ES2022 ESM",
+      "minify": true,
+      "gzipLevel": 6,
+      "deflateRawLevel": 6,
+      "entries": {
+        "parserOnly": "import { HTTPParser } from 'http-parser-js';\nexport { HTTPParser };\n",
+        "parserWithBuffer": "import { HTTPParser } from 'http-parser-js';\nimport { Buffer } from 'buffer';\nexport { HTTPParser, Buffer };\n",
+        "combined": "export * from './dns-packet-with-stream.mjs';\nexport { HTTPParser } from 'http-parser-js';\n"
+      }
+    },
+    "measurements": {
+      "httpParserJsOnly": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/http-layer/http-parser-js.js",
+        "bytes": 7380,
+        "gzipBytes": 2662,
+        "deflateRawBytes": 2644,
+        "sha256": "b147742720185503aa54d7e6ad789fa4a7301d708013e38e046f86037d0dce6e"
+      },
+      "httpParserJsWithBuffer": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/http-layer/http-parser-js-with-buffer.js",
+        "bytes": 35262,
+        "gzipBytes": 10951,
+        "deflateRawBytes": 10933,
+        "sha256": "e66b29266b92f3931b83ebe9b38cc556fb609b688453f5bb6a3a5d2e20be50ad"
+      },
+      "readableStreamDnsPacketBufferBase": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/dns-packet/dns-packet-with-stream.js",
+        "bytes": 150148,
+        "gzipBytes": 44408,
+        "deflateRawBytes": 44390,
+        "sha256": "6ebf7f6b36ac54b1d5483451b1c000e0cee6dc68763fe46588b2c0b03db5812e"
+      },
+      "httpParserWithReadableStreamDnsPacketBuffer": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/http-layer/http-dns-stream-combined.js",
+        "bytes": 157028,
+        "gzipBytes": 46601,
+        "deflateRawBytes": 46583,
+        "sha256": "6a5253ed147ed5ee7fa0e8a1476d29575d9a5c9f0d47540f47de2c4398f04f76"
+      }
+    },
+    "marginal": {
+      "parserOverExistingStreamDnsBufferBundle": {
+        "minifiedBytes": 6880,
+        "gzipBytes": 2193,
+        "deflateRawBytes": 2193
+      },
+      "bufferPolyfillOverParserOnly": {
+        "minifiedBytes": 27882,
+        "gzipBytes": 8289,
+        "deflateRawBytes": 8289
+      },
+      "parserOverExistingReadableStreamDnsBufferBundleRawDeflateBytes": 2193
+    },
+    "parserEvidence": {
+      "supportsBothDirections": true,
+      "requestTest": "POST /upload HTTP/1.1, fragmented input, chunked Wikipedia body, X-Checksum trailer, message complete",
+      "responseTest": "HTTP/1.1 200 OK, fragmented input, chunked onetwo body, X-Trace trailer, message complete",
+      "testScript": "/private/tmp/niva-node-size-20260924/test-http-parser-smoke.cjs",
+      "result": {
+        "request": {
+          "method": "POST",
+          "url": "/upload",
+          "body": "Wikipedia",
+          "trailer": [
+            "X-Checksum",
+            "7"
+          ],
+          "completed": 1
+        },
+        "response": {
+          "status": 200,
+          "body": "onetwo",
+          "trailer": [
+            "X-Trace",
+            "done"
+          ],
+          "completed": 1
+        }
+      },
+      "claim": "Synthetic smoke only; no complete HTTP client/server conformance test."
+    },
+    "browserChecks": {
+      "externalImports": [],
+      "externalImportCount": 0,
+      "externalNodeBuiltins": [],
+      "nativeAddons": [],
+      "bufferPackageIncludedWhenRequested": true,
+      "parserSourceUsesNodeRuntime": false,
+      "parserRequiresBufferInput": "HTTPParser.execute consumes chunk with Buffer-compatible toString(encoding,start,end), slice and length behavior; source itself does not import Node Buffer.",
+      "browserBundleSucceeded": true
+    },
+    "architecture": {
+      "providesParserOnly": true,
+      "clientServerAPIsProvided": false,
+      "jsWorkStillRequired": [
+        "HTTPParser adapter and per-connection parser lifecycle",
+        "ClientRequest and IncomingMessage objects",
+        "Server and response writer",
+        "Agent/session reuse, keep-alive and connection pooling",
+        "request serialization and header validation",
+        "100-continue and upgrade/hijack semantics",
+        "backpressure, abort/error/close handling across callbacks and stream objects"
+      ],
+      "nativePrerequisite": "Planned Native net/dgram/tls supplies connection/listen/datagram/TLS primitives; this JS parser does not open sockets or implement transports.",
+      "securityCaveat": "Upstream describes parser as more tolerant of malformed legacy traffic. For server-side parsing, validate request-smuggling/differential parsing behavior against other HTTP intermediaries before adoption.",
+      "maintenanceCaveat": "Package API mirrors the legacy Node http_parser interface; README says it is mainly useful as a standalone tolerant parser/replacement. Do not equate it with current Node http.Server implementation."
+    },
+    "limitations": [
+      "Parser handles HTTP message bytes only; it does not implement Node http/https client or server APIs.",
+      "Input chunks must provide Buffer-like toString and slice semantics. The tested integration uses feross buffer via existing bundle; Niva custom Buffer compatibility was not separately runtime-verified.",
+      "Bundle measurements include parser and when relevant shared Browser Buffer/stream/DNS code, not a native release binary delta.",
+      "Only small synthetic request/response tests covering chunked bodies and trailers were run; no broad parser suite, adversarial corpus, socket integration, or platform WebView test."
+    ],
+    "browserBundleSyntheticFixtures": {
+      "scope": "browser ESM artifact with bundled feross Buffer executed in Node harness, not WebView/network acceptance",
+      "scriptSource": "import assert from 'node:assert/strict';\nconst {Buffer,HTTPParser}=await import('file:///tmp/niva-http-browser-probe.mjs');\n\nfunction parse(type, raw) {\n  const parser = new HTTPParser(type);\n  const result = { headers: null, trailerHeaders: [], body: '', completed: 0 };\n  parser.onHeadersComplete = info => { result.headers = info; };\n  parser.onHeaders = fields => { result.trailerHeaders.push(fields.slice()); };\n  parser.onBody = chunk => { result.body += chunk.toString(); };\n  parser.onMessageComplete = () => { result.completed += 1; };\n  // Deliberately split start line, headers, and chunk framing across input writes.\n  const sizes = [1, 4, 7, 2, 5, 3, 8];\n  let cursor = 0, idx = 0;\n  while (cursor < raw.length) {\n    const end = Math.min(raw.length, cursor + sizes[idx++ % sizes.length]);\n    const chunk = Buffer.from(raw.slice(cursor, end));\n    const consumed = parser.execute(chunk);\n    if (consumed instanceof Error) throw consumed;\n    assert.equal(consumed, chunk.length);\n    cursor = end;\n  }\n  return result;\n}\nconst request = parse(HTTPParser.REQUEST,\n  'POST /upload HTTP/1.1\\r\\nHost: example.test\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n4\\r\\nWiki\\r\\n5\\r\\npedia\\r\\n0\\r\\nX-Checksum: 7\\r\\n\\r\\n');\nassert.equal(request.headers.method, 'POST');\nassert.equal(request.headers.url, '/upload');\nassert.equal(request.body, 'Wikipedia');\nassert.deepEqual(request.trailerHeaders[0], ['X-Checksum', '7']);\nassert.equal(request.completed, 1);\nconst response = parse(HTTPParser.RESPONSE,\n  'HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n3\\r\\none\\r\\n3\\r\\ntwo\\r\\n0\\r\\nX-Trace: done\\r\\n\\r\\n');\nassert.equal(response.headers.statusCode, 200);\nassert.equal(response.headers.statusMessage, 'OK');\nassert.equal(response.body, 'onetwo');\nassert.deepEqual(response.trailerHeaders[0], ['X-Trace', 'done']);\nassert.equal(response.completed, 1);\nconsole.log(JSON.stringify({request:{method:request.headers.method,url:request.headers.url,body:request.body,trailer:request.trailerHeaders[0],completed:request.completed},response:{status:response.headers.statusCode,body:response.body,trailer:response.trailerHeaders[0],completed:response.completed}}));\n",
+      "result": "fragmented request+response, chunked bodies and trailers passed"
+    }
+  },
+  "jsDns": {
+    "schemaVersion": 1,
+    "measuredAt": "2026-09-24T06:20:30.627Z",
+    "isolation": {
+      "tempProject": "/private/tmp/niva-node-size-20260924",
+      "repositoryModified": false,
+      "dependenciesAdded": "dns-packet@5.6.1 and its @leichtgewicht/ip-codec@2.0.5 transitive dependency; existing pinned buffer/readable-stream/esbuild reused"
+    },
+    "versions": {
+      "dnsPacket": "5.6.1",
+      "ipCodec": "2.0.5",
+      "buffer": "6.0.3",
+      "readableStream": "4.7.0",
+      "esbuild": "0.28.2"
+    },
+    "primaryUrls": {
+      "repository": "https://github.com/mafintosh/dns-packet",
+      "readme": "https://github.com/mafintosh/dns-packet",
+      "packageJson": "https://github.com/mafintosh/dns-packet/blob/master/package.json",
+      "packetTypes": "https://github.com/mafintosh/dns-packet/blob/master/types.js",
+      "packetSource": "https://github.com/mafintosh/dns-packet/blob/master/index.js"
+    },
+    "capability": {
+      "kind": "DNS wire packet codec only",
+      "functions": [
+        "encode",
+        "decode",
+        "streamEncode",
+        "streamDecode",
+        "encodingLength"
+      ],
+      "nodeHighFrequencyTypes": [
+        "A",
+        "AAAA",
+        "CNAME",
+        "MX",
+        "TXT",
+        "NS",
+        "PTR",
+        "SOA",
+        "SRV",
+        "NAPTR",
+        "CAA",
+        "TLSA"
+      ],
+      "any": {
+        "supported": true,
+        "meaning": "QTYPE ANY (255) is present in the type-number mapping; this is not a resolver operation and is not a distinct “ANY RR” guarantee."
+      },
+      "additionalReadmeRecordTypes": [
+        "DNAME",
+        "DNSKEY",
+        "DS",
+        "HINFO",
+        "NSEC",
+        "NSEC3",
+        "NULL",
+        "OPT",
+        "RP",
+        "SSHFP",
+        "RRSIG"
+      ],
+      "providesResolver": false,
+      "providesNetworkTransport": false,
+      "summary": "Encodes/decodes DNS question/response wire packets and TCP length-prefixed packet framing. It does not open sockets, query configured DNS servers, use OS resolver/search configuration, follow CNAMEs, cache, retry, timeout, or implement Node dns.lookup/resolve semantics."
+    },
+    "browserViability": {
+      "browserFieldInPackage": false,
+      "buildSucceeded": true,
+      "bufferDependency": "dns-packet/index.js uses require(\"buffer\").Buffer; esbuild platform=browser resolved this to the pinned pure-JS npm buffer@6.0.3 package already present in the temp project.",
+      "nodeRuntimeRequiredInBundle": false,
+      "externalImports": [],
+      "externalImportCount": 0,
+      "nativeAddons": [],
+      "bundleInputEvidence": [
+        "node_modules/buffer/index.js",
+        "node_modules/dns-packet/types.js",
+        "node_modules/dns-packet/rcodes.js",
+        "node_modules/dns-packet/opcodes.js",
+        "node_modules/dns-packet/classes.js",
+        "node_modules/dns-packet/optioncodes.js",
+        "node_modules/@leichtgewicht/ip-codec/index.cjs",
+        "node_modules/dns-packet/index.js",
+        "entries/dns-packet.mjs",
+        "entries/dns-packet-with-buffer.mjs",
+        "entries/dns-packet-with-stream.mjs"
+      ]
+    },
+    "buildSettings": {
+      "command": "esbuild entries/dns-packet.mjs entries/dns-packet-with-buffer.mjs entries/dns-packet-with-stream.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --metafile=dist/dns-packet-metafile.json --outdir=dist/dns-packet",
+      "target": "browser ES2022 ESM",
+      "minify": true,
+      "gzipLevel": 6,
+      "deflateRawLevel": 6,
+      "compressionInput": "emitted minified JS bytes",
+      "sourceEntries": {
+        "dnsPacket": "import packet from 'dns-packet';\nexport const encode = packet.encode;\nexport const decode = packet.decode;\nexport const streamEncode = packet.streamEncode;\nexport const streamDecode = packet.streamDecode;\nexport const encodingLength = packet.encodingLength;\n",
+        "dnsPacketWithBuffer": "export * from './dns-packet.mjs';\nexport { Buffer } from './buffer.mjs';\n",
+        "dnsPacketWithStream": "export * from './dns-packet.mjs';\nexport * from './stream.mjs';\nexport { Buffer } from './buffer.mjs';\n"
+      }
+    },
+    "measurements": {
+      "dnsPacketWithRequiredBufferPolyfill": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/dns-packet/dns-packet.js",
+        "bytes": 59576,
+        "gzipBytes": 16803,
+        "deflateRawBytes": 16785,
+        "sha256": "9dfc197b91eb54135498fcfd96ee9ba523b9f2edc633a6ef8a72d625a7758914"
+      },
+      "dnsPacketWithBufferNamedExport": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/dns-packet/dns-packet-with-buffer.js",
+        "bytes": 59646,
+        "gzipBytes": 16830,
+        "deflateRawBytes": 16812,
+        "sha256": "1529f0b8aea6b4169c08250aa4aabe04919ca24d67b937e017c3bd28c98858af"
+      },
+      "readableStreamBaseline": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/stream.js",
+        "bytes": 118698,
+        "gzipBytes": 35867,
+        "deflateRawBytes": 35849,
+        "sha256": "c46453b85e5c00e8d6d8c5b79efc0114fdc947b52d19fd29f7a9fa9b19b72a0f"
+      },
+      "dnsPacketPlusBufferPlusReadableStream": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/dns-packet/dns-packet-with-stream.js",
+        "bytes": 150148,
+        "gzipBytes": 44408,
+        "deflateRawBytes": 44390,
+        "sha256": "6ebf7f6b36ac54b1d5483451b1c000e0cee6dc68763fe46588b2c0b03db5812e"
+      }
+    },
+    "marginal": {
+      "dnsPacketOverExistingReadableStream": {
+        "minifiedBytes": 31450,
+        "gzipBytes": 8541,
+        "deflateRawBytes": 8541
+      },
+      "namedBufferExportOverCodecBundle": {
+        "minifiedBytes": 70,
+        "gzipBytes": 27,
+        "deflateRawBytes": 27
+      }
+    },
+    "limitations": [
+      "Bundle size is for the full CommonJS codec export object after browser bundling; it includes Buffer polyfill and ip-codec but excludes socket/resolver logic.",
+      "The package has no browser field; bundlers must resolve its Node buffer import to a browser Buffer implementation. The measured build uses buffer@6.0.3.",
+      "Niva currently has its own Buffer implementation; compatibility with the feross Buffer instance used by this bundle requires a shared Buffer alias or explicit Uint8Array/Buffer conversion at packet and socket boundaries. This was not runtime-tested.",
+      "dns.lookup remains an OS resolver/API concern. dns.resolve and dns.resolve4 still need a configured server/transport strategy (for example the planned dgram/net path or another chosen transport); packet encoding alone does not complete them.",
+      "No API runtime tests, socket tests, WebView platform checks, or release size builds were run. gzip/DEFLATE numbers are Node zlib level 6 and may differ from Niva packaging implementation."
+    ]
+  },
+  "rustDns": {
+    "reviewScope": "Read-only assessment of Rust dns-packet 0.1.0 plus an isolated temporary size harness; no Niva source/dependencies/build targets changed.",
+    "crate": {
+      "package": "dns-packet",
+      "crateName": "dns_packet",
+      "version": "0.1.0",
+      "releaseDate": "2026-03-20 (registry metadata supplied by main thread)",
+      "license": "MIT",
+      "repository": "https://github.com/NathanRoyer/dns-packet",
+      "docs": "https://docs.rs/dns-packet/0.1.0/dns_packet/",
+      "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html",
+      "manifest": "https://docs.rs/crate/dns-packet/0.1.0/source/Cargo.toml.orig",
+      "features": {
+        "default": [
+          "log"
+        ],
+        "log": "optional log 0.4 dependency"
+      },
+      "dependencies": [
+        "optional log 0.4 only"
+      ],
+      "noStd": true,
+      "evidence": [
+        "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html",
+        "https://docs.rs/crate/dns-packet/0.1.0/source/Cargo.toml.orig",
+        "https://github.com/NathanRoyer/dns-packet"
+      ]
+    },
+    "functionalReview": {
+      "summary": "Small low-level DNS wire reader/writer, not a resolver and not a typed-record codec.",
+      "supported": [
+        "Uncompressed QNAME/question/header read and write.",
+        "Ordinary resource headers (owner, type, class, TTL, RDLENGTH).",
+        "Single compression-pointer hop to a prior uncompressed name; synthetic compressed A answer owner passes.",
+        "Writer suffix-compresses a repeated answer owner against the earlier uncompressed question.",
+        "Caller can manually decode common A octets, CNAME name RDATA, and length-prefixed TXT chunks."
+      ],
+      "materialGaps": [
+        "Reader::read_resource returns only Resource header metadata and leaves the RDATA cursor at payload start; caller must read/validate RDLENGTH and decode each type. Writer::write_resource writes metadata only; caller appends RDATA bytes.",
+        "A second compressed name pointing to a prior compressed-pointer owner is rejected; the synthetic two-answer A packet is a passing expected-gap test (reader returns None). Main-thread JS dns-packet 5.6.1 fixture result passes this case.",
+        "No RR-type enum or typed RDATA helpers for A/AAAA/CNAME/MX/NS/PTR/SOA/SRV/TXT/etc.",
+        "Reader name decoding assumes UTF-8 labels; non-UTF8 DNS label bytes fail.",
+        "Writer replaces labels longer than 63 bytes with ___invalid___ rather than returning an error; caller must validate labels.",
+        "No UDP/TCP resolver, transaction matching, retries, timeout, response policy or Node DNS error mapping."
+      ],
+      "sourcePointers": [
+        {
+          "claim": "no_std plus alloc String/Vec and optional log",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#1-15"
+        },
+        {
+          "claim": "Header/Question/Resource expose wire metadata; Resource has no typed RDATA",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#27-87"
+        },
+        {
+          "claim": "compressed-name reader performs one pointer hop and rejects pointer-to-pointer targets",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#193-209"
+        },
+        {
+          "claim": "read_resource stops after RDLENGTH; payload remains for caller",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#280-290"
+        },
+        {
+          "claim": "writer suffix compression and header-only resource serialization",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#357-440"
+        },
+        {
+          "claim": "oversize labels are replaced rather than rejected",
+          "source": "https://docs.rs/dns-packet/0.1.0/src/dns_packet/lib.rs.html#357-389"
+        }
+      ]
+    },
+    "isolatedMeasurement": {
+      "tempRoot": "/private/var/folders/d7/xhqcv4gd7bvd5cfnb88mj_940000gn/T/niva-dns-packet-codec-hmjvcu04",
+      "targetTriple": "aarch64-apple-darwin",
+      "toolchain": {
+        "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+      },
+      "releaseProfile": {
+        "lto": true,
+        "optLevel": "z",
+        "codegenUnits": 1,
+        "strip": true,
+        "panic": "abort"
+      },
+      "sizesBytes": {
+        "sameHarnessBaselineNoCodec": 286160,
+        "dnsPacket0_1_0NoDefaultLog": 302720,
+        "dnsPacket0_1_0DefaultLog": 302720,
+        "deltaNoDefaultLog": 16560,
+        "deltaDefaultLog": 16560,
+        "defaultLogFeatureMarginal": 0
+      },
+      "runtimeInputs": [
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "parse",
+          "fixture": "query_a.bin",
+          "result": "parse:5776"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "parse",
+          "fixture": "a_uncompressed.bin",
+          "result": "parse:6962"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "parse",
+          "fixture": "a_compressed.bin",
+          "result": "parse:6962"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "parse",
+          "fixture": "cname_compressed.bin",
+          "result": "parse:7843"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "parse",
+          "fixture": "txt_chunks.bin",
+          "result": "parse:8061"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "write-query",
+          "fixture": "domain.txt",
+          "result": "write-query:6179"
+        },
+        {
+          "binary": "dns-codec-nolog",
+          "mode": "write-response",
+          "fixture": "domain.txt",
+          "result": "write-response:8081"
+        },
+        {
+          "binary": "baseline",
+          "mode": "parse-hash",
+          "fixture": "a_compressed.bin",
+          "result": "parse:525912681616099319"
+        }
+      ],
+      "checks": [
+        {
+          "name": "cargo test --features dns-codec",
+          "result": "7 passed, 0 failed; six positive synthetic packet cases plus one passing expected-gap test for pointer-to-pointer compression; no network."
+        },
+        {
+          "name": "cargo test --features dns-codec-log",
+          "result": "7 passed, 0 failed with the crate default log feature enabled."
+        },
+        {
+          "name": "runtime release fixture paths",
+          "result": "No-log release binary parsed query, compressed/uncompressed A, compressed CNAME and multi-chunk TXT fixtures; emitted a query and compressed-owner A response using a runtime domain file."
+        },
+        {
+          "name": "runtime-varying inputs",
+          "result": "Harness reads packet/domain from files selected by CLI arguments; no packet bytes are compile-time constants."
+        }
+      ],
+      "measurementCaveats": [
+        "Standalone A/B executable with identical small CLI/file-input harness, not an Niva release A/B. Do not treat 16,560 bytes as guaranteed Niva delta; Niva has a different LTO reachability graph and dependency graph.",
+        "Default log feature produced no extra bytes in this specific optimized harness; this is observed here only, not a general guarantee that log is free in Niva.",
+        "Measured delta covers reader/writer branches linked by this harness; typed RDATA helpers, DNS resolver/network code, Node API adapters and integration glue are excluded."
+      ]
+    },
+    "comparison": {
+      "jsCodec": "dns-packet npm 5.6.1",
+      "jsStandaloneRawDeflateBytes": 16785,
+      "jsMarginalWithStreamRawDeflateBytes": 8541,
+      "jsMeasurementsSource": "Main-thread measurement, not remeasured by this Rust harness.",
+      "rustStandaloneNoLogDeltaBytes": 16560,
+      "interpretation": "Rust codec-only delta is 16,560 bytes in this isolated build, about 1.94x the JS marginal figure; these are not like-for-like coverage or final Niva package sizes because Rust lacks typed RDATA and rejects the pointer-to-pointer fixture."
+    }
+  },
+  "dnsSyntheticFixtures": [
+    {
+      "name": "query_a",
+      "hex": "123401000001000000000000076578616d706c6503636f6d0000010001",
+      "expected": {
+        "question": "example.com"
+      }
+    },
+    {
+      "name": "a_uncompressed",
+      "hex": "123481800001000100000000076578616d706c6503636f6d0000010001076578616d706c6503636f6d00000100010000003c000401020304",
+      "expected": {
+        "type": "A",
+        "data": "1.2.3.4"
+      }
+    },
+    {
+      "name": "a_compressed",
+      "hex": "123481800001000100000000076578616d706c6503636f6d0000010001c00c000100010000003c000401020304",
+      "expected": {
+        "type": "A",
+        "data": "1.2.3.4"
+      }
+    },
+    {
+      "name": "cname_compressed",
+      "hex": "123481800001000100000000076578616d706c6503636f6d0000010001c00c000500010000003c000805616c696173c014",
+      "expected": {
+        "type": "CNAME",
+        "data": "alias.com"
+      }
+    },
+    {
+      "name": "txt_chunks",
+      "hex": "123481800001000100000000076578616d706c6503636f6d0000010001c00c001000010000003c000c0568656c6c6f05776f726c64",
+      "expected": {
+        "type": "TXT",
+        "data": [
+          "hello",
+          "world"
+        ]
+      }
+    },
+    {
+      "name": "a_pointer_chain",
+      "hex": "123481800001000200000000076578616d706c6503636f6d0000010001c00c000100010000003c000401020304c01d000100010000003c000405060708",
+      "expected": {
+        "addresses": [
+          "1.2.3.4",
+          "5.6.7.8"
+        ]
+      }
+    }
+  ],
+  "jsDnsFixtureResults": {
+    "scope": "browser bundle executed in Node test harness, not WebView/network acceptance",
+    "bufferBoundary": "codec.decode requires Buffer methods; convert Niva Uint8Array to packaged Buffer",
+    "results": [
+      {
+        "name": "query_a",
+        "passed": true,
+        "decoded": {
+          "question": "example.com"
+        }
+      },
+      {
+        "name": "a_uncompressed",
+        "passed": true,
+        "decoded": {
+          "type": "A",
+          "data": "1.2.3.4"
+        }
+      },
+      {
+        "name": "a_compressed",
+        "passed": true,
+        "decoded": {
+          "type": "A",
+          "data": "1.2.3.4"
+        }
+      },
+      {
+        "name": "cname_compressed",
+        "passed": true,
+        "decoded": {
+          "type": "CNAME",
+          "data": "alias.com"
+        }
+      },
+      {
+        "name": "txt_chunks",
+        "passed": true,
+        "decoded": {
+          "type": "TXT",
+          "data": [
+            "hello",
+            "world"
+          ]
+        }
+      },
+      {
+        "name": "a_pointer_chain",
+        "passed": true,
+        "decoded": [
+          "1.2.3.4",
+          "5.6.7.8"
+        ]
+      }
+    ]
+  },
+  "rustHarnessSources": {
+    "Cargo.toml": "[package]\nname = \"niva-dns-packet-size-harness\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[features]\ndefault = []\ndns-codec = [\"dep:dns-packet\"]\ndns-codec-log = [\"dns-codec\", \"dns-packet/log\"]\n\n[dependencies]\ndns-packet = { version = \"=0.1.0\", optional = true, default-features = false }\n\n[profile.release]\nlto = true\nopt-level = \"z\"\ncodegen-units = 1\nstrip = true\npanic = \"abort\"\n",
+    "Cargo.lock": "# This file is automatically @generated by Cargo.\n# It is not intended for manual editing.\nversion = 4\n\n[[package]]\nname = \"dns-packet\"\nversion = \"0.1.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"5179cd7244acd36b4677a2eefa590e30780981c08cdef7af3788b2e9c38aecee\"\ndependencies = [\n \"log\",\n]\n\n[[package]]\nname = \"log\"\nversion = \"0.4.34\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6\"\n\n[[package]]\nname = \"niva-dns-packet-size-harness\"\nversion = \"0.1.0\"\ndependencies = [\n \"dns-packet\",\n]\n",
+    "src/main.rs": "use std::{env, fs};\n#[cfg(feature = \"dns-codec\")]\nuse dns_packet::{Header, MessageType, QueryType, Question, Reader, Resource, ResponseData, Writer};\n\n#[cfg(feature = \"dns-codec\")]\nfn parsed_checksum(packet: &[u8]) -> Result<u64, String> {\n    let mut reader = Reader::new(packet);\n    let header = reader.read_header().ok_or(\"header\")?;\n    let mut checksum = header.id as u64 + header.answer_count as u64 + header.question_count as u64;\n    for _ in 0..header.question_count {\n        let q = reader.read_question().ok_or(\"question\")?;\n        let (name, qtype, qclass) = (q.name.to_owned(), q.qtype, q.qclass);\n        checksum = checksum.wrapping_add(name.bytes().map(u64::from).sum::<u64>() + qtype as u64 + qclass as u64);\n    }\n    for _ in 0..header.answer_count {\n        let rr = reader.read_resource().ok_or(\"resource\")?;\n        let (name, qtype, qclass, ttl, len) = (rr.name.to_owned(), rr.qtype, rr.qclass, rr.time_to_live, rr.data_len as usize);\n        let start = reader.offset;\n        let end = start.checked_add(len).ok_or(\"overflow\")?;\n        let raw = reader.packet.get(start..end).ok_or(\"rdata bounds\")?;\n        checksum = checksum.wrapping_add(name.bytes().map(u64::from).sum::<u64>() + qtype as u64 + qclass as u64 + ttl as u64);\n        match qtype {\n            1 => {\n                if len != 4 { return Err(\"A RDATA length\".into()); }\n                checksum = checksum.wrapping_add(raw.iter().map(|b| *b as u64).sum::<u64>());\n            }\n            5 => {\n                let cname = reader.read_name().ok_or(\"CNAME RDATA name\")?.to_owned();\n                if reader.offset > end { return Err(\"CNAME exceeds rdlength\".into()); }\n                checksum = checksum.wrapping_add(cname.bytes().map(u64::from).sum::<u64>());\n            }\n            16 => {\n                let mut i = start;\n                while i < end {\n                    let chunk_len = reader.packet[i] as usize;\n                    i += 1;\n                    let chunk_end = i.checked_add(chunk_len).ok_or(\"TXT overflow\")?;\n                    let chunk = reader.packet.get(i..chunk_end).ok_or(\"TXT chunk bounds\")?;\n                    checksum = checksum.wrapping_add(chunk_len as u64 + chunk.iter().map(|b| *b as u64).sum::<u64>());\n                    i = chunk_end;\n                }\n            }\n            _ => checksum = checksum.wrapping_add(raw.iter().map(|b| *b as u64).sum::<u64>()),\n        }\n        reader.offset = end;\n    }\n    Ok(checksum)\n}\n\n#[cfg(feature = \"dns-codec\")]\nfn build_query(domain: &str) -> Vec<u8> {\n    let mut p=Vec::new();\n    let h=Header{id:0x1234,mtype:MessageType::Query,qtype:QueryType::Standard,truncated:false,recursion_desired:true,question_count:1,answer_count:0,nameserver_count:0,additional_count:0};\n    let q=Question{name:domain,qtype:1,qclass:1};\n    let mut w=Writer::new(&mut p); w.write_header(&h); w.write_question(&q); p\n}\n#[cfg(feature = \"dns-codec\")]\nfn build_a_response(domain: &str) -> Vec<u8> {\n    let mut p=Vec::new();\n    let h=Header{id:0x1234,mtype:MessageType::Response(ResponseData{authoritative:false,recursion_available:true,error:None}),qtype:QueryType::Standard,truncated:false,recursion_desired:true,question_count:1,answer_count:1,nameserver_count:0,additional_count:0};\n    let q=Question{name:domain,qtype:1,qclass:1}; let rr=Resource{name:domain,qtype:1,qclass:1,time_to_live:60,data_len:4};\n    let mut w=Writer::new(&mut p); w.write_header(&h); w.write_question(&q); w.write_resource(&rr); w.write(&[203,0,113,7]); p\n}\nfn main() {\n    let mut a=env::args().skip(1); let mode=a.next().unwrap_or_else(||\"hash\".into()); let path=a.next().expect(\"input path\");\n    let bytes=fs::read(path).expect(\"read runtime input\");\n    #[cfg(feature = \"dns-codec\")]\n    let out=match mode.as_str(){\n      \"parse\"=>parsed_checksum(&bytes).expect(\"parse DNS fixture\"),\n      \"write-query\"=>{let name=std::str::from_utf8(&bytes).unwrap();let p=build_query(name);parsed_checksum(&p).unwrap()},\n      \"write-response\"=>{let name=std::str::from_utf8(&bytes).unwrap();let p=build_a_response(name);let answer_offset=p.len()-16;assert_eq!(p[answer_offset]&0xc0,0xc0);parsed_checksum(&p).unwrap()},\n      _=>bytes.iter().fold(0xcbf29ce484222325u64,|h,b|(h^*b as u64).wrapping_mul(0x100000001b3)),\n    };\n    #[cfg(not(feature = \"dns-codec\"))]\n    let out=bytes.iter().fold(0xcbf29ce484222325u64,|h,b|(h^*b as u64).wrapping_mul(0x100000001b3));\n    println!(\"{mode}:{out}\");\n}\n\n#[cfg(all(test,feature=\"dns-codec\"))]\nmod tests{\n use super::*;\n fn from_hex(h:&str)->Vec<u8>{(0..h.len()).step_by(2).map(|i|u8::from_str_radix(&h[i..i+2],16).unwrap()).collect()}\n #[test] fn reads_uncompressed_query(){let p=from_hex(\"123401000001000000000000076578616d706c6503636f6d0000010001\");let mut r=Reader::new(&p);let h=r.read_header().unwrap();assert_eq!(h.question_count,1);let q=r.read_question().unwrap();assert_eq!(q.name,\"example.com\");assert_eq!(q.qtype,1);}\n #[test] fn reads_uncompressed_a_response_and_raw_rdata(){let p=from_hex(\"123481800001000100000000076578616d706c6503636f6d0000010001076578616d706c6503636f6d00000100010000003c000401020304\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let (name,qtype,len)={let rr=r.read_resource().unwrap();(rr.name.to_owned(),rr.qtype,rr.data_len as usize)};assert_eq!(name,\"example.com\");assert_eq!(qtype,1);assert_eq!(len,4);let start=r.offset;let raw=&r.packet[start..start+len];assert_eq!(raw,&[1,2,3,4]);}\n #[test] fn reads_compressed_a_owner_response_and_raw_rdata(){let p=from_hex(\"123481800001000100000000076578616d706c6503636f6d0000010001c00c000100010000003c000401020304\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let (name,qtype,len)={let rr=r.read_resource().unwrap();(rr.name.to_owned(),rr.qtype,rr.data_len as usize)};assert_eq!(name,\"example.com\");assert_eq!(qtype,1);let start=r.offset;let raw=&r.packet[start..start+len];assert_eq!(raw,&[1,2,3,4]);}\n #[test] fn reads_compressed_cname_rdata_only_via_manual_read_name(){let p=from_hex(\"123481800001000100000000076578616d706c6503636f6d0000010001c00c000500010000003c000805616c696173c014\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let len={let rr=r.read_resource().unwrap();assert_eq!(rr.qtype,5);rr.data_len as usize};let end=r.offset+len;let cname=r.read_name().unwrap().to_owned();assert_eq!(cname,\"alias.com\");assert!(r.offset<=end);}\n #[test] fn reads_txt_only_by_manual_length_prefixed_chunk_decode(){let p=from_hex(\"123481800001000100000000076578616d706c6503636f6d0000010001c00c001000010000003c000c0568656c6c6f05776f726c64\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let len={let rr=r.read_resource().unwrap();assert_eq!(rr.qtype,16);rr.data_len as usize};let end=r.offset+len;let mut i=r.offset;let mut chunks=Vec::new();while i<end{let n=r.packet[i] as usize;i+=1;chunks.push(std::str::from_utf8(&r.packet[i..i+n]).unwrap().to_string());i+=n;}assert_eq!(chunks,[\"hello\",\"world\"]);}\n #[test] fn writer_emits_query_and_compresses_repeated_answer_name(){let q=build_query(\"example.com\");assert_eq!(q[12],7);let p=build_a_response(\"example.com\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let rr=r.read_resource().unwrap();assert_eq!(rr.name,\"example.com\");let answer_offset=q.len();assert_eq!(&p[answer_offset..answer_offset+2],&[0xc0,0x0c]);}\n #[test] fn pointer_to_pointer_is_not_supported(){let p=from_hex(\"123481800001000200000000076578616d706c6503636f6d0000010001c00c000100010000003c000401020304c01d00010001000000010004cb007108\");let mut r=Reader::new(&p);let _=r.read_header().unwrap();let _=r.read_question().unwrap();let first=r.read_resource().unwrap();let len=first.data_len as usize;let _=first;r.offset+=len;assert!(r.read_resource().is_none());}\n}\n"
+  },
+  "dependencyLockSnapshot": {
+    "name": "niva-node-size-20260924",
+    "version": "1.0.0",
+    "lockfileVersion": 3,
+    "requires": true,
+    "packages": {
+      "": {
+        "name": "niva-node-size-20260924",
+        "version": "1.0.0",
+        "license": "ISC",
+        "dependencies": {
+          "@noble/hashes": "2.4.0",
+          "buffer": "6.0.3",
+          "dns-packet": "5.6.1",
+          "esbuild": "0.28.2",
+          "fflate": "0.8.3",
+          "http-parser-js": "0.5.10",
+          "readable-stream": "4.7.0"
+        }
+      },
+      "node_modules/@esbuild/aix-ppc64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.2.tgz",
+        "integrity": "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==",
+        "cpu": [
+          "ppc64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "aix"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-arm": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.28.2.tgz",
+        "integrity": "sha512-kXXoiPVVGQcnIYGOeaovwOURpniDBpSq4A03qkQ+BMQqtGG6HYap3xne9C1O1yo4TR3qxlCX5IqqmX6fFo2Lqg==",
+        "cpu": [
+          "arm"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.28.2.tgz",
+        "integrity": "sha512-5YfKeeI8qWfBZIX+u2xZC3Zlb3Os/gLS2sbEKM+I4ZOcsWmHS2WLysCcQZDAFRslDUU5Oiq44gf6PYN1vGwG5A==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.28.2.tgz",
+        "integrity": "sha512-O387ite7SzUyCcy3JQX4P4bLtEA7bLLkx+esve5JHnyYfNTxcVpXZo9jhdB0lTKN44gztELTdU7nS8Nr16Fs1Q==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/darwin-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.2.tgz",
+        "integrity": "sha512-n4KqkOQrraxHJcgjM1RvwbigfQKIKJVpM7xp+KsxiyUSrRdIXnt73VhrPAx0fV44hgfmIVKjxMN9J1t5jySVkw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "darwin"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/darwin-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.28.2.tgz",
+        "integrity": "sha512-uq6suIWYP37qzGddBKPw5QEQPi6HiLGsO7UmkpfyaYNQ3D+rN6w6WfwH+nuqcGXWvawGwxOEroO4YGnFh95azw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "darwin"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/freebsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-n+I0BTSRIoy+d6RPKnEVwql5UwBJolytvY4mAOIEJorKlqgPII8ix6slVVrfZ5Tnj7glIZvloylbB/EJPMWEXw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "freebsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/freebsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.28.2.tgz",
+        "integrity": "sha512-78XJTJkvPs0kz2w61301PJjXl4g7q3JqiYMZ/M/yVI73EHBrCRTgkhu9oqG7vPqq+a/yadEW8aD+agKlk5xrmg==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "freebsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-arm": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.28.2.tgz",
+        "integrity": "sha512-XlDnu2q5yoqems+xay6wSAcg9DDD7K9RLKZEBOMZm3ckNpJBvOX20tSfby8KfrrhINDyv9V2YVZKY/SpoGJI8w==",
+        "cpu": [
+          "arm"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.28.2.tgz",
+        "integrity": "sha512-pW4AC0P3it8c7do9MVM4p51FzHzdM/TZrerurgRcHJ2WTa1VQ1CIq18xncfpBJw4ojkiZZrKW2yIBWBP92j6Ug==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-ia32": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.28.2.tgz",
+        "integrity": "sha512-CYbnj78HsIeA+DhgUKgFCfvNsTHFhMMrinUrMZpDXJXKN8T3XViTZ/+wtHeVxEWY8ewSzTFN+nRmSwO2tZaLUQ==",
+        "cpu": [
+          "ia32"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-loong64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.28.2.tgz",
+        "integrity": "sha512-buwkd8nsph4R+ajRvw0qM5Hja/TXQow3ptzWO2EbG/cqcIkHloRrdlBtQlshyYGTNFvfkfJ5tpPLVkY4DtsPfQ==",
+        "cpu": [
+          "loong64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-mips64el": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.28.2.tgz",
+        "integrity": "sha512-ZVykbDyk7519VwiNb9Lcj9m8XM6v5V9uKPvrEMkkEedVewf+0itkhahp4HDpgERXhwLRpWFypsGbG/J8s0QjJA==",
+        "cpu": [
+          "mips64el"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-ppc64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.28.2.tgz",
+        "integrity": "sha512-CAXl+Dtd9UUuJd8pKKdwh6MLm3MUMiqMPmhZ3tTSXPqfyQ3vDl6R5hZdZ/kYojK4ofXtdfSv1tFq8XzWx3heNQ==",
+        "cpu": [
+          "ppc64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-riscv64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.28.2.tgz",
+        "integrity": "sha512-GeXCej4IQtU1B+QlDV8W/RRvbzI3O/Stss+/bCXv4lZls5WGRtu2a+3JkA3i4qIUlMXpcHebWpF8AkJhATowuA==",
+        "cpu": [
+          "riscv64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-s390x": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.28.2.tgz",
+        "integrity": "sha512-3H1weTYZPxt/WOhByszQZybS9w5lKzUn1FDMsgEChbHWQwHYQQRfBxgCcZvPhjHfKyJjIievvMmEUawJrdY9Dg==",
+        "cpu": [
+          "s390x"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz",
+        "integrity": "sha512-4xTZr1FUmSoQW4XIWmit3tzQrUTZM+N3P0XV8xROKYF50XfI7xeO90+1bZvNwxIufQ9hDQVRJH5YhgPVF8A/HQ==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/netbsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-sSATRjPeDBg3pdgHoQfoYBob11Kk1FGa9lui5RIHZCoCkJa9QKlvl3/vKz2usCmYYjs7ymJR/2Nnsqe+Hjt5nw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "netbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/netbsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.28.2.tgz",
+        "integrity": "sha512-lqnzCV+mM0gIADaKihiCg6ifgfU2L3h5E33rNQBN1Y4MaVGnzryzmvvf7UHxprpQdE8hpqLolJ9Rl+SkIRDpyw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "netbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openbsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-AL2qJILH7lNjrDmCQDvdxMfAUIv8KMNZOvrwAQ8i8//ntL9FflhOyMJ8OZSMBb8/AWXe3/5v5S20y3zCoZWKoQ==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openbsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.28.2.tgz",
+        "integrity": "sha512-QtiuPytchRyC4rwUKhexJdQKvDuZ6hWloi3igqPQNUJCS1/v9EiO3UTOXR6A3FoMo4fnAKbWJdqaIwhOzh8qEw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openharmony-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.2.tgz",
+        "integrity": "sha512-WkhYDmpTjLvGlScA1rwjRUmhl4k8oXR3cIbtqWmELgU/dFeHHlEllxDvdWcNJV9rbzCexB5vz8gtNewWLgCT7Q==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openharmony"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/sunos-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.28.2.tgz",
+        "integrity": "sha512-GPMSkTOtMnv2U2F8gxe4Io6qmVs+YKyp832Etqqxr0hFngmXQ3rzwytelm3GIn7T4VviRUlf3sOgBOiTdvaf7g==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "sunos"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.28.2.tgz",
+        "integrity": "sha512-PIhhEkE9uPBleRBrQEJpUn7MBnibZzbGzYWPmY3x+YoVg/95zbjB4CxPPOQ8l5tYYM4mMaCthF8/1DIfBQQyWQ==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-ia32": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.28.2.tgz",
+        "integrity": "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA==",
+        "cpu": [
+          "ia32"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.28.2.tgz",
+        "integrity": "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@leichtgewicht/ip-codec": {
+        "version": "2.0.5",
+        "resolved": "https://registry.npmjs.org/@leichtgewicht/ip-codec/-/ip-codec-2.0.5.tgz",
+        "integrity": "sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==",
+        "license": "MIT"
+      },
+      "node_modules/@noble/hashes": {
+        "version": "2.4.0",
+        "resolved": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz",
+        "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==",
+        "license": "MIT",
+        "engines": {
+          "node": ">= 20.19.0"
+        },
+        "funding": {
+          "url": "https://paulmillr.com/funding/"
+        }
+      },
+      "node_modules/abort-controller": {
+        "version": "3.0.0",
+        "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
+        "integrity": "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==",
+        "license": "MIT",
+        "dependencies": {
+          "event-target-shim": "^5.0.0"
+        },
+        "engines": {
+          "node": ">=6.5"
+        }
+      },
+      "node_modules/base64-js": {
+        "version": "1.5.1",
+        "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+        "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT"
+      },
+      "node_modules/buffer": {
+        "version": "6.0.3",
+        "resolved": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+        "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT",
+        "dependencies": {
+          "base64-js": "^1.3.1",
+          "ieee754": "^1.2.1"
+        }
+      },
+      "node_modules/dns-packet": {
+        "version": "5.6.1",
+        "resolved": "https://registry.npmjs.org/dns-packet/-/dns-packet-5.6.1.tgz",
+        "integrity": "sha512-l4gcSouhcgIKRvyy99RNVOgxXiicE+2jZoNmaNmZ6JXiGajBOJAesk1OBlJuM5k2c+eudGdLxDqXuPCKIj6kpw==",
+        "license": "MIT",
+        "dependencies": {
+          "@leichtgewicht/ip-codec": "^2.0.1"
+        },
+        "engines": {
+          "node": ">=6"
+        }
+      },
+      "node_modules/esbuild": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
+        "integrity": "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==",
+        "hasInstallScript": true,
+        "license": "MIT",
+        "bin": {
+          "esbuild": "bin/esbuild"
+        },
+        "engines": {
+          "node": ">=18"
+        },
+        "optionalDependencies": {
+          "@esbuild/aix-ppc64": "0.28.2",
+          "@esbuild/android-arm": "0.28.2",
+          "@esbuild/android-arm64": "0.28.2",
+          "@esbuild/android-x64": "0.28.2",
+          "@esbuild/darwin-arm64": "0.28.2",
+          "@esbuild/darwin-x64": "0.28.2",
+          "@esbuild/freebsd-arm64": "0.28.2",
+          "@esbuild/freebsd-x64": "0.28.2",
+          "@esbuild/linux-arm": "0.28.2",
+          "@esbuild/linux-arm64": "0.28.2",
+          "@esbuild/linux-ia32": "0.28.2",
+          "@esbuild/linux-loong64": "0.28.2",
+          "@esbuild/linux-mips64el": "0.28.2",
+          "@esbuild/linux-ppc64": "0.28.2",
+          "@esbuild/linux-riscv64": "0.28.2",
+          "@esbuild/linux-s390x": "0.28.2",
+          "@esbuild/linux-x64": "0.28.2",
+          "@esbuild/netbsd-arm64": "0.28.2",
+          "@esbuild/netbsd-x64": "0.28.2",
+          "@esbuild/openbsd-arm64": "0.28.2",
+          "@esbuild/openbsd-x64": "0.28.2",
+          "@esbuild/openharmony-arm64": "0.28.2",
+          "@esbuild/sunos-x64": "0.28.2",
+          "@esbuild/win32-arm64": "0.28.2",
+          "@esbuild/win32-ia32": "0.28.2",
+          "@esbuild/win32-x64": "0.28.2"
+        }
+      },
+      "node_modules/event-target-shim": {
+        "version": "5.0.1",
+        "resolved": "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz",
+        "integrity": "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=6"
+        }
+      },
+      "node_modules/events": {
+        "version": "3.3.0",
+        "resolved": "https://registry.npmjs.org/events/-/events-3.3.0.tgz",
+        "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=0.8.x"
+        }
+      },
+      "node_modules/fflate": {
+        "version": "0.8.3",
+        "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
+        "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+        "license": "MIT"
+      },
+      "node_modules/http-parser-js": {
+        "version": "0.5.10",
+        "resolved": "https://registry.npmjs.org/http-parser-js/-/http-parser-js-0.5.10.tgz",
+        "integrity": "sha512-Pysuw9XpUq5dVc/2SMHpuTY01RFl8fttgcyunjL7eEMhGM3cI4eOmiCycJDVCo/7O7ClfQD3SaI6ftDzqOXYMA==",
+        "license": "MIT"
+      },
+      "node_modules/ieee754": {
+        "version": "1.2.1",
+        "resolved": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+        "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "BSD-3-Clause"
+      },
+      "node_modules/process": {
+        "version": "0.11.10",
+        "resolved": "https://registry.npmjs.org/process/-/process-0.11.10.tgz",
+        "integrity": "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==",
+        "license": "MIT",
+        "engines": {
+          "node": ">= 0.6.0"
+        }
+      },
+      "node_modules/readable-stream": {
+        "version": "4.7.0",
+        "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
+        "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
+        "license": "MIT",
+        "dependencies": {
+          "abort-controller": "^3.0.0",
+          "buffer": "^6.0.3",
+          "events": "^3.3.0",
+          "process": "^0.11.10",
+          "string_decoder": "^1.3.0"
+        },
+        "engines": {
+          "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
+        }
+      },
+      "node_modules/safe-buffer": {
+        "version": "5.2.1",
+        "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+        "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT"
+      },
+      "node_modules/string_decoder": {
+        "version": "1.3.0",
+        "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+        "integrity": "sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==",
+        "license": "MIT",
+        "dependencies": {
+          "safe-buffer": "~5.2.0"
+        }
+      }
+    }
+  }
+}

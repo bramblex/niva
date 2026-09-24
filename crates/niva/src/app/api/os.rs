@@ -1,21 +1,89 @@
 use anyhow::Result;
 use directories::UserDirs;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sys_locale::get_locale;
 
 use crate::app::NivaApp;
 use crate::app::api_manager::ApiManager;
 use crate::app::api_manager::ApiRequest;
+use crate::app::os_native as native;
 use crate::app::window_manager::window::NivaWindow;
 use std::path::Path;
 use std::sync::Arc;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.info", info);
+    api_manager.register_blocking_api("os.timingSafeEqual", timing_safe_equal);
+    api_manager.register_blocking_api("os.cpus", cpus);
+    api_manager.register_blocking_api("os.freemem", freemem);
+    api_manager.register_blocking_api("os.networkInterfaces", network_interfaces);
+    api_manager.register_blocking_api("os.uptime", uptime);
+    api_manager.register_blocking_api("os.dnsLookup", dns_lookup);
+    api_manager.register_blocking_api("os.dnsServers", dns_servers);
     api_manager.register_api("os.dirs", dirs);
     api_manager.register_api("os.sep", sep);
     api_manager.register_api("os.eol", eol);
     api_manager.register_api("os.locale", locale);
+}
+
+fn timing_safe_equal(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
+    use base64::Engine;
+    use subtle::ConstantTimeEq;
+    let (a, b): (String, String) = request.args().get()?;
+    let a = base64::engine::general_purpose::STANDARD.decode(a)?;
+    let b = base64::engine::general_purpose::STANDARD.decode(b)?;
+    anyhow::ensure!(a.len() == b.len(), "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH");
+    Ok(bool::from(a.ct_eq(&b)))
+}
+
+fn cpus(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
+    native::cpus()
+}
+
+fn freemem(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<u64> {
+    native::free_memory()
+}
+
+fn network_interfaces(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Value> {
+    native::network_interfaces()
+}
+
+fn uptime(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<f64> {
+    native::uptime()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DnsLookupOptions {
+    hostname: String,
+    family: Option<u8>,
+    all: Option<bool>,
+}
+
+fn dns_lookup(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
+    let (options,): (DnsLookupOptions,) = request.args().get()?;
+    native::dns_lookup(
+        &options.hostname,
+        options.family.unwrap_or(0),
+        options.all.unwrap_or(false),
+    )
+}
+
+fn dns_servers(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    _request: ApiRequest,
+) -> Result<Value> {
+    native::dns_servers()
 }
 
 async fn info(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {

@@ -17,22 +17,6 @@
     throw new Error(`${label} did not become ${expected}`);
   }
 
-  add("http.get", "GETs a local fixture and returns its exact text", async ({ api }) => {
-    const base = await api.webview.baseUrl();
-    const response = await api.http.get(`${base}probe.txt`);
-    expect(response.status === 200 && response.body === "niva-smoke-only\n", "http.get fixture response mismatch");
-  });
-  add("http.request", "sends an explicit GET and preserves status/body", async ({ api }) => {
-    const base = await api.webview.baseUrl();
-    const response = await api.http.request({ method: "GET", url: `${base}probe.txt` });
-    expect(response.status === 200 && response.body === "niva-smoke-only\n", "http.request fixture response mismatch");
-  });
-  add("http.post", "returns the local server's explicit non-GET status", async ({ api }) => {
-    const base = await api.webview.baseUrl();
-    const response = await api.http.post(`${base}probe.txt`, "smoke-only");
-    expect(response.status === 405, `http.post expected local GET-only 405, got ${response.status}`);
-  });
-
   add("process.env", "returns a string-keyed environment without printing its values", async ({ api }) => {
     const env = await api.process.env();
     expect(env && typeof env === "object" && !Array.isArray(env), "process.env did not return object");

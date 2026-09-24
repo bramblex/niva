@@ -12,6 +12,10 @@ use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_blocking_api("fs.stat", stat);
+    api_manager.register_blocking_api("fs.node", node_operation);
+    api_manager.register_stream_api_with("fs.openHandle", Some(None), node_open_handle);
+    api_manager.register_stream_api("fs.handle", node_handle_operation);
+    api_manager.register_stream_api_with("fs.watch", Some(None), node_watch);
     api_manager.register_blocking_api("fs.exists", exists);
     api_manager.register_stream_api("fs.readStream", read_stream);
     api_manager.register_blocking_api("fs.copy", copy);
@@ -318,6 +322,517 @@ fn write_file_chunks(
     Ok(Some(bytes))
 }
 
+// Buffered JSON operations serve both WS unary calls and synchronous XHR.
+// Streams remain binary WS calls. Byte results use base64 to avoid UTF-8 loss.
+fn node_operation(
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    let (operation, arguments): (String, Value) = request.args().get()?;
+    node_fs_operation(&operation, &arguments)
+}
+
+fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use std::io::{Read, Write};
+    let path = Path::new(
+        args["path"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("path must be a string"))?,
+    );
+    match operation {
+        "readFile" => {
+            let mut file = node_open(path, args["flag"].as_str().unwrap_or("r"), 0o666)?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            Ok(json!(STANDARD.encode(bytes)))
+        }
+        "writeFile" | "appendFile" => {
+            let bytes = STANDARD.decode(
+                args["data"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("missing bytes"))?,
+            )?;
+            let flag = args["flag"]
+                .as_str()
+                .unwrap_or(if operation == "appendFile" { "a" } else { "w" });
+            let mut file = node_open(path, flag, args["mode"].as_u64().unwrap_or(0o666) as u32)?;
+            file.write_all(&bytes)?;
+            Ok(Value::Null)
+        }
+        "stat" | "lstat" => {
+            let metadata = if operation == "lstat" {
+                std::fs::symlink_metadata(path)?
+            } else {
+                std::fs::metadata(path)?
+            };
+            Ok(node_stat(&metadata))
+        }
+        "realpath" => Ok(json!(std::fs::canonicalize(path)?)),
+        "rename" => {
+            std::fs::rename(path, node_destination(args)?)?;
+            Ok(Value::Null)
+        }
+        "unlink" => {
+            std::fs::remove_file(path)?;
+            Ok(Value::Null)
+        }
+        "copyFile" => {
+            let destination = node_destination(args)?;
+            let flags = args["flags"].as_u64().unwrap_or(0);
+            anyhow::ensure!(flags & !1 == 0, "ENOTSUP: clone flags are unsupported");
+            let mut input = std::fs::File::open(path)?;
+            let input_metadata = input.metadata()?;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true);
+            if flags & 1 != 0 {
+                options.create_new(true);
+            } else {
+                options.create(true);
+            }
+            // Check path identity before opening, then compare open handles
+            // below so hard links and path races cannot truncate the source.
+            if matches!(
+                (std::fs::canonicalize(path), std::fs::canonicalize(destination)),
+                (Ok(source), Ok(destination)) if source == destination
+            ) {
+                anyhow::bail!("EINVAL: source and destination are the same file");
+            }
+            let mut output = options.open(destination)?;
+            anyhow::ensure!(
+                !same_file(&input, &output)?,
+                "EINVAL: source and destination are the same file"
+            );
+            output.set_len(0)?;
+            use std::io::Seek;
+            output.seek(std::io::SeekFrom::Start(0))?;
+            std::io::copy(&mut input, &mut output)?;
+            output.set_permissions(input_metadata.permissions())?;
+            Ok(Value::Null)
+        }
+        "mkdir" => {
+            let recursive = args["recursive"].as_bool().unwrap_or(false);
+            let mut first = None;
+            if recursive {
+                let mut current = path;
+                while !current.exists() {
+                    first = Some(current.to_path_buf());
+                    match current.parent() {
+                        Some(parent) if !parent.as_os_str().is_empty() => current = parent,
+                        _ => break,
+                    }
+                }
+            }
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(recursive);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(args["mode"].as_u64().unwrap_or(0o777) as u32);
+            }
+            builder.create(path)?;
+            Ok(json!(first))
+        }
+        "readdir" => {
+            let entries: Result<Vec<Value>> = std::fs::read_dir(path)?.map(|entry| {
+                let entry = entry?;
+                Ok(json!({"name": entry.file_name().to_string_lossy(), "stats":node_stat(&std::fs::symlink_metadata(entry.path())?)}))
+            }).collect();
+            Ok(json!(entries?))
+        }
+        "rm" => {
+            let metadata = match std::fs::symlink_metadata(path) {
+                Ok(metadata) => metadata,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && args["force"].as_bool().unwrap_or(false) =>
+                {
+                    return Ok(Value::Null);
+                }
+                Err(error) => return Err(error.into()),
+            };
+            if metadata.is_dir() {
+                anyhow::ensure!(
+                    args["recursive"].as_bool().unwrap_or(false),
+                    "ERR_FS_EISDIR: recursive removal required"
+                );
+                std::fs::remove_dir_all(path)?;
+            } else {
+                std::fs::remove_file(path)?;
+            }
+            Ok(Value::Null)
+        }
+        "access" => {
+            let mode = args["mode"].as_u64().unwrap_or(0);
+            anyhow::ensure!(mode <= 7, "invalid access mode");
+            #[cfg(unix)]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+                // SAFETY: NUL-terminated pathname is alive for this call.
+                if unsafe { libc::access(path.as_ptr(), mode as i32) } != 0 {
+                    return Err(std::io::Error::last_os_error().into());
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let metadata = std::fs::metadata(path)?;
+                if mode & 2 != 0 && metadata.permissions().readonly() {
+                    anyhow::bail!("EACCES: read-only path");
+                }
+            }
+            Ok(Value::Null)
+        }
+        _ => anyhow::bail!("unknown filesystem operation"),
+    }
+}
+
+fn node_destination(args: &Value) -> Result<&Path> {
+    Ok(Path::new(
+        args["destination"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing destination"))?,
+    ))
+}
+
+fn node_open(path: &Path, flag: &str, mode: u32) -> Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    match flag {
+        "r" | "rs" => {
+            options.read(true);
+        }
+        "r+" | "rs+" => {
+            options.read(true).write(true);
+        }
+        "w" | "w+" | "wx" | "wx+" | "xw" | "xw+" => {
+            options.write(true).read(flag.contains('+'));
+            if flag.contains('x') {
+                options.create_new(true);
+            } else {
+                options.create(true).truncate(true);
+            }
+        }
+        "a" | "a+" | "ax" | "ax+" | "xa" | "xa+" => {
+            options.append(true).read(flag.contains('+'));
+            if flag.contains('x') {
+                options.create_new(true);
+            } else {
+                options.create(true);
+            }
+        }
+        _ => anyhow::bail!("EINVAL: unsupported file flag {flag}"),
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    Ok(options.open(path)?)
+}
+
+fn same_file(source: &std::fs::File, destination: &std::fs::File) -> Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let source = source.metadata()?;
+        let destination = destination.metadata()?;
+        Ok(source.dev() == destination.dev() && source.ino() == destination.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
+        };
+        let mut source_info = BY_HANDLE_FILE_INFORMATION::default();
+        let mut destination_info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: both handles are live files owned by the caller; the API
+        // writes fixed-size metadata records into initialized output storage.
+        unsafe {
+            GetFileInformationByHandle(HANDLE(source.as_raw_handle() as *mut _), &mut source_info)?;
+            GetFileInformationByHandle(
+                HANDLE(destination.as_raw_handle() as *mut _),
+                &mut destination_info,
+            )?;
+        }
+        Ok(
+            source_info.dwVolumeSerialNumber == destination_info.dwVolumeSerialNumber
+                && source_info.nFileIndexHigh == destination_info.nFileIndexHigh
+                && source_info.nFileIndexLow == destination_info.nFileIndexLow,
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (source, destination);
+        Ok(false)
+    }
+}
+
+fn node_stat(meta: &std::fs::Metadata) -> Value {
+    let millis = |time: std::io::Result<std::time::SystemTime>| {
+        time.ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0)
+    };
+    let mut value = json!({"isFile":meta.is_file(),"isDir":meta.is_dir(),"isSymlink":meta.file_type().is_symlink(),"size":meta.len(),"atimeMs":millis(meta.accessed()),"mtimeMs":millis(meta.modified()),"birthtimeMs":millis(meta.created())});
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        value["dev"] = json!(meta.dev());
+        value["ino"] = json!(meta.ino());
+        value["mode"] = json!(meta.mode());
+        value["nlink"] = json!(meta.nlink());
+        value["uid"] = json!(meta.uid());
+        value["gid"] = json!(meta.gid());
+        value["rdev"] = json!(meta.rdev());
+        value["blksize"] = json!(meta.blksize());
+        value["blocks"] = json!(meta.blocks());
+        value["ctimeMs"] = json!(meta.ctime() as f64 * 1000.0 + meta.ctime_nsec() as f64 / 1e6);
+        value["isBlockDevice"] = json!(meta.file_type().is_block_device());
+        value["isCharacterDevice"] = json!(meta.file_type().is_char_device());
+        value["isFIFO"] = json!(meta.file_type().is_fifo());
+        value["isSocket"] = json!(meta.file_type().is_socket());
+    }
+    value
+}
+
+struct NodeFileHandle {
+    owner: (u8, u64),
+    file: std::sync::Mutex<std::fs::File>,
+    closed: async_channel::Sender<()>,
+}
+type NodeFiles = std::sync::Mutex<std::collections::HashMap<String, Arc<NodeFileHandle>>>;
+fn node_files() -> &'static NodeFiles {
+    static FILES: std::sync::OnceLock<NodeFiles> = std::sync::OnceLock::new();
+    FILES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+struct NodeFileRegistration {
+    id: String,
+    handle: Arc<NodeFileHandle>,
+}
+
+impl NodeFileRegistration {
+    fn insert(id: String, handle: Arc<NodeFileHandle>) -> Result<Self> {
+        let mut files = node_files()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
+        anyhow::ensure!(
+            files.len() < 256,
+            "EMFILE: too many open compatibility files"
+        );
+        anyhow::ensure!(!files.contains_key(&id), "EEXIST: file handle id collision");
+        files.insert(id.clone(), handle.clone());
+        Ok(Self { id, handle })
+    }
+}
+
+impl Drop for NodeFileRegistration {
+    fn drop(&mut self) {
+        if let Ok(mut files) = node_files().lock()
+            && files
+                .get(&self.id)
+                .is_some_and(|registered| Arc::ptr_eq(registered, &self.handle))
+        {
+            files.remove(&self.id);
+        }
+    }
+}
+
+async fn node_open_handle(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    let (path, flag, mode): (String, Option<String>, Option<u32>) = request.args().optional(3)?;
+    let file = crate::blocking!(node_open(
+        Path::new(&path),
+        flag.as_deref().unwrap_or("r"),
+        mode.unwrap_or(0o666)
+    ))
+    .await?;
+    let mut bytes = [0u8; 24];
+    getrandom::fill(&mut bytes).map_err(|_| anyhow::anyhow!("handle entropy unavailable"))?;
+    let id: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    let (closed, closing) = async_channel::bounded(1);
+    let handle = Arc::new(NodeFileHandle {
+        owner: (ctx.window.id, ctx.connection_id),
+        file: std::sync::Mutex::new(file),
+        closed,
+    });
+    let _registration = NodeFileRegistration::insert(id.clone(), handle)?;
+    ctx.push("open", json!({"handle":id}));
+    smol::future::or(ctx.cancelled(), async {
+        let _ = closing.recv().await;
+    })
+    .await;
+    if !ctx.is_cancelled() {
+        ctx.respond(Ok(Value::Null));
+    }
+    Ok(())
+}
+
+async fn node_handle_operation(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let (id, operation, args): (String, String, Value) = request.args().get()?;
+    let handle = {
+        let files = node_files()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
+        let handle = files
+            .get(&id)
+            .ok_or_else(|| anyhow::anyhow!("EBADF: file closed"))?;
+        anyhow::ensure!(
+            handle.owner == (ctx.window.id, ctx.connection_id),
+            "EACCES: file belongs to another connection"
+        );
+        handle.clone()
+    };
+    let result = crate::blocking!({
+        if operation == "close" {
+            node_files()
+                .lock()
+                .map_err(|_| anyhow::anyhow!("file registry poisoned"))?
+                .remove(&id);
+            handle.closed.close();
+            Ok(Value::Null)
+        } else {
+            let mut file = handle
+                .file
+                .lock()
+                .map_err(|_| anyhow::anyhow!("file lock poisoned"))?;
+            let restore = if let Some(position) = args["position"].as_u64() {
+                let old = file.stream_position()?;
+                file.seek(SeekFrom::Start(position))?;
+                Some(old)
+            } else {
+                None
+            };
+            let operation_result = (|| -> Result<Value> {
+                match operation.as_str() {
+                    "read" => {
+                        let length = args["length"].as_u64().unwrap_or(65536);
+                        anyhow::ensure!(length <= 8 * 1024 * 1024, "read chunk too large");
+                        let mut data = vec![0; length as usize];
+                        let size = file.read(&mut data)?;
+                        data.truncate(size);
+                        Ok(json!({"bytesRead":size,"data":STANDARD.encode(data)}))
+                    }
+                    "write" => {
+                        let data = STANDARD.decode(args["data"].as_str().unwrap_or(""))?;
+                        let size = file.write(&data)?;
+                        Ok(json!({"bytesWritten":size}))
+                    }
+                    "stat" => Ok(node_stat(&file.metadata()?)),
+                    "sync" => {
+                        file.sync_all()?;
+                        Ok(Value::Null)
+                    }
+                    "datasync" => {
+                        file.sync_data()?;
+                        Ok(Value::Null)
+                    }
+                    "truncate" => {
+                        file.set_len(args["length"].as_u64().unwrap_or(0))?;
+                        Ok(Value::Null)
+                    }
+                    _ => anyhow::bail!("ENOTSUP: unsupported FileHandle operation"),
+                }
+            })();
+            if let Some(position) = restore {
+                file.seek(SeekFrom::Start(position))?;
+            }
+            operation_result
+        }
+    })
+    .await;
+    ctx.respond(result);
+    Ok(())
+}
+
+async fn node_watch(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    use notify::Watcher;
+    let (path, recursive): (String, Option<bool>) = request.args().optional(2)?;
+    let root = std::path::PathBuf::from(path);
+    let (events, receiver) = async_channel::bounded(256);
+    let (overflow_tx, overflow_rx) = async_channel::bounded::<()>(1);
+    let overflowed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let callback_overflow = overflowed.clone();
+    let callback_signal = overflow_tx.clone();
+    let mut watcher = notify::recommended_watcher(move |event| {
+        queue_watch_event(&events, &callback_signal, &callback_overflow, event);
+    })?;
+    watcher.watch(
+        &root,
+        if recursive.unwrap_or(false) {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        },
+    )?;
+    ctx.push("ready", Value::Null);
+    loop {
+        let event = smol::future::or(async { receiver.recv().await.ok() }, async {
+            smol::future::or(ctx.cancelled(), async {
+                let _ = overflow_rx.recv().await;
+            })
+            .await;
+            None
+        })
+        .await;
+        let Some(event) = event else {
+            break;
+        };
+        let event = event?;
+        if event.kind.is_access() {
+            continue;
+        }
+        let kind = match event.kind {
+            notify::EventKind::Create(_)
+            | notify::EventKind::Remove(_)
+            | notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => "rename",
+            _ => "change",
+        };
+        if event.paths.is_empty() {
+            ctx.push("change", json!({"eventType":kind,"filename":null}));
+        }
+        for path in event.paths {
+            let name = if root.is_dir() {
+                path.strip_prefix(&root)
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            } else {
+                path.file_name().map(|p| p.to_string_lossy().into_owned())
+            };
+            ctx.push("change", json!({"eventType":kind,"filename":name}));
+        }
+    }
+    drop(watcher);
+    anyhow::ensure!(
+        !overflowed.load(std::sync::atomic::Ordering::Acquire),
+        "ENOSPC: filesystem watcher queue overflow"
+    );
+    Ok(())
+}
+
+fn queue_watch_event<T>(
+    events: &async_channel::Sender<T>,
+    overflow_signal: &async_channel::Sender<()>,
+    overflowed: &std::sync::atomic::AtomicBool,
+    event: T,
+) {
+    match events.try_send(event) {
+        Ok(()) => {}
+        Err(async_channel::TrySendError::Full(_)) => {
+            overflowed.store(true, std::sync::atomic::Ordering::Release);
+            let _ = overflow_signal.try_send(());
+        }
+        Err(async_channel::TrySendError::Closed(_)) => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,6 +874,50 @@ mod tests {
             data: data.to_vec(),
             end,
         }
+    }
+
+    #[test]
+    fn node_file_operations_preserve_bytes_flags_and_directory_semantics() {
+        let temp = TestDir::new();
+        let path = temp.path().join("node.bin");
+        node_fs_operation("writeFile", &json!({"path":path,"data":"AP/+"})).unwrap();
+        assert_eq!(
+            node_fs_operation("readFile", &json!({"path":path})).unwrap(),
+            json!("AP/+")
+        );
+        assert!(
+            node_fs_operation("writeFile", &json!({"path":path,"data":"YQ==","flag":"wx"}))
+                .is_err()
+        );
+        node_fs_operation("appendFile", &json!({"path":path,"data":"YQ=="})).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), [0, 255, 254, 97]);
+        assert!(node_fs_operation("rm", &json!({"path":temp.path()})).is_err());
+        assert!(path.exists());
+        let entries = node_fs_operation("readdir", &json!({"path":temp.path()})).unwrap();
+        assert_eq!(entries[0]["stats"]["isFile"], true);
+        assert!(node_fs_operation("unlink", &json!({"path":temp.path()})).is_err());
+        node_fs_operation("unlink", &json!({"path":path})).unwrap();
+        node_fs_operation("rm", &json!({"path":path,"force":true})).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_lstat_keeps_symlinks_and_removal_does_not_follow_them() {
+        let temp = TestDir::new();
+        let target = temp.path().join("target");
+        let link = temp.path().join("link");
+        std::fs::create_dir(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_eq!(
+            node_fs_operation("lstat", &json!({"path":link})).unwrap()["isSymlink"],
+            true
+        );
+        assert_eq!(
+            node_fs_operation("stat", &json!({"path":link})).unwrap()["isDir"],
+            true
+        );
+        node_fs_operation("rm", &json!({"path":link,"recursive":true})).unwrap();
+        assert!(target.is_dir());
     }
 
     #[test]
@@ -633,5 +1192,73 @@ mod tests {
             None
         );
         assert_eq!(std::fs::read(&path).unwrap(), b"");
+    }
+
+    #[test]
+    fn node_copy_rejects_hardlink_destinations_without_truncating_source() {
+        let temp = TestDir::new();
+        let source = temp.path().join("source.bin");
+        let destination = temp.path().join("source-hardlink.bin");
+        std::fs::write(&source, b"preserve these bytes").unwrap();
+        std::fs::hard_link(&source, &destination).unwrap();
+
+        let error = node_fs_operation(
+            "copyFile",
+            &json!({ "path": source, "destination": destination }),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("same file"));
+        assert_eq!(std::fs::read(&source).unwrap(), b"preserve these bytes");
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"preserve these bytes"
+        );
+    }
+
+    #[test]
+    fn open_handle_registration_drop_removes_the_owned_descriptor() {
+        let temp = TestDir::new();
+        let path = temp.path().join("registered.bin");
+        std::fs::write(&path, b"handle").unwrap();
+        let id = format!("test-{}", std::process::id());
+        let (closed, _closing) = async_channel::bounded(1);
+        let handle = Arc::new(NodeFileHandle {
+            owner: (0, 17),
+            file: std::sync::Mutex::new(std::fs::File::open(&path).unwrap()),
+            closed,
+        });
+
+        let registration = NodeFileRegistration::insert(id.clone(), handle.clone()).unwrap();
+        assert!(node_files().lock().unwrap().contains_key(&id));
+        drop(registration);
+        assert!(!node_files().lock().unwrap().contains_key(&id));
+        drop(handle);
+    }
+
+    #[test]
+    fn watcher_receiver_close_is_not_misreported_as_queue_overflow() {
+        let (events, receiver) = async_channel::bounded(1);
+        let (overflow_signal, overflow_receiver) = async_channel::bounded(1);
+        let overflowed = std::sync::atomic::AtomicBool::new(false);
+        queue_watch_event(&events, &overflow_signal, &overflowed, 1);
+        drop(receiver);
+        queue_watch_event(&events, &overflow_signal, &overflowed, 2);
+        drop(overflow_signal);
+
+        assert!(!overflowed.load(std::sync::atomic::Ordering::Acquire));
+        assert!(overflow_receiver.is_closed());
+    }
+
+    #[test]
+    fn watcher_full_queue_is_reported_as_overflow() {
+        let (events, _receiver) = async_channel::bounded(1);
+        let (overflow_signal, overflow_receiver) = async_channel::bounded(1);
+        let overflowed = std::sync::atomic::AtomicBool::new(false);
+        queue_watch_event(&events, &overflow_signal, &overflowed, 1);
+        queue_watch_event(&events, &overflow_signal, &overflowed, 2);
+
+        assert!(overflowed.load(std::sync::atomic::Ordering::Acquire));
+        assert_eq!(overflow_receiver.try_recv().unwrap(), ());
     }
 }

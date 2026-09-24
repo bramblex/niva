@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Optional Node-shaped browser adapters for Niva pages",
+  "description": "Browser Node-style API subset embedded by Niva",
   "exports": {
     ".": "./src/index.js",
     "./path": "./src/path.js",
@@ -24,10 +24,38 @@
     "./assert/strict": "./src/assert-strict.js",
     "./stream": "./src/stream.js",
     "./stream/promises": "./src/stream-promises.js",
+    "./process": "./src/process.js",
+    "./net": "./src/net.js",
+    "./dgram": "./src/dgram.js",
+    "./tls": "./src/tls.js",
+    "./dns": "./src/dns.js",
+    "./dns/promises": "./src/dns-promises.js",
+    "./string_decoder": "./src/string_decoder.js",
+    "./timers": "./src/timers.js",
+    "./timers/promises": "./src/timers-promises.js",
     "./classic": "./dist/niva-node-compat.js"
   },
   "scripts": {
+    "test:upstream": "node ./scripts/test-upstream.mjs",
+    "test:upstream:harness": "node ./scripts/test-upstream.mjs --self-test",
     "build:classic": "node ./scripts/build-classic.mjs",
-    "test": "npm run build:classic && node --test ./test/*.test.js"
+    "build:vendor": "node ./scripts/build-vendor.mjs",
+    "test:vendor": "npm run build:vendor && node --test ./test/vendor.test.js",
+    "test": "npm run build:vendor && npm run build:classic && node --test ./test/*.test.js"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "acorn": "8.14.0",
+    "acorn-walk": "8.3.4",
+    "buffer": "6.0.3",
+    "dns-packet": "5.6.1",
+    "fflate": "0.8.3",
+    "http-parser-js": "0.5.10",
+    "readable-stream": "4.7.0",
+    "string_decoder": "1.3.0",
+    "url": "0.11.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

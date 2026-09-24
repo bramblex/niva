@@ -3,29 +3,13 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sources = [
-  "src/runtime/bridge.js",
-  "src/runtime/path.js",
-  "src/runtime/events.js",
-  "src/runtime/querystring.js",
-  "src/runtime/buffer.js",
-  "src/runtime/util.js",
-  "src/runtime/os.js",
-  "src/runtime/fs.js",
-  "src/runtime/child_process.js",
-  "src/runtime/url.js",
-  "src/runtime/crypto.js",
-  "src/runtime/zlib.js",
-  "src/runtime/assert.js",
-  "src/runtime/http.js",
-  "src/runtime/stream.js",
-  "src/runtime/registration.js",
-];
-
-const sections = await Promise.all(sources.map(async (file) => {
+const runtimeFiles = JSON.parse(await readFile(path.join(packageRoot, "runtime-files.json"), "utf8"));
+const sources = runtimeFiles.classic;
+const sections = [];
+for (const file of sources) {
   const source = await readFile(path.join(packageRoot, file), "utf8");
-  return `/* ${file} */\n${source.trim()}\n`;
-}));
+  sections.push(`/* ${file} */\n${source.trim()}\n`);
+}
 
 sections.push(`(function (root) {
   "use strict";

@@ -307,10 +307,12 @@ impl NivaBuilder {
             let trusted_bootstrap = format!(
                 "if(window.top===window && location.origin==={:?} && !location.pathname.startsWith('/__niva_fs/')){{\
                 window.__niva_ws_url={:?};window.__niva_window_id={id};\
-                window.__niva_token={:?};}}",
+                window.__niva_token={:?};window.__niva_node_bootstrap={};}}",
                 trusted_origin,
                 format!("ws://127.0.0.1:{server_port}/__niva_ws"),
                 window_token,
+                serde_json::to_string(&crate::app::node_bootstrap::metadata(id == 0))?
+                    .replace('<', "\\u003c"),
             );
             builder = builder.with_initialization_script_for_main_only(trusted_bootstrap, true);
         }
@@ -326,6 +328,22 @@ impl NivaBuilder {
             )
         };
         builder = builder.with_initialization_script_for_main_only(init_script, false);
+        // The Vite/debug entry is served by another loopback server, so its
+        // HTML does not pass through our resource rewriter. Load the embedded
+        // adapter in that already-authorized development origin as well.
+        if !use_custom_protocol
+            && let Some(origin) = trusted_ws_origin
+                .as_ref()
+                .filter(|origin| *origin != &server_origin)
+            && let Some(compat) = NodeCompat::from_option(&app.launch_info.options.node_compat)?
+            && let Some(classic) = NodeCompat::embedded_asset("__niva_compat/node-compat.js")
+        {
+            let script = String::from_utf8(compat.classic_script(&classic)?)?;
+            builder = builder.with_initialization_script_for_main_only(
+                format!("if(location.origin==={origin:?} && window.__niva_ws_url){{{script}}}"),
+                false,
+            );
+        }
 
         if use_custom_protocol {
             let dispatcher: CustomProtocolDispatcher = app._custom_protocol.clone();

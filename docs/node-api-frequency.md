@@ -1,11 +1,19 @@
 # Node 内置 API 使用频率调研与 Niva 落地顺序
 
+> **2026-09-24 逐项盘点**：模块与 API 的当前覆盖、频率档位及补齐难度见 [Node.js 模块与常用 API 覆盖盘点](node-api-coverage.md)，可复算数据见 [node-api-inventory.json](node-api-inventory.json)。本文件保留早期调研与候选方案；下文模块名次是定性判断，没有可复算的频率样本，不能作为真实调用占比。§2 和 §6 的简写/历史签名也不替代 Node 官方契约；覆盖统计以新表逐项状态为准。
+
+> **难度口径**：沿用双向 WS、本地同步 XHR、跨域有限 IPC 三条路径。先判断 Niva Native 是否具备所需能力，再估算 JS API 封装；仅封装为低、扩展现有 Native 或复杂 JS 语义为中、新增整类 Native 后端为高、引入大型第三方库或完整运行时为很高。同步机制本身按低难度，库大小未实测时只列选型条件或风险。
+
+> **纯 JS 补充**：现成浏览器库能够覆盖且无需 Node runtime 时，统一按低难度；例如 crypto 摘要/HMAC/KDF 可选 `@noble/hashes`，zlib 可选 `fflate`。候选库及限制见 [浏览器纯 JS 方案](node-browser-js-options.md)。
+
+> **当前范围与注入决策**：目标已收敛到 22 个模块族、179 项 API；旧调研中出现的 perf_hooks、console、http2、tty、v8、vm、sqlite、test、cluster、worker_threads、readline 不再属于当前待开发目标。console 使用浏览器原生；process/os 固定信息启动注入，真实 process 仅在 main 窗口注入/注册。动态系统信息每次用同步 XHR 查询，不采用缓存或推算；实际操作按接口契约处理。child_process.fork 也已移出目标；默认 JS，仅必要系统能力/不可满足的接口行为或实测性能缺口才 Native。本文后续排名和历史方案仅作调研留档，以最新逐项盘点为当前分母。
+
 > 日期：2026-09-22。目的：按真实使用频率排 Node builtins，指导 Niva 按“高频先行、零新增依赖优先”补齐。
 > 方法：教程共识（Flavio Copes / GeeksforGeeks / W3Schools）+ Socket 供应链遥测 + npm 生态论文方法三角验证。
 > 局限：**不存在权威的 builtin 级百分比排名**；SO / State of JS 只到运行时层面。以下名次 1–4 可信度高，5–12 中（教程间互换），函数级精确占比公开数据无（如需精确数，做 BigQuery `github_repos.contents` 全量 `require('node:x')` 计数或 npm Top-1000 静态扫描）。
 > Node 签名以 `nodejs.org/api` v26 为准；Niva 现状以本仓实测为准（见 `docs/PROJECT_MANUAL.md §2.6`）。
 
-> 实施状态更新（2026-09-23）：`packages/node-compat` 已提供 15 个浏览器适配模块，Rust `nodeCompat` 配置、服务器 HTML importmap/classic 注入与 CORS 兼容资源路由、Devtools 按模块选择资源均已实现。这里的频率排名和 API 清单仍是调研/目标范围，不代表每个列出的 Node 签名都已覆盖。同步 API 范围仍待用户决定；见 §6 和 [`node-compat-design.md`](node-compat-design.md)。
+> 实施状态更新（2026-09-23；同步方案说明更新于 2026-09-24）：`packages/node-compat` 已提供 15 个浏览器适配模块，Rust `nodeCompat` 配置、服务器 HTML importmap/classic 注入与 CORS 兼容资源路由、Devtools 按模块选择资源均已实现。这里的频率排名和 API 清单仍是调研/目标范围，不代表每个列出的 Node 签名都已覆盖。同步调用沿用用户确认的既定同步 XHR 方案，具体 API 接入和覆盖范围按逐项清单选择；见 §6 和 [`node-compat-design.md`](node-compat-design.md)。
 
 ## 1. 模块频率排名
 
@@ -195,9 +203,11 @@ assert.ok(value: any, message?: string): void; assert.throws(fn: Function): void
 
 NodeCompat 的 15 个浏览器模块、Rust `nodeCompat` 配置和服务器资源/HTML 注入、Devtools 的模块资源选择已实现。上述阶段表已被当前实现取代，不再作为未开始的交付计划。剩余差距应按实际用户需求逐项决策；本调研频率不能单独决定新增 bridge 能力、原生依赖或公开 API。
 
-## 6. Sync API：历史提案与未决产品边界
+## 6. Sync API：既定同步 XHR 方案与历史细节
 
-以下 §6.1–§6.4 是此前讨论的候选方案和技术调研，**不是当前实现或已批准的规格**。历史文本同时记录了“只开放少数同步读 API”和“全量同步白名单”两种互相冲突的结论；两者均未落地，当前 NodeCompat 不导出同步文件 API。具体选择等待用户决定，不要从本节旧方案推断接口已经实现或已获决策。
+**2026-09-24 用户确认：同步调用沿用同步 XHR，属于既定方案，同步机制按低难度评估。** Sync API 的补齐成本主要是具体原生能力、接口接线及返回/错误映射；最新评级见 [逐项盘点](node-api-coverage.md)。
+
+以下 §6.1–§6.4 保留此前技术方案及白名单、超时、限额等细节。窄版/全量白名单的历史差异不再作为“同步方案未决”的依据；具体覆盖范围仍按模块/API 清单选择。当前盘点分支的 NodeCompat 未导出所列同步文件 API，不能仅凭方案已确定就把这些接口计为已实现。
 
 历史提案曾讨论同步 XHR 与打包期改写两条技术路线：
 

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "upstream": "v22.14.0",
+  "authorization": "User explicitly approved skipping these two Node-environment-specific differences on 2026-09-24; do not broaden this list implicitly.",
+  "entries": [
+    {
+      "id": "v8-erased-constructor-name",
+      "file": "test/parallel/test-util-format.js",
+      "sourceSha256": "7bd8052e3ce78695f377870bcea855b748e0d1ac1d2d1b2b7fe517167a8792e1",
+      "start": 7972,
+      "end": 8090,
+      "startLine": 196,
+      "endLine": 199,
+      "statement": "assert.strictEqual(\n    util.format('%s', Object.setPrototypeOf(new Foo(), null)),\n    '[Foo: null prototype] {}'\n  );",
+      "reason": "V8 retains an erased constructor name that standard WebView reflection does not expose."
+    },
+    {
+      "id": "native-cryptokey-material-equality",
+      "file": "test/parallel/test-assert-deep.js",
+      "sourceSha256": "b49cb36e976150f3d36872a60a0bc0b019944bc592745e5195687c9f6ad46fb0",
+      "start": 37236,
+      "end": 37267,
+      "startLine": 1365,
+      "endLine": 1365,
+      "statement": "assertDeepAndStrictEqual(a, b);",
+      "reason": "Node compares native CryptoKey material through private handles; the portable synchronous comparator cannot read it."
+    }
+  ]
+}

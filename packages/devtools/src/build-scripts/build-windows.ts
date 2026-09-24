@@ -1,9 +1,5 @@
 import { pathJoin, tempDirWith } from "../common/utils";
 import { versionInfoTemplate } from "../templates/windows-version-info-template";
-import {
-  resolveNodeCompatAssets,
-  stageProjectResourcesWithNodeCompat,
-} from "./node-compat";
 import type { BuildParams } from './base';
 
 export async function buildWindowsApp(params: BuildParams): Promise<string> {
@@ -21,27 +17,14 @@ export async function buildWindowsApp(params: BuildParams): Promise<string> {
     project.state.path,
     project.state.config.build?.resource
   );
-  const nodeCompatOption = project.state.config.nodeCompat;
-  const nodeCompatSelection = resolveNodeCompatAssets(nodeCompatOption);
   const buildPath = tempDirWith(
     `${project.state.name}_${project.state.uuid.slice(0, 8)}`
   );
-  const stagedResourcePath = pathJoin(buildPath, "node-compat-resources");
-  const resourcePathForPackager = nodeCompatSelection.enabled
-    ? stagedResourcePath
-    : projectResourcePath;
   const packagerPath = pathJoin(buildPath, "win_packager.exe");
   const versionInfoPath = pathJoin(buildPath, "VERSION_INFO");
 
   progress.addTask(locale.t("PREPARE_BUILD_ENVIRONMENT"), async () => {
     await fs.createDirAll(buildPath);
-    if (nodeCompatSelection.enabled) {
-      await stageProjectResourcesWithNodeCompat(
-        projectResourcePath,
-        stagedResourcePath,
-        nodeCompatOption,
-      );
-    }
   });
 
   progress.addTask(locale.t("BUILD_EXECUTABLE_FILE"), async () => {
@@ -57,7 +40,7 @@ export async function buildWindowsApp(params: BuildParams): Promise<string> {
       "--save-as",
       targetExe,
       "--resource-dir",
-      resourcePathForPackager,
+      projectResourcePath,
       "--config",
       project.state.configPath,
       "--version-info",

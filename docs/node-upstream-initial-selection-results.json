@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-24T10:17:12.146Z",
+  "runnerSha256": "a11833bf70e7d5a1e7eb68e25ba233ec713ce456a989f7c9dac6c0cb91048e26",
+  "environment": {
+    "node": "v22.14.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "scope": "Niva JS adapters in a Node host; not WebView/native acceptance",
+  "infrastructure": [
+    "host assert (not Niva assert)",
+    "host util for test diagnostics",
+    "host vm for test realms",
+    "host process/scheduling and Web Crypto platform primitive",
+    "host memory capacity for upstream enoughTestMem",
+    "live host cwd/env as explicit OS fixtures",
+    "host internal expected-error constructor and EventTarget introspection symbol",
+    "pinned fixture subprocess with Niva path routing"
+  ],
+  "results": [
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-alloc.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-bytelength.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-compare.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-concat.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-fill.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-from.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-indexof.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-tojson.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-buffer-write.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-events-list.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-events-listener-count-with-listener.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-events-once.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-basename.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-dirname.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-extname.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-glob.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-isabsolute.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-join.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-normalize.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-parse-format.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-relative.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path-resolve.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-path.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-querystring-escape.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-querystring-maxKeys-non-finite.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-querystring-multichar-separator.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-querystring.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-string-decoder-end.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-string-decoder-fuzz.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "file": "test/parallel/test-string-decoder.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder"
+    }
+  ],
+  "upstream": {
+    "version": "v22.14.0",
+    "commit": "5d2feb257bcee090e57900eb51720171a6aa92f3",
+    "repository": "https://github.com/nodejs/node"
+  },
+  "manifestSha256": "7f60ad27203feed67c223519d881b1337eb3e5618846080360c63b057d375a71",
+  "sourceSha256": {
+    "src/assert-strict.js": "b07954497bbc2d90501255e2bba10f8053e7d7984c77e508d0722f8ef025b5a9",
+    "src/assert.js": "5b23f6399345bb4f3406d5301a5f5c83e51fb5ff5bf5a53fe340bcf003461927",
+    "src/buffer.js": "44c925c106d5bf8ac9606c3472a9839fd2d9d4d5575a63095cafd68039f03d5f",
+    "src/child_process.js": "75103c22ed343fb579c8a5658afea3543db4dbfb2e34b1d218532ea4e8981bf8",
+    "src/crypto.js": "94a9764a3e4bee5a756054f1b8de84471519c31c2a48d25c1bd925e923d2eef4",
+    "src/dgram.js": "e4042cc7c3c10003a8face66dcaee963bf27a0e8b422130283dba00199f48c65",
+    "src/dns-promises.js": "aceb0412d0981d7ecb014d2bf782ac1008d465d7ed6c117116cef369d2d39513",
+    "src/dns.js": "9b4d5a95ed3346ecb8fc26c71b1b1043512310c624c0d5b60c746989bd99f0c4",
+    "src/events.js": "b8ab7c6ad200c092b0a0e8c57ca8c41b7b4d7e0d9971963392eff682d12aa8ea",
+    "src/fs-promises.js": "b2f0d56f7df5e21de6856e0d592c2251ccb8813527b82e2675c81fd77b5624bf",
+    "src/fs.js": "ebda1b77e91ac3953cadb75d8ab8bf10938ad6ce9df8d89464ab5c596de464d9",
+    "src/http.js": "2d131602907bc1afab495ae00f9199dbc46a65fe0ec09494ba49037991c17abb",
+    "src/https.js": "9af5f83d1ce91aedd16501d6455b5d668bd52c6ed1d9d6abc7539d075bf46139",
+    "src/index.js": "2cbb6bb4243dcf4cce1fdd370d5e77853c8c83d25bf947fa6e7589c07c53a74f",
+    "src/net.js": "03d7723dc0ef841b7870228cd930940df258a514e70731ceed66f6364c20b1cb",
+    "src/os.js": "147e2bce271317e848190c056c19b634c867bb1b04c551cd75d207e13994d766",
+    "src/path.js": "32b6fc0e6d06647e8a4e4dd24cdce5e5c0fe1391e7e0a423735fcb2f3fba0637",
+    "src/process.js": "20ef2da17a02a33dbe04c82a1c8b46be575013a626a1d5375f08f31a1239de5e",
+    "src/querystring.js": "e8f42961940725bb68cd77f60563bda034a306686f82e25ca92e65d6c1b97a67",
+    "src/stream-promises.js": "afbbbabfd6470a057fd64ee9b0428280288290416665fea709df25eea739e1ec",
+    "src/stream.js": "083b94613d5efba03206a95c5da595d5e082955b6e3e42026c4b5c427861a822",
+    "src/string_decoder.js": "9c3a476f153b0802ea81528aee316c9d447ab24dc6b18b28594c6db9dedcc625",
+    "src/timers-promises.js": "06b0ad3041e01e8029dd29406697d92f711d703a68c74d591918d89b71534f75",
+    "src/timers.js": "2a27e9d233cd74cfe49e0140331c5aef8f27ed73d69c0966fd364f0a946920fc",
+    "src/tls.js": "5ae76174f44f5a96280fde74d3099ad383fa96b77a120394bc910a33e767d5e6",
+    "src/url.js": "79d9a8e6b1a15261054a11ab3ca0561184fba428b2f42d3da8f0a3daf495ee84",
+    "src/util.js": "5f40df50e4bc5c870e9881631551112b9cc552065c6bac40bcefa36359ad2fb6",
+    "src/zlib.js": "111e2aea7f57a505b37953835fe7eee287a35614906a5d8a7f348dce58af7228",
+    "src/runtime/assert.js": "a44b805f12baf23db9436073e97741c54c37cd038a6289a0b59110c7cf80e39b",
+    "src/runtime/bridge.js": "0263de39c7eb7d0204667d7ade10e9a051404a6fd260db77867b324f31a021be",
+    "src/runtime/buffer.js": "158a633c073c3423c43c24cc4f23a953f9003882b7372f3a3c0030b349aec13e",
+    "src/runtime/child_process.js": "3b25fc61a4227b6fa84dd6b3593c5bbc36c709f0562db17012a78581e53419dd",
+    "src/runtime/crypto.js": "98b15d5ad8af5e2db501ddcee3a265f83a9f6c2cb5edc596056ec291c4795c2d",
+    "src/runtime/dgram.js": "e00f752e1cc579301f4db4e556cfef72f6ce775e1f086e1b529c048ce929e491",
+    "src/runtime/dns.js": "2fa810b16dd7e09bf35fff5a4951288e847cabe062b346af884dee849aa0479c",
+    "src/runtime/events.js": "f252ad217f10a6a4b975171cf78aabec3fe52350858e8ab708fc53388e661cda",
+    "src/runtime/fs.js": "207d0e7d56bd275921033f575992589cce83b40d10ee4b158b7e6f3aba680f4e",
+    "src/runtime/http.js": "edcada6a561cada31b5d76464997d29ad5a438c9ed47cb9efd445ba5c0769fec",
+    "src/runtime/net.js": "9be84bebe7991cb0c3afd887cfac7f00ca07916b87f2102f0fe78c6118cab0b5",
+    "src/runtime/os.js": "85ca4260a98b9575248a41bc5ede6fd6019dcd04f773d0e74d80a551de8b60c7",
+    "src/runtime/path.js": "eefca2ebb864974450c827495f6e003b33f3deaafd4aa0bb6ea0f96a17a6fcbc",
+    "src/runtime/process.js": "e073c8efa8c377e8746fc338cc8be99076fb83838270777a1abacccf77b4df58",
+    "src/runtime/querystring.js": "1c2b6c6da76c2ac9ba997c38a479b36904d06960059a77323dbcdc28664031e6",
+    "src/runtime/registration.js": "ef0d7a66566f11ad77c4aae437de9b110ece468db042c9f999bd6bead5396999",
+    "src/runtime/stream.js": "4d4e15ddf0b87781e92f9cd034711e4d1dd0e0f2af949bf797db3226040c7c82",
+    "src/runtime/string_decoder.js": "c2317a04a3a7cd7a7870c7d2c11d60f0a4e53f59316d4c4d6ae1c980f00c7370",
+    "src/runtime/timers.js": "87251c9f8b60fdfe5385736f6aff03b23409f954150b00fbe5b0b7df8237073c",
+    "src/runtime/tls.js": "88687e74d9bfc80f3c2ac928595fd77ed401ec058e4a58e8e68add2c868b4c69",
+    "src/runtime/url.js": "53659940bc9e07e38dd6a00b50316b8c6f694d70c05cfffa007272757d1eeb7d",
+    "src/runtime/util.js": "9658d5187e058871a5cfd3512776152a7d23a6dd4abe7e951a8dc8fb7b73c5cf",
+    "src/runtime/vendor.js": "74abab352fe3bb7fcc165b0c367896bba40b32e2d8ef3af24560f457b7d42c29",
+    "src/runtime/zlib.js": "3a288b06ddb6b93a52aca85334d36fe3897d4f7ba24122d0863431af3688a182"
+  },
+  "counts": {
+    "total": 30,
+    "pass": 30,
+    "fail": 0,
+    "unsupported": 0
+  },
+  "passed": true,
+  "finishedAt": "2026-09-24T10:17:14.476Z"
+}

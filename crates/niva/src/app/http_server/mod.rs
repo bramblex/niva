@@ -43,11 +43,6 @@ struct ServerState {
 impl NivaHttpServer {
     pub fn start(app: &Arc<NivaApp>) -> Result<Arc<Self>> {
         let node_compat = NodeCompat::from_option(&app.launch_info.options.node_compat)?;
-        if node_compat.is_some() && !app.resource().exists("__niva_compat/node-compat.js") {
-            return Err(anyhow!(
-                "nodeCompat enabled but packaged adapter assets are missing"
-            ));
-        }
         let listener = smol::block_on(TcpListener::bind("127.0.0.1:0"))?;
         let port = listener.local_addr()?.port();
 
@@ -175,7 +170,12 @@ fn parse_head(raw: &[u8]) -> Result<(HttpHead, Vec<u8>)> {
             break;
         }
         if let Some((name, value)) = line.split_once(':') {
-            headers.insert(name.trim().to_lowercase(), value.trim().to_string());
+            let name = name.trim().to_lowercase();
+            if headers.insert(name, value.trim().to_string()).is_some() {
+                return Err(anyhow!("duplicate HTTP header"));
+            }
+        } else {
+            return Err(anyhow!("malformed HTTP header"));
         }
     }
     Ok((
@@ -239,6 +239,90 @@ fn is_document_navigation(headers: &HashMap<String, String>) -> bool {
         .unwrap_or(false)
 }
 
+const MAX_SYNC_BODY: usize = 16 * 1024 * 1024;
+
+fn sync_body_length(headers: &HashMap<String, String>) -> Result<usize> {
+    if headers.contains_key("transfer-encoding") {
+        return Err(anyhow!("synchronous requests require Content-Length"));
+    }
+    let length = headers
+        .get("content-length")
+        .ok_or_else(|| anyhow!("missing length"))?;
+    if length.is_empty() || !length.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(anyhow!("invalid length"));
+    }
+    let length: usize = length.parse()?;
+    if length > MAX_SYNC_BODY {
+        return Err(anyhow!("request too large"));
+    }
+    Ok(length)
+}
+
+#[derive(serde::Deserialize)]
+struct SyncEnvelope {
+    token: String,
+    request: super::api_manager::ApiRequest,
+}
+
+async fn handle_sync(
+    state: &Arc<ServerState>,
+    stream: &mut smol::net::TcpStream,
+    head: &HttpHead,
+) -> Result<()> {
+    let Ok(length) = sync_body_length(&head.headers) else {
+        return write_response(
+            stream,
+            400,
+            "Bad Request",
+            "text/plain",
+            b"invalid request framing",
+        )
+        .await;
+    };
+    let mut body = vec![0; length];
+    let read = smol::future::or(
+        async {
+            stream
+                .read_exact(&mut body)
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        async {
+            smol::Timer::after(Duration::from_secs(10)).await;
+            Err(anyhow!("request timeout"))
+        },
+    )
+    .await;
+    if read.is_err() {
+        return Ok(());
+    }
+    let Ok(envelope) = serde_json::from_slice::<SyncEnvelope>(&body) else {
+        return write_response(stream, 400, "Bad Request", "text/plain", b"invalid request").await;
+    };
+    let window = state
+        .app
+        .window()
+        .ok()
+        .and_then(|windows| windows.get_window_by_token(&envelope.token).ok());
+    let Some(window) = window else {
+        return write_response(stream, 403, "Forbidden", "text/plain", b"unauthorized").await;
+    };
+    let Some(origin) = head
+        .headers
+        .get("origin")
+        .filter(|origin| window.trusted_ws_origin.as_deref() == Some(origin.as_str()))
+    else {
+        return write_response(stream, 403, "Forbidden", "text/plain", b"unauthorized").await;
+    };
+    let response = state
+        .app
+        .api()
+        .sync_call(window.id, envelope.request)
+        .await?;
+    write_response_headers(stream, 200, "OK", "application/json", response.as_bytes(),
+        &format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n")).await
+}
+
 async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream) -> Result<()> {
     let (head, raw_head) = read_head(&mut stream).await?;
 
@@ -249,6 +333,10 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
         .is_none_or(|host| host != &expected_host)
     {
         return write_response(&mut stream, 403, "Forbidden", "text/plain", b"bad host").await;
+    }
+
+    if head.method == "POST" && head.target == "/__niva_sync" {
+        return handle_sync(state, &mut stream, &head).await;
     }
 
     if head.method != "GET" {
@@ -292,7 +380,9 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
         if !compat.allows_asset(relative) {
             return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
         }
-        return match state.resource.load(relative) {
+        return match NodeCompat::embedded_asset(relative)
+            .ok_or_else(|| anyhow!("missing embedded asset"))
+        {
             Ok(content) => {
                 let content = if relative == "__niva_compat/node-compat.js" {
                     compat.classic_script(&content)?
@@ -748,36 +838,34 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
     }
 
     ws.get_ref()
-        .set_read_timeout(Some(Duration::from_millis(200)))?;
-    loop {
+        .set_read_timeout(Some(Duration::from_millis(10)))?;
+    // Drain on every iteration, including while uploads are active. Previously
+    // continuously arriving frames starved all write acknowledgements until a
+    // read timeout, preventing socket backpressure from making progress.
+    'pump: loop {
+        use crate::app::window_manager::window::WsOut;
+        for _ in 0..64 {
+            let Ok(out) = rx.try_recv() else {
+                break;
+            };
+            let sent = match out {
+                WsOut::Text(text) => ws.send(Message::text(text)),
+                WsOut::Binary(bytes) => ws.send(Message::Binary(bytes.into())),
+            };
+            if sent.is_err() {
+                break 'pump;
+            }
+        }
         match ws.read() {
-            Ok(Message::Text(text)) => {
-                handle_ws_request(state, &window, connection_id, &tx, &text);
-            }
-            Ok(Message::Binary(bytes)) => {
-                handle_ws_binary(state, &window, connection_id, &bytes);
-            }
+            Ok(Message::Text(text)) => handle_ws_request(state, &window, connection_id, &tx, &text),
+            Ok(Message::Binary(bytes)) => handle_ws_binary(state, &window, connection_id, &bytes),
             Ok(Message::Close(_)) => break,
             Ok(_) => {}
             Err(tungstenite::Error::Io(err))
-                if err.kind() == std::io::ErrorKind::TimedOut
-                    || err.kind() == std::io::ErrorKind::WouldBlock =>
-            {
-                // No inbound traffic: flush outbound queue.
-                use crate::app::window_manager::window::WsOut;
-                while let Ok(out) = rx.try_recv() {
-                    let sent = match out {
-                        WsOut::Text(text) => ws.send(Message::text(text)).is_ok(),
-                        WsOut::Binary(bytes) => ws.send(Message::Binary(bytes.into())).is_ok(),
-                    };
-                    if !sent {
-                        break;
-                    }
-                }
-            }
-            Err(tungstenite::Error::AlreadyClosed) | Err(tungstenite::Error::ConnectionClosed) => {
-                break;
-            }
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) => {}
             Err(_) => break,
         }
     }
@@ -855,6 +943,25 @@ mod tests {
 
         length_headers.insert("content-length".into(), (1024 * 1024 + 1).to_string());
         assert!(!smol::block_on(drain_rejected_body(&mut length_body, &length_headers)).unwrap());
+    }
+
+    #[test]
+    fn sync_rejects_ambiguous_or_unbounded_framing() {
+        assert!(
+            parse_head(
+                b"POST /__niva_sync HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n"
+            )
+            .is_err()
+        );
+        let mut headers = HashMap::from([("content-length".into(), "12".into())]);
+        assert_eq!(sync_body_length(&headers).unwrap(), 12);
+        headers.insert("transfer-encoding".into(), "chunked".into());
+        assert!(sync_body_length(&headers).is_err());
+        headers.remove("transfer-encoding");
+        headers.insert("content-length".into(), (MAX_SYNC_BODY + 1).to_string());
+        assert!(sync_body_length(&headers).is_err());
+        headers.insert("content-length".into(), "+12".into());
+        assert!(sync_body_length(&headers).is_err());
     }
 
     #[test]

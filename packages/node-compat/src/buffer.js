@@ -1,4 +1,5 @@
 import "./runtime/bridge.js";
+import "./runtime/vendor.js";
 import "./runtime/buffer.js";
 
 const buffer = globalThis[Symbol.for("niva.node-compat.runtime")].buffer;

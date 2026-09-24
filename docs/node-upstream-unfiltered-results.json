@@ -1,0 +1,1039 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-24T13:40:37.450Z",
+  "runnerSha256": "84b8208924fb3de6e44c2d8dae1ea738df1b9ac0ab6dbb0073c629329fd210b6",
+  "helperSha256": {
+    "upstream-native-bridge.mjs": "093ca5a7240e6b3ab1f5e3fed7fc0bcd6dd50d67b6fbc333fd41f6d9d35a16e5",
+    "upstream-native-relay.py": "610f1fe91823d24c1b55c8a41f542a88044223f9e43d441b3da138f5926f6240",
+    "upstream-util-fixture.mjs": "a3bc1677254c3fc5798130804c0a43c85639785099386d90e8bec7442b95f62c",
+    "upstream-child-fixtures.cjs": "bd91a512f37d23fdbe454d5b537242a29f9765a39785703400eda28f56f6951f",
+    "upstream-environment-exclusions.mjs": "0a6a7307cc3f24422403d2bd03520fd5432262d06e5f6060e725199f51ee9ce8"
+  },
+  "environment": {
+    "node": "v22.14.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "scope": "Full unfiltered upstream files against Niva adapters and real Native relay",
+  "environmentPolicy": {
+    "mode": "unfiltered",
+    "sha256": "607ac4076ac99a8915c452071f37b3429db78d5cecb8eb0353cb05a5cd9092f1"
+  },
+  "infrastructure": [
+    "host assert oracle except assert-subject tests use Niva assert",
+    "host util diagnostics except util-subject tests use Niva util",
+    "host vm for test realms",
+    "host process/scheduling and Web Crypto platform primitive",
+    "host memory capacity for upstream enoughTestMem",
+    "live host cwd/env as explicit OS fixtures",
+    "host internal expected-error constructor and EventTarget introspection symbol",
+    "pinned fixture subprocess with Niva path or util routing",
+    "host fs stat/statSync only as util.promisify fixture",
+    "native suite: isolated real WebView Niva.call/callSync/stream relay, no host filesystem/network API replacement",
+    "child_process test uses host process.execPath to launch pinned Node as an external program through real Native",
+    "host EventTarget listener introspection for child_process abort checks"
+  ],
+  "results": [
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "dd313db2b6b6679092018d0d1a2b1608036990afc8fb0c619ae68988dc55899d",
+      "file": "test/parallel/test-buffer-alloc.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "7821f8278d17e4367e54ac9fe01ff8df77a32e40262286586665586b615c4e66",
+      "file": "test/parallel/test-buffer-bytelength.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "31ca4edc3766b623fbb27088b0a7dee091c7c2bd547b9b428c79aec897083352",
+      "file": "test/parallel/test-buffer-compare.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "d320b87463a06e6d65691118f26e96bcd93c771ffdf3287afe84974a9204e169",
+      "file": "test/parallel/test-buffer-concat.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "d7334366077dc073145011c6efdd4a61e3013a9ea12c94e845a74902b57e56b6",
+      "file": "test/parallel/test-buffer-fill.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "46a55d69b721ed48ad48f0ddd88154adb2934abc99f94e5b188f6d2928e209bd",
+      "file": "test/parallel/test-buffer-from.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "4546d19f43350e91b1f51306f06466d85d8d0a6b6b108887b6b3857fd677ae37",
+      "file": "test/parallel/test-buffer-indexof.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "8f8bd78041033e87ed0196b0cf7d3c8574bebdbff012eabed6a6711f59bc39f0",
+      "file": "test/parallel/test-buffer-tojson.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "93170535c0a63b72a446c7f4a5e8871c4f7005af7eeac99b5bdbec5cdf641a08",
+      "file": "test/parallel/test-buffer-write.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "buffer",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "0681d1fab7f2e9553a7cb7cb6bd04772702a4ebd8c88dc63bd43fcfcb2572ee9",
+      "file": "test/parallel/test-events-list.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "a5c5dad35b3ad20bf00db8614e3a0049947b5320d16324122c0bd0eb68762255",
+      "file": "test/parallel/test-events-listener-count-with-listener.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "0a92d06fb886f55aeedf4f28ab33809e8cbee4a31208d11bc702e1e8a41a34eb",
+      "file": "test/parallel/test-events-once.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "events",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "65597c05aba2382d01fbe265db8f1c4f6a8a3abfbde15b195fc132ef33b285a5",
+      "file": "test/parallel/test-path-basename.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "8c2deec17cf44d2a5d64a60a3f692fad69635b28e225451aa2619bc53b2da30a",
+      "file": "test/parallel/test-path-dirname.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "923a9c4d615770ea3aa054756d21046c17883d350fe53dc7dad22ae65bb24048",
+      "file": "test/parallel/test-path-extname.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "2662446d1550ea128ae1e54334e977d915c1adb50f8eecfe9f6d8832a5b26c04",
+      "file": "test/parallel/test-path-glob.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "08a508f0392e255f3b42c435b384fdc35af70ae0c64ab63e279c78f10823c8a0",
+      "file": "test/parallel/test-path-isabsolute.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "f8f4fdda0cbc7d9598685c84edf9d1c144708d45cd11e15f534c91935037f1ae",
+      "file": "test/parallel/test-path-join.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "5eaea8af1bca8cefeb49cdeb808cfbea0b8339e2d920e713d4a5472302623c36",
+      "file": "test/parallel/test-path-normalize.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "1eca0e56c88a65727ea7717b13dda9a33e659df6bd5cd2075f67c6f17dbd600e",
+      "file": "test/parallel/test-path-parse-format.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "c50c170b438c400fb3a693e99c16f21f6c2f5ccdfab6626765b54b26f58bae03",
+      "file": "test/parallel/test-path-relative.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "dbfd7e81cb4fac3b6df3443ce34e98db2265da1edc35bd35ebd8db0108c19c0d",
+      "file": "test/parallel/test-path-resolve.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "fa6a6b3db2f451b2a8c3eb9155cb3fa8929f2e1bf6ce9bcafe1b1ba982450fa6",
+      "file": "test/parallel/test-path.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "path",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "76a4cc226e3de5e522da1c4ec12b4610a981d1d471832106a5a167691a2e72e6",
+      "file": "test/parallel/test-querystring-escape.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "aa946251bc025f3b89b81446777ff723b6c7a87b4b28d461df5cb5b331f5ec68",
+      "file": "test/parallel/test-querystring-maxKeys-non-finite.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "04bbfbf3fd3dd97442acd19ae025d3e6310eae4f981bb55c45a5846f28d7748b",
+      "file": "test/parallel/test-querystring-multichar-separator.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "b542bd7e2045fa2d6f51318ec2850ee6219c408fdb6ac518fc4cb1e1b47f4f04",
+      "file": "test/parallel/test-querystring.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "querystring",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "7c7a2001863059594d112a8450e3808e891f6c8e06d0f62e57920411545a8cb9",
+      "file": "test/parallel/test-string-decoder-end.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "a3e665a923c69dcfe39c0992ec670adcd4d418b53a91aa93d8957f59666b0c28",
+      "file": "test/parallel/test-string-decoder-fuzz.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "f556e3745ae83dd118dc38f740fcf23da9b8db9a2c7c301d1938e38f97884393",
+      "file": "test/parallel/test-string-decoder.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "string_decoder",
+      "execution": "js-host"
+    },
+    {
+      "status": "fail",
+      "reason": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ '[Object: null prototype] {}'\n- '[Foo: null prototype] {}'\n\n    at /Users/brambles/Workspace/playground/niva/packages/node-compat/upstream/node-v22.14.0/test/parallel/test-util-format.js:196:10\n    at runCase (file:///Users/brambles/Workspace/playground/niva/packages/node-compat/scripts/test-upstream.mjs:377:217)\n    at async file:///Users/brambles/Workspace/playground/niva/packages/node-compat/scripts/test-upstream.mjs:396:3",
+      "executedSourceSha256": "7bd8052e3ce78695f377870bcea855b748e0d1ac1d2d1b2b7fe517167a8792e1",
+      "file": "test/parallel/test-util-format.js",
+      "exitCode": 1,
+      "signal": null,
+      "stderr": "",
+      "module": "util",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "c1044d2c09a412e11ab746da0429f58ed2ff53da427333ace1755a2fe9b06845",
+      "file": "test/parallel/test-util-promisify.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "util",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "9658652084025c42f5c5ac0663dddd157edd094f0e25d98137e13a77735e3fc2",
+      "file": "test/parallel/test-util-callbackify.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "util",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "9620e17ed59cd7fff0bc39f3b3a5bf38d1845c2860854f5bb0ca8b475e619c42",
+      "file": "test/parallel/test-util-deprecate.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "util",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "subtests": [
+        {
+          "name": "some basics",
+          "status": "pass"
+        },
+        {
+          "name": "Throw message if the message is instanceof Error",
+          "status": "pass"
+        },
+        {
+          "name": "Errors created in different contexts are handled as any other custom error",
+          "status": "pass"
+        },
+        {
+          "name": "assert.throws()",
+          "status": "pass"
+        },
+        {
+          "name": "Check messages from assert.throws()",
+          "status": "pass"
+        },
+        {
+          "name": "Test assertion messages",
+          "status": "pass"
+        },
+        {
+          "name": "Custom errors",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that throws() and doesNotThrow() throw on non-functions",
+          "status": "pass"
+        },
+        {
+          "name": "https://github.com/nodejs/node/issues/3275",
+          "status": "pass"
+        },
+        {
+          "name": "Long values should be truncated for display",
+          "status": "pass"
+        },
+        {
+          "name": "Output that extends beyond 10 lines should also be truncated for display",
+          "status": "pass"
+        },
+        {
+          "name": "Bad args to AssertionError constructor should throw TypeError.",
+          "status": "pass"
+        },
+        {
+          "name": "NaN is handled correctly",
+          "status": "pass"
+        },
+        {
+          "name": "Test strict assert",
+          "status": "pass"
+        },
+        {
+          "name": "Additional asserts",
+          "status": "pass"
+        },
+        {
+          "name": "Throws accepts objects",
+          "status": "pass"
+        },
+        {
+          "name": "Additional assert",
+          "status": "pass"
+        },
+        {
+          "name": "assert/strict exists",
+          "status": "pass"
+        }
+      ],
+      "executedSourceSha256": "0c2313387ec5ca6ffe60ff80a58afe214fda009682342736c9c2ce67a8a40a5a",
+      "file": "test/parallel/test-assert.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "assert",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "9c52a4fa94a588d37ba0dba18015e2cc9c6052e2b286d2529854345ac26440f0",
+      "file": "test/parallel/test-assert-async.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "assert",
+      "execution": "js-host"
+    },
+    {
+      "status": "fail",
+      "reason": "AssertionError: Expected values to be loosely deep-equal:\n\nCryptoKey {}\n\nshould loosely deep-equal\n\nCryptoKey {}\n    at assertDeepAndStrictEqual (/Users/brambles/Workspace/playground/niva/packages/node-compat/upstream/node-v22.14.0/test/parallel/test-assert-deep.js:199:10)\n    at /Users/brambles/Workspace/playground/niva/packages/node-compat/upstream/node-v22.14.0/test/parallel/test-assert-deep.js:1365:5",
+      "subtests": [
+        {
+          "name": "deepEqual",
+          "status": "pass"
+        },
+        {
+          "name": "date",
+          "status": "pass"
+        },
+        {
+          "name": "regexp",
+          "status": "pass"
+        },
+        {
+          "name": "deepEqual should pass for these weird cases",
+          "status": "pass"
+        },
+        {
+          "name": "es6 Maps and Sets",
+          "status": "pass"
+        },
+        {
+          "name": "GH-6416. Make sure circular refs do not throw",
+          "status": "pass"
+        },
+        {
+          "name": "GH-14441. Circular structures should be consistent",
+          "status": "pass"
+        },
+        {
+          "name": "Ensure reflexivity of deepEqual with `arguments` objects.",
+          "status": "pass"
+        },
+        {
+          "name": "More checking that arguments objects are handled correctly",
+          "status": "pass"
+        },
+        {
+          "name": "Handle sparse arrays",
+          "status": "pass"
+        },
+        {
+          "name": "Handle different error messages",
+          "status": "pass"
+        },
+        {
+          "name": "Handle NaN",
+          "status": "pass"
+        },
+        {
+          "name": "Handle boxed primitives",
+          "status": "pass"
+        },
+        {
+          "name": "Minus zero",
+          "status": "pass"
+        },
+        {
+          "name": "Handle symbols (enumerable only)",
+          "status": "pass"
+        },
+        {
+          "name": "Additional tests",
+          "status": "pass"
+        },
+        {
+          "name": "Having the same number of owned properties && the same set of keys",
+          "status": "pass"
+        },
+        {
+          "name": "Having an identical prototype property",
+          "status": "pass"
+        },
+        {
+          "name": "Primitives",
+          "status": "pass"
+        },
+        {
+          "name": "Additional tests",
+          "status": "pass"
+        },
+        {
+          "name": "Having the same number of owned properties && the same set of keys",
+          "status": "pass"
+        },
+        {
+          "name": "Prototype check",
+          "status": "pass"
+        },
+        {
+          "name": "Check extra properties on errors",
+          "status": "pass"
+        },
+        {
+          "name": "Check proxies",
+          "status": "pass"
+        },
+        {
+          "name": "Strict equal with identical objects that are not identical by reference and longer than 50 elements",
+          "status": "pass"
+        },
+        {
+          "name": "Basic valueOf check",
+          "status": "pass"
+        },
+        {
+          "name": "Basic array out of bounds check",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that manipulating the `getTime()` function has no impact on the time verification.",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that an array and the equivalent fake array object are correctly compared",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that extra keys will be tested for when using fake arrays",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that changed tags will still check for the error message",
+          "status": "pass"
+        },
+        {
+          "name": "Check for non-native errors",
+          "status": "pass"
+        },
+        {
+          "name": "Check for Errors with cause property",
+          "status": "pass"
+        },
+        {
+          "name": "Check for AggregateError",
+          "status": "pass"
+        },
+        {
+          "name": "Verify that `valueOf` is not called for boxed primitives",
+          "status": "pass"
+        },
+        {
+          "name": "Check getters",
+          "status": "pass"
+        },
+        {
+          "name": "Verify object types being identical on both sides",
+          "status": "pass"
+        },
+        {
+          "name": "Verify commutativity",
+          "status": "pass"
+        },
+        {
+          "name": "Crypto",
+          "status": "fail",
+          "reason": "AssertionError: Expected values to be loosely deep-equal:\n\nCryptoKey {}\n\nshould loosely deep-equal\n\nCryptoKey {}\n    at assertDeepAndStrictEqual (/Users/brambles/Workspace/playground/niva/packages/node-compat/upstream/node-v22.14.0/test/parallel/test-assert-deep.js:199:10)\n    at /Users/brambles/Workspace/playground/niva/packages/node-compat/upstream/node-v22.14.0/test/parallel/test-assert-deep.js:1365:5"
+        }
+      ],
+      "executedSourceSha256": "b49cb36e976150f3d36872a60a0bc0b019944bc592745e5195687c9f6ad46fb0",
+      "file": "test/parallel/test-assert-deep.js",
+      "exitCode": 1,
+      "signal": null,
+      "stderr": "",
+      "module": "assert",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "subtests": [
+        {
+          "name": "No args",
+          "status": "pass"
+        },
+        {
+          "name": "One arg = message",
+          "status": "pass"
+        },
+        {
+          "name": "One arg = Error",
+          "status": "pass"
+        },
+        {
+          "name": "Object prototype get",
+          "status": "pass"
+        }
+      ],
+      "executedSourceSha256": "939b232765da3e56568b2279df53d72ea02a1a1937a2bcad67935a88434dd41d",
+      "file": "test/parallel/test-assert-fail.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "assert",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "subtests": [
+        {
+          "name": "invalid arguments",
+          "status": "pass"
+        },
+        {
+          "name": "input must be a file URL",
+          "status": "pass"
+        },
+        {
+          "name": "fileURLToPath with host",
+          "status": "pass"
+        },
+        {
+          "name": "fileURLToPath with invalid path",
+          "status": "pass"
+        },
+        {
+          "name": "fileURLToPath with windows path",
+          "status": "platform-excluded"
+        },
+        {
+          "name": "fileURLToPath with posix path",
+          "status": "pass"
+        },
+        {
+          "name": "options is null",
+          "status": "pass"
+        },
+        {
+          "name": "defaultTestCases",
+          "status": "pass"
+        }
+      ],
+      "executedSourceSha256": "306e82570c440d5b414c1ccc0458b032801da1ede6ffcb369c85767460f838f8",
+      "file": "test/parallel/test-url-fileurltopath.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "url",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "7ce6dca0b33df728f80adccc2550fe80c27cf368172b7a17597cecda8a3e6fb9",
+      "file": "test/parallel/test-url-pathtofileurl.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "url",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "cb76189bc2292e3f21f8bb6acf288c03315994bdd3803ae0650842cfbb60b6ae",
+      "file": "test/parallel/test-crypto-pbkdf2.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "crypto",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "a7b7c2a1ba1791276e1b7d911b3084d8f5fc82f72b88671a13cf8643583a9f2e",
+      "file": "test/parallel/test-crypto-randomuuid.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "crypto",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "5b99de86a8f1c6da0116876b64f1c88cc687df5397ef085eeaa50e90615403e7",
+      "file": "test/parallel/test-zlib-from-gzip-with-trailing-garbage.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "zlib",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "ff8b9bb394b81ba35c76496e6a609a1d2c80f8a049731c6e0ab72f29915e4362",
+      "file": "test/parallel/test-zlib-kmaxlength-rangeerror.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "zlib",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "f241bfc467121b9ddfc1f76cb2de67afaa29aed63b8eb04812e95afe0992f376",
+      "file": "test/parallel/test-stream-pipeline-with-empty-string.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "stream",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "1327f0087c9ed6b9640f66708ab2ba72305e94b8ac7c29ba7500654d3e59a4b4",
+      "file": "test/parallel/test-stream-pipeline-async-iterator.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "stream",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "abdc0764a6007998bb65d3077f243dec9a20743c5f5e50f27f187c004e1f9203",
+      "file": "test/parallel/test-timers.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "timers",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "38744e53f8d159a7fee0e57cc80f8a8d072bc7969b67aeb0d773cb9e53ff887c",
+      "file": "test/parallel/test-timers-promises-scheduler.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "timers",
+      "execution": "js-host"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "a8cb5228c030b21dd560feb7362391fa217a3f9c06ecb2bd624103ce73151395",
+      "file": "test/parallel/test-fs-promises-writefile-typedarray.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "fs",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "8278bee65285675b34cd86f790aff25d141b77e6f97dbc2555c5419533f15b09",
+      "file": "test/parallel/test-process-chdir.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "process",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "73a45b0254148f05880076dac887bf62f2c58082b191708e99ba256cc6bd4f76",
+      "file": "test/parallel/test-os-eol.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "os",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "18b95b50f723a722e16b6bcc0a9eaa136fbeacd8045ec7bd5cf7be5ecfe68261",
+      "file": "test/parallel/test-child-process-execfile.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "child_process",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "b7c31fc3fdb4bde2f5629a07d0e95e2c63aa972f12791c07c6a0535be7b9975c",
+      "file": "test/parallel/test-http-client-get-url.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "http",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "c1df2fab79cf60dd11c631076660ec453f770b3d17d30edc2e2b358af2f2bac7",
+      "file": "test/parallel/test-https-options-boolean-check.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "https",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "311b8a531b2f916b80e36ca8d38fc3c49a993415ee088009be85bccff55b8359",
+      "file": "test/parallel/test-net-server-close.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "net",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "44fd890ebe9cf275957947a5dfac8dfa1eeabad89b5e93b014a2b400a5bd97f8",
+      "file": "test/parallel/test-tls-connect-no-host.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "tls",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "1843e0d81947b45f05c4aa6413e94240b475422efbc35853d9339e889297b96b",
+      "file": "test/parallel/test-dns-resolvens-typeerror.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "dns",
+      "execution": "native"
+    },
+    {
+      "status": "pass",
+      "reason": null,
+      "executedSourceSha256": "ac1386a7377706aa54e0be120da122cbf6e2753c955e42cbf83b53d87c822be4",
+      "file": "test/parallel/test-dgram-udp4.js",
+      "exitCode": 0,
+      "signal": null,
+      "stderr": "",
+      "module": "dgram",
+      "execution": "native"
+    }
+  ],
+  "suite": "all",
+  "frozenTotal": 58,
+  "outsideSuite": [],
+  "native": {
+    "binary": "/Users/brambles/Workspace/playground/niva/target/release/niva",
+    "sha256": "6087161cb13e6cc6da51c5ae8a80914cf89d25b0d07f86a1d9227284781b9c5a"
+  },
+  "upstream": {
+    "version": "v22.14.0",
+    "commit": "5d2feb257bcee090e57900eb51720171a6aa92f3",
+    "repository": "https://github.com/nodejs/node"
+  },
+  "manifestSha256": "4daa582a0a347db764cae3e5d09de8a0ac16f54ed3b34e09a509090ac8e1a350",
+  "sourceSha256": {
+    "src/assert-strict.js": "c84446cf344f42c00a0213333010eee54f013da186f03159cd92cf7c12ae6566",
+    "src/assert.js": "51ace7b1d8ac0541a92cb8a715957fdb5ec8ba84447a238b13c030afac53f2f6",
+    "src/buffer.js": "44c925c106d5bf8ac9606c3472a9839fd2d9d4d5575a63095cafd68039f03d5f",
+    "src/child_process.js": "75103c22ed343fb579c8a5658afea3543db4dbfb2e34b1d218532ea4e8981bf8",
+    "src/crypto.js": "233b742252efdfabb5e84aa0c1fd8774813e2c03f0647e84acec6fdd95a6ab2b",
+    "src/dgram.js": "e4042cc7c3c10003a8face66dcaee963bf27a0e8b422130283dba00199f48c65",
+    "src/dns-promises.js": "aceb0412d0981d7ecb014d2bf782ac1008d465d7ed6c117116cef369d2d39513",
+    "src/dns.js": "9b4d5a95ed3346ecb8fc26c71b1b1043512310c624c0d5b60c746989bd99f0c4",
+    "src/events.js": "b8ab7c6ad200c092b0a0e8c57ca8c41b7b4d7e0d9971963392eff682d12aa8ea",
+    "src/fs-promises.js": "b2f0d56f7df5e21de6856e0d592c2251ccb8813527b82e2675c81fd77b5624bf",
+    "src/fs.js": "ebda1b77e91ac3953cadb75d8ab8bf10938ad6ce9df8d89464ab5c596de464d9",
+    "src/http.js": "2d131602907bc1afab495ae00f9199dbc46a65fe0ec09494ba49037991c17abb",
+    "src/https.js": "9af5f83d1ce91aedd16501d6455b5d668bd52c6ed1d9d6abc7539d075bf46139",
+    "src/index.js": "2cbb6bb4243dcf4cce1fdd370d5e77853c8c83d25bf947fa6e7589c07c53a74f",
+    "src/net.js": "03d7723dc0ef841b7870228cd930940df258a514e70731ceed66f6364c20b1cb",
+    "src/os.js": "147e2bce271317e848190c056c19b634c867bb1b04c551cd75d207e13994d766",
+    "src/path.js": "32b6fc0e6d06647e8a4e4dd24cdce5e5c0fe1391e7e0a423735fcb2f3fba0637",
+    "src/process.js": "20ef2da17a02a33dbe04c82a1c8b46be575013a626a1d5375f08f31a1239de5e",
+    "src/querystring.js": "e8f42961940725bb68cd77f60563bda034a306686f82e25ca92e65d6c1b97a67",
+    "src/stream-promises.js": "afbbbabfd6470a057fd64ee9b0428280288290416665fea709df25eea739e1ec",
+    "src/stream.js": "083b94613d5efba03206a95c5da595d5e082955b6e3e42026c4b5c427861a822",
+    "src/string_decoder.js": "9c3a476f153b0802ea81528aee316c9d447ab24dc6b18b28594c6db9dedcc625",
+    "src/timers-promises.js": "06b0ad3041e01e8029dd29406697d92f711d703a68c74d591918d89b71534f75",
+    "src/timers.js": "2a27e9d233cd74cfe49e0140331c5aef8f27ed73d69c0966fd364f0a946920fc",
+    "src/tls.js": "5ae76174f44f5a96280fde74d3099ad383fa96b77a120394bc910a33e767d5e6",
+    "src/url.js": "830412991a6954e392fa3b9f267a0ce735df4d186589aa6ab404114fe875bec6",
+    "src/util.js": "2aa6a478afca9900dc5a190795d8e3ef541c09f6b34ad0b52ab0359b06b70bb9",
+    "src/zlib.js": "111e2aea7f57a505b37953835fe7eee287a35614906a5d8a7f348dce58af7228",
+    "src/runtime/assert.js": "5bf75f0d838d45b46387c6fe47e71d456203c0320ba98f0343443872d30ecc0d",
+    "src/runtime/bridge.js": "0263de39c7eb7d0204667d7ade10e9a051404a6fd260db77867b324f31a021be",
+    "src/runtime/buffer.js": "9917306b2d6f1449de1ec73cb2222cad367e347b2fa57e46a828e32823434920",
+    "src/runtime/child_process.js": "63540dd21131253464fefc96c99f76c429ba8a8041a653d52db8f50dd8939737",
+    "src/runtime/crypto.js": "413a36c1858a936c8d73163fc55f2de4f7e6eee4951907a0e219c45e7e281a05",
+    "src/runtime/dgram.js": "e00f752e1cc579301f4db4e556cfef72f6ce775e1f086e1b529c048ce929e491",
+    "src/runtime/dns.js": "d195e8de9329d3840e86adc7d232c200d14036b99a953c84b4787fdd6a250017",
+    "src/runtime/events.js": "f252ad217f10a6a4b975171cf78aabec3fe52350858e8ab708fc53388e661cda",
+    "src/runtime/fs.js": "1d8c7f9a135d48fea0732537bc51d4e16aa280e60c02123cf122dbb5421dba8b",
+    "src/runtime/http.js": "edcada6a561cada31b5d76464997d29ad5a438c9ed47cb9efd445ba5c0769fec",
+    "src/runtime/net.js": "9be84bebe7991cb0c3afd887cfac7f00ca07916b87f2102f0fe78c6118cab0b5",
+    "src/runtime/os.js": "520aa10d5f37252059bebc6effde80784e506d792da381851a9b4a245a92eaf7",
+    "src/runtime/path.js": "eefca2ebb864974450c827495f6e003b33f3deaafd4aa0bb6ea0f96a17a6fcbc",
+    "src/runtime/process.js": "647f0dbea73ae24f4193348d4aa34ab8cf3058d7ff874beba3dd25eeb8bb5cd2",
+    "src/runtime/querystring.js": "1c2b6c6da76c2ac9ba997c38a479b36904d06960059a77323dbcdc28664031e6",
+    "src/runtime/registration.js": "dbe2018c1ac72a97e03166daf827f39d36182a9c62eee94a93eabb464fadda7a",
+    "src/runtime/source.js": "b7827eb1f7b80c8786148342bd26ee590300879a4f6fb1d8ed1cf79f21e1a6b2",
+    "src/runtime/stream.js": "4d4e15ddf0b87781e92f9cd034711e4d1dd0e0f2af949bf797db3226040c7c82",
+    "src/runtime/string_decoder.js": "c2317a04a3a7cd7a7870c7d2c11d60f0a4e53f59316d4c4d6ae1c980f00c7370",
+    "src/runtime/timers.js": "1c8014a774ede08eabdfbd6d30d09f08c86ce8a909d15256f2868155ed661553",
+    "src/runtime/tls.js": "8bd92dfd46ad6437d3b7ccf018bb586a57081a5d94965b49997dafa3bfca9baa",
+    "src/runtime/url.js": "8705e3f78cb4c57dd840432ea226fca372232034af5caa346f4e79c2f5bab235",
+    "src/runtime/util.js": "cfd87d363acdf63eed35dd3c91e0c6b33ccd6e859a75a5e02432a78c0528a412",
+    "src/runtime/vendor.js": "a45e51fa6a7254294885d0763eb450d8e3b4f495688fb46762307f5f52d06ce1",
+    "src/runtime/zlib.js": "2cea2267287078f1b8fb7755c00497ff00b69d9df3ca9722f0577351b91c8a2a"
+  },
+  "counts": {
+    "total": 58,
+    "pass": 56,
+    "fail": 2,
+    "unsupported": 0
+  },
+  "environmentExclusions": [],
+  "environmentExclusionCount": 0,
+  "passed": false,
+  "finishedAt": "2026-09-24T13:40:51.916Z"
+}

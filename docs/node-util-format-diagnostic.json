@@ -1,0 +1,17 @@
+{
+  "source": "packages/node-compat/upstream/node-v22.14.0/test/parallel/test-util-format.js",
+  "assertions": 189,
+  "failureCount": 1,
+  "failures": [
+    {
+      "method": "strictEqual",
+      "line": 197,
+      "sourceLine": "    util.format('%s', Object.setPrototypeOf(new Foo(), null)),",
+      "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ '[Object: null prototype] {}'\n- '[Foo: null prototype] {}'\n",
+      "actual": "'[Object: null prototype] {}'",
+      "expected": "'[Foo: null prototype] {}'"
+    }
+  ],
+  "sourceSha256": "7bd8052e3ce78695f377870bcea855b748e0d1ac1d2d1b2b7fe517167a8792e1",
+  "scope": "Diagnostic-only host-assert recorder continues after assertion failures; not an official gate pass and not a changed upstream test."
+}

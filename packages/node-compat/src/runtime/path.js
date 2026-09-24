@@ -1,7 +1,30 @@
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+// Adapted from Node.js v22.14.0, commit 5d2feb257bcee090e57900eb51720171a6aa92f3:
+// https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/lib/path.js
 (function (root) {
   "use strict";
 
   var runtime = root[Symbol.for("niva.node-compat.runtime")];
+  if (typeof runtime.createPathModule === "function") return;
 
   function detectPlatform() {
     if (typeof process !== "undefined" && process.platform) return process.platform;
@@ -21,6 +44,21 @@
 
   function createPathModule() {
     var cwd = initialCwd();
+    var cwdOverride = false;
+
+    function currentCwd() {
+      if (cwdOverride) return cwd;
+      var processModule = root.process;
+      if (processModule && typeof processModule.cwd === "function" &&
+          (processModule === runtime.process || processModule.versions && processModule.versions.niva)) {
+        return processModule.cwd();
+      }
+      if (runtime.callSync && root.Niva && typeof root.Niva.callSync === "function") {
+        return runtime.callSync(root.Niva, "process.currentDir", []);
+      }
+      if (processModule && typeof processModule.cwd === "function") return processModule.cwd();
+      return cwd;
+    }
 
     function makePath(windows) {
       var sep = windows ? "\\" : "/";
@@ -28,6 +66,10 @@
       var isSep = windows
         ? function (code) { return code === 47 || code === 92; }
         : function (code) { return code === 47; };
+
+      function isWindowsDeviceRoot(code) {
+        return code >= 65 && code <= 90 || code >= 97 && code <= 122;
+      }
 
       function winRoot(path) {
         var length = path.length;
@@ -54,10 +96,11 @@
           var serverEnd = serverStart;
           while (serverEnd < length && !isSep(path.charCodeAt(serverEnd))) serverEnd += 1;
           if (serverEnd > serverStart && serverEnd < length) {
-            var shareStart = serverEnd + 1;
+            var shareStart = serverEnd;
+            while (shareStart < length && isSep(path.charCodeAt(shareStart))) shareStart += 1;
             var shareEnd = shareStart;
             while (shareEnd < length && !isSep(path.charCodeAt(shareEnd))) shareEnd += 1;
-            if (shareEnd > shareStart) {
+            if (shareEnd > shareStart && shareStart > serverEnd) {
               var prefix = extended ? "\\\\?\\UNC\\" : "\\\\";
               device = prefix + path.slice(serverStart, serverEnd) + "\\" + path.slice(shareStart, shareEnd);
               rootEnd = shareEnd;
@@ -68,7 +111,7 @@
           }
         }
 
-        if (length >= 2 && path.charCodeAt(1) === 58) {
+        if (length >= 2 && isWindowsDeviceRoot(path.charCodeAt(0)) && path.charCodeAt(1) === 58) {
           device = path.slice(0, 2);
           rootEnd = length >= 3 && isSep(path.charCodeAt(2)) ? 3 : 2;
           absolute = rootEnd === 3;
@@ -87,36 +130,54 @@
         var lastSegmentLength = 0;
         var lastSlash = -1;
         var dots = 0;
+        var code = 0;
         for (var i = 0; i <= path.length; i += 1) {
-          var code = i < path.length ? path.charCodeAt(i) : (windows ? 92 : 47);
-          if (i < path.length && !isSep(code)) {
-            if (code === 46) dots += 1;
-            else dots = -1;
-            continue;
-          }
-          if (lastSlash === i - 1 || dots === 1) {
-            // Empty and dot segments are removed.
-          } else if (dots === 2) {
-            if (result.length > 0 && lastSegmentLength !== 2) {
-              var lastSlashIndex = result.lastIndexOf(sep);
-              if (lastSlashIndex === -1) {
-                result = "";
-                lastSegmentLength = 0;
-              } else {
-                result = result.slice(0, lastSlashIndex);
-                lastSegmentLength = result.length - 1 - result.lastIndexOf(sep);
+          if (i < path.length) code = path.charCodeAt(i);
+          else if (isSep(code)) break;
+          else code = 47;
+          if (isSep(code)) {
+            if (lastSlash === i - 1 || dots === 1) {
+              // Empty and dot segments are removed.
+            } else if (dots === 2) {
+              if (result.length < 2 || lastSegmentLength !== 2 ||
+                  result.charCodeAt(result.length - 1) !== 46 ||
+                  result.charCodeAt(result.length - 2) !== 46) {
+                if (result.length > 2) {
+                  var lastSlashIndex = result.lastIndexOf(sep);
+                  if (lastSlashIndex === -1) {
+                    result = "";
+                    lastSegmentLength = 0;
+                  } else {
+                    result = result.slice(0, lastSlashIndex);
+                    lastSegmentLength = result.length - 1 - result.lastIndexOf(sep);
+                  }
+                  lastSlash = i;
+                  dots = 0;
+                  continue;
+                } else if (result.length !== 0) {
+                  result = "";
+                  lastSegmentLength = 0;
+                  lastSlash = i;
+                  dots = 0;
+                  continue;
+                }
               }
-            } else if (allowAboveRoot) {
-              result = result.length > 0 ? result + sep + ".." : "..";
-              lastSegmentLength = 2;
+              if (allowAboveRoot) {
+                result += result.length > 0 ? sep + ".." : "..";
+                lastSegmentLength = 2;
+              }
+            } else {
+              var segment = path.slice(lastSlash + 1, i);
+              result = result.length > 0 ? result + sep + segment : segment;
+              lastSegmentLength = i - lastSlash - 1;
             }
+            lastSlash = i;
+            dots = 0;
+          } else if (code === 46 && dots !== -1) {
+            dots += 1;
           } else {
-            var segment = path.slice(lastSlash + 1, i);
-            result = result.length > 0 ? result + sep + segment : segment;
-            lastSegmentLength = segment.length;
+            dots = -1;
           }
-          lastSlash = i;
-          dots = 0;
         }
         return result;
       }
@@ -133,87 +194,113 @@
           return (absolutePosix ? "/" : "") + posixTail;
         }
 
-        var rootInfo = winRoot(path);
-        var absoluteWin = rootInfo.absolute;
-        var trailingWin = isSep(path.charCodeAt(path.length - 1));
-        var tail = normalizeString(path.slice(rootInfo.rootEnd), !absoluteWin);
-        var prefix = rootInfo.device;
-        if (prefix && rootInfo.rootEnd > prefix.length) prefix += sep;
-        if (absoluteWin && !prefix) prefix = sep;
-        if (tail) {
-          if (trailingWin) tail += sep;
-          return prefix ? prefix + tail : tail;
+        var length = path.length;
+        var rootEnd = 0;
+        var device;
+        var absoluteWin = false;
+        var firstCode = path.charCodeAt(0);
+        if (length === 1) return firstCode === 47 ? "\\" : path;
+        if (isSep(firstCode)) {
+          absoluteWin = true;
+          if (isSep(path.charCodeAt(1))) {
+            var serverStart = 2;
+            var serverEnd = serverStart;
+            while (serverEnd < length && !isSep(path.charCodeAt(serverEnd))) serverEnd += 1;
+            if (serverEnd < length && serverEnd !== serverStart) {
+              var serverName = path.slice(serverStart, serverEnd);
+              var shareStart = serverEnd;
+              while (shareStart < length && isSep(path.charCodeAt(shareStart))) shareStart += 1;
+              if (shareStart < length && shareStart !== serverEnd) {
+                var shareEnd = shareStart;
+                while (shareEnd < length && !isSep(path.charCodeAt(shareEnd))) shareEnd += 1;
+                if (shareEnd === length) return "\\\\" + serverName + "\\" + path.slice(shareStart) + "\\";
+                if (shareEnd !== shareStart) {
+                  device = "\\\\" + serverName + "\\" + path.slice(shareStart, shareEnd);
+                  rootEnd = shareEnd;
+                }
+              }
+            }
+          } else {
+            rootEnd = 1;
+          }
+        } else if (isWindowsDeviceRoot(firstCode) && path.charCodeAt(1) === 58) {
+          device = path.slice(0, 2);
+          rootEnd = 2;
+          if (length > 2 && isSep(path.charCodeAt(2))) {
+            absoluteWin = true;
+            rootEnd = 3;
+          }
         }
-        if (rootInfo.unc) return rootInfo.device + sep;
-        if (absoluteWin) return prefix || sep;
-        if (rootInfo.device) return rootInfo.device + ".";
-        return prefix || ".";
+
+        var tail = rootEnd < length ? normalizeString(path.slice(rootEnd), !absoluteWin) : "";
+        if (!tail && !absoluteWin) tail = ".";
+        if (tail && isSep(path.charCodeAt(length - 1))) tail += "\\";
+        if (!absoluteWin && device === undefined && path.indexOf(":") !== -1) {
+          if (tail.length >= 2 && isWindowsDeviceRoot(tail.charCodeAt(0)) && tail.charCodeAt(1) === 58) {
+            return ".\\" + tail;
+          }
+          var colonIndex = path.indexOf(":");
+          while (colonIndex !== -1) {
+            if (colonIndex === length - 1 || isSep(path.charCodeAt(colonIndex + 1))) return ".\\" + tail;
+            colonIndex = path.indexOf(":", colonIndex + 1);
+          }
+        }
+        if (device === undefined) return absoluteWin ? "\\" + tail : tail;
+        return absoluteWin ? device + "\\" + tail : device + tail;
       }
 
       function resolve() {
+        var baseCwd = currentCwd();
+        if (!windows) {
+          var posixTail = "";
+          var posixAbsolute = false;
+          var posixArgs = Array.prototype.slice.call(arguments);
+          for (var posixIndex = posixArgs.length - 1; posixIndex >= -1 && !posixAbsolute; posixIndex -= 1) {
+            var posixPath = posixIndex >= 0 ? posixArgs[posixIndex] : baseCwd;
+            assertPath(posixPath, posixIndex >= 0 ? "paths[" + posixIndex + "]" : "path");
+            if (posixPath.length === 0) continue;
+            if (posixPath.charCodeAt(0) === 47) posixAbsolute = true;
+            posixTail = posixPath + "/" + posixTail;
+          }
+          var posixResolved = normalizeString(posixTail, !posixAbsolute);
+          return (posixAbsolute ? "/" : "") + (posixResolved || (posixAbsolute ? "" : "."));
+        }
+
         var resolvedDevice = "";
         var resolvedTail = "";
         var resolvedAbsolute = false;
         var args = Array.prototype.slice.call(arguments);
-        for (var i = args.length - 1; i >= -1 && !resolvedAbsolute; i -= 1) {
-          var path = i >= 0 ? args[i] : cwd;
-          assertPath(path);
-          if (path.length === 0) continue;
-          if (!windows) {
-            if (path.charCodeAt(0) === 47) {
-              resolvedAbsolute = true;
-            }
-            resolvedTail = path + "/" + resolvedTail;
-            continue;
+        for (var i = args.length - 1; i >= -1; i -= 1) {
+          var path;
+          if (i >= 0) {
+            path = args[i];
+            assertPath(path, "paths[" + i + "]");
+            if (path.length === 0) continue;
+          } else if (!resolvedDevice) {
+            path = baseCwd;
+          } else {
+            var cwdInfo = winRoot(baseCwd);
+            path = cwdInfo.device.toLowerCase() === resolvedDevice.toLowerCase() ? baseCwd : resolvedDevice + "\\";
           }
           var rootInfo = winRoot(path);
           var device = rootInfo.device;
           if (device) {
             if (resolvedDevice && device.toLowerCase() !== resolvedDevice.toLowerCase()) continue;
             if (!resolvedDevice) resolvedDevice = device;
-          } else if (resolvedDevice && rootInfo.absolute) {
-            // A root-relative path inherits the already selected drive.
-          } else if (!resolvedDevice && rootInfo.absolute) {
-            resolvedDevice = "";
           }
-          if (rootInfo.absolute) {
-            resolvedAbsolute = true;
+          if (resolvedAbsolute) {
+            if (resolvedDevice) break;
+          } else {
+            var tail = path.slice(rootInfo.rootEnd);
+            resolvedTail = tail + "\\" + resolvedTail;
+            resolvedAbsolute = rootInfo.absolute;
+            if (resolvedAbsolute && resolvedDevice) break;
           }
-          var tail = path.slice(rootInfo.rootEnd);
-          if (tail) resolvedTail = tail + "\\" + resolvedTail;
         }
-
-        if (windows) {
-          if (!resolvedDevice && resolvedAbsolute) {
-            // Root-relative Windows paths inherit the current drive.
-            resolvedDevice = winRoot(cwd).device;
-          }
-          if (resolvedDevice && !resolvedAbsolute) {
-            var base = cwd;
-            var baseInfo = winRoot(base);
-            if (baseInfo.device.toLowerCase() === resolvedDevice.toLowerCase()) {
-              var baseTail = base.slice(baseInfo.rootEnd);
-              resolvedTail = baseTail + "\\" + resolvedTail;
-            } else {
-              resolvedTail = "\\" + resolvedTail;
-              resolvedAbsolute = true;
-            }
-          } else if (!resolvedDevice && !resolvedAbsolute) {
-            var fallbackInfo = winRoot(cwd);
-            resolvedDevice = fallbackInfo.device;
-            resolvedTail = cwd.slice(fallbackInfo.rootEnd) + "\\" + resolvedTail;
-            resolvedAbsolute = fallbackInfo.absolute;
-          }
-          var normalizedTail = normalizeString(resolvedTail, !resolvedAbsolute);
-          if (resolvedAbsolute && !resolvedDevice) normalizedTail = "\\" + normalizedTail;
-          if (resolvedDevice && resolvedAbsolute && normalizedTail) return resolvedDevice + "\\" + normalizedTail;
-          if (resolvedDevice && resolvedAbsolute) return resolvedDevice + "\\";
-          if (resolvedDevice) return resolvedDevice + normalizedTail;
-          return normalizedTail || (resolvedAbsolute ? "\\" : ".");
-        }
-
-        var posixResolved = normalizeString(resolvedTail, !resolvedAbsolute);
-        return (resolvedAbsolute ? "/" : "") + (posixResolved || (resolvedAbsolute ? "" : "."));
+        var normalizedTail = normalizeString(resolvedTail, !resolvedAbsolute);
+        if (resolvedAbsolute) return resolvedDevice + "\\" + normalizedTail;
+        var resolved = resolvedDevice + normalizedTail;
+        return resolved || ".";
       }
 
       function isAbsolute(path) {
@@ -224,6 +311,37 @@
 
       function join() {
         var parts = Array.prototype.slice.call(arguments);
+        if (windows) {
+          if (parts.length === 0) return ".";
+          var winJoined;
+          var firstPart;
+          for (var winIndex = 0; winIndex < parts.length; winIndex += 1) {
+            var winPart = parts[winIndex];
+            assertPath(winPart);
+            if (winPart.length > 0) {
+              if (winJoined === undefined) winJoined = firstPart = winPart;
+              else winJoined += "\\" + winPart;
+            }
+          }
+          if (winJoined === undefined) return ".";
+          var needsReplace = true;
+          var slashCount = 0;
+          if (isSep(firstPart.charCodeAt(0))) {
+            slashCount += 1;
+            if (firstPart.length > 1 && isSep(firstPart.charCodeAt(1))) {
+              slashCount += 1;
+              if (firstPart.length > 2) {
+                if (isSep(firstPart.charCodeAt(2))) slashCount += 1;
+                else needsReplace = false;
+              }
+            }
+          }
+          if (needsReplace) {
+            while (slashCount < winJoined.length && isSep(winJoined.charCodeAt(slashCount))) slashCount += 1;
+            if (slashCount >= 2) winJoined = "\\" + winJoined.slice(slashCount);
+          }
+          return normalize(winJoined);
+        }
         var joined = "";
         for (var i = 0; i < parts.length; i += 1) {
           var part = parts[i];
@@ -231,10 +349,6 @@
           if (part.length > 0) joined = joined ? joined + sep + part : part;
         }
         if (!joined) return ".";
-        if (windows && /^\\\\[^\\]+[\\/][^\\]+/.test(joined)) {
-          // Keep UNC roots intact while collapsing any extra leading slashes.
-          joined = joined.replace(/^[\\/]{2,}/, "\\\\");
-        }
         return normalize(joined);
       }
 
@@ -245,18 +359,57 @@
       }
 
       function basename(path, suffix) {
+        if (suffix !== undefined) assertPath(suffix, "suffix");
         assertPath(path);
-        if (suffix !== undefined && typeof suffix !== "string") throw new TypeError("suffix must be a string");
-        var end = trimTrailing(path);
-        var start = end;
-        while (start > 0 && !isSep(path.charCodeAt(start - 1))) start -= 1;
-        if (windows) {
-          var basenameRoot = winRoot(path);
-          if (!basenameRoot.unc) start = Math.max(start, basenameRoot.rootEnd);
+        var start = 0;
+        var end = -1;
+        var matchedSlash = true;
+        if (windows && path.length >= 2 && isWindowsDeviceRoot(path.charCodeAt(0)) && path.charCodeAt(1) === 58) {
+          start = 2;
         }
-        var base = path.slice(start, end);
-        if (suffix && base.endsWith(suffix)) base = base.slice(0, base.length - suffix.length);
-        return base;
+        if (suffix !== undefined && suffix.length > 0 && suffix.length <= path.length) {
+          if (suffix === path) return "";
+          var extIndex = suffix.length - 1;
+          var firstNonSlashEnd = -1;
+          for (var i = path.length - 1; i >= start; i -= 1) {
+            var code = path.charCodeAt(i);
+            if (isSep(code)) {
+              if (!matchedSlash) {
+                start = i + 1;
+                break;
+              }
+            } else {
+              if (firstNonSlashEnd === -1) {
+                matchedSlash = false;
+                firstNonSlashEnd = i + 1;
+              }
+              if (extIndex >= 0) {
+                if (code === suffix.charCodeAt(extIndex)) {
+                  if (--extIndex === -1) end = i;
+                } else {
+                  extIndex = -1;
+                  end = firstNonSlashEnd;
+                }
+              }
+            }
+          }
+          if (start === end) end = firstNonSlashEnd;
+          else if (end === -1) end = path.length;
+          return path.slice(start, end);
+        }
+        for (var j = path.length - 1; j >= start; j -= 1) {
+          if (isSep(path.charCodeAt(j))) {
+            if (!matchedSlash) {
+              start = j + 1;
+              break;
+            }
+          } else if (end === -1) {
+            matchedSlash = false;
+            end = j + 1;
+          }
+        }
+        if (end === -1) return "";
+        return path.slice(start, end);
       }
 
       function dirname(path) {
@@ -335,7 +488,12 @@
       }
 
       function format(pathObject) {
-        if (pathObject === null || typeof pathObject !== "object") throw new TypeError("pathObject must be an object");
+        if (pathObject === null || typeof pathObject !== "object") {
+          var objectReceived = describeReceived(pathObject);
+          var objectError = new TypeError('The "pathObject" argument must be of type object.' + objectReceived);
+          objectError.code = "ERR_INVALID_ARG_TYPE";
+          throw objectError;
+        }
         var dir = pathObject.dir || pathObject.root || "";
         var base;
         if (pathObject.base) {
@@ -346,25 +504,40 @@
           base = (pathObject.name || "") + ext;
         }
         if (!dir) return base;
-        return dir + (dir.endsWith(sep) ? "" : sep) + base;
+        return dir === pathObject.root ? dir + base : dir + sep + base;
       }
 
       function relative(from, to) {
-        assertPath(from);
-        assertPath(to);
+        assertPath(from, "from");
+        assertPath(to, "to");
         if (from === to) return "";
         var fromResolved = resolve(from);
         var toResolved = resolve(to);
-        var compareFrom = windows ? fromResolved.toLowerCase() : fromResolved;
-        var compareTo = windows ? toResolved.toLowerCase() : toResolved;
-        if (compareFrom === compareTo) return "";
+        if (fromResolved === toResolved) return "";
         var fromRoot = windows ? winRoot(fromResolved) : { device: "", rootEnd: fromResolved.charCodeAt(0) === 47 ? 1 : 0 };
         var toRoot = windows ? winRoot(toResolved) : { device: "", rootEnd: toResolved.charCodeAt(0) === 47 ? 1 : 0 };
-        if (windows && fromRoot.device.toLowerCase() !== toRoot.device.toLowerCase()) return toResolved;
-        var fromParts = compareFrom.slice(fromRoot.rootEnd).split(windows ? /[\\/]+/ : /\/+/).filter(Boolean);
-        var toParts = compareTo.slice(toRoot.rootEnd).split(windows ? /[\\/]+/ : /\/+/).filter(Boolean);
+        var fromStart = fromRoot.rootEnd;
+        var toStart = toRoot.rootEnd;
+        if (windows) {
+          if (fromRoot.unc && toRoot.unc) {
+            var fromServerEnd = fromRoot.device.indexOf("\\", 2);
+            var toServerEnd = toRoot.device.indexOf("\\", 2);
+            var fromServer = fromServerEnd < 0 ? fromRoot.device.slice(2) : fromRoot.device.slice(2, fromServerEnd);
+            var toServer = toServerEnd < 0 ? toRoot.device.slice(2) : toRoot.device.slice(2, toServerEnd);
+            if (fromServer.toLowerCase() !== toServer.toLowerCase()) return toResolved;
+            fromStart = 2;
+            toStart = 2;
+          } else if (fromRoot.device.toLowerCase() !== toRoot.device.toLowerCase()) {
+            return toResolved;
+          }
+        }
+        var fromParts = fromResolved.slice(fromStart).split(windows ? /[\\/]+/ : /\/+/).filter(Boolean);
+        var toParts = toResolved.slice(toStart).split(windows ? /[\\/]+/ : /\/+/).filter(Boolean);
         var common = 0;
-        while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) common += 1;
+        while (common < fromParts.length && common < toParts.length &&
+               (windows ? fromParts[common].toLowerCase() === toParts[common].toLowerCase() : fromParts[common] === toParts[common])) {
+          common += 1;
+        }
         var output = [];
         for (var i = common; i < fromParts.length; i += 1) output.push("..");
         for (var j = common; j < toParts.length; j += 1) output.push(toParts[j]);
@@ -387,27 +560,151 @@
         assertPath(pattern);
         var candidate = windows ? path.replace(/\\/g, "/") : path;
         var glob = windows ? pattern.replace(/\\/g, "/") : pattern;
-        var expression = "^";
-        for (var i = 0; i < glob.length; i += 1) {
-          var character = glob[i];
-          if (character === "*" && glob[i + 1] === "*") {
-            i += 1;
-            if (glob[i + 1] === "/") { i += 1; expression += "(?:.*/)?"; }
-            else expression += ".*";
-          } else if (character === "*") expression += "[^/]*";
-          else if (character === "?") expression += "[^/]";
-          else if (character === "[") {
-            var close = glob.indexOf("]", i + 1);
-            if (close > i + 1) { expression += glob.slice(i, close + 1); i = close; }
-            else expression += "\\[";
-          } else expression += character.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+        var candidateTrailingSlash = candidate.length > 0 && candidate.endsWith("/");
+        var patternTrailingSlash = glob.length > 0 && glob.endsWith("/");
+        candidate = candidate.replace(/\/{2,}/g, "/");
+        glob = glob.replace(/\/{2,}/g, "/");
+        if (candidateTrailingSlash !== patternTrailingSlash && patternTrailingSlash) return false;
+        var candidateAbsolute = candidate.startsWith("/");
+        var patternAbsolute = glob.startsWith("/");
+        if (candidateAbsolute !== patternAbsolute) return false;
+        var candidateParts = candidate.split("/").filter(Boolean);
+        var patternParts = glob.split("/").filter(Boolean);
+        var flags = windows ? "i" : "";
+
+        function splitAlternatives(value, separator) {
+          var parts = [];
+          var depth = 0;
+          var start = 0;
+          for (var si = 0; si < value.length; si += 1) {
+            if (value[si] === "\\") { si += 1; continue; }
+            if (value[si] === "(" || value[si] === "{" || value[si] === "[") depth += 1;
+            else if (value[si] === ")" || value[si] === "}" || value[si] === "]") depth = Math.max(0, depth - 1);
+            else if (value[si] === separator && depth === 0) { parts.push(value.slice(start, si)); start = si + 1; }
+          }
+          parts.push(value.slice(start));
+          return parts;
         }
-        expression += "$";
-        return new RegExp(expression, windows ? "i" : "").test(candidate);
+
+        function findClose(value, start, open, close) {
+          var depth = 0;
+          for (var ci = start; ci < value.length; ci += 1) {
+            if (value[ci] === "\\") { ci += 1; continue; }
+            if (value[ci] === open) depth += 1;
+            else if (value[ci] === close && --depth === 0) return ci;
+          }
+          return -1;
+        }
+
+        function compileSegment(segment) {
+          function compilePart(value) {
+            var out = "";
+            for (var gi = 0; gi < value.length; gi += 1) {
+              var character = value[gi];
+              if (character === "\\" && gi + 1 < value.length) {
+                out += value[++gi].replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+                continue;
+              }
+              if ((character === "@" || character === "+" || character === "?" || character === "*" || character === "!") && value[gi + 1] === "(") {
+                var extEnd = findClose(value, gi + 1, "(", ")");
+                if (extEnd > gi + 1) {
+                  var alternatives = splitAlternatives(value.slice(gi + 2, extEnd), "|").map(compilePart);
+                  var group = "(?:" + alternatives.join("|") + ")";
+                  var rest = character === "!" ? compilePart(value.slice(extEnd + 1)) : "";
+                  out += character === "@" ? group : character === "+" ? group + "+" : character === "?" ? group + "?" : character === "*" ? group + "*" : "(?!(?:" + alternatives.join("|") + ")" + rest + "$)[^/]*";
+                  gi = extEnd;
+                  continue;
+                }
+              }
+              if (character === "{") {
+                var braceEnd = findClose(value, gi, "{", "}");
+                if (braceEnd > gi + 1) {
+                  var alternativesText = value.slice(gi + 1, braceEnd);
+                  var alternatives = splitAlternatives(alternativesText, ",");
+                  if (alternatives.length > 1) out += "(?:" + alternatives.map(compilePart).join("|") + ")";
+                  else {
+                    var range = /^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/.exec(alternativesText);
+                    if (range) {
+                      var from = Number(range[1]), to = Number(range[2]), step = Number(range[3] || (from <= to ? 1 : -1));
+                      if (step === 0 || Math.sign(to - from) && Math.sign(step) !== Math.sign(to - from)) out += "";
+                      else {
+                        var choices = [];
+                        for (var n = from, guard = 0; guard < 1000 && (step > 0 ? n <= to : n >= to); n += step, guard += 1) choices.push(String(n).replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"));
+                        out += "(?:" + choices.join("|") + ")";
+                      }
+                    } else out += "\\{" + compilePart(alternativesText) + "\\}";
+                  }
+                  gi = braceEnd;
+                  continue;
+                }
+              }
+              if (character === "*") { out += "[^/]*"; continue; }
+              if (character === "?") { out += "[^/]"; continue; }
+              if (character === "[") {
+                var classEnd = findClose(value, gi, "[", "]");
+                if (classEnd > gi + 1) {
+                  var body = value.slice(gi + 1, classEnd);
+                  if (body[0] === "!") body = "^" + body.slice(1);
+                  out += "[" + body.replace(/\\/g, "\\\\") + "]";
+                  gi = classEnd;
+                  continue;
+                }
+              }
+              out += character.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+            }
+            return out;
+          }
+          return new RegExp("^" + compilePart(segment) + "$", flags);
+        }
+
+        function matchSegments(patternIndex, pathIndex) {
+          if (patternIndex === patternParts.length) return pathIndex === candidateParts.length;
+          var segment = patternParts[patternIndex];
+          if (segment === "**") {
+            if (matchSegments(patternIndex + 1, pathIndex)) return true;
+            for (var rest = pathIndex; rest < candidateParts.length; rest += 1) {
+              if (candidateParts[rest].startsWith(".") && !segment.startsWith(".")) break;
+              if (matchSegments(patternIndex + 1, rest + 1)) return true;
+            }
+            return false;
+          }
+          var part = candidateParts[pathIndex];
+          if (part === undefined || part.startsWith(".") && !segment.startsWith(".")) return false;
+          return compileSegment(segment).test(part) && matchSegments(patternIndex + 1, pathIndex + 1);
+        }
+
+        if (!patternParts.length && !candidateParts.length) return true;
+        return matchSegments(0, 0);
       }
 
-      function assertPath(path) {
-        if (typeof path !== "string") throw new TypeError("path must be a string");
+      function assertPath(path, name) {
+        if (typeof path !== "string") {
+          name = name || "path";
+          var error = new TypeError('The "' + name + '" argument must be of type string.' + describeReceived(path));
+          error.code = "ERR_INVALID_ARG_TYPE";
+          throw error;
+        }
+      }
+
+      function describeReceived(value) {
+        if (value === null) return " Received null";
+        if (value === undefined) return " Received undefined";
+        if (typeof value === "string") {
+          var inspected = "'" + value.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + "'";
+          if (inspected.length > 28) inspected = inspected.slice(0, 25) + "...";
+          return " Received type string (" + inspected + ")";
+        }
+        if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+          return " Received type " + typeof value + " (" + String(value) + (typeof value === "bigint" ? "n" : "") + ")";
+        }
+        if (typeof value === "function") return " Received function" + (value.name ? " " + value.name : "");
+        if (typeof value === "object") {
+          var constructorName;
+          try { constructorName = value.constructor && value.constructor.name; } catch (_) {}
+          if (constructorName) return " Received an instance of " + constructorName;
+          return " Received an object";
+        }
+        return " Received type " + typeof value;
       }
 
       var api = {
@@ -425,24 +722,25 @@
         matchesGlob: matchesGlob,
         sep: sep,
         delimiter: delimiter,
-        _makeLong: function (path) { return path; },
+        _makeLong: function (path) { return windows ? toNamespacedPath(path) : path; },
       };
       return api;
     }
 
     var posix = makePath(false);
     var win32 = makePath(true);
+    posix.posix = posix;
+    posix.win32 = win32;
+    win32.posix = posix;
+    win32.win32 = win32;
     var defaultPath = detectPlatform() === "win32" ? win32 : posix;
-    var module = {};
-    Object.keys(defaultPath).forEach(function (key) { module[key] = defaultPath[key]; });
-    module.posix = posix;
-    module.win32 = win32;
-    module.setCwd = function (value) {
+    defaultPath.setCwd = function (value) {
       if (typeof value !== "string" || value.length === 0) throw new TypeError("cwd must be a non-empty string");
       cwd = value;
+      cwdOverride = true;
     };
-    module.getCwd = function () { return cwd; };
-    return module;
+    defaultPath.getCwd = currentCwd;
+    return defaultPath;
   }
 
   runtime.createPathModule = createPathModule;

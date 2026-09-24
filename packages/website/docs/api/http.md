@@ -1,73 +1,34 @@
-# 网络 http
+# NodeCompat HTTP 与 HTTPS
 
-## Niva.api.http.request
-```ts
-/**
- * 发送 HTTP(s) 请求并返回响应结果，包括响应状态码、响应头和响应体。
- * @param options 请求选项，包括方法、URL、请求头和请求体。原生请求禁用代理。
- * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
- */
-export function request(options: {
-    method: string;
-    url: string;
-    headers?: { [key: string]: string };
-    body?: string;
-}): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-}>;
-```
+HTTP 与 HTTPS 是 NodeCompat 模块，不属于 `Niva.api`。应用可使用 Node 风格模块接口：
 
-## Niva.api.http.get
-```ts
-/**
- * 发送 HTTP(s) GET 请求并返回响应结果，包括响应状态码、响应头和响应体。
- * @param url 请求的 URL。
- * @param headers 如果有，指定请求头。
- * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
- */
-export function get(url: string, headers?: { [key: string]: string }): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-}>;
-```
+```js
+const http = Niva.require("http");
+const https = Niva.require("https");
 
-## Niva.api.http.post
-```ts
-/**
- * 发送 HTTP(s) POST 请求并返回响应结果，包括响应状态码、响应头和响应体。
- * @param url 请求的 URL。
- * @param body 请求体。
- * @param headers 如果有，指定请求头。
- * @returns 一个 Promise，在接收响应成功后解析该 Promise，或在发生错误时拒绝该 Promise。成功时返回一个包含响应状态码、响应头和响应体的对象。
- */
-export function post(url: string, body: string, headers?: { [key: string]: string }): Promise<{
-    status: number;
-    headers: { [key: string]: string };
-    body: string;
-}>;
-```
-
-## 原生流式 handler：http.requestStream
-
-`Niva.api.http.request/get/post` 会在 JS 层收集完整响应体，仅在本地 WebSocket 页面可用；远端 IPC 页面也不能使用这些 wrapper。`http.requestStream` 是原生流式 handler，不是 `Niva.api.http` 上的 unary Promise 方法。需要直接处理二进制响应时，使用
-[`Niva.stream`](stream.md) 调用它：`head` 事件包含状态码和响应头，
-`onChunk` 可逐帧处理正文；`onBlob` 可在 END 后取得完整正文，终局结果包含状态码。
-
-```ts
-const request = Niva.stream("http.requestStream", [{ method: "GET", url: "https://example.com/" }], {
-  onEvent(name, data) {
-    if (name === "head") console.log(data.status, data.headers);
-  },
-  onChunk(bytes) {
-    console.log("received response bytes:", bytes.byteLength);
-  },
+const request = https.get("https://example.com/", (response) => {
+  console.log(response.statusCode, response.headers);
 });
-await request.promise;
+request.on("error", console.error);
 ```
 
-原生请求只支持 HTTP(S)，不使用显式或环境代理，并拒绝向非公开网络地址发起请求。
-只有当前 Niva 实例的精确 loopback 服务地址是例外。重定向后的每一跳同样会检查。
-远端 IPC 页面不能调用流式 HTTP API。
+ESM 项目也可从 `node:http`、`node:https` 或 NodeCompat 包的 `http`、`https` 子路径导入。具体可用方法与参数以当前模块实现和 [NodeCompat 模块说明](./node-compat)为准。
+
+## HTTP 模块
+
+当前模块提供 `request()`、`get()`、`createServer()`、`ClientRequest`、`IncomingMessage`、`ServerResponse`、`METHODS` 和 `STATUS_CODES`。HTTPS 提供相同的客户端与服务端接口，并在 Native TLS 层验证证书链与主机名；不支持关闭 TLS 校验。
+
+HTTP 报文解析、请求/响应对象和服务器逻辑运行在 JS，TCP/TLS 字节流由 Native socket 层提供。应用 `http.createServer()` 创建的服务器与 Niva 内部用于加载页面、资源服务及 bridge WebSocket 的 Native HTTP 服务无关。
+
+旧版 `Niva.api.http.request/get/post` 和 `Niva.stream("http.requestStream", ...)` 已移除，不应继续使用。对简单 JSON API 可直接使用浏览器 `fetch`；需要 Node 风格 socket 流、HTTP server 或 Node 客户端请求对象时使用 NodeCompat 模块。
+
+## 当前限制
+
+- macOS 系统 TLS 后端在结束写端时关闭整个 TLS 会话；TLS 不接受 `allowHalfOpen: true`，TCP 支持半关闭。
+- NodeCompat HTTP/HTTPS 是 Node API 子集，不承诺所有 Agent、连接复用、upgrade、100-continue、超时和错误语义。
+- 已在 macOS 实际验证 HTTP/HTTPS 收发、关闭与 TLS CA/主机名验证；这不代表全部 Node HTTP 行为通过官方契约测试。
+- 真实 socket 依赖本地可信页面的 WebSocket bridge；远端 IPC 不提供 socket 或流。
+- 当前 macOS 核心 WebView 和 Native socket/TLS 有有限验证，Windows 只有 target 编译检查，尚无真机结果。
+- NodeCompat 默认随 Niva 主程序内嵌并启用，可用 `nodeCompat: false` 关闭或在对象配置中筛选模块。
+
+应用开发者使用时请按目标平台验证请求/响应生命周期与 TLS 行为。仓库的 `docs/node-compat-implementation.md` 记录测试证据和未完成门禁。

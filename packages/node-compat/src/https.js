@@ -1,11 +1,17 @@
 import "./runtime/bridge.js";
-import "./runtime/path.js";
+import "./runtime/vendor.js";
+import "./runtime/events.js";
 import "./runtime/buffer.js";
+import "./runtime/net.js";
+import "./runtime/tls.js";
 import "./runtime/http.js";
-
-const https = globalThis[Symbol.for("niva.node-compat.runtime")].https;
-
-export const request = https.request;
-export const get = https.get;
-export const post = https.post;
-export default https;
+const http = globalThis[Symbol.for("niva.node-compat.runtime")].https;
+export const request = http.request;
+export const get = http.get;
+export const createServer = http.createServer;
+export const IncomingMessage = http.IncomingMessage;
+export const ServerResponse = http.ServerResponse;
+export const ClientRequest = http.ClientRequest;
+export const METHODS = http.METHODS;
+export const STATUS_CODES = http.STATUS_CODES;
+export default http;

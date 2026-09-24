@@ -1,0 +1,600 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "version": "v22.14.0",
+    "commit": "5d2feb257bcee090e57900eb51720171a6aa92f3",
+    "repository": "https://github.com/nodejs/node"
+  },
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "1474fea5eff88dc92763acca3ca1f54b51fa153be1529eae74ace35957aea9ce",
+      "kind": "license"
+    },
+    {
+      "path": "test/fixtures/path-resolve.js",
+      "sha256": "66cc747927577b9bd7d9e549ab7d1d123d79f49cd9b9bd8d5da464fb0d285ce3",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/parallel/test-buffer-alloc.js",
+      "sha256": "dd313db2b6b6679092018d0d1a2b1608036990afc8fb0c619ae68988dc55899d",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-bytelength.js",
+      "sha256": "7821f8278d17e4367e54ac9fe01ff8df77a32e40262286586665586b615c4e66",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-compare.js",
+      "sha256": "31ca4edc3766b623fbb27088b0a7dee091c7c2bd547b9b428c79aec897083352",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-concat.js",
+      "sha256": "d320b87463a06e6d65691118f26e96bcd93c771ffdf3287afe84974a9204e169",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-fill.js",
+      "sha256": "d7334366077dc073145011c6efdd4a61e3013a9ea12c94e845a74902b57e56b6",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-from.js",
+      "sha256": "46a55d69b721ed48ad48f0ddd88154adb2934abc99f94e5b188f6d2928e209bd",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-indexof.js",
+      "sha256": "4546d19f43350e91b1f51306f06466d85d8d0a6b6b108887b6b3857fd677ae37",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-tojson.js",
+      "sha256": "8f8bd78041033e87ed0196b0cf7d3c8574bebdbff012eabed6a6711f59bc39f0",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-buffer-write.js",
+      "sha256": "93170535c0a63b72a446c7f4a5e8871c4f7005af7eeac99b5bdbec5cdf641a08",
+      "kind": "test",
+      "module": "buffer"
+    },
+    {
+      "path": "test/parallel/test-events-list.js",
+      "sha256": "0681d1fab7f2e9553a7cb7cb6bd04772702a4ebd8c88dc63bd43fcfcb2572ee9",
+      "kind": "test",
+      "module": "events"
+    },
+    {
+      "path": "test/parallel/test-events-listener-count-with-listener.js",
+      "sha256": "a5c5dad35b3ad20bf00db8614e3a0049947b5320d16324122c0bd0eb68762255",
+      "kind": "test",
+      "module": "events"
+    },
+    {
+      "path": "test/parallel/test-events-once.js",
+      "sha256": "0a92d06fb886f55aeedf4f28ab33809e8cbee4a31208d11bc702e1e8a41a34eb",
+      "kind": "test",
+      "module": "events"
+    },
+    {
+      "path": "test/parallel/test-path-basename.js",
+      "sha256": "65597c05aba2382d01fbe265db8f1c4f6a8a3abfbde15b195fc132ef33b285a5",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-dirname.js",
+      "sha256": "8c2deec17cf44d2a5d64a60a3f692fad69635b28e225451aa2619bc53b2da30a",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-extname.js",
+      "sha256": "923a9c4d615770ea3aa054756d21046c17883d350fe53dc7dad22ae65bb24048",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-glob.js",
+      "sha256": "2662446d1550ea128ae1e54334e977d915c1adb50f8eecfe9f6d8832a5b26c04",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-isabsolute.js",
+      "sha256": "08a508f0392e255f3b42c435b384fdc35af70ae0c64ab63e279c78f10823c8a0",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-join.js",
+      "sha256": "f8f4fdda0cbc7d9598685c84edf9d1c144708d45cd11e15f534c91935037f1ae",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-normalize.js",
+      "sha256": "5eaea8af1bca8cefeb49cdeb808cfbea0b8339e2d920e713d4a5472302623c36",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-parse-format.js",
+      "sha256": "1eca0e56c88a65727ea7717b13dda9a33e659df6bd5cd2075f67c6f17dbd600e",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-relative.js",
+      "sha256": "c50c170b438c400fb3a693e99c16f21f6c2f5ccdfab6626765b54b26f58bae03",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path-resolve.js",
+      "sha256": "dbfd7e81cb4fac3b6df3443ce34e98db2265da1edc35bd35ebd8db0108c19c0d",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-path.js",
+      "sha256": "fa6a6b3db2f451b2a8c3eb9155cb3fa8929f2e1bf6ce9bcafe1b1ba982450fa6",
+      "kind": "test",
+      "module": "path"
+    },
+    {
+      "path": "test/parallel/test-querystring-escape.js",
+      "sha256": "76a4cc226e3de5e522da1c4ec12b4610a981d1d471832106a5a167691a2e72e6",
+      "kind": "test",
+      "module": "querystring"
+    },
+    {
+      "path": "test/parallel/test-querystring-maxKeys-non-finite.js",
+      "sha256": "aa946251bc025f3b89b81446777ff723b6c7a87b4b28d461df5cb5b331f5ec68",
+      "kind": "test",
+      "module": "querystring"
+    },
+    {
+      "path": "test/parallel/test-querystring-multichar-separator.js",
+      "sha256": "04bbfbf3fd3dd97442acd19ae025d3e6310eae4f981bb55c45a5846f28d7748b",
+      "kind": "test",
+      "module": "querystring"
+    },
+    {
+      "path": "test/parallel/test-querystring.js",
+      "sha256": "b542bd7e2045fa2d6f51318ec2850ee6219c408fdb6ac518fc4cb1e1b47f4f04",
+      "kind": "test",
+      "module": "querystring"
+    },
+    {
+      "path": "test/parallel/test-string-decoder-end.js",
+      "sha256": "7c7a2001863059594d112a8450e3808e891f6c8e06d0f62e57920411545a8cb9",
+      "kind": "test",
+      "module": "string_decoder"
+    },
+    {
+      "path": "test/parallel/test-string-decoder-fuzz.js",
+      "sha256": "a3e665a923c69dcfe39c0992ec670adcd4d418b53a91aa93d8957f59666b0c28",
+      "kind": "test",
+      "module": "string_decoder"
+    },
+    {
+      "path": "test/parallel/test-string-decoder.js",
+      "sha256": "f556e3745ae83dd118dc38f740fcf23da9b8db9a2c7c301d1938e38f97884393",
+      "kind": "test",
+      "module": "string_decoder"
+    },
+    {
+      "module": "util",
+      "path": "test/parallel/test-util-format.js",
+      "apis": [
+        "format",
+        "inspect"
+      ],
+      "sha256": "7bd8052e3ce78695f377870bcea855b748e0d1ac1d2d1b2b7fe517167a8792e1",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-util-format.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "util",
+      "path": "test/parallel/test-util-promisify.js",
+      "apis": [
+        "promisify"
+      ],
+      "sha256": "c1044d2c09a412e11ab746da0429f58ed2ff53da427333ace1755a2fe9b06845",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-util-promisify.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "util",
+      "path": "test/parallel/test-util-callbackify.js",
+      "apis": [
+        "callbackify"
+      ],
+      "sha256": "9658652084025c42f5c5ac0663dddd157edd094f0e25d98137e13a77735e3fc2",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-util-callbackify.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "util",
+      "path": "test/parallel/test-util-deprecate.js",
+      "apis": [
+        "deprecate"
+      ],
+      "sha256": "9620e17ed59cd7fff0bc39f3b3a5bf38d1845c2860854f5bb0ca8b475e619c42",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-util-deprecate.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "assert",
+      "path": "test/parallel/test-assert.js",
+      "apis": [
+        "core assertions"
+      ],
+      "sha256": "0c2313387ec5ca6ffe60ff80a58afe214fda009682342736c9c2ce67a8a40a5a",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-assert.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "assert",
+      "path": "test/parallel/test-assert-async.js",
+      "apis": [
+        "rejects",
+        "doesNotReject"
+      ],
+      "sha256": "9c52a4fa94a588d37ba0dba18015e2cc9c6052e2b286d2529854345ac26440f0",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-assert-async.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "assert",
+      "path": "test/parallel/test-assert-deep.js",
+      "apis": [
+        "deepEqual",
+        "deepStrictEqual"
+      ],
+      "sha256": "b49cb36e976150f3d36872a60a0bc0b019944bc592745e5195687c9f6ad46fb0",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-assert-deep.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "assert",
+      "path": "test/parallel/test-assert-fail.js",
+      "apis": [
+        "fail",
+        "AssertionError"
+      ],
+      "sha256": "939b232765da3e56568b2279df53d72ea02a1a1937a2bcad67935a88434dd41d",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-assert-fail.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "url",
+      "path": "test/parallel/test-url-fileurltopath.js",
+      "apis": [
+        "fileURLToPath"
+      ],
+      "sha256": "306e82570c440d5b414c1ccc0458b032801da1ede6ffcb369c85767460f838f8",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-url-fileurltopath.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "module": "url",
+      "path": "test/parallel/test-url-pathtofileurl.js",
+      "apis": [
+        "pathToFileURL"
+      ],
+      "sha256": "7ce6dca0b33df728f80adccc2550fe80c27cf368172b7a17597cecda8a3e6fb9",
+      "sourceUrl": "https://github.com/nodejs/node/blob/5d2feb257bcee090e57900eb51720171a6aa92f3/test/parallel/test-url-pathtofileurl.js",
+      "kind": "test",
+      "execution": "js-host"
+    },
+    {
+      "path": "test/parallel/test-crypto-pbkdf2.js",
+      "module": "crypto",
+      "sha256": "cb76189bc2292e3f21f8bb6acf288c03315994bdd3803ae0650842cfbb60b6ae",
+      "reason": "PBKDF2 callback/sync behavior and validation.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "crypto.pbkdf2",
+        "crypto.pbkdf2Sync",
+        "crypto.getHashes"
+      ]
+    },
+    {
+      "path": "test/parallel/test-crypto-randomuuid.js",
+      "module": "crypto",
+      "sha256": "a7b7c2a1ba1791276e1b7d911b3084d8f5fc82f72b88671a13cf8643583a9f2e",
+      "reason": "UUID format, uniqueness and option validation.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "crypto.randomUUID"
+      ]
+    },
+    {
+      "path": "test/parallel/test-zlib-from-gzip-with-trailing-garbage.js",
+      "module": "zlib",
+      "sha256": "5b99de86a8f1c6da0116876b64f1c88cc687df5397ef085eeaa50e90615403e7",
+      "reason": "Gzip/gunzip one-shot APIs and malformed/trailing input errors.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "zlib.gzipSync",
+        "zlib.gunzipSync",
+        "zlib.gunzip"
+      ]
+    },
+    {
+      "path": "test/parallel/test-zlib-kmaxlength-rangeerror.js",
+      "module": "zlib",
+      "sha256": "ff8b9bb394b81ba35c76496e6a609a1d2c80f8a049731c6e0ab72f29915e4362",
+      "reason": "Gunzip output-size limits and RangeError behavior.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "zlib.gunzip",
+        "zlib.gunzipSync"
+      ]
+    },
+    {
+      "path": "test/parallel/test-stream-pipeline-with-empty-string.js",
+      "module": "stream",
+      "sha256": "f241bfc467121b9ddfc1f76cb2de67afaa29aed63b8eb04812e95afe0992f376",
+      "reason": "Callback pipeline with an empty-string source.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "stream.pipeline",
+        "stream.PassThrough"
+      ]
+    },
+    {
+      "path": "test/parallel/test-stream-pipeline-async-iterator.js",
+      "module": "stream",
+      "sha256": "1327f0087c9ed6b9640f66708ab2ba72305e94b8ac7c29ba7500654d3e59a4b4",
+      "reason": "Pipeline with an async iterable/readable result and error propagation.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "stream.pipeline",
+        "stream.Readable",
+        "stream.PassThrough"
+      ]
+    },
+    {
+      "path": "test/parallel/test-timers.js",
+      "module": "timers",
+      "sha256": "abdc0764a6007998bb65d3077f243dec9a20743c5f5e50f27f187c004e1f9203",
+      "reason": "Delay normalization, callback arguments/context and cancellation.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "timers.setTimeout",
+        "timers.clearTimeout",
+        "timers.setInterval",
+        "timers.clearInterval"
+      ]
+    },
+    {
+      "path": "test/parallel/test-timers-promises-scheduler.js",
+      "module": "timers",
+      "sha256": "38744e53f8d159a7fee0e57cc80f8a8d072bc7969b67aeb0d773cb9e53ff887c",
+      "reason": "Scheduler timing/order and AbortSignal rejection.",
+      "kind": "test",
+      "execution": "js-host",
+      "apis": [
+        "timers/promises.scheduler.wait",
+        "timers/promises.scheduler.yield"
+      ]
+    },
+    {
+      "path": "test/fixtures/uncaught-exceptions/callbackify1.js",
+      "sha256": "0383cef9a019b8cb372bb56a31733f6e5316515acc4cd4d8ec2d45fb4ffc0fcd",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/uncaught-exceptions/callbackify2.js",
+      "sha256": "e4f66259eb06d5ed32f9b78ccaaa6ab08a316274eecd9da50aff01cc028fee99",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/parallel/test-fs-promises-writefile-typedarray.js",
+      "module": "fs",
+      "apis": [
+        "fs/promises.writeFile",
+        "fs/promises.readFile"
+      ],
+      "scenario": "Writes and reads Uint8Array/Uint16Array/Uint32Array over a real filesystem file; >16 KiB case. Uses Node tmpdir helper. No internal binding.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "a8cb5228c030b21dd560feb7362391fa217a3f9c06ecb2bd624103ce73151395"
+    },
+    {
+      "path": "test/parallel/test-process-chdir.js",
+      "module": "process",
+      "apis": [
+        "process.chdir",
+        "process.cwd"
+      ],
+      "scenario": "Changes native process cwd to a temp dir and back; validates cwd and bad-argument errors. Uses worker_threads.isMainThread only as a test guard.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "8278bee65285675b34cd86f790aff25d141b77e6f97dbc2555c5419533f15b09"
+    },
+    {
+      "path": "test/parallel/test-os-eol.js",
+      "module": "os",
+      "apis": [
+        "os.EOL"
+      ],
+      "scenario": "Checks platform EOL value and read-only property contract; static OS field only, not a dynamic Native OS query.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "73a45b0254148f05880076dac887bf62f2c58082b191708e99ba256cc6bd4f76"
+    },
+    {
+      "path": "test/parallel/test-child-process-execfile.js",
+      "module": "child_process",
+      "apis": [
+        "child_process.execFile",
+        "child_process.execFileSync",
+        "ChildProcess.kill"
+      ],
+      "scenario": "ExecFile exit code, errors, shell/env, AbortSignal, callback/sync stdout; requires Node executable as child fixture. Test-only process.execPath injection must be explicit.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "18b95b50f723a722e16b6bcc0a9eaa136fbeacd8045ec7bd5cf7be5ecfe68261"
+    },
+    {
+      "path": "test/parallel/test-http-client-get-url.js",
+      "module": "http",
+      "apis": [
+        "http.createServer",
+        "http.Server.listen",
+        "http.get",
+        "http.ClientRequest.end"
+      ],
+      "scenario": "Loopback GET server/client with string, url.parse() object and URL object; validates method/path/response callback. Real native localhost sockets required.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "b7c31fc3fdb4bde2f5629a07d0e95e2c63aa972f12791c07c6a0535be7b9975c"
+    },
+    {
+      "path": "test/parallel/test-https-options-boolean-check.js",
+      "module": "https",
+      "apis": [
+        "https.createServer"
+      ],
+      "scenario": "Constructor/options type validation for key/cert/CA encodings using PEM fixtures. Validation-only: no listen/handshake; HTTPS Agent and insecure verification cases excluded.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "c1df2fab79cf60dd11c631076660ec453f770b3d17d30edc2e2b358af2f2bac7"
+    },
+    {
+      "path": "test/parallel/test-net-server-close.js",
+      "module": "net",
+      "apis": [
+        "net.createServer",
+        "net.Server.listen",
+        "net.Server.close",
+        "net.connect",
+        "net.Socket.destroy"
+      ],
+      "scenario": "Loopback server accepts two clients, close waits for socket closure, then emits close; direct fit for Native TCP lifecycle.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "311b8a531b2f916b80e36ca8d38fc3c49a993415ee088009be85bccff55b8359"
+    },
+    {
+      "path": "test/parallel/test-tls-connect-no-host.js",
+      "module": "tls",
+      "apis": [
+        "tls.createServer",
+        "tls.connect"
+      ],
+      "scenario": "Loopback TLS server/client using supplied CA and cert, omitted host defaults to localhost, verifies authorized, reads/writes then closes. Real Native TLS handshake required.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "44fd890ebe9cf275957947a5dfac8dfa1eeabad89b5e93b014a2b400a5bd97f8"
+    },
+    {
+      "path": "test/parallel/test-dns-resolvens-typeerror.js",
+      "module": "dns",
+      "apis": [
+        "dns.resolve (resolveNs submethod)"
+      ],
+      "scenario": "Synchronous argument validation for resolveNs malformed hostname/callback; does not perform a DNS packet query. DNS internal-stub candidates excluded.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "1843e0d81947b45f05c4aa6413e94240b475422efbc35853d9339e889297b96b"
+    },
+    {
+      "path": "test/parallel/test-dgram-udp4.js",
+      "module": "dgram",
+      "apis": [
+        "dgram.createSocket",
+        "Socket.bind",
+        "Socket.send",
+        "Socket.close"
+      ],
+      "scenario": "Loopback UDP4 echo, source address/port, message payload and close events; real Native UDP required.",
+      "kind": "test",
+      "execution": "native",
+      "sha256": "ac1386a7377706aa54e0be120da122cbf6e2753c955e42cbf83b53d87c822be4"
+    },
+    {
+      "path": "test/fixtures/exit.js",
+      "sha256": "2820472909cadd2db628d83993e6c628b6fe8e0db3cf625f1be700e02947e763",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/echo.js",
+      "sha256": "e9bbddbd1e12a756b60dd330c135e53f9de9d6e50435ecb998376337696888a2",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/rsa_cert.crt",
+      "sha256": "bb2ffc75fcaff202f5c514124d8cd16b93e2de866e907849eccd04d701e77fcf",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/rsa_private.pem",
+      "sha256": "765388550143f3e182aafa6e5aa9b61faf894edbcd98877ebd9069eaba490606",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/agent1-key.pem",
+      "sha256": "2b75ca8377f0963f5ce0d47a416b9d40de09dbd6e128ffe6e00af0e52be0eda9",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/agent1-cert.pem",
+      "sha256": "5968cc95396f7a49d0fccaee6cf2c6b8a2f66b907efa21531c4c98d20962783c",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/ec-key.pem",
+      "sha256": "684215a703060c2b443743188308c32c889d3375835c5752e39e9af0bec0cebb",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/ec-cert.pem",
+      "sha256": "48743dc653ea3cd8ffa7bcbb3b6ccfd920e8299b0319f3e75cd57efbadbcce7f",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/ca1-cert.pem",
+      "sha256": "cfc60db87bd758cd89e69973484b60a14fb2f3d9cf798bb4ce0dcc17e59643b6",
+      "kind": "fixture"
+    },
+    {
+      "path": "test/fixtures/keys/ca2-cert.pem",
+      "sha256": "5117d80e6c85e92c5707e66979cb39bc352d6d782c0719afd82eefd88328d24f",
+      "kind": "fixture"
+    }
+  ],
+  "selectionCount": 58
+}

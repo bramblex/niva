@@ -1,18 +1,8 @@
 import "./runtime/bridge.js";
-import "./runtime/path.js";
+import "./runtime/vendor.js";
 import "./runtime/os.js";
-
 const os = globalThis[Symbol.for("niva.node-compat.runtime")].os;
-
-export const EOL = os.EOL;
-export const devNull = os.devNull;
-export const sep = os.sep;
-export const delimiter = os.delimiter;
-export const info = os.info;
-export const dirs = os.dirs;
-export const platform = os.platform;
-export const arch = os.arch;
-export const homedir = os.homedir;
-export const tmpdir = os.tmpdir;
-
+// EOL is statically determined from the platform at module load.
+export const EOL = globalThis.Niva?.bootstrap?.os?.EOL ?? "\n";
+export const { arch, platform, homedir, tmpdir, hostname, release, totalmem, type, version, userInfo, cpus, freemem, networkInterfaces, uptime } = os;
 export default os;

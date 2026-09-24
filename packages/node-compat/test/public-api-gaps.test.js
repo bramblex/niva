@@ -60,80 +60,6 @@ test("path.toNamespacedPath resolves drive and UNC paths without double-prefixin
   assert.equal(path.toNamespacedPath, path.sep === "\\" ? path.win32.toNamespacedPath : path.posix.toNamespacedPath);
 });
 
-test("OS synchronous constants agree with the host path convention", () => {
-  assert.equal(os.EOL, nodeOs.EOL);
-  assert.equal(os.devNull, nodePath.sep === "\\" ? "\\\\.\\NUL" : "/dev/null");
-  assert.equal(os.sep, nodePath.sep);
-  assert.equal(os.delimiter, nodePath.delimiter);
-});
-
-function makeProcessNiva(onStart) {
-  const calls = [];
-  const sent = [];
-  let nextId = 20;
-  const niva = {
-    stream(method, args, handlers) {
-      const id = ++nextId;
-      calls.push([method, args]);
-      onStart?.(handlers);
-      return {
-        id,
-        cancel() { calls.push(["cancel", id]); },
-        promise: Promise.resolve().then(async () => {
-          if (onStart?.blobs) {
-            for (const [bytes, isStderr] of onStart.blobs) handlers.onBlob(new Blob([bytes]), isStderr);
-          }
-          return onStart?.result ?? { status: 0 };
-        }),
-      };
-    },
-    streamSend(id, data, end) { sent.push([id, [...data], end]); return true; },
-  };
-  return { niva, calls, sent, setBlobs(blobs) { onStart.blobs = blobs; }, setResult(result) { onStart.result = result; } };
-}
-
-test("child output setEncoding incrementally decodes split UTF-8 and validates encodings", async () => {
-  const fake = makeProcessNiva(() => {});
-  fake.setBlobs([
-    [Uint8Array.from([65, 0xf0, 0x9f]), false],
-    [Uint8Array.from([0x8c, 0x8d, 90]), false],
-  ]);
-  const child = runtime.createChildProcessModule(fake.niva).spawn("emit", []);
-  assert.equal(child.stdout.setEncoding("utf8"), child.stdout);
-  const output = [];
-  child.stdout.on("data", (chunk) => output.push(chunk));
-  await child.completion;
-  assert.deepEqual(output, ["A", "🌍Z"]);
-  assert.equal(output.join(""), "A🌍Z");
-  assert.throws(() => child.stderr.setEncoding("latin1"), /Only UTF-8 and binary/);
-});
-
-test("detached spawn passes its mode to the bridge and reports the detached pid", async () => {
-  const fake = makeProcessNiva(() => {});
-  fake.setResult(4321);
-  const child = runtime.createChildProcessModule(fake.niva).spawn("worker", [], { detached: true });
-  assert.equal(child.stdin.write("ignored"), false);
-  child.stdin.end();
-  assert.deepEqual(await child.completion, { pid: 4321, status: null, detached: true });
-  assert.equal(child.pid, 4321);
-  assert.equal(fake.calls[0][1][2].detached, true);
-  assert.deepEqual(fake.sent, []);
-});
-
-test("exec with encoding null returns binary Buffers", async () => {
-  const fake = makeProcessNiva(() => {});
-  fake.setBlobs([
-    [Uint8Array.from([0, 0xff, 65]), false],
-    [Uint8Array.from([0xfe]), true],
-  ]);
-  const child = runtime.createChildProcessModule(fake.niva).exec("binary-output", { encoding: null });
-  const result = await child.result;
-  assert.equal(Buffer.isBuffer(result.stdout), true);
-  assert.equal(Buffer.isBuffer(result.stderr), true);
-  assert.deepEqual([...result.stdout], [0, 0xff, 65]);
-  assert.deepEqual([...result.stderr], [0xfe]);
-});
-
 test("EventEmitter aliases, once raw listeners, listener filtering, and errorMonitor work", () => {
   assert.equal(defaultMaxListeners, 10);
   assert.equal(events.errorMonitor, EventEmitter.errorMonitor);
@@ -181,17 +107,18 @@ test("querystring aliases and custom codec options preserve their documented beh
   const parsed = querystring.parse("a+b=%41", "&", "=", {
     decodeURIComponent(value) { decodedInputs.push(value); return `decoded:${value}`; },
   });
-  assert.deepEqual(decodedInputs, ["a b", "%41"]);
-  assert.equal(parsed["decoded:a b"], "decoded:%41");
+  assert.deepEqual(decodedInputs, ["a%20b", "%41"]);
+  assert.equal(parsed["decoded:a%20b"], "decoded:%41");
   assert.equal(querystring.stringify({ "a b": "x/y" }, "&", "=", {
     encodeURIComponent(value) { return `[${value}]`; },
   }), "[a b]=[x/y]");
 });
 
 test("Buffer allocation, sizing, encoding checks, comparisons, and copies match Node", () => {
-  assert.equal(bufferModule.SlowBuffer, Buffer);
+  assert.equal(Buffer.isBuffer(bufferModule.SlowBuffer(3)), true);
+  assert.deepEqual([...bufferModule.SlowBuffer(3)], [...nodeBuffer.SlowBuffer(3)]);
   assert.equal(bufferModule.INSPECT_MAX_BYTES, 50);
-  assert.equal(bufferModule.kMaxLength, 0x7fffffff);
+  assert.equal(bufferModule.kMaxLength, nodeBuffer.kMaxLength);
   assert.equal(Buffer.allocUnsafeSlow(2).length, 2);
   const unsafe = Buffer.allocUnsafe(5);
   assert.equal(unsafe.length, 5);
@@ -282,21 +209,21 @@ test("Windows file URL helpers round-trip drive and UNC paths", () => {
   }
 });
 
-test("crypto reports its supported hashes and hashes SHA-384/SHA-512 data", async () => {
+test("crypto exposes the bundled hashes and Node-compatible synchronous digest", () => {
   const supported = crypto.getHashes();
-  assert.deepEqual(supported, ["sha1", "sha256", "sha384", "sha512"]);
+  assert.deepEqual(supported, ["md5", "sha1", "sha256", "sha384", "sha512"]);
   supported.pop();
-  assert.deepEqual(crypto.getHashes(), ["sha1", "sha256", "sha384", "sha512"]);
+  assert.deepEqual(crypto.getHashes(), ["md5", "sha1", "sha256", "sha384", "sha512"]);
   for (const algorithm of ["sha384", "sha512"]) {
-    const actual = await crypto.createHash(algorithm).update("chunk ").update("boundary").digest("hex");
+    const actual = crypto.createHash(algorithm).update("chunk ").update("boundary").digest("hex");
     const expected = nodeCrypto.createHash(algorithm).update("chunk boundary").digest("hex");
     assert.equal(actual, expected, algorithm);
   }
-  const raw = await crypto.createHash("sha384").update("bytes").digest();
+  const raw = crypto.createHash("sha384").update("bytes").digest();
   assert.equal(Buffer.isBuffer(raw), true);
   assert.equal(raw.toString("hex"), nodeCrypto.createHash("sha384").update("bytes").digest("hex"));
   assert.equal(
-    await crypto.createHash("sha256").update("6869", "hex").digest("hex"),
+    crypto.createHash("sha256").update("6869", "hex").digest("hex"),
     nodeCrypto.createHash("sha256").update("hi").digest("hex"),
   );
 });
@@ -324,83 +251,6 @@ function makeHttpNiva(responses) {
   };
 }
 
-test("http.post submits its body and IncomingMessage exposes buffer and response events", async () => {
-  const { niva, calls } = makeHttpNiva([
-    { status: 404, headers: { "content-type": "text/plain", "x-origin": "mock" }, body: "not found" },
-    { status: 202, headers: {}, body: "queued" },
-  ]);
-  const api = runtime.createHttpModule("http", niva);
-  const responseEvents = [];
-  let responseFromEvent;
-  const request = api.post("http://api.example.test/jobs", "payload", { headers: { "content-type": "text/plain" } });
-  request.on("response", (response) => {
-    responseFromEvent = response;
-    responseEvents.push("response");
-    response.setEncoding("utf8");
-    response.on("data", (chunk) => responseEvents.push(["data", chunk]));
-    response.on("end", () => responseEvents.push("end"));
-  });
-  const response = await request.response;
-  assert.equal(responseFromEvent, response);
-  assert.equal(response.statusCode, 404);
-  assert.equal(response.statusMessage, "Not Found");
-  assert.equal((await response.buffer()).toString(), "not found");
-  assert.equal(response.complete, true);
-  assert.deepEqual(responseEvents, ["response", ["data", "not found"], "end"]);
-  assert.equal(new TextDecoder().decode(await response.arrayBuffer()), "not found");
-  assert.equal(calls[0][1][0].method, "POST");
-  assert.equal(calls[0][1][0].body, "payload");
-
-  const objectPost = api.post({ hostname: "api.example.test", path: "/jobs" }, "second");
-  assert.equal((await objectPost.result).statusCode, 202);
-  assert.equal(calls[1][1][0].url, "http://api.example.test/jobs");
-  assert.equal(calls[1][1][0].body, "second");
-});
-
-test("HTTP request accepts an options object followed by request overrides", async () => {
-  const { niva, calls } = makeHttpNiva([{ status: 201, headers: {}, body: "created" }]);
-  const api = runtime.createHttpModule("http", niva);
-  let callbackResponse;
-  const request = api.request(
-    { hostname: "api.example.test", path: "/items", headers: { "x-base": "base" } },
-    { method: "PATCH", headers: { "x-extra": "extra" } },
-    (response) => { callbackResponse = response; },
-  );
-  assert.equal(request.method, "PATCH");
-  assert.equal(request.getHeader("x-base"), "base");
-  assert.equal(request.hasHeader("x-extra"), true);
-  assert.deepEqual(Object.fromEntries(Object.entries(request.getHeaders())), { "x-base": "base", "x-extra": "extra" });
-  request.setHeader("x-later", "later");
-  assert.equal(request.getHeader("x-later"), "later");
-  request.removeHeader("x-later");
-  assert.equal(request.hasHeader("x-later"), false);
-  request.end();
-  const response = await request.response;
-  assert.equal(callbackResponse, response);
-  assert.equal(response.statusCode, 201);
-  assert.equal(calls[0][1][0].method, "PATCH");
-  assert.equal(calls[0][1][0].url, "http://api.example.test/items");
-  assert.deepEqual(Object.fromEntries(Object.entries(calls[0][1][0].headers)), { "x-base": "base", "x-extra": "extra" });
-  assert.throws(() => request.setHeader("x-late", "no"), { code: "ERR_HTTP_HEADERS_SENT" });
-});
-
-test("https.get and https.request use HTTPS and preserve request callbacks", async () => {
-  const { niva, calls } = makeHttpNiva([
-    { status: 200, headers: { "x-secure": "yes" }, body: "secure get" },
-    { status: 204, headers: {}, body: "" },
-  ]);
-  const api = runtime.createHttpModule("https", niva);
-  const getRequest = api.get("https://secure.example.test/read");
-  assert.equal(await (await getRequest.result).text(), "secure get");
-  const request = api.request({ hostname: "secure.example.test", path: "/write", method: "PUT" });
-  request.end("body");
-  assert.equal((await request.result).statusCode, 204);
-  assert.equal(calls[0][1][0].method, "GET");
-  assert.equal(calls[0][1][0].url, "https://secure.example.test/read");
-  assert.equal(calls[1][1][0].method, "PUT");
-  assert.equal(calls[1][1][0].body, "body");
-});
-
 test("assert exports cover negative checks, regex checks, and sync/async no-throw helpers", async () => {
   assert.equal(assertApi.strict, strictAssert);
   assert.equal(strictAssertDefault, strictAssert);
@@ -415,9 +265,9 @@ test("assert exports cover negative checks, regex checks, and sync/async no-thro
   assertNotDeepStrictEqual({ a: 1 }, { a: 2 });
   assert.equal(strictEqualExport, strictAssert.equal);
   assert.equal(strictDeepEqualExport, strictAssert.deepEqual);
-  assert.equal(assertThrows(() => { throw new TypeError("bad"); }, TypeError).message, "bad");
+  assert.equal(assertThrows(() => { throw new TypeError("bad"); }, TypeError), undefined);
   assertDoesNotThrow(() => 42);
-  assert.equal(await assertRejects(() => { throw new Error("async"); }, /async/).then((error) => error.message), "async");
+  await assert.rejects(assertRejects(() => { throw new Error("async"); }, /async/), { name: "Error", message: "async" });
   await assertDoesNotReject(Promise.resolve("ok"));
   assertIfError(null);
   assertIfError(undefined);
@@ -429,40 +279,30 @@ test("assert exports cover negative checks, regex checks, and sync/async no-thro
   assert.throws(() => nodeAssert.notEqual(1, 1), nodeAssert.AssertionError);
 });
 
-function makeWritable() {
-  const events = new EventEmitter();
-  const writable = {
-    chunks: [],
-    destroyError: undefined,
-    on: events.on.bind(events),
-    once: events.once.bind(events),
-    off: events.off.bind(events),
-    emit: events.emit.bind(events),
-    write(value) { writable.chunks.push(value); return true; },
-    end() { events.emit("finish"); },
-    destroy(error) { writable.destroyError = error || true; },
-  };
-  return writable;
-}
-
-test("stream/promises pipeline exports the Promise API and rejects stream errors", async () => {
+test("stream classes and pipeline match the Node Promise API", async () => {
   assert.equal(streamPromises, streamModule.promises);
-  assert.equal(streamPromises.pipeline, streamModule.pipeline);
-  assert.equal(exportedStreamPromisesPipeline, streamModule.pipeline);
+  assert.equal(typeof streamModule.Readable, "function");
+  assert.equal(typeof streamModule.Writable, "function");
+  assert.equal(typeof streamModule.Transform, "function");
+  assert.equal(typeof streamModule.PassThrough, "function");
+  assert.equal(typeof streamModule.finished, "function");
+  assert.equal(typeof streamPromises.pipeline, "function");
+  assert.equal(typeof exportedStreamPromisesPipeline, "function");
 
-  const sourceEvents = new EventEmitter();
-  const destination = makeWritable();
-  const source = Object.assign(sourceEvents, {
-    pipe(target) { target.write(Buffer.from("piped")); target.end(); return target; },
+  const chunks = [];
+  const source = streamModule.Readable.from([Buffer.from("piped")]);
+  const destination = new streamModule.Writable({
+    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
   });
-  assert.equal(await exportedStreamPromisesPipeline(source, destination), destination);
-  assert.equal(Buffer.from(destination.chunks[0]).toString(), "piped");
+  assert.equal(await exportedStreamPromisesPipeline(source, destination), undefined);
+  assert.equal(Buffer.concat(chunks).toString(), "piped");
 
-  const failingSource = Object.assign(new EventEmitter(), { pipe() {} });
-  const failingDestination = makeWritable();
-  failingSource.pipe = (target) => { target.emit("error", new Error("sink failed")); return target; };
+  const failingSource = new streamModule.Readable({
+    read() { this.destroy(new Error("sink failed")); },
+  });
+  const failingDestination = new streamModule.Writable({ write(_chunk, _encoding, callback) { callback(); } });
   await assert.rejects(streamPromises.pipeline(failingSource, failingDestination), /sink failed/);
-  assert.match(String(failingDestination.destroyError), /sink failed/);
+  assert.equal(failingDestination.destroyed, true);
 });
 
 function aString() { return "different"; }

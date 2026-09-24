@@ -33,9 +33,6 @@
 | `Niva.api.fs.readDir` | crates/niva/src/app/api/fs.rs — `read_dir_lists_only_immediate_entry_names` (helper, not full handler) | macOS 真机 PASS（headless，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.api.fs.readDirAll` | crates/niva/src/app/api/fs.rs — `read_dir_all_recurses_and_excludes_matching_paths` (helper, not full handler) | macOS 真机 PASS（headless，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.api.host.send` | 未发现逐方法行为断言 | macOS 真机 PASS（default，逐方法） | 未观察 | 其他平台或选项分支待测 |
-| `Niva.api.http.request` | `bridge-api-overrides.test.mjs` — `http.request returns response head and streamed body` | macOS 真机 PASS（extended，逐方法） | 未观察 | 其他平台或选项分支待测 |
-| `Niva.api.http.get` | `bridge-api-overrides.test.mjs` — `http.get returns response head and streamed body` | macOS 真机 PASS（extended，逐方法） | 未观察 | 其他平台或选项分支待测 |
-| `Niva.api.http.post` | `bridge-api-overrides.test.mjs` — `http.post returns response head and streamed body` | macOS 真机 PASS（extended，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.api.monitor.list` | 未发现逐方法行为断言 | macOS 真机 PASS（default，逐方法） | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他平台或选项分支待测 |
 | `Niva.api.monitor.current` | 未发现逐方法行为断言 | macOS 真机 PASS（default，逐方法） | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他平台或选项分支待测 |
 | `Niva.api.monitor.primary` | 未发现逐方法行为断言 | macOS 真机 PASS（default，逐方法） | Windows 真机 [run_api.py](../examples/windows-smoke/run_api.py) 逐方法行为断言通过（68 项整套） | 其他平台或选项分支待测 |
@@ -187,6 +184,7 @@
 | `Niva.removeEventListener` | `bridge-api-overrides.test.mjs` — `Niva event subscriptions match exact, namespace, and wildcard names` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.removeAllEventListeners` | `bridge-api-overrides.test.mjs` — `Niva event subscriptions match exact, namespace, and wildcard names` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.call` | `bridge-api-overrides.test.mjs` — `Niva.call resolves successful replies and rejects native errors` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
+| `Niva.callSync` | API Manager 同步方法门禁与 HTTP framing 测试 | macOS WebView 同步文件/进程/系统调用 PASS | 未观察 | Windows 仅 target check；同步调用不支持 UI/流式方法 |
 | `Niva.stream` | `bridge-api-overrides.test.mjs` — `Niva.stream cancellation and streamSend use the call ID and binary frame` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 | `Niva.streamSend` | `bridge-api-overrides.test.mjs` — `Niva.stream cancellation and streamSend use the call ID and binary frame` | macOS 真机 PASS（run_bridge_top_level.py，逐方法） | 未观察 | 其他平台或选项分支待测 |
 

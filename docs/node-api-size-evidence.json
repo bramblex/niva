@@ -1,0 +1,1606 @@
+{
+  "asOf": "2026-09-24",
+  "sourceCommit": "3787257887eddc31007dbfa57f36181ce93e6abf",
+  "baseline": {
+    "scope": "existing local artifacts + NodeCompat-only resource concatenation model, no application/config/icon files and no fresh native build",
+    "nativeBaseline": {
+      "path": "target/release/niva",
+      "bytes": 2288336,
+      "sha256": "2144141ec6666b824f5f990a9dcb99eac2d6db46a31abf528d82bbfc2497b1cd",
+      "platform": "macOS arm64",
+      "freshBuild": false
+    },
+    "nodeCompatResourceModel": {
+      "fileCount": 34,
+      "rawBytes": 277765,
+      "deflateRawBytes": 58036,
+      "indexBytes": 2190,
+      "files": [
+        {
+          "name": "node-compat.js",
+          "path": "packages/node-compat/dist/niva-node-compat.js",
+          "bytes": 136934,
+          "sha256": "045648d81b016f7ac26034a0b7d347f495a31229dc7f0145966fc6b0c6111482"
+        },
+        {
+          "name": "src/assert-strict.js",
+          "path": "packages/node-compat/src/assert-strict.js",
+          "bytes": 1051,
+          "sha256": "dc40126c72e8aea5392ba0b6cf60879503c1102eb11833d7abb2a03e6900c429"
+        },
+        {
+          "name": "src/assert.js",
+          "path": "packages/node-compat/src/assert.js",
+          "bytes": 1052,
+          "sha256": "38a332b894e4bb1cb88a88d4e0f5288c82e02de5853f493cf6b3f01c7dc7fbd5"
+        },
+        {
+          "name": "src/buffer.js",
+          "path": "packages/node-compat/src/buffer.js",
+          "bytes": 345,
+          "sha256": "c99ad4ee05136b16a4e6855e7c6e6ed8063f0170c59c4fb88d8e04f65b5025a7"
+        },
+        {
+          "name": "src/child_process.js",
+          "path": "packages/node-compat/src/child_process.js",
+          "bytes": 324,
+          "sha256": "0a4217724cb8c1b0f628276e17974423136df1c00028ad0a72d8475caac949ab"
+        },
+        {
+          "name": "src/crypto.js",
+          "path": "packages/node-compat/src/crypto.js",
+          "bytes": 369,
+          "sha256": "0d1500facac2e37d25c3dc04ffe40a470bf6922c79fa0f955f23587452d55455"
+        },
+        {
+          "name": "src/events.js",
+          "path": "packages/node-compat/src/events.js",
+          "bytes": 320,
+          "sha256": "db48e96cd51986623dcfd1db823e57e336704797e268d27508fb71357b6e0a70"
+        },
+        {
+          "name": "src/fs-promises.js",
+          "path": "packages/node-compat/src/fs-promises.js",
+          "bytes": 726,
+          "sha256": "e6d93989fbd2a6c72ec79052c0bee351e04c668e381dbfa1b6556a24ba187349"
+        },
+        {
+          "name": "src/fs.js",
+          "path": "packages/node-compat/src/fs.js",
+          "bytes": 643,
+          "sha256": "49ab1e063c5e822c3815bda07b25c5693adaf674f7d7aeac9b4c432b84baf0b5"
+        },
+        {
+          "name": "src/http.js",
+          "path": "packages/node-compat/src/http.js",
+          "bytes": 306,
+          "sha256": "75b2ddf5d02c4286cc92ada85f1a76c7957a03477e5fffd2008a75a4fb957a17"
+        },
+        {
+          "name": "src/https.js",
+          "path": "packages/node-compat/src/https.js",
+          "bytes": 312,
+          "sha256": "41cc4083ccd5b8eeca7c50d56c889f84fb37ddbdd9aca69dd1004a10cd6c9226"
+        },
+        {
+          "name": "src/os.js",
+          "path": "packages/node-compat/src/os.js",
+          "bytes": 492,
+          "sha256": "682eaaa8a7b0ef4cab794147c071b1329ba5f34c36c03afc6e52fcf054a3b72a"
+        },
+        {
+          "name": "src/path.js",
+          "path": "packages/node-compat/src/path.js",
+          "bytes": 830,
+          "sha256": "32b6fc0e6d06647e8a4e4dd24cdce5e5c0fe1391e7e0a423735fcb2f3fba0637"
+        },
+        {
+          "name": "src/querystring.js",
+          "path": "packages/node-compat/src/querystring.js",
+          "bytes": 439,
+          "sha256": "f3ac365da3c8665d57ab00f81c5cf8b178dd8dcc69af458e48a65f1858557883"
+        },
+        {
+          "name": "src/runtime/assert.js",
+          "path": "packages/node-compat/src/runtime/assert.js",
+          "bytes": 9650,
+          "sha256": "cee71552492d68b02a8f00e54668fdb9c271a9a89f0a06fe2ad794057dc52a0a"
+        },
+        {
+          "name": "src/runtime/bridge.js",
+          "path": "packages/node-compat/src/runtime/bridge.js",
+          "bytes": 4293,
+          "sha256": "c7ec354ceb422016a7f6caf08c85a635034cafe4b32fe23daf123454e51fb2b3"
+        },
+        {
+          "name": "src/runtime/buffer.js",
+          "path": "packages/node-compat/src/runtime/buffer.js",
+          "bytes": 15427,
+          "sha256": "b409f57934fdabc0acc0864251bd4945bc8921b786a7726e77cacb73c2e67e65"
+        },
+        {
+          "name": "src/runtime/child_process.js",
+          "path": "packages/node-compat/src/runtime/child_process.js",
+          "bytes": 16448,
+          "sha256": "52710e98cab6d4c809519f6e835668189e533bd8d905a4d02302de0e9d2b982e"
+        },
+        {
+          "name": "src/runtime/crypto.js",
+          "path": "packages/node-compat/src/runtime/crypto.js",
+          "bytes": 3994,
+          "sha256": "f0e7baca50374995de8aad855ac5b998c312d7002ffa6c6816b457b8b5d43b9b"
+        },
+        {
+          "name": "src/runtime/events.js",
+          "path": "packages/node-compat/src/runtime/events.js",
+          "bytes": 6415,
+          "sha256": "982915a24171b9ff005a09cd880b92061abc58fb9da3f48ab93d64c4378afac2"
+        },
+        {
+          "name": "src/runtime/fs.js",
+          "path": "packages/node-compat/src/runtime/fs.js",
+          "bytes": 12345,
+          "sha256": "a4f3cfa1a436c89c740e0cdea252587ab838a445b8ecaeeb8554c4f67d4db2f2"
+        },
+        {
+          "name": "src/runtime/http.js",
+          "path": "packages/node-compat/src/runtime/http.js",
+          "bytes": 19240,
+          "sha256": "a6c124f95a913dbe1a7c14e72427317113bc26b585ed37e13f9c5b452dad7a65"
+        },
+        {
+          "name": "src/runtime/os.js",
+          "path": "packages/node-compat/src/runtime/os.js",
+          "bytes": 2727,
+          "sha256": "0394fd49b45643d09d33ece532ebc827844648ae84578ab78b612916b8fce975"
+        },
+        {
+          "name": "src/runtime/path.js",
+          "path": "packages/node-compat/src/runtime/path.js",
+          "bytes": 18946,
+          "sha256": "c78da8e6dacc37d44c90feb8f8a2c2f62ee92db20776751f6743bae6ec929211"
+        },
+        {
+          "name": "src/runtime/querystring.js",
+          "path": "packages/node-compat/src/runtime/querystring.js",
+          "bytes": 3242,
+          "sha256": "1a7543c37f9b2122b32468d3211bb1c54efada1f9b5a03e775828573f4260e43"
+        },
+        {
+          "name": "src/runtime/stream.js",
+          "path": "packages/node-compat/src/runtime/stream.js",
+          "bytes": 2712,
+          "sha256": "045ee9e6df2926e4d25cbcf46fc9543dd1dcc018f42f83e78d7f82d29ad441bc"
+        },
+        {
+          "name": "src/runtime/url.js",
+          "path": "packages/node-compat/src/runtime/url.js",
+          "bytes": 2603,
+          "sha256": "37f1f413da1ffd08d85492eae7d1605cdb718cca851a306bb17b7645d682f57a"
+        },
+        {
+          "name": "src/runtime/util.js",
+          "path": "packages/node-compat/src/runtime/util.js",
+          "bytes": 12350,
+          "sha256": "f5e53a441dd4dabd24c9ccc1f75c5c2b6938e8a178b44fa8c3c9a7167adb6ee8"
+        },
+        {
+          "name": "src/runtime/zlib.js",
+          "path": "packages/node-compat/src/runtime/zlib.js",
+          "bytes": 1727,
+          "sha256": "434d32622ea88928ad96b5ec752f81efab126ee10357283842f2ad3ea90ddd8d"
+        },
+        {
+          "name": "src/stream-promises.js",
+          "path": "packages/node-compat/src/stream-promises.js",
+          "bytes": 221,
+          "sha256": "1b695368dd67c6d42b9f82a9010a7ca50e5d31b6e8ab9f38eeaea1be57d3e13b"
+        },
+        {
+          "name": "src/stream.js",
+          "path": "packages/node-compat/src/stream.js",
+          "bytes": 247,
+          "sha256": "21ed65b05abce6fab3ea94e72269d192b79472bea0eef190c04660f91a3f383d"
+        },
+        {
+          "name": "src/url.js",
+          "path": "packages/node-compat/src/url.js",
+          "bytes": 351,
+          "sha256": "79d9a8e6b1a15261054a11ab3ca0561184fba428b2f42d3da8f0a3daf495ee84"
+        },
+        {
+          "name": "src/util.js",
+          "path": "packages/node-compat/src/util.js",
+          "bytes": 437,
+          "sha256": "e7c6a2fa19d44f8d3fff0afe0c7ff9194cd5b39d0f738ca36d18a809d0a00d6f"
+        },
+        {
+          "name": "src/zlib.js",
+          "path": "packages/node-compat/src/zlib.js",
+          "bytes": 247,
+          "sha256": "44274a4453873af0222db475928676c9b329ff0dc09ac5619a4a14d6b7707c71"
+        }
+      ]
+    },
+    "compression": "Node zlib.deflateRawSync level6",
+    "nodeVersion": "v24.10.0"
+  },
+  "jsBundleMeasurements": {
+    "schemaVersion": 1,
+    "measuredAt": "2026-09-24T05:40:07.104Z",
+    "isolation": {
+      "tempProject": "/private/tmp/niva-node-size-20260924",
+      "repositoryModified": false,
+      "note": "Dependencies and build outputs are confined to this temporary project."
+    },
+    "versions": {
+      "@noble/hashes": "2.4.0",
+      "buffer": "6.0.3",
+      "readable-stream": "4.7.0",
+      "fflate": "0.8.3",
+      "esbuild": "0.28.2",
+      "string_decoder": "1.3.0",
+      "process": "0.11.10",
+      "base64-js": "1.5.1",
+      "ieee754": "1.2.1",
+      "events": "3.3.0",
+      "abort-controller": "3.0.0"
+    },
+    "buildSettings": {
+      "esbuildVersion": "0.28.2",
+      "command": "esbuild <entries> --bundle --format=esm --platform=browser --target=es2022 --minify --metafile=dist/metafile.json --outdir=dist",
+      "target": "browser ES2022 ESM",
+      "minification": true,
+      "compressionMeasurement": "Node zlib gzipSync/deflateRawSync of emitted minified JS bytes, level 6",
+      "entryTexts": {
+        "noble": "import { sha256, sha384, sha512 } from '@noble/hashes/sha2.js';\nimport { sha1, md5 } from '@noble/hashes/legacy.js';\nimport { hmac } from '@noble/hashes/hmac.js';\nimport { pbkdf2, pbkdf2Async } from '@noble/hashes/pbkdf2.js';\nimport { scrypt, scryptAsync } from '@noble/hashes/scrypt.js';\nexport { sha256, sha384, sha512, sha1, md5, hmac, pbkdf2, pbkdf2Async, scrypt, scryptAsync };\n",
+        "buffer": "import { Buffer } from 'buffer';\nexport { Buffer };\n",
+        "readable_stream": "import Stream from 'readable-stream';\nexport const Readable = Stream.Readable;\nexport const Writable = Stream.Writable;\nexport const Duplex = Stream.Duplex;\nexport const Transform = Stream.Transform;\nexport const PassThrough = Stream.PassThrough;\nexport const pipeline = Stream.pipeline;\nexport const finished = Stream.finished;\nexport const pipelinePromise = Stream.promises.pipeline;\nexport const finishedPromise = Stream.promises.finished;\n",
+        "string_decoder": "import { StringDecoder } from 'string_decoder';\nexport { StringDecoder };\n",
+        "fflate": "import { gzip, gunzip, gzipSync, gunzipSync } from 'fflate/browser';\nexport { gzip, gunzip, gzipSync, gunzipSync };\n",
+        "combined_selected": "export * from './noble.mjs';\nexport { Buffer } from './buffer.mjs';\nexport * from './stream.mjs';\nexport { StringDecoder } from './string-decoder.mjs';\nexport * from './fflate.mjs';\n",
+        "combined_selected_without_buffer_export": "export * from './noble.mjs';\nexport * from './stream.mjs';\nexport { StringDecoder } from './string-decoder.mjs';\nexport * from './fflate.mjs';\n",
+        "stream_plus_string_decoder": "export * from './stream.mjs';\nexport { StringDecoder } from './string-decoder.mjs';\n",
+        "current_niva_node_compat_full_esm": "import \"./runtime/bridge.js\";\nimport \"./runtime/path.js\";\nimport \"./runtime/events.js\";\nimport \"./runtime/querystring.js\";\nimport \"./runtime/buffer.js\";\nimport \"./runtime/util.js\";\nimport \"./runtime/os.js\";\nimport \"./runtime/fs.js\";\nimport \"./runtime/child_process.js\";\nimport \"./runtime/url.js\";\nimport \"./runtime/crypto.js\";\nimport \"./runtime/zlib.js\";\nimport \"./runtime/assert.js\";\nimport \"./runtime/http.js\";\nimport \"./runtime/stream.js\";\nimport \"./runtime/registration.js\";\n\nexport { default as path } from \"./path.js\";\nexport { default as os } from \"./os.js\";\nexport { default as fs } from \"./fs.js\";\nexport { default as child_process } from \"./child_process.js\";\nexport { default as events } from \"./events.js\";\nexport { default as util } from \"./util.js\";\nexport { default as querystring } from \"./querystring.js\";\nexport { default as buffer } from \"./buffer.js\";\nexport { default as url } from \"./url.js\";\nexport { default as crypto } from \"./crypto.js\";\nexport { default as zlib } from \"./zlib.js\";\nexport { default as http } from \"./http.js\";\nexport { default as https } from \"./https.js\";\nexport { default as assert } from \"./assert.js\";\nexport { default as stream } from \"./stream.js\";\n\nexport function registerNodeCompat(niva = globalThis.Niva) {\n  return globalThis[Symbol.for(\"niva.node-compat.runtime\")].registerNodeCompat(niva);\n}\n"
+      },
+      "installCommand": "npm install --ignore-scripts --no-audit --no-fund --save-exact @noble/hashes@2.4.0 buffer@6.0.3 readable-stream@4.7.0 fflate@0.8.3 esbuild@0.28.2",
+      "toolRuntime": {
+        "node": "v24.10.0",
+        "npm": "11.6.1"
+      },
+      "rebuildCorrectionCommand": "esbuild entries/string-decoder.mjs entries/stream-string-decoder.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --metafile=dist/string-decoder-correction-metafile.json --outdir=dist/string-decoder-correction"
+    },
+    "measurements": {
+      "noble": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/noble.js",
+        "bytes": 19920,
+        "gzipBytes": 8362,
+        "deflateRawBytes": 8344
+      },
+      "buffer": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/buffer.js",
+        "bytes": 28404,
+        "gzipBytes": 8768,
+        "deflateRawBytes": 8750
+      },
+      "readable_stream": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/stream.js",
+        "bytes": 118698,
+        "gzipBytes": 35867,
+        "deflateRawBytes": 35849
+      },
+      "string_decoder": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/string-decoder-correction/string-decoder.js",
+        "bytes": 32967,
+        "gzipBytes": 9856,
+        "deflateRawBytes": 9838
+      },
+      "fflate": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/fflate.js",
+        "bytes": 11483,
+        "gzipBytes": 5601,
+        "deflateRawBytes": 5583
+      },
+      "combined_selected": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/combined.js",
+        "bytes": 150726,
+        "gzipBytes": 49939,
+        "deflateRawBytes": 49921
+      },
+      "combined_selected_without_buffer_export": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/private/tmp/niva-node-size-20260924/entries/combined-no-buffer.js",
+        "bytes": 150656,
+        "gzipBytes": 49920,
+        "deflateRawBytes": 49902
+      },
+      "readable_stream_plus_string_decoder": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/string-decoder-correction/stream-string-decoder.js",
+        "bytes": 118796,
+        "gzipBytes": 35916,
+        "deflateRawBytes": 35898
+      },
+      "current_niva_node_compat_full_esm": {
+        "artifactPath": "/private/tmp/niva-node-size-20260924/dist/Users/brambles/Workspace/playground/niva/packages/node-compat/src/index.js",
+        "bytes": 73017,
+        "gzipBytes": 22645,
+        "deflateRawBytes": 22627
+      }
+    },
+    "deltas": {
+      "combinedMinusBufferOnlyBytes": 122322,
+      "combinedMinusBufferOnlyGzipBytes": 41171,
+      "combinedWithoutExplicitBufferExportBytes": 150656,
+      "combinedWithoutExplicitBufferExportGzipBytes": 49920,
+      "incrementalExplicitBufferExportBytes": 70,
+      "incrementalExplicitBufferExportGzipBytes": 19
+    },
+    "checks": {
+      "externalImports": [],
+      "externalImportCount": 0,
+      "externalNodeBuiltinImports": [],
+      "browserReadableStreamEntryUsed": true,
+      "readableStreamNodeEntryAvoided": true,
+      "nativeAddonSourcesInBundleInputs": [],
+      "hasNoExternalNodeRuntimeImports": true,
+      "currentNivaNodeCompatIncludedAsReferenceOnly": true,
+      "streamPlusStringDecoderExternalNodeImports": [],
+      "browserRuntimeShimInputs": [
+        "node_modules/buffer/index.js",
+        "node_modules/abort-controller/browser.js",
+        "node_modules/events/events.js",
+        "node_modules/process/browser.js"
+      ],
+      "fflateBrowserEntryUsed": true,
+      "stringDecoderNamedExportValidated": true,
+      "streamStringDecoderCombinedExportsConstructor": true,
+      "fullNivaCompatHasNoExternalNodeImports": true
+    },
+    "limitations": [
+      "Byte counts describe these pinned package versions, exports, esbuild version, and target only; different export selections, bundler options, runtime polyfills, or source maps change output size.",
+      "ESBuild itself uses a platform-native build executable but is a temporary build-time dependency and is not part of measured bundles.",
+      "This is JavaScript bundle size only, not a platform release binary delta; no macOS/Windows runtime or package-size verification was performed.",
+      "No runtime Node dependency is bundled as an external node: import; readable-stream browser mapping was checked. Some pure-JS process/buffer/events/string_decoder shims are included when needed.",
+      "Noble scrypt/PBKDF2 bundle cost excludes runtime memory/work-factor overhead; scrypt can consume substantial runtime memory and time.",
+      "gzip and raw DEFLATE lengths compress the emitted minified entry bytes at level 6; they do not model Niva archive framing or container overhead."
+    ],
+    "packageManagerInstallPackageCount": 39,
+    "moduleSelections": {
+      "crypto": [
+        "@noble/hashes sha2 sha256/sha384/sha512",
+        "@noble/hashes legacy sha1/md5",
+        "hmac",
+        "pbkdf2/pbkdf2Async",
+        "scrypt/scryptAsync"
+      ],
+      "buffer": [
+        "feross/buffer Buffer"
+      ],
+      "stream": [
+        "Readable/Writable/Duplex/Transform/PassThrough",
+        "pipeline/finished",
+        "promises.pipeline/promises.finished"
+      ],
+      "string_decoder": [
+        "StringDecoder"
+      ],
+      "zlib": [
+        "fflate gzip/gunzip/gzipSync/gunzipSync"
+      ]
+    },
+    "measurementSettings": {
+      "gzipLevel": 6,
+      "deflateRawLevel": 6,
+      "compressionInput": "minified JS bundle bytes"
+    },
+    "sourceEntryPaths": {
+      "noble": "/private/tmp/niva-node-size-20260924/entries/noble.mjs",
+      "buffer": "/private/tmp/niva-node-size-20260924/entries/buffer.mjs",
+      "readable_stream": "/private/tmp/niva-node-size-20260924/entries/stream.mjs",
+      "string_decoder": "/private/tmp/niva-node-size-20260924/entries/string-decoder.mjs",
+      "fflate": "/private/tmp/niva-node-size-20260924/entries/fflate.mjs",
+      "combined_selected": "/private/tmp/niva-node-size-20260924/entries/combined.mjs",
+      "combined_selected_without_buffer_export": "/private/tmp/niva-node-size-20260924/entries/combined-no-buffer.mjs",
+      "stream_plus_string_decoder": "/private/tmp/niva-node-size-20260924/entries/stream-string-decoder.mjs",
+      "current_niva_node_compat_full_esm": "/Users/brambles/Workspace/playground/niva/packages/node-compat/src/index.js"
+    },
+    "packageLockPath": "/private/tmp/niva-node-size-20260924/package-lock.json"
+  },
+  "resourceAppendModel": {
+    "model": "Keep all existing NodeCompat assets; append one minified library bundle; raw DEFLATE level6; no removals, filenames, index, config, page or icon added",
+    "baselineDeflateRawBytes": 58036,
+    "entries": {
+      "noble": {
+        "bundleBytes": 19920,
+        "bundleSha256": "fb4c19d971fcd8d94f3a8a190accf1694872b5470762075973155e3c8731c228",
+        "combinedResourceBytes": 66231,
+        "incrementalResourceBytes": 8195
+      },
+      "buffer": {
+        "bundleBytes": 28404,
+        "bundleSha256": "b94e5ad33978aa987ebd37438f34e8361e70b44cf7c7dba54a4c8ca7664faa86",
+        "combinedResourceBytes": 66472,
+        "incrementalResourceBytes": 8436
+      },
+      "readable_stream": {
+        "bundleBytes": 118698,
+        "bundleSha256": "c46453b85e5c00e8d6d8c5b79efc0114fdc947b52d19fd29f7a9fa9b19b72a0f",
+        "combinedResourceBytes": 93579,
+        "incrementalResourceBytes": 35543
+      },
+      "fflate": {
+        "bundleBytes": 11483,
+        "bundleSha256": "9cb2cefc48ef97478ecf52a835fddeff19f0218b597ad342448d8a940ad36387",
+        "combinedResourceBytes": 63568,
+        "incrementalResourceBytes": 5532
+      },
+      "combined_selected": {
+        "bundleBytes": 150726,
+        "bundleSha256": "196e1606b3636aa9bef2c31faa88923efaa7288fb4bc51d09ece73e6c107daef",
+        "combinedResourceBytes": 107621,
+        "incrementalResourceBytes": 49585
+      }
+    }
+  },
+  "nativeBudgets": {
+    "schemaVersion": 1,
+    "scope": "22 modules; incremental Native release-code estimates only. Every nonzero interval is an unmeasured manual order-of-magnitude budget. Existing fixed dependencies are excluded from per-module deltas.",
+    "baselineSnapshot": {
+      "path": "target/release/niva",
+      "bytes": 2288336,
+      "providedBy": "main-thread live file measurement and SHA-256; not rebuilt",
+      "measuredInThisTask": true,
+      "note": "Not freshly rebuilt and not assumed platform-independent."
+    },
+    "releaseProfile": {
+      "lto": true,
+      "optLevel": "z",
+      "codegenUnits": 1,
+      "strip": true,
+      "panic": "abort",
+      "evidence": "Cargo.toml:9"
+    },
+    "sharedNativeBudgets": [
+      {
+        "budget": "syncXHR shared dispatcher",
+        "nativeMinKiB": 8,
+        "nativeMaxKiB": 40,
+        "scenario": "One shared POST/body parser, token-authenticated sync API dispatch and error/result mapping; charge once across modules.",
+        "basis": "Current server supports GET only; API manager already defines unary handler/JSON result types. Uses existing smol/serde_json; manually estimated, not built.",
+        "evidence": [
+          "crates/niva/src/app/http_server/mod.rs:22",
+          "crates/niva/src/app/api_manager/mod.rs:64",
+          "crates/niva/src/app/api_manager/mod.rs:278"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "smol",
+          "serde_json",
+          "existing loopback server/API manager"
+        ]
+      },
+      {
+        "budget": "startup snapshot injection",
+        "nativeMinKiB": 2,
+        "nativeMaxKiB": 12,
+        "scenario": "One main-frame capture/serialization of fixed process/os facts; charge once, not per process/os API.",
+        "basis": "Trusted main-frame bootstrap already emits window/origin/token; Native process/os getters already provide several values. Snapshot shape is future code, not measured.",
+        "evidence": [
+          "crates/niva/src/app/window_manager/builder.rs:301",
+          "crates/niva/src/app/window_manager/builder.rs:306",
+          "crates/niva/src/app/api/process.rs:12",
+          "crates/niva/src/app/api/os.rs:13"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "existing initialization-script injection",
+          "existing process/os getters"
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "module": "fs",
+        "nativeMinKiB": 24,
+        "nativeMaxKiB": 180,
+        "scenario": "File API extensions; upper range includes a cross-platform watch backend.",
+        "basis": "Existing std::fs handlers cover basic I/O. Remaining Native code: bounded unary sync I/O, FileHandle registry, lstat/realpath, watch. Rough manual code-plus-small-backend range; no measurement.",
+        "evidence": [
+          "crates/niva/src/app/api/fs.rs:13",
+          "crates/niva/src/app/api/fs.rs:224",
+          "crates/niva/src/app/api/fs.rs:272",
+          "crates/niva/Cargo.toml:8"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "Rust std::fs",
+          "existing API Manager WS streams",
+          "smol transport"
+        ],
+        "unmeasuredDependencyScenarios": [
+          "notify/platform watcher selection is open; any dependency delta is unmeasured."
+        ]
+      },
+      {
+        "module": "path",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Pure JS path computation; current cwd query reuses existing Native method plus shared syncXHR dispatcher.",
+        "basis": "No separate Native path module or cwd cache is budgeted; dynamic cwd queries use shared transport.",
+        "evidence": [
+          "packages/node-compat/src/runtime/path.js:1",
+          "packages/node-compat/src/runtime/registration.js:79"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "events",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Pure JavaScript EventEmitter semantics.",
+        "basis": "No Native event subsystem required for EventEmitter helpers.",
+        "evidence": [
+          "packages/node-compat/src/runtime/events.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "process",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 20,
+        "scenario": "Existing process getters plus small stdio/event/exit adapters; startup snapshot excluded here.",
+        "basis": "pid/currentDir/currentExe/env/args/setCurrentDir/exit/version and execStream are already registered; only process event/raw stdio and small semantic extensions may need Native code.",
+        "evidence": [
+          "crates/niva/src/app/api/process.rs:12",
+          "crates/niva/src/app/api/process.rs:25",
+          "crates/niva/src/app/api/process.rs:57",
+          "crates/niva/src/app/api/process.rs:150",
+          "crates/niva/src/app/stdio.rs:18"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "Rust std::process/std::env",
+          "existing API manager",
+          "existing stdio message bridge"
+        ]
+      },
+      {
+        "module": "http",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Node HTTP/HTTPS客户端及应用服务器协议在JS；TCP/TLS Native成本只计入net/tls；内部启动HTTP/WS保留在现有基线。",
+        "basis": "Reevaluated under JS protocol / shared Native socket architecture; no Native dependency-removal savings credited.",
+        "evidence": [
+          "crates/niva/src/app/api/http.rs:10",
+          "crates/niva/src/app/api/http.rs:25",
+          "crates/niva/src/app/http_server/mod.rs:22",
+          "crates/niva/src/app/http_server/mod.rs:242"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "net TCP primitive",
+          "tls primitive for https"
+        ]
+      },
+      {
+        "module": "https",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Node HTTP/HTTPS客户端及应用服务器协议在JS；TCP/TLS Native成本只计入net/tls；内部启动HTTP/WS保留在现有基线。",
+        "basis": "Reevaluated under JS protocol / shared Native socket architecture; no Native dependency-removal savings credited.",
+        "evidence": [
+          "crates/niva/src/app/api/http.rs:39",
+          "crates/niva/Cargo.toml:16",
+          "crates/niva/Cargo.toml:21"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "net TCP primitive",
+          "tls primitive for https"
+        ]
+      },
+      {
+        "module": "util",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Pure JS utility APIs.",
+        "basis": "No Native API or dependency required.",
+        "evidence": [
+          "packages/node-compat/src/runtime/util.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "os",
+        "nativeMinKiB": 8,
+        "nativeMaxKiB": 80,
+        "scenario": "Add missing dynamic OS facts; reuse os_info/directories for current fields.",
+        "basis": "Native has type/arch/version/home/temp/separator/EOL. CPU detail, memory, hostname, uptime, interfaces and full userInfo need new collection; low-confidence code budget.",
+        "evidence": [
+          "crates/niva/src/app/api/os.rs:13",
+          "crates/niva/src/app/api/os.rs:21",
+          "crates/niva/src/app/api/os.rs:34",
+          "crates/niva/src/app/api/os.rs:63",
+          "crates/niva/Cargo.toml:25",
+          "crates/niva/Cargo.toml:26"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "os_info",
+          "directories",
+          "Rust std::env"
+        ],
+        "unmeasuredDependencyScenarios": [
+          "sysinfo/interface crate choice could alter range; not selected or measured."
+        ]
+      },
+      {
+        "module": "crypto",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 8,
+        "scenario": "Chosen default is noble JS algorithms and browser random; only a strict timingSafeEqual Native helper remains.",
+        "basis": "Hash/HMAC/PBKDF2/scrypt are selected browser JS candidates. Do not charge Native algorithm crates. A small comparison handler is an unmeasured manual allowance.",
+        "evidence": [
+          "packages/node-compat/src/runtime/crypto.js:52",
+          "packages/node-compat/src/runtime/crypto.js:87",
+          "crates/niva/Cargo.toml:8"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "existing unary dispatch/serde_json"
+        ],
+        "unmeasuredDependencyScenarios": [],
+        "alternativeScenarios": [
+          {
+            "scenario": "Unselected Native algorithm route, retained only for comparison",
+            "nativeMinKiB": 16,
+            "nativeMaxKiB": 160
+          }
+        ]
+      },
+      {
+        "module": "child_process",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 32,
+        "scenario": "普通进程扩展；fork已从目标移除，不引入Node runtime。",
+        "basis": "复用现有execStream/std::process，补信号、结果及同步适配；0–32KiB是未实测工程预算。",
+        "evidence": [
+          "crates/niva/src/app/api/process.rs:107",
+          "crates/niva/src/app/api/process.rs:150",
+          "crates/niva/src/app/api/process.rs:235"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "Rust std::process",
+          "existing execStream",
+          "API manager WS streams"
+        ]
+      },
+      {
+        "module": "stream",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Node stream constructors/pipeline semantics in JS over existing binary channel.",
+        "basis": "Niva already transports per-call events/chunks/cancellation; generic Node streams do not require Rust.",
+        "evidence": [
+          "crates/niva/src/app/api_manager/mod.rs:97",
+          "crates/niva/src/app/api_manager/mod.rs:125",
+          "packages/node-compat/src/runtime/stream.js:6"
+        ],
+        "confidence": "高",
+        "sharedDependencies": [
+          "existing API manager binary WS channel"
+        ]
+      },
+      {
+        "module": "url",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "JS URL/file-URL helpers.",
+        "basis": "No Native module required.",
+        "evidence": [
+          "packages/node-compat/src/runtime/url.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "buffer",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "JS Buffer polyfill and typed arrays.",
+        "basis": "No Native code required.",
+        "evidence": [
+          "packages/node-compat/src/runtime/buffer.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "querystring",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Pure JS encoding and decoding.",
+        "basis": "No Native calls required.",
+        "evidence": [
+          "packages/node-compat/src/runtime/querystring.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "net",
+        "nativeMinKiB": 16,
+        "nativeMaxKiB": 120,
+        "scenario": "TCP Socket/connect/server over existing smol TCP primitives.",
+        "basis": "Niva already has smol TCP listener; Socket lifecycle, half-close, backpressure and events are new glue, not a new network runtime.",
+        "evidence": [
+          "crates/niva/Cargo.toml:32",
+          "crates/niva/src/app/http_server/mod.rs:12",
+          "crates/niva/src/app/http_server/mod.rs:51"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "smol",
+          "Rust std::net"
+        ],
+        "unmeasuredDependencyScenarios": [
+          "No new socket crate assumed; full cross-platform lifecycle not built or measured."
+        ]
+      },
+      {
+        "module": "tls",
+        "nativeMinKiB": 8,
+        "nativeMaxKiB": 72,
+        "scenario": "TLS streams/connect/server over existing sockets and native-tls.",
+        "basis": "TLS client is already used by ureq; Node TLS connect/server options, certificates and stream binding are missing. Exclude fixed client dependencies.",
+        "evidence": [
+          "crates/niva/Cargo.toml:16",
+          "crates/niva/Cargo.toml:21"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "native-tls",
+          "smol TCP primitives (shared with net)"
+        ],
+        "unmeasuredDependencyScenarios": [
+          "Server acceptor may newly link native-tls backend symbols; marginal code is unmeasured."
+        ]
+      },
+      {
+        "module": "dns",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 24,
+        "scenario": "只预算系统lookup与DNS配置薄封装；协议codec在JS，UDP/TCP成本在dgram/net中计一次。",
+        "basis": "Reevaluated under JS protocol / shared Native socket architecture; no Native dependency-removal savings credited.",
+        "evidence": [
+          "crates/niva/src/app/api/http.rs:141",
+          "crates/niva/src/app/api/http.rs:146",
+          "crates/niva/Cargo.toml:16"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "system getaddrinfo/resolver configuration",
+          "dgram UDP",
+          "net TCP"
+        ]
+      },
+      {
+        "module": "dgram",
+        "nativeMinKiB": 8,
+        "nativeMaxKiB": 48,
+        "scenario": "UDP sockets using existing smol UDP primitives.",
+        "basis": "No Node datagram APIs exist; UDP itself can reuse smol. Lifecycle, multicast and event behavior are new Native integration.",
+        "evidence": [
+          "crates/niva/Cargo.toml:32",
+          "crates/niva/src/app/http_server/mod.rs:12"
+        ],
+        "confidence": "低",
+        "sharedDependencies": [
+          "smol"
+        ],
+        "unmeasuredDependencyScenarios": [
+          "No datagram crate assumed; multicast behavior is not measured."
+        ]
+      },
+      {
+        "module": "zlib",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Chosen fflate/browser JS route, including Sync APIs.",
+        "basis": "No new Native compression API is needed when using fflate; existing flate2 remains unchanged.",
+        "evidence": [
+          "crates/niva/Cargo.toml:36",
+          "crates/niva/src/app/resource_manager/mod.rs:251",
+          "packages/node-compat/src/runtime/zlib.js:14"
+        ],
+        "confidence": "高",
+        "sharedDependencies": [],
+        "alternativeScenarios": [
+          {
+            "scenario": "Alternative Native flate2 exposure, not the chosen JS route",
+            "nativeMinKiB": 0,
+            "nativeMaxKiB": 24
+          }
+        ]
+      },
+      {
+        "module": "assert",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Pure JS assertion semantics.",
+        "basis": "No Native API or dependency.",
+        "evidence": [
+          "packages/node-compat/src/runtime/assert.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "string_decoder",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "JS byte decoding helper.",
+        "basis": "Uses browser byte/string primitives; no Native code.",
+        "evidence": [
+          "packages/node-compat/src/runtime/buffer.js:1"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      },
+      {
+        "module": "timers",
+        "nativeMinKiB": 0,
+        "nativeMaxKiB": 0,
+        "scenario": "Browser timers and JS scheduling wrappers.",
+        "basis": "Existing browser timer functions; no Native additions.",
+        "evidence": [
+          "crates/niva/assets/initialize_script.js:680",
+          "packages/node-compat/src/runtime/registration.js:55"
+        ],
+        "confidence": "高",
+        "sharedDependencies": []
+      }
+    ],
+    "packagingNote": {
+      "nodeCompatJs": "Selected JS wrappers/runtime files are staged as project resources, not Native Rust code.",
+      "macOS": "RESOURCE_INDEXES and Deflate-compressed RESOURCE_DATA are separate under .app/Contents/Resources; measure app bundle size separately from executable.",
+      "Windows": "Project resources are compressed into RESOURCE_DATA and embedded as PE RCDATA; final EXE includes compressed JS assets. Do not add raw JS bytes to Native estimates.",
+      "evidence": [
+        "packages/devtools/src/build-scripts/node-compat-assets.mjs:6",
+        "packages/devtools/src/build-scripts/node-compat.ts:15",
+        "packages/devtools/src/build-scripts/build-macos.ts:69",
+        "packages/devtools/src/build-scripts/build-macos.ts:86",
+        "crates/win_packager/src/bundle.rs:64",
+        "crates/win_packager/src/lib.rs:169",
+        "crates/niva/src/app/resource_manager/mod.rs:242"
+      ]
+    }
+  },
+  "lockfileSha256": "c04270152d1ad03cba20c6f1aec6fcdce9c7b0b5fcfabf3eacb6cf089664829a",
+  "isolatedLockSnapshot": {
+    "name": "niva-node-size-20260924",
+    "version": "1.0.0",
+    "lockfileVersion": 3,
+    "requires": true,
+    "packages": {
+      "": {
+        "name": "niva-node-size-20260924",
+        "version": "1.0.0",
+        "license": "ISC",
+        "dependencies": {
+          "@noble/hashes": "2.4.0",
+          "buffer": "6.0.3",
+          "esbuild": "0.28.2",
+          "fflate": "0.8.3",
+          "readable-stream": "4.7.0"
+        }
+      },
+      "node_modules/@esbuild/aix-ppc64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.2.tgz",
+        "integrity": "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==",
+        "cpu": [
+          "ppc64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "aix"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-arm": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.28.2.tgz",
+        "integrity": "sha512-kXXoiPVVGQcnIYGOeaovwOURpniDBpSq4A03qkQ+BMQqtGG6HYap3xne9C1O1yo4TR3qxlCX5IqqmX6fFo2Lqg==",
+        "cpu": [
+          "arm"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.28.2.tgz",
+        "integrity": "sha512-5YfKeeI8qWfBZIX+u2xZC3Zlb3Os/gLS2sbEKM+I4ZOcsWmHS2WLysCcQZDAFRslDUU5Oiq44gf6PYN1vGwG5A==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/android-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.28.2.tgz",
+        "integrity": "sha512-O387ite7SzUyCcy3JQX4P4bLtEA7bLLkx+esve5JHnyYfNTxcVpXZo9jhdB0lTKN44gztELTdU7nS8Nr16Fs1Q==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "android"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/darwin-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.2.tgz",
+        "integrity": "sha512-n4KqkOQrraxHJcgjM1RvwbigfQKIKJVpM7xp+KsxiyUSrRdIXnt73VhrPAx0fV44hgfmIVKjxMN9J1t5jySVkw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "darwin"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/darwin-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.28.2.tgz",
+        "integrity": "sha512-uq6suIWYP37qzGddBKPw5QEQPi6HiLGsO7UmkpfyaYNQ3D+rN6w6WfwH+nuqcGXWvawGwxOEroO4YGnFh95azw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "darwin"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/freebsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-n+I0BTSRIoy+d6RPKnEVwql5UwBJolytvY4mAOIEJorKlqgPII8ix6slVVrfZ5Tnj7glIZvloylbB/EJPMWEXw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "freebsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/freebsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.28.2.tgz",
+        "integrity": "sha512-78XJTJkvPs0kz2w61301PJjXl4g7q3JqiYMZ/M/yVI73EHBrCRTgkhu9oqG7vPqq+a/yadEW8aD+agKlk5xrmg==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "freebsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-arm": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.28.2.tgz",
+        "integrity": "sha512-XlDnu2q5yoqems+xay6wSAcg9DDD7K9RLKZEBOMZm3ckNpJBvOX20tSfby8KfrrhINDyv9V2YVZKY/SpoGJI8w==",
+        "cpu": [
+          "arm"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.28.2.tgz",
+        "integrity": "sha512-pW4AC0P3it8c7do9MVM4p51FzHzdM/TZrerurgRcHJ2WTa1VQ1CIq18xncfpBJw4ojkiZZrKW2yIBWBP92j6Ug==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-ia32": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.28.2.tgz",
+        "integrity": "sha512-CYbnj78HsIeA+DhgUKgFCfvNsTHFhMMrinUrMZpDXJXKN8T3XViTZ/+wtHeVxEWY8ewSzTFN+nRmSwO2tZaLUQ==",
+        "cpu": [
+          "ia32"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-loong64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.28.2.tgz",
+        "integrity": "sha512-buwkd8nsph4R+ajRvw0qM5Hja/TXQow3ptzWO2EbG/cqcIkHloRrdlBtQlshyYGTNFvfkfJ5tpPLVkY4DtsPfQ==",
+        "cpu": [
+          "loong64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-mips64el": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.28.2.tgz",
+        "integrity": "sha512-ZVykbDyk7519VwiNb9Lcj9m8XM6v5V9uKPvrEMkkEedVewf+0itkhahp4HDpgERXhwLRpWFypsGbG/J8s0QjJA==",
+        "cpu": [
+          "mips64el"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-ppc64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.28.2.tgz",
+        "integrity": "sha512-CAXl+Dtd9UUuJd8pKKdwh6MLm3MUMiqMPmhZ3tTSXPqfyQ3vDl6R5hZdZ/kYojK4ofXtdfSv1tFq8XzWx3heNQ==",
+        "cpu": [
+          "ppc64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-riscv64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.28.2.tgz",
+        "integrity": "sha512-GeXCej4IQtU1B+QlDV8W/RRvbzI3O/Stss+/bCXv4lZls5WGRtu2a+3JkA3i4qIUlMXpcHebWpF8AkJhATowuA==",
+        "cpu": [
+          "riscv64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-s390x": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.28.2.tgz",
+        "integrity": "sha512-3H1weTYZPxt/WOhByszQZybS9w5lKzUn1FDMsgEChbHWQwHYQQRfBxgCcZvPhjHfKyJjIievvMmEUawJrdY9Dg==",
+        "cpu": [
+          "s390x"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/linux-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz",
+        "integrity": "sha512-4xTZr1FUmSoQW4XIWmit3tzQrUTZM+N3P0XV8xROKYF50XfI7xeO90+1bZvNwxIufQ9hDQVRJH5YhgPVF8A/HQ==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "linux"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/netbsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-sSATRjPeDBg3pdgHoQfoYBob11Kk1FGa9lui5RIHZCoCkJa9QKlvl3/vKz2usCmYYjs7ymJR/2Nnsqe+Hjt5nw==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "netbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/netbsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.28.2.tgz",
+        "integrity": "sha512-lqnzCV+mM0gIADaKihiCg6ifgfU2L3h5E33rNQBN1Y4MaVGnzryzmvvf7UHxprpQdE8hpqLolJ9Rl+SkIRDpyw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "netbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openbsd-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.2.tgz",
+        "integrity": "sha512-AL2qJILH7lNjrDmCQDvdxMfAUIv8KMNZOvrwAQ8i8//ntL9FflhOyMJ8OZSMBb8/AWXe3/5v5S20y3zCoZWKoQ==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openbsd-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.28.2.tgz",
+        "integrity": "sha512-QtiuPytchRyC4rwUKhexJdQKvDuZ6hWloi3igqPQNUJCS1/v9EiO3UTOXR6A3FoMo4fnAKbWJdqaIwhOzh8qEw==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openbsd"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/openharmony-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.2.tgz",
+        "integrity": "sha512-WkhYDmpTjLvGlScA1rwjRUmhl4k8oXR3cIbtqWmELgU/dFeHHlEllxDvdWcNJV9rbzCexB5vz8gtNewWLgCT7Q==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "openharmony"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/sunos-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.28.2.tgz",
+        "integrity": "sha512-GPMSkTOtMnv2U2F8gxe4Io6qmVs+YKyp832Etqqxr0hFngmXQ3rzwytelm3GIn7T4VviRUlf3sOgBOiTdvaf7g==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "sunos"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-arm64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.28.2.tgz",
+        "integrity": "sha512-PIhhEkE9uPBleRBrQEJpUn7MBnibZzbGzYWPmY3x+YoVg/95zbjB4CxPPOQ8l5tYYM4mMaCthF8/1DIfBQQyWQ==",
+        "cpu": [
+          "arm64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-ia32": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.28.2.tgz",
+        "integrity": "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA==",
+        "cpu": [
+          "ia32"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@esbuild/win32-x64": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.28.2.tgz",
+        "integrity": "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g==",
+        "cpu": [
+          "x64"
+        ],
+        "license": "MIT",
+        "optional": true,
+        "os": [
+          "win32"
+        ],
+        "engines": {
+          "node": ">=18"
+        }
+      },
+      "node_modules/@noble/hashes": {
+        "version": "2.4.0",
+        "resolved": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz",
+        "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==",
+        "license": "MIT",
+        "engines": {
+          "node": ">= 20.19.0"
+        },
+        "funding": {
+          "url": "https://paulmillr.com/funding/"
+        }
+      },
+      "node_modules/abort-controller": {
+        "version": "3.0.0",
+        "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
+        "integrity": "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==",
+        "license": "MIT",
+        "dependencies": {
+          "event-target-shim": "^5.0.0"
+        },
+        "engines": {
+          "node": ">=6.5"
+        }
+      },
+      "node_modules/base64-js": {
+        "version": "1.5.1",
+        "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz",
+        "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT"
+      },
+      "node_modules/buffer": {
+        "version": "6.0.3",
+        "resolved": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+        "integrity": "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT",
+        "dependencies": {
+          "base64-js": "^1.3.1",
+          "ieee754": "^1.2.1"
+        }
+      },
+      "node_modules/esbuild": {
+        "version": "0.28.2",
+        "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
+        "integrity": "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==",
+        "hasInstallScript": true,
+        "license": "MIT",
+        "bin": {
+          "esbuild": "bin/esbuild"
+        },
+        "engines": {
+          "node": ">=18"
+        },
+        "optionalDependencies": {
+          "@esbuild/aix-ppc64": "0.28.2",
+          "@esbuild/android-arm": "0.28.2",
+          "@esbuild/android-arm64": "0.28.2",
+          "@esbuild/android-x64": "0.28.2",
+          "@esbuild/darwin-arm64": "0.28.2",
+          "@esbuild/darwin-x64": "0.28.2",
+          "@esbuild/freebsd-arm64": "0.28.2",
+          "@esbuild/freebsd-x64": "0.28.2",
+          "@esbuild/linux-arm": "0.28.2",
+          "@esbuild/linux-arm64": "0.28.2",
+          "@esbuild/linux-ia32": "0.28.2",
+          "@esbuild/linux-loong64": "0.28.2",
+          "@esbuild/linux-mips64el": "0.28.2",
+          "@esbuild/linux-ppc64": "0.28.2",
+          "@esbuild/linux-riscv64": "0.28.2",
+          "@esbuild/linux-s390x": "0.28.2",
+          "@esbuild/linux-x64": "0.28.2",
+          "@esbuild/netbsd-arm64": "0.28.2",
+          "@esbuild/netbsd-x64": "0.28.2",
+          "@esbuild/openbsd-arm64": "0.28.2",
+          "@esbuild/openbsd-x64": "0.28.2",
+          "@esbuild/openharmony-arm64": "0.28.2",
+          "@esbuild/sunos-x64": "0.28.2",
+          "@esbuild/win32-arm64": "0.28.2",
+          "@esbuild/win32-ia32": "0.28.2",
+          "@esbuild/win32-x64": "0.28.2"
+        }
+      },
+      "node_modules/event-target-shim": {
+        "version": "5.0.1",
+        "resolved": "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz",
+        "integrity": "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=6"
+        }
+      },
+      "node_modules/events": {
+        "version": "3.3.0",
+        "resolved": "https://registry.npmjs.org/events/-/events-3.3.0.tgz",
+        "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=0.8.x"
+        }
+      },
+      "node_modules/fflate": {
+        "version": "0.8.3",
+        "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
+        "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+        "license": "MIT"
+      },
+      "node_modules/ieee754": {
+        "version": "1.2.1",
+        "resolved": "https://registry.npmjs.org/ieee754/-/ieee754-1.2.1.tgz",
+        "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "BSD-3-Clause"
+      },
+      "node_modules/process": {
+        "version": "0.11.10",
+        "resolved": "https://registry.npmjs.org/process/-/process-0.11.10.tgz",
+        "integrity": "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==",
+        "license": "MIT",
+        "engines": {
+          "node": ">= 0.6.0"
+        }
+      },
+      "node_modules/readable-stream": {
+        "version": "4.7.0",
+        "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-4.7.0.tgz",
+        "integrity": "sha512-oIGGmcpTLwPga8Bn6/Z75SVaH1z5dUut2ibSyAMVhmUggWpmDn2dapB0n7f8nwaSiRtepAsfJyfXIO5DCVAODg==",
+        "license": "MIT",
+        "dependencies": {
+          "abort-controller": "^3.0.0",
+          "buffer": "^6.0.3",
+          "events": "^3.3.0",
+          "process": "^0.11.10",
+          "string_decoder": "^1.3.0"
+        },
+        "engines": {
+          "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
+        }
+      },
+      "node_modules/safe-buffer": {
+        "version": "5.2.1",
+        "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+        "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==",
+        "funding": [
+          {
+            "type": "github",
+            "url": "https://github.com/sponsors/feross"
+          },
+          {
+            "type": "patreon",
+            "url": "https://www.patreon.com/feross"
+          },
+          {
+            "type": "consulting",
+            "url": "https://feross.org/support"
+          }
+        ],
+        "license": "MIT"
+      },
+      "node_modules/string_decoder": {
+        "version": "1.3.0",
+        "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+        "integrity": "sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==",
+        "license": "MIT",
+        "dependencies": {
+          "safe-buffer": "~5.2.0"
+        }
+      }
+    }
+  },
+  "compressionRuntime": {
+    "node": "v24.10.0",
+    "zlib": "1.3.1-470d3a2",
+    "implementation": "Node node:zlib; not assumed byte-identical to Python zlib, pako or flate2"
+  },
+  "scopeNote": "当前范围22模块179 API；fork已移除。JS样本测量不变；Native区间是JS优先下的必要系统接口预算。",
+  "embeddingProjection": {
+    "policy": {
+      "decision": "全部22模块179项功能完成后，Native与内嵌NodeCompat JS组成的完整release主程序满足3.3MB门禁时，直接采用内嵌方案",
+      "budgetLimitBytes": 3300000,
+      "releaseGate": "现有CI/构建脚本严格小于3,300,000 bytes，逐平台实测完整文件",
+      "counted": [
+        "全部目标Native实现",
+        "全部目标NodeCompat JS及第三方JS资源",
+        "加载及启动注入代码",
+        "压缩资源索引/元数据/文件对齐"
+      ],
+      "implementationStatus": "内嵌有条件获准；当前完整目标尚未实现，不能凭库样本判断已达标",
+      "runtimeScope": "Node风格API默认开发入口；真实process仅main；静态注入、动态XHR；跨域IPC有限"
+    },
+    "kind": "arithmetic model, not a linked embedded release",
+    "nativeBytes": 2288336,
+    "currentCompatPlusIndexTotalBytes": 2348562,
+    "candidateLibModelResourceBytes": 107621,
+    "candidateLibModelPlusIndexTotalBytes": 2398147,
+    "remainingBudgetBytes": 901853,
+    "excludedFutureCosts": [
+      "embedded loader",
+      "additional index/metadata/alignment",
+      "future Native API completion"
+    ],
+    "nativeFreshBuild": false,
+    "use": "partial library-only reference; do not use to answer full179API size question"
+  },
+  "fullTargetProjection": {
+    "kind": "planning subtotal of currently quantified budget items, NOT a complete measured release or guaranteed bound",
+    "moduleCount": 22,
+    "apiCount": 179,
+    "limitBytes": 3300000,
+    "baselineNativeBytes": 2288336,
+    "baselineJsResourcesAndIndexBytes": 60226,
+    "moduleNativeKiB": [
+      64,
+      584
+    ],
+    "moduleJsCompressedKiBWithSharing": [
+      88,
+      175
+    ],
+    "sharedNativeKiB": [
+      10,
+      52
+    ],
+    "sharedJsKiB": [
+      1,
+      4
+    ],
+    "planningSubtotalBytes": [
+      2515474,
+      3183122
+    ],
+    "lowerHeadroomBytes": 784526,
+    "upperExcessBytes": 0,
+    "completeUpperBoundAvailable": false,
+    "unquantified": [
+      "final Native socket/system-DNS integration and linker delta may differ from manual budgets",
+      "complete Node HTTP/DNS lifecycle and strict-parser integration beyond measured codecs",
+      "final embedding/alignment and each release platform"
+    ],
+    "platform": "macOS arm64 baseline only; other architectures/platforms require separate completed-release measurement",
+    "noDoubleCount": "net/dgram/tls计一次；HTTP/HTTPS协议不再加独立Native后端；JS parser/codec已进入模块预算，不另加测量样本；未抵扣ureq删除收益。",
+    "upperHeadroomBytes": 116878
+  },
+  "networkLayerReevaluation": {
+    "evidence": "node-network-layer-evidence.json",
+    "httpParserMarginalRawDeflateBytes": 2193,
+    "dnsCodecMarginalRawDeflateBytes": 8541,
+    "ureqRemovalSavingsCreditedBytes": 0,
+    "note": "Native协议增量预算归零不代表已经删掉现有代码；基线仍含旧实现。"
+  }
+}

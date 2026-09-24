@@ -33,9 +33,6 @@ The 10 Windows-only handlers are registered under `cfg(target_os = "windows")`; 
 | `fs.readDir` | Require direct entries include sample.txt and exclude nested moved.txt. | headless-safe run.py / headless.html | PASS real macOS: headless |
 | `fs.readDirAll` | Require recursive paths simple/sample.txt and nested/a/b/moved.txt. | headless-safe run.py / headless.html | PASS real macOS: headless |
 | `host.send` | Send unique nonce through stdio and require exact nonce echoed by harness. | default or headless-safe run.py stdio echo | PASS real macOS: default |
-| `http.request` | sends an explicit GET and preserves status/body | system-cases.js / automatic | PASS real macOS: extended |
-| `http.get` | GETs a local fixture and returns its exact text | system-cases.js / automatic | PASS real macOS: extended |
-| `http.post` | returns the local server's explicit non-GET status | system-cases.js / automatic | PASS real macOS: extended |
 | `monitor.list` | Require a nonempty display list; each display has name, positive logical and physical dimensions, and positive scale factor. | default run.py / index.html | PASS real macOS: default |
 | `monitor.current` | Require valid display geometry for the visible temporary smoke window. | default run.py / index.html | PASS real macOS: default |
 | `monitor.primary` | Require valid geometry for the primary display. | default run.py / index.html | PASS real macOS: default |

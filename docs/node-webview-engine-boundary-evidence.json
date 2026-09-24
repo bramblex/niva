@@ -1,0 +1,17 @@
+{
+  "node": "v22.14.0",
+  "scope": "Public-observation counterexamples in the pinned Node oracle; not WebView runtime acceptance",
+  "cryptoKey": {
+    "samePublicShape": true,
+    "samePrototype": true,
+    "nodeDifferentMaterialEqual": false,
+    "nodeSameMaterialEqual": true,
+    "exportReturnsPromise": true,
+    "nonextractableExportError": "InvalidAccessException"
+  },
+  "removedPrototype": {
+    "samePublicShape": true,
+    "nodeClassLabel": "[Foo: null prototype] {}",
+    "nodePlainLabel": "[Object: null prototype] {}"
+  }
+}

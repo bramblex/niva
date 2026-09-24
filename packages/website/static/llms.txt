@@ -31,7 +31,6 @@ Use the matching `Niva.api.<namespace>` link below to find methods. Repository d
 - [Niva.api.dialog](https://bramblex.github.io/niva/docs/api/dialog): Native file and message dialogs.
 - [Niva.api.extra](https://bramblex.github.io/niva/docs/api/extra): Additional system methods.
 - [Niva.api.fs](https://bramblex.github.io/niva/docs/api/fs): File system access and streaming.
-- [Niva.api.http](https://bramblex.github.io/niva/docs/api/http): HTTP requests and streaming responses.
 - [Niva.api.monitor](https://bramblex.github.io/niva/docs/api/monitor): Display information.
 - [Niva.api.os](https://bramblex.github.io/niva/docs/api/os): Operating system information and paths.
 - [Niva.api.process](https://bramblex.github.io/niva/docs/api/process): Process information, execution, and streams.
@@ -45,7 +44,8 @@ Use the matching `Niva.api.<namespace>` link below to find methods. Repository d
 
 ## Optional
 
-- [NodeCompat](https://bramblex.github.io/niva/docs/api/node-compat): Optional browser-side compatibility modules and limits.
+- [NodeCompat](https://bramblex.github.io/niva/docs/api/node-compat): Embedded Node-shaped browser modules, enabled by default, with API and platform limits.
+- [NodeCompat HTTP and HTTPS](https://bramblex.github.io/niva/docs/api/http): Node-style HTTP clients and application servers; these are modules, not Niva.api namespaces.
 - [stdio host bridge](https://bramblex.github.io/niva/docs/api/stdio): Host messaging and protocol limits.
 - [Type declarations](https://github.com/bramblex/niva/blob/main/packages/types/Niva_zh.d.ts): Public TypeScript API signatures.
 - [Source code](https://github.com/bramblex/niva): Source of truth for current behavior.

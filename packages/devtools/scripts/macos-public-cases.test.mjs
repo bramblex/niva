@@ -46,5 +46,5 @@ test("every documented public Niva API has exactly one macOS case definition", (
   const cases = [...new Set(old), ...extra];
   assert.equal(cases.length, new Set(cases).size, "new API cases overlap existing cases");
   assert.deepEqual(cases.sort(), expected.sort());
-  assert.equal(expected.length, 167);
+  assert.equal(expected.length, 164);
 });

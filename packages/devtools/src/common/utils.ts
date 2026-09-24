@@ -158,8 +158,22 @@ export function parseVersion(versionString: string): number[] {
 
 export async function checkVersion(): Promise<string | null> {
   try {
-    const response = await Niva.api.http.get("https://api.github.com/repos/bramblex/niva/releases/latest");
-    const remoteVersion = JSON.parse(response.body)?.tag_name;
+    const body = await new Promise<string>((resolve, reject) => {
+      const request = Niva.require("https").get(
+        "https://api.github.com/repos/bramblex/niva/releases/latest",
+        { headers: { "User-Agent": "Niva", Accept: "application/vnd.github+json" } },
+        (response: any) => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk: string) => { body += chunk; });
+          response.on("end", () => resolve(body));
+          response.on("error", reject);
+        },
+      );
+      request.on("error", reject);
+      request.setTimeout(10000, () => request.destroy(new Error("Update check timed out")));
+    });
+    const remoteVersion = JSON.parse(body)?.tag_name;
     if (typeof remoteVersion !== "string") return null;
 
     const localVersion = await Niva.api.process.version();

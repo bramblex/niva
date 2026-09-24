@@ -28,23 +28,9 @@ const result = await task.promise; // { status: 0 }
 
 每个二进制子流结束时，`onBlob(blob, isStderr)` 会收到按序拼好的完整 Blob。它适合完整文件或响应体；进程 pipe 的 Blob 要等对应 pipe 到达 END。`onChunk` 与 `onBlob` 可同时提供：前者逐帧回调，后者仍会在 END 后回调完整内容。stdout 与 stderr 是独立子流，跨子流回调顺序只表示帧到达顺序，不代表两个 OS pipe 产生输出的精确先后。
 
-`onEvent(name, data)` 用于调用关联的 JSON 事件。例如 `http.requestStream` 会先发 `head` 事件，随后传响应体二进制数据：
+`onEvent(name, data)` 接收调用关联的 JSON 事件。例如 `process.execStream` 会发送 `spawn` 事件，其 `data.pid` 是原生子进程 ID。Node 风格 HTTP、TCP、UDP 与 TLS 应使用对应 NodeCompat 模块；这些模块处理内部 socket 事件、确认与流量控制。
 
-```ts
-const request = Niva.stream(
-  "http.requestStream",
-  [{ method: "GET", url: "https://example.com/" }],
-  {
-    onEvent(name, data) {
-      if (name === "head") console.log(data.status, data.headers);
-    },
-    onChunk(bytes) {
-      console.log("received response bytes:", bytes.byteLength);
-    },
-  },
-);
-const result = await request.promise; // { status: number }
-```
+仅设置 `onChunk` 时，bridge 不会为 Blob 收集器保留历史分片；长连接可以持续消费数据。
 
 ## 发送数据
 
@@ -76,7 +62,7 @@ await child.promise;
 
 - `fs.readStream`、`fs.writeStream`
 - `resource.readStream`
-- `http.requestStream`
+- NodeCompat 内部的 `socket.*`、`fs.openHandle/handle/watch`
 - `process.execStream`
 
-`Niva.api.fs.read/write/append`、`http.get/post/request`、`process.exec` 和 `resource.read` 是初始化脚本提供的 Promise wrapper，会组装完整数据。这些 wrapper 需要本地 WebSocket 页面；远端 IPC 没有相应的 unary Rust 方法。大文件或持续处理时应直接使用 stream API。详见[Bridge 与传输方式](./bridge)、[文件系统](./fs)、[HTTP](./http)和[进程](./process)。
+`Niva.api.fs.read/write/append`、`process.exec` 和 `resource.read` 是初始化脚本提供的 Promise wrapper，会组装完整数据。这些 wrapper 需要本地 WebSocket 页面；远端 IPC 没有相应的 unary Rust 方法。大文件或持续处理时应直接使用 stream API。详见[Bridge 与传输方式](./bridge)、[文件系统](./fs)、[HTTP](./http)和[进程](./process)。

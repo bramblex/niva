@@ -1,16 +1,22 @@
 # Node 兼容层（NodeCompat）设计与当前边界
 
-> 状态：核心浏览器适配、资源选择与服务器注入已实现；仍属有明确限制的 Node 风格子集，不是完整 Node 运行时。同步 API 未实现；一元同步与全量同步的产品范围仍待用户决定。
+> 状态：NodeCompat 已作为浏览器 JS 资源嵌入 Niva 主程序，并默认启用。它提供 22 个 Node 风格模块的有限子集，不是 Node.js 运行时。逐 API 支持范围以[覆盖盘点](node-api-coverage.md)为准。
 
 ## 1. 目标与范围
 
-NodeCompat 是独立的可选浏览器包 `packages/node-compat`，为 Niva 页面提供 15 个 Node 风格模块：`path`、`os`、`fs`、`child_process`、`events`、`util`、`querystring`、`buffer`、`url`、`crypto`、`zlib`、`http`、`https`、`assert`、`stream`。实现通过现有 Niva bridge 调用本地能力，库本身不引入新的 Rust 运行时。
+NodeCompat 让页面和打包后的纯 JS 库可以使用一组选定的 Node 风格 API，例如 `node:fs/promises`、`node:path` 和 `node:buffer`。依赖在应用构建时解析为浏览器资源；Niva 主程序内嵌兼容层资源，运行应用不需要 Node runtime。实际兼容性仍取决于库使用的完整 API、选项和依赖链。
 
-它不提供完整 Node/npm 运行时，也不承诺所有 Node 签名、同步文件 API、`child.kill()` 这类逐进程终止或实时子进程输出。已附加的普通子进程会在所属 bridge 调用取消或超时时被终止并回收；`detached` 子进程可脱离调用继续运行。精确的支持签名和限制见 [`packages/node-compat/README.md`](../packages/node-compat/README.md)。
+当前目标为 **22 个模块族、179 项 API**：`path`、`os`、`fs`、`child_process`、`events`、`util`、`querystring`、`buffer`、`url`、`crypto`、`zlib`、`http`、`https`、`assert`、`stream`、`process`、`net`、`dgram`、`tls`、`dns`、`string_decoder`、`timers`。目标清单不表示其中每项 API 都已实现；状态和限制见[覆盖盘点](node-api-coverage.md)。不提供完整 Node/npm 加载器、任意运行时 `require()`、原生 addon 或完整事件循环。
 
-## 2. 配置与资源选择
+默认启用 NodeCompat。`nodeCompat: false` 可关闭；对象配置可用 `modules` 选择模块子集、用 `importmap` 控制 HTML 文档中的裸名 importmap 注入。未填写 `modules` 时启用全部 22 个模块。相关资源从主程序嵌入的资源索引读取，不再要求 Devtools 重复暂存 NodeCompat 文件。
 
-`niva.json` 可用 `nodeCompat: true` 启用默认模块集，也可显式选模块并控制静态 importmap：
+Node 专有行为按能力分层：Native `net`、`dgram`、`tls` 提供系统 socket 与 TLS 基础；HTTP/HTTPS 应用模块和 DNS 协议层在 JS 实现。Niva 内部启动用 HTTP/WS/资源服务继续由 Native 提供，它与应用调用 `http.createServer()` 是不同服务。HTTP/HTTPS 的迁移已删除旧 `Niva.api.http`/ureq 客户端；Node HTTP server 关闭清理仍有待修复项。DNS 的 `lookup` 与 `resolve` 语义不同，逐项完成情况以源码及 API 清单为准。[网络分层及测量依据](node-layering-plan.md)。
+
+实现优先使用 JS、浏览器原语和无需 Node runtime 的纯 JS 库。Native 仅承担必须访问系统资源或浏览器无法满足目标契约的部分。纯 JS 算法、压缩和协议解析不会仅因潜在性能优势而下沉 Native。
+
+## 2. 加载、配置与启动数据
+
+Native 构建阶段将已检查入库的 runtime、vendor、模块 wrapper 和 classic 入口生成嵌入资源索引及压缩数据。Cargo 构建不需要运行 npm。Classic 入口注册已选模块；ESM 映射仅包含选择的模块及其资源。`Niva.require()` 从已注册的同步表读取模块；`Niva.import()` 优先复用已注册对象，未注册时使用当前资源映射动态导入。未知模块会抛错。
 
 ```json
 "nodeCompat": {
@@ -19,32 +25,36 @@ NodeCompat 是独立的可选浏览器包 `packages/node-compat`，为 Niva 页�
 }
 ```
 
-省略 `modules` 时选择全部 15 个模块；省略 `importmap` 时默认为 `true`。未知模块会被拒绝。Devtools 按所选模块及其 ESM 依赖闭包打包对应资源，并选择 classic 入口；Rust 服务端只允许读取所选模块所需的兼容资源。关闭时不要求也不打包 NodeCompat 资源。
+未指定 `nodeCompat` 或设为 `true` 时默认启用全部模块；`false` 关闭；对象配置省略 `modules` 时选全部模块。未知模块配置会被拒绝。`importmap: false` 仅关闭文档导航时的裸名映射注入，不关闭所选模块资源。静态 ESM 裸名仍须在模块解析前有 importmap，或由应用打包工具将其解析掉。
 
-## 3. 加载路径
+启动数据通过 `Niva.bootstrap` 提供。可信本地顶层页面可读取静态 OS 快照；真实 `process` 对象及其启动元数据仅注入 main 窗口（id 0）的可信顶层页面。子窗口不会获得 process 启动载荷。动态 OS/进程数据或操作由运行时桥接 API 查询，不应当作启动快照，也不应缓存为实时值。启动脚本只向顶层文档注入；跨域 IPC 不提供启动快照。
 
-- classic 入口 `__niva_compat/node-compat.js` 为页面注册已选模块及其 `node:` 名称；选中 `fs`、`assert`、`stream` 时也注册对应的 `fs/promises`、`assert/strict`、`stream/promises`。单文件页面通过 `require()` 使用这些名称；ESM 子路径使用各自的专用 wrapper。
-- 页面静态裸名导入依赖服务端在 HTML 响应中注入 importmap。注入仅在 NodeCompat 开启、选项允许 importmap 且请求是文档导航时进行；fetch/XHR 获取 HTML 不会被改写。已有 importmap 会与 NodeCompat 映射合并，已有键优先，并通过标记避免重复注入。
-- `importmap: false` 关闭静态裸名映射注入，但所选 ESM 资源仍会打包，可由应用提供自己的映射或使用打包工具配置别名。
-- 浏览器在模块解析前需要 importmap。模块已被 bundler 改写为静态 URL 的页面不依赖运行时 DOM 注入；运行时注册不能修复已经解析失败的静态裸名导入。
+NodeCompat 与 `Niva.api` 是两个接口层：`Niva.api` 暴露 Niva 专有原生功能，NodeCompat 暴露 Node 风格模块。文件系统等底层能力可共用相同 Native handler，但不要把模块方法等同于 `Niva.api` 的公共命名空间。
 
-## 4. HTTP 资源与文件凭证
+## 3. 传输和权限边界
 
-服务器的 `__niva_compat/` 资源路由仅服务允许的资源，并返回 JavaScript MIME、`Access-Control-Allow-Origin: *`、`nosniff` 和 `no-store`。该静态适配器资源路由不等同于 bridge 或文件 API 的授权。
+- 本地可信页面使用双向 WebSocket 承载普通异步调用、事件、二进制流及 socket 字节流。
+- 本地可信页面的 `Niva.callSync()` 使用同步 XHR；Native 校验窗口 token、精确 origin、loopback Host、请求长度和同步 handler 白名单。它只适用于被允许的同步方法，不承载 UI、socket 或流操作。
+- 跨域页面只能在 Native 授权后使用有限 unary JSON IPC；不支持同步调用、二进制、socket、双向流或完整 Node API。
 
-`__niva_fs/` 使用窗口作用域的 file token，并在 Rust 服务端校验 token 对应的窗口；当前实现不是旧设计中描述的 session-cookie。不要把早期方案里的 cookie 豁免、静态资源 session-cookie 保护等描述当成现状。完整 HTTP/bridge 权限边界仍以 [`http-auth-plan.md`](http-auth-plan.md)、[`permission-design.md`](permission-design.md) 和 [`security.md`](security.md) 的实际状态为准。
+进程等敏感能力需服从窗口和页面权限，不因 NodeCompat 默认启用而扩大授权。WS、同步 XHR 和 IPC 的当前鉴权细节见 [bridge 合约](bridge.md) 与 [权限设计](permission-design.md)。
+
+## 4. 实现与验收状态
+
+当前实现与验收以[实施记录](node-compat-implementation.md)和机器证据为准：22 个模块、179 个目标入口可加载；最新 release 打包 WebView 通过 45 项检查，macOS arm64 主程序 2,772,000 bytes。选定 Node 官方契约 58 个文件的适用检查通过，另有 2 处经用户授权的引擎差异跳过；Windows 仅 target check，尚未真机或 release 体积验收。
+
+这些检查分别覆盖 JS 组件、Native 单测和有限 macOS WebView 路径，不能合并成 179 项 Node 兼容验收。HTTP/HTTPS 客户端与服务端真实网络路径仍有集成工作，特别是 server close 清理；尚未完成完整目标功能的 release 主程序体积测量，也未确认小于 3,300,000 bytes 的发布门禁。完整第三方库和官方 Node 测试子集仍须逐项验收。[实施状态与证据](node-compat-implementation.md)。
 
 ## 5. 浏览器与平台限制
 
-- 页面 HTML 自带 CSP meta 时，运行时会把 Niva 注入的 import map/classic 脚本移到策略之后，并只给这两条脚本加每次导航随机 nonce；作者其他内联脚本不因此获准。模块资源仍受页面策略约束。宿主额外提供的 CSP response header 无法由 Niva 改写，仍可能阻止兼容层加载。
-- Web Crypto、`CompressionStream` / `DecompressionStream` 等能力取决于 WebView 实现；crypto 与 zlib 在能力缺失时会拒绝或不可用。
-- `fs` 和 `child_process` 的二进制流需要本地 Niva WebSocket 页面；远端 IPC 页面不支持这些二进制流。
-- macOS 已验证隔离运行与打包后的浏览器路径；Windows WebView2 已有限实测打包页的 `path`、`fs/promises` 与 `assert/strict`，包括严格 CSP 下的成功路径。完整模块/API 与 CSP 矩阵仍待验收，见 [Windows 验证记录](windows-validation-2026-09-23.md)。
+- Web Crypto、Compression Streams、WebView fetch/network 和 CSP 行为依赖目标 WebView。浏览器能 import 某个 wrapper 不表示其功能在每个平台可用。
+- 文件与进程二进制流需要本地 WebSocket；远端 IPC 页面没有对应能力。
+- 不提供完整 CommonJS/npm runtime、Node 原生扩展、任意文件系统模块加载、未列入目标的 Node builtin 或完整 Node 事件循环。
+- `process` 受 main 窗口限制；不要在其他窗口假设该全局存在。
+- macOS 的有限 WebView 路径已有验证；Windows target check 不等于 Windows 真机支持。按平台记录完整功能及发布体积验收。
 
-## 6. 未决 API 冲突
+## 6. Node 库兼容验收
 
-`docs/node-api-frequency.md` 的历史方案一度提出全量过渡同步 API，另一处又提出只开放少量同步读 API。二者与当前异步 bridge 和已实现 NodeCompat 的边界冲突。当前 NodeCompat **没有实现同步 API**，本设计不选择窄版或全量版，也不据此承诺同步 API；该产品范围等待用户决定。在决定前，兼容包继续保持异步文件和进程操作，以及纯字符串性质的同步 `path` 操作。
+兼容验收采用[官方测试子集规则](node-upstream-conformance.md)：固定上游版本，以 API 签名、选项和平台为契约；纳入子集的原断言失败必须阻断。未覆盖 API 或只有项目自有 smoke 的条目不能标为通过官方 Node 测试。
 
-## 7. 验证状态
-
-NodeCompat 包含针对适配器的测试；Devtools 有资源选择/依赖闭包测试。macOS 和 Windows 均有有限打包浏览器验证；Windows 本轮还修复了根目录相对路径的盘符继承。现有结果不消除浏览器能力、CSP 和完整模块语义的限制。
+第三方库验收还应检查完整依赖链、打包输出是否残留运行时 Node 内置导入或 `.node` addon，并在目标 WebView 运行代表性功能，验证回调/同步返回、Buffer、错误和资源清理。仅能打包、仅能 import、或者只通过合成协议样例，都不足以宣称完整 Node 模块兼容。

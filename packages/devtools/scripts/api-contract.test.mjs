@@ -75,17 +75,41 @@ test("every typed Niva.api method has a native handler or explicit page override
   assert.deepEqual(missing.sort(), []);
 });
 
-test("native-only API methods are the internal stream handlers", () => {
+test("native-only API methods are explicitly internal bridge operations", () => {
   const publicMethods = publicApiMethods();
   const nativeOnly = [...registeredMethods()].filter((method) => !publicMethods.has(method));
   assert.deepEqual(nativeOnly.sort(), [
+    "fs.handle",
+    "fs.node",
+    "fs.openHandle",
     "fs.readStream",
+    "fs.watch",
     "fs.writeStream",
-    "http.requestStream",
+    "os.cpus",
+    "os.dnsLookup",
+    "os.dnsServers",
+    "os.freemem",
+    "os.networkInterfaces",
+    "os.timingSafeEqual",
+    "os.uptime",
     "process.execStream",
+    "process.signal",
+    "process.spawnSync",
+    "process.stdin",
+    "process.write",
     "resource.readStream",
-  ]);
-});
+    "socket.control",
+    "socket.tcpAttach",
+    "socket.tcpConnect",
+    "socket.tcpConnectGuarded",
+    "socket.tcpListen",
+    "socket.tlsAttach",
+    "socket.tlsConnect",
+    "socket.tlsConnectGuarded",
+    "socket.tlsListen",
+    "socket.udpBind",
+    "socket.udpSend",
+  ]);});
 
 test("the coverage matrix tracks each public API and bridge method exactly once", () => {
   const matrix = readFileSync(path.join(root, "docs/api-test-matrix.md"), "utf8");
