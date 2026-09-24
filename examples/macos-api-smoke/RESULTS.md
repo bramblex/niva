@@ -30,6 +30,25 @@ that this automatic run did not exercise. The NodeCompat HTTPS cases check
 wrong-scheme rejection without an outbound TLS request. The run uses isolated
 debug resources, not a downloaded or signed release package.
 
+## Thread-affinity follow-up
+
+A macOS crash report from 2026-09-24 02:35 shows AppKit rejecting
+`window.setVisibleOnAllWorkspaces` on the `smol-1` worker thread with
+“Must only be used from the main thread”. The main-thread dispatch for that
+specific method entered the test branch later at 04:25. The subsequent
+thread-affinity audit also moved other AppKit-backed `window.*` reads and
+mutators to the main event loop.
+
+On the isolated follow-up branch, `run_thread_affinity.py` invoked 22 window
+calls from a real macOS WebView, including enabling and restoring
+`setVisibleOnAllWorkspaces`; all resolved and the process stayed alive until
+the runner terminated it. This checks the crash mechanism, not the visual
+Space effect. A fresh full supervised run timed out after its first two
+cases while exercising the always-on-bottom case. The extended automatic
+suite stopped at its strict monitor precondition because Tao returned no
+connected displays in that session. Those runs do not count as full-suite
+passes; repeat them with an awake, unlocked desktop before release acceptance.
+
 Local gates on the same checkout passed: `cargo fmt --all -- --check`,
 `cargo check --workspace`, `cargo clippy --workspace --all-targets`,
 `cargo test --workspace` (90 Niva and 10 win_packager tests), NodeCompat

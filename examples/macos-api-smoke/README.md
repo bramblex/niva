@@ -24,6 +24,18 @@ dialog, Dock, process-open, and NodeCompat WebView suites, use:
 python3 -B examples/macos-api-smoke/run_all.py target/debug/niva
 ```
 
+For a focused regression check of AppKit thread affinity without monitor or
+pixel observations, run:
+
+```sh
+python3 -B examples/macos-api-smoke/run_thread_affinity.py target/debug/niva
+```
+
+It calls 22 window APIs through the asynchronous WebView bridge, including
+`setVisibleOnAllWorkspaces(true)` and its cleanup call. It verifies that all
+calls resolve without a main-thread trap; it does not assert their visual
+effects or replace the supervised suite.
+
 The aggregate runner saves one log per suite under a reported `/tmp` directory
 and checks the exact 167 `Niva.api` methods and nine top-level bridge methods.
 Its summary separates
