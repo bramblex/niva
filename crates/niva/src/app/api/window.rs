@@ -193,12 +193,35 @@ async fn list(
     _window: Arc<NivaWindow>,
     _request: ApiRequest,
 ) -> Result<Vec<Value>> {
-    Ok(app
-        .window()?
-        .list_windows()
-        .into_iter()
-        .map(|w| json!({"id":w.id,"title":w.title(),"visible":w.is_visible(),}))
-        .collect())
+    #[cfg(target_os = "macos")]
+    {
+        // Release the manager lock before waiting for AppKit-backed reads on
+        // the event-loop thread.
+        let windows = {
+            let manager = app.window()?;
+            manager
+                .list_windows()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(windows
+                .into_iter()
+                .map(|w| json!({"id":w.id,"title":w.title(),"visible":w.is_visible(),}))
+                .collect())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(app
+            .window()?
+            .list_windows()
+            .into_iter()
+            .map(|w| json!({"id":w.id,"title":w.title(),"visible":w.is_visible(),}))
+            .collect())
+    }
 }
 
 async fn send_message(
@@ -267,7 +290,18 @@ async fn scale_factor(
 ) -> Result<f64> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.scale_factor())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(
+            &app,
+            move |_target, _control_flow| Ok(window.scale_factor()),
+        )
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.scale_factor())
+    }
 }
 
 async fn inner_position(
@@ -277,7 +311,17 @@ async fn inner_position(
 ) -> Result<NivaPosition> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(logical_try!(window, inner_position))
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(logical_try!(window, inner_position))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(logical_try!(window, inner_position))
+    }
 }
 
 async fn outer_position(
@@ -287,7 +331,17 @@ async fn outer_position(
 ) -> Result<NivaPosition> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(logical_try!(window, outer_position))
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(logical_try!(window, outer_position))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(logical_try!(window, outer_position))
+    }
 }
 
 async fn set_outer_position(
@@ -297,8 +351,19 @@ async fn set_outer_position(
 ) -> Result<()> {
     let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_outer_position(position);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_outer_position(position);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_outer_position(position);
+        Ok(())
+    }
 }
 
 async fn inner_size(
@@ -329,7 +394,17 @@ async fn outer_size(
 ) -> Result<NivaSize> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(logical!(window, outer_size))
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(logical!(window, outer_size))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(logical!(window, outer_size))
+    }
 }
 
 async fn set_min_inner_size(
@@ -544,7 +619,14 @@ async fn set_title(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReque
 async fn title(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<String> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.title())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| Ok(window.title())).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.title())
+    }
 }
 
 async fn is_visible(
@@ -554,7 +636,14 @@ async fn is_visible(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_visible())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| Ok(window.is_visible())).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_visible())
+    }
 }
 
 async fn set_visible(
@@ -575,14 +664,32 @@ async fn is_focused(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_focused())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| Ok(window.is_focused())).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_focused())
+    }
 }
 
 async fn set_focus(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    window.set_focus();
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_focus();
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_focus();
+        Ok(())
+    }
 }
 
 async fn is_resizable(
@@ -592,7 +699,18 @@ async fn is_resizable(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_resizable())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(
+            &app,
+            move |_target, _control_flow| Ok(window.is_resizable()),
+        )
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_resizable())
+    }
 }
 
 async fn set_resizable(
@@ -602,8 +720,19 @@ async fn set_resizable(
 ) -> Result<()> {
     let (resizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_resizable(resizable);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_resizable(resizable);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_resizable(resizable);
+        Ok(())
+    }
 }
 
 async fn is_minimizable(
@@ -613,7 +742,17 @@ async fn is_minimizable(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_minimizable())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(window.is_minimizable())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_minimizable())
+    }
 }
 
 async fn set_minimizable(
@@ -623,8 +762,19 @@ async fn set_minimizable(
 ) -> Result<()> {
     let (minimizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_minimizable(minimizable);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_minimizable(minimizable);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_minimizable(minimizable);
+        Ok(())
+    }
 }
 
 async fn is_maximizable(
@@ -634,7 +784,17 @@ async fn is_maximizable(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_maximizable())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(window.is_maximizable())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_maximizable())
+    }
 }
 
 async fn set_maximizable(
@@ -644,8 +804,19 @@ async fn set_maximizable(
 ) -> Result<()> {
     let (maximizable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_maximizable(maximizable);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_maximizable(maximizable);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_maximizable(maximizable);
+        Ok(())
+    }
 }
 
 async fn is_closable(
@@ -655,7 +826,14 @@ async fn is_closable(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_closable())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| Ok(window.is_closable())).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_closable())
+    }
 }
 
 async fn set_closable(
@@ -665,8 +843,19 @@ async fn set_closable(
 ) -> Result<()> {
     let (closable, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_closable(closable);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_closable(closable);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_closable(closable);
+        Ok(())
+    }
 }
 
 async fn is_minimized(
@@ -676,7 +865,18 @@ async fn is_minimized(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_minimized())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(
+            &app,
+            move |_target, _control_flow| Ok(window.is_minimized()),
+        )
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_minimized())
+    }
 }
 
 async fn set_minimized(
@@ -686,8 +886,19 @@ async fn set_minimized(
 ) -> Result<()> {
     let (minimized, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_minimized(minimized);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_minimized(minimized);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_minimized(minimized);
+        Ok(())
+    }
 }
 
 async fn is_maximized(
@@ -697,7 +908,18 @@ async fn is_maximized(
 ) -> Result<bool> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(window.is_maximized())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(
+            &app,
+            move |_target, _control_flow| Ok(window.is_maximized()),
+        )
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(window.is_maximized())
+    }
 }
 
 async fn set_maximized(
@@ -707,8 +929,19 @@ async fn set_maximized(
 ) -> Result<()> {
     let (maximized, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_maximized(maximized);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_maximized(maximized);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_maximized(maximized);
+        Ok(())
+    }
 }
 
 async fn decorated(
@@ -751,25 +984,49 @@ async fn set_fullscreen(
         .args()
         .optional::<(bool, Option<String>, Option<u8>)>(3)?;
     match_window!(app, window, id);
-    if !is_fullscreen {
-        window.set_fullscreen(None);
-        return Ok(());
-    }
-    match monitor_name {
-        Some(name) => {
-            let monitor = window
-                .available_monitors()
-                .find(|m| m.name() == Some(name.clone()));
-            if monitor.is_none() {
-                return Err(anyhow!("Monitornotfound"));
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            if !is_fullscreen {
+                window.set_fullscreen(None);
+                return Ok(());
             }
-            window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+            match monitor_name {
+                Some(name) => {
+                    let monitor = window
+                        .available_monitors()
+                        .find(|m| m.name() == Some(name.clone()));
+                    if monitor.is_none() {
+                        return Err(anyhow!("Monitornotfound"));
+                    }
+                    window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+                }
+                None => window.set_fullscreen(Some(Fullscreen::Borderless(None))),
+            }
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if !is_fullscreen {
+            window.set_fullscreen(None);
+            return Ok(());
         }
-        None => {
-            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+        match monitor_name {
+            Some(name) => {
+                let monitor = window
+                    .available_monitors()
+                    .find(|m| m.name() == Some(name.clone()));
+                if monitor.is_none() {
+                    return Err(anyhow!("Monitornotfound"));
+                }
+                window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+            }
+            None => window.set_fullscreen(Some(Fullscreen::Borderless(None))),
         }
-    };
-    Ok(())
+        Ok(())
+    }
 }
 
 async fn set_always_on_top(
@@ -801,12 +1058,31 @@ async fn request_user_attention(
 ) -> Result<()> {
     let (level, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    match level.as_str() {
-        "informational" => window.request_user_attention(Some(UserAttentionType::Informational)),
-        "critical" => window.request_user_attention(Some(UserAttentionType::Critical)),
-        _ => window.request_user_attention(None),
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            match level.as_str() {
+                "informational" => {
+                    window.request_user_attention(Some(UserAttentionType::Informational))
+                }
+                "critical" => window.request_user_attention(Some(UserAttentionType::Critical)),
+                _ => window.request_user_attention(None),
+            }
+            Ok(())
+        })
+        .await;
     }
-    Ok(())
+    #[cfg(not(target_os = "macos"))]
+    {
+        match level.as_str() {
+            "informational" => {
+                window.request_user_attention(Some(UserAttentionType::Informational))
+            }
+            "critical" => window.request_user_attention(Some(UserAttentionType::Critical)),
+            _ => window.request_user_attention(None),
+        }
+        Ok(())
+    }
 }
 
 async fn set_content_protection(
@@ -816,8 +1092,19 @@ async fn set_content_protection(
 ) -> Result<()> {
     let (enabled, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_content_protection(enabled);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_content_protection(enabled);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_content_protection(enabled);
+        Ok(())
+    }
 }
 
 async fn set_visible_on_all_workspaces(
@@ -827,8 +1114,19 @@ async fn set_visible_on_all_workspaces(
 ) -> Result<()> {
     let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_visible_on_all_workspaces(visible);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_visible_on_all_workspaces(visible);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_visible_on_all_workspaces(visible);
+        Ok(())
+    }
 }
 
 async fn set_cursor_icon(
@@ -838,7 +1136,7 @@ async fn set_cursor_icon(
 ) -> Result<()> {
     let (icon, id) = request.args().optional::<(String, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_cursor_icon(match icon.as_str() {
+    let native_icon = match icon.as_str() {
         "default" => CursorIcon::Default,
         "crosshair" => CursorIcon::Crosshair,
         "hand" => CursorIcon::Hand,
@@ -875,8 +1173,20 @@ async fn set_cursor_icon(
         "col_resize" => CursorIcon::ColResize,
         "row_resize" => CursorIcon::RowResize,
         _ => CursorIcon::Arrow,
-    });
-    Ok(())
+    };
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_cursor_icon(native_icon);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_cursor_icon(native_icon);
+        Ok(())
+    }
 }
 
 async fn cursor_position(
@@ -886,7 +1196,17 @@ async fn cursor_position(
 ) -> Result<NivaPosition> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
     match_window!(app, window, id);
-    Ok(logical_try!(window, cursor_position))
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            Ok(logical_try!(window, cursor_position))
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(logical_try!(window, cursor_position))
+    }
 }
 
 async fn set_cursor_position(
@@ -896,8 +1216,19 @@ async fn set_cursor_position(
 ) -> Result<()> {
     let (position, id) = request.args().optional::<(NivaPosition, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_cursor_position(position)?;
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_cursor_position(position)?;
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_cursor_position(position)?;
+        Ok(())
+    }
 }
 
 async fn set_cursor_grab(
@@ -918,8 +1249,19 @@ async fn set_cursor_visible(
 ) -> Result<()> {
     let (visible, id) = request.args().optional::<(bool, Option<u8>)>(2)?;
     match_window!(app, window, id);
-    window.set_cursor_visible(visible);
-    Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return run_on_main(&app, move |_target, _control_flow| {
+            window.set_cursor_visible(visible);
+            Ok(())
+        })
+        .await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_cursor_visible(visible);
+        Ok(())
+    }
 }
 
 async fn drag_window(
