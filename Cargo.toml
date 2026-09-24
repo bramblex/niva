@@ -4,6 +4,7 @@ members = [
 	"crates/niva",
 	"crates/icon_creator",
 	"crates/win_packager",
+	"crates/niva_packager",
 ]
 
 [profile.release]

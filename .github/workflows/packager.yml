@@ -1,0 +1,89 @@
+name: Cross-platform build kits
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            kit: windows-x86_64
+            runtime: niva-windows-x86_64.exe
+            exe: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            kit: macos-aarch64
+            runtime: niva-macos-aarch64
+            exe: ''
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            kit: macos-x86_64
+            runtime: niva-macos-x86_64
+            exe: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build --locked --release --target ${{ matrix.target }} -p niva -p niva-packager
+      - run: cargo test --locked -p niva-packager
+      - name: Collect binaries
+        shell: python
+        run: |
+          import pathlib, shutil
+          out=pathlib.Path('native-artifacts'); out.mkdir()
+          src=pathlib.Path('target/${{ matrix.target }}/release')
+          shutil.copyfile(src/'niva${{ matrix.exe }}',out/'${{ matrix.runtime }}')
+          shutil.copyfile(src/'niva-packager${{ matrix.exe }}',out/'niva-packager-${{ matrix.kit }}${{ matrix.exe }}')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.kit }}
+          path: native-artifacts/*
+  kits:
+    needs: native
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            host: windows-x86_64
+            exe: .exe
+          - os: macos-latest
+            host: macos-aarch64
+            exe: ''
+          - os: macos-15-intel
+            host: macos-x86_64
+            exe: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: native-artifacts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assemble offline kit
+        shell: bash
+        run: |
+          chmod +x native-artifacts/niva-packager-${{ matrix.host }}${{ matrix.exe }}
+          python scripts/create-packager-kit.py --runtime-dir native-artifacts --packager native-artifacts/niva-packager-${{ matrix.host }}${{ matrix.exe }} --output dist/niva-build-kit-${{ matrix.host }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: niva-build-kit-${{ matrix.host }}
+          path: dist/*.zip

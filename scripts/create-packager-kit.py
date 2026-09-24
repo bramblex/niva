@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Assemble a pinned, offline Niva build kit. Run after native CI builds."""
+import argparse
+import hashlib
+import json
+import pathlib
+import shutil
+import subprocess
+import tempfile
+import zipfile
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+TARGETS = {
+    'windows-x86_64': 'niva-windows-x86_64.exe',
+    'macos-aarch64': 'niva-macos-aarch64',
+    'macos-x86_64': 'niva-macos-x86_64',
+}
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--runtime-dir', type=pathlib.Path, required=True)
+    parser.add_argument('--packager', type=pathlib.Path, required=True)
+    parser.add_argument('--output', type=pathlib.Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        raise SystemExit('Output already exists')
+    version = json.loads((ROOT / 'packages/devtools/niva.json').read_text())['version']
+    # Ensure the copied host tool and all runtime artifacts belong to this kit.
+    tool_version = subprocess.check_output([str(args.packager.resolve()), '--version'], text=True).strip()
+    if tool_version != f'niva-packager {version}':
+        raise SystemExit(f'Packager version mismatch: {tool_version}')
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.niva-kit-', dir=args.output.parent) as tmp:
+        kit = pathlib.Path(tmp) / 'niva-build-kit'
+        (kit / 'runtimes').mkdir(parents=True)
+        runtimes = {}
+        for target, filename in TARGETS.items():
+            source = args.runtime_dir / filename
+            dest = kit / 'runtimes' / filename
+            shutil.copyfile(source, dest)
+            dest.chmod(0o755)
+            runtimes[target] = {'path': f'runtimes/{filename}', 'version': version,
+                                'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()}
+        tool = kit / ('niva-packager.exe' if args.packager.suffix == '.exe' else 'niva-packager')
+        shutil.copyfile(args.packager, tool)
+        tool.chmod(0o755)
+        (kit / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'version': version, 'runtimes': runtimes}, indent=2)+'\n')
+        subprocess.run(['node', str(ROOT / 'packages/devtools/scripts/stage-node-compat.mjs')], check=True, cwd=ROOT)
+        shutil.copytree(ROOT / 'packages/devtools/public/__niva_compat', kit / 'node-compat')
+        shutil.copyfile(ROOT / 'LICENSE', kit / 'LICENSE')
+        shutil.copyfile(ROOT / 'docs/packager-usage.md', kit / 'README.md')
+        # Preserve the dependency notices, and supply exact source download links.
+        metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--format-version=1'], cwd=ROOT))
+        nodes = {node['id']:node for node in metadata['resolve']['nodes']}
+        tool_id = next(p['id'] for p in metadata['packages'] if p['name'] == 'niva-packager')
+        selected = set()
+        def visit(id):
+            if id in selected: return
+            selected.add(id)
+            for child in nodes[id]['dependencies']: visit(child)
+        visit(tool_id)
+        notices = []
+        for package in metadata['packages']:
+            if package['id'] not in selected: continue
+            name, ver = package['name'], package['version']
+            source = f'https://crates.io/api/v1/crates/{name}/{ver}/download' if package['source'] else 'https://github.com/bramblex/niva'
+            notices.append(f'{name} {ver}\nLicense: {package["license"]}\nCorresponding source: {source}\n')
+            pkgdir = pathlib.Path(package['manifest_path']).parent
+            for file in pkgdir.iterdir():
+                if file.is_file() and file.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE')):
+                    directory = kit / 'licenses' / f'{name}-{ver}'
+                    directory.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(file, directory / file.name)
+        (kit / 'THIRD_PARTY.txt').write_text('\n'.join(notices), encoding='utf-8')
+        (kit / 'SHA256SUMS').write_text('\n'.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(kit).as_posix()}' for p in sorted(kit.rglob('*')) if p.is_file())+'\n')
+        archive = pathlib.Path(tmp) / 'kit.zip'
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as z:
+            for file in sorted(kit.rglob('*')):
+                if not file.is_file(): continue
+                info = zipfile.ZipInfo(file.relative_to(kit.parent).as_posix())
+                info.create_system = 3
+                executable = file == tool or file.parent.name == 'runtimes'
+                info.external_attr = (0o100755 if executable else 0o100644) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(info, file.read_bytes())
+        # Exclusive destination creation prevents an accidental overwrite.
+        with args.output.open('xb') as dest, archive.open('rb') as source:
+            shutil.copyfileobj(source, dest)
+    print(args.output)
+
+if __name__ == '__main__': main()

@@ -3,12 +3,15 @@ import { useApp, useLocale, useProject } from "../../models/app.model";
 import { Logo } from "./logo";
 import { tryOrAlert } from "../../common/utils";
 import { FolderOpen, Refresh } from "@icon-park/react";
+import { MultiTargetBuildPanel } from "./multi-target-build";
+import { useState } from "react";
 
 export function ProjectDetails() {
   const app = useApp();
   const locale = useLocale();
   const project = useProject();
   const { state } = project;
+  const [showMultiTargetBuild, setShowMultiTargetBuild] = useState(false);
 
   return (
     <div className="project-detail">
@@ -28,7 +31,7 @@ export function ProjectDetails() {
           <button className="btn" onClick={() => tryOrAlert(app, project.debug())}>
             {locale.t("DEBUG")}
           </button>
-          <button className="btn btn-primary" onClick={() => tryOrAlert(app, project.build())}>
+          <button className="btn btn-primary" onClick={() => setShowMultiTargetBuild((shown) => !shown)}>
             {locale.t("BUILD")}
           </button>
         </div>
@@ -41,6 +44,13 @@ export function ProjectDetails() {
           </button>
         </div>
       </div>
+
+      {showMultiTargetBuild && (
+        <MultiTargetBuildPanel
+          project={project}
+          onClose={() => setShowMultiTargetBuild(false)}
+        />
+      )}
 
       <div className="project-facts">
         <section className="fact-section">

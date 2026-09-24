@@ -1,0 +1,95 @@
+{
+  "path": [
+    "src/path.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js"
+  ],
+  "os": [
+    "src/os.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/os.js"
+  ],
+  "fs": [
+    "src/fs.js",
+    "src/fs-promises.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/buffer.js",
+    "src/runtime/fs.js"
+  ],
+  "child_process": [
+    "src/child_process.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/buffer.js",
+    "src/runtime/child_process.js"
+  ],
+  "events": [
+    "src/events.js",
+    "src/runtime/bridge.js",
+    "src/runtime/events.js"
+  ],
+  "util": [
+    "src/util.js",
+    "src/runtime/bridge.js",
+    "src/runtime/buffer.js",
+    "src/runtime/util.js"
+  ],
+  "querystring": [
+    "src/querystring.js",
+    "src/runtime/bridge.js",
+    "src/runtime/querystring.js"
+  ],
+  "buffer": [
+    "src/buffer.js",
+    "src/runtime/bridge.js",
+    "src/runtime/buffer.js"
+  ],
+  "url": [
+    "src/url.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/url.js"
+  ],
+  "crypto": [
+    "src/crypto.js",
+    "src/runtime/bridge.js",
+    "src/runtime/buffer.js",
+    "src/runtime/crypto.js"
+  ],
+  "zlib": [
+    "src/zlib.js",
+    "src/runtime/bridge.js",
+    "src/runtime/buffer.js",
+    "src/runtime/zlib.js"
+  ],
+  "http": [
+    "src/http.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/buffer.js",
+    "src/runtime/http.js"
+  ],
+  "https": [
+    "src/https.js",
+    "src/runtime/bridge.js",
+    "src/runtime/path.js",
+    "src/runtime/buffer.js",
+    "src/runtime/http.js"
+  ],
+  "assert": [
+    "src/assert.js",
+    "src/assert-strict.js",
+    "src/runtime/bridge.js",
+    "src/runtime/buffer.js",
+    "src/runtime/util.js",
+    "src/runtime/assert.js"
+  ],
+  "stream": [
+    "src/stream.js",
+    "src/stream-promises.js",
+    "src/runtime/bridge.js",
+    "src/runtime/stream.js"
+  ]
+}
