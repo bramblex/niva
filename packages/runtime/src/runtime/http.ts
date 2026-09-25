@@ -27,14 +27,26 @@
         return result;
     }
     class IncomingMessage extends Readable {
-        constructor(socket) { super(); this.socket = this.connection = socket; this.headers = {}; this.rawHeaders = []; this.trailers = {}; this.rawTrailers = []; this.complete = false; this.aborted = false; }
-        _read() { this.socket.resume(); }
-        _destroy(error, callback) { if (!this.complete)
-            this.socket.destroy(error); callback(error); }
-        setTimeout(timeout, callback) { this.socket.setTimeout(timeout, callback); return this; }
+        constructor(socket, nativeRequest?) { super(); this.socket = this.connection = socket; this._nativeRequest = nativeRequest; this.headers = {}; this.rawHeaders = []; this.trailers = {}; this.rawTrailers = []; this.complete = false; this.aborted = false; }
+        _read() { if (this._nativeRequest) {
+            if (this._nativeAckPending) {
+                this._nativeAckPending = false;
+                this._nativeRequest.ackResponse();
+            }
+            return;
+        } this.socket.resume(); }
+        _pushNativeChunk(chunk) { if (!this.push(Buffer.from(chunk)))
+            this._nativeAckPending = true; else
+            this._nativeRequest.ackResponse(); }
+        _completeNative() { this.complete = true; this.push(null); }
+        _destroy(error, callback) { if (!this.complete) {
+            if (this._nativeRequest) { this.aborted = true; this.emit("aborted"); this._nativeRequest.destroy(error); if (this._nativeRequest.owner && !this._nativeRequest.owner.destroyed) this._nativeRequest.owner.destroy(error); }
+            else this.socket.destroy(error);
+        } callback(error); }
+        setTimeout(timeout, callback) { if (this._nativeRequest) this._nativeRequest.setTimeout(timeout, callback); else this.socket.setTimeout(timeout, callback); return this; }
     }
     class OutgoingMessage extends Writable {
-        constructor(socket, options) { super(options); this.socket = this.connection = socket; this.headersSent = false; this._headers = Object.create(null); this._chunked = false; this._sent = 0; this._expected = null; this._trailers = []; }
+        constructor(socket, options) { super(options); this.socket = this.connection = socket; this._nativeClient = !!options.nativeClient; this.headersSent = false; this._headers = Object.create(null); this._chunked = false; this._sent = 0; this._expected = null; this._trailers = []; }
         setHeader(name, value) { if (this.headersSent)
             throw fail("Headers already sent", "ERR_HTTP_HEADERS_SENT"); var values = Array.isArray(value) ? value.map(function (item) { return header(name, item); }) : header(name, value); this._headers[name.toLowerCase()] = { name: name, value: values }; return this; }
         getHeader(name) { return this._headers[String(name).toLowerCase()]?.value; }
@@ -65,8 +77,16 @@
             else {
                 if (this.hasHeader("transfer-encoding") && String(this.getHeader("transfer-encoding")).toLowerCase() !== "chunked")
                     throw fail("Unsupported Transfer-Encoding");
-                this.setHeader("Transfer-Encoding", "chunked");
+                if (!this._nativeClient)
+                    this.setHeader("Transfer-Encoding", "chunked");
                 this._chunked = true;
+            }
+            if (this._nativeClient) {
+                var rawHeaders = [];
+                Object.keys(this._headers).forEach(name => { var entry = this._headers[name]; (Array.isArray(entry.value) ? entry.value : [entry.value]).forEach(value => rawHeaders.push([entry.name, value])); });
+                this.headersSent = true;
+                this.socket.begin({ url: this.url, method: this.method, headers: rawHeaders, timeout: this._requestTimeout || undefined });
+                return;
             }
             var lines = [this._startLine()];
             Object.keys(this._headers).forEach(name => { var entry = this._headers[name]; (Array.isArray(entry.value) ? entry.value : [entry.value]).forEach(value => lines.push(entry.name + ": " + value)); });
@@ -82,7 +102,7 @@
             this._sent += chunk.length;
             if (this._expected !== null && this._sent > this._expected)
                 throw fail("Body exceeds Content-Length", "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
-            var bytes = this._chunked ? Buffer.concat([Buffer.from(chunk.length.toString(16) + "\r\n"), chunk, Buffer.from("\r\n")]) : chunk;
+            var bytes = this._nativeClient ? chunk : this._chunked ? Buffer.concat([Buffer.from(chunk.length.toString(16) + "\r\n"), chunk, Buffer.from("\r\n")]) : chunk;
             this.socket.write(bytes, callback);
         }
         catch (error) {
@@ -92,7 +112,9 @@
             this.flushHeaders();
             if (!this._noBody && this._expected !== null && this._sent !== this._expected)
                 throw fail("Body does not match Content-Length", "ERR_HTTP_CONTENT_LENGTH_MISMATCH");
-            if (this._chunked)
+            if (this._nativeClient)
+                this.socket.end(callback);
+            else if (this._chunked)
                 this.socket.write(Buffer.from("0\r\n" + this._trailers.join("\r\n") + (this._trailers.length ? "\r\n" : "") + "\r\n"), callback);
             else
                 callback();
@@ -243,6 +265,127 @@
                 return { statusCode: result.statusCode, statusMessage: result.statusMessage || "", headers: result.headers || {}, body: result.body };
             }, function (error) { throw runtime.nativeError(error); });
         }
+        class NativeHttpTransport {
+            call: any; owner: any; response: any; started: boolean; destroyed: boolean; callSettled: boolean; timeout: number; timeoutCallback: any; timeoutId: any; pendingWrite: any;
+            constructor() { this.call = null; this.owner = null; this.response = null; this.started = false; this.destroyed = false; this.timeout = 0; this.timeoutCallback = null; this.timeoutId = undefined; this.pendingWrite = null; }
+            setOwner(owner) { this.owner = owner; }
+            begin(options) {
+                if (this.started) throw fail("HTTP request already started", "ERR_HTTP_HEADERS_SENT");
+                this.started = true;
+                var self = this;
+                this.call = runtime.stream(niva, "http.requestStream", [options], {
+                    onEvent: function (name, data) { self._onEvent(name, data); },
+                    onChunk: function (chunk) { self._onChunk(chunk); },
+                });
+                this.call.promise.then(function () { self.callSettled = true; self._onComplete(); }, function (error) { self.callSettled = true; self._onError(error); });
+            }
+            _onEvent(name, data) {
+                if (name === "uploadAck") {
+                    this._touchTimeout();
+                    var write = this.pendingWrite;
+                    if (!write) return;
+                    if (write.offset >= write.bytes.length) {
+                        this.pendingWrite = null;
+                        write.callback();
+                    }
+                    else this._sendNextWriteChunk();
+                    return;
+                }
+                if (name !== "response" || !data || typeof data.statusCode !== "number") return;
+                if (this.response) { this._onError(fail("Duplicate HTTP response head", "ERR_NIVA_IPC_RESPONSE")); return; }
+                this._touchTimeout();
+                var response = new IncomingMessage(this, this);
+                response.statusCode = data.statusCode;
+                response.statusMessage = data.statusMessage || "";
+                response.headers = data.headers || {};
+                response.rawHeaders = Array.isArray(data.rawHeaders) ? data.rawHeaders.slice() : [];
+                response.httpVersionMajor = data.httpVersionMajor || 1;
+                response.httpVersionMinor = data.httpVersionMinor || 1;
+                response.httpVersion = response.httpVersionMajor + "." + response.httpVersionMinor;
+                this.response = response;
+                this.owner.res = response;
+                this.owner.emit("response", response);
+            }
+            _onChunk(chunk) {
+                this._touchTimeout();
+                if (!this.response) { this._onError(fail("HTTP response body arrived before its headers", "ERR_NIVA_IPC_RESPONSE")); return; }
+                this.response._pushNativeChunk(chunk);
+            }
+            _onComplete() {
+                if (this.destroyed) return;
+                this._clearTimeout();
+                if (!this.response) { this._onError(fail("HTTP request ended before a response", "ECONNRESET")); return; }
+                this.response._completeNative();
+                this.owner.emit("close");
+            }
+            _onError(error) {
+                if (this.destroyed) return;
+                this._clearTimeout();
+                var native = runtime.nativeError(error);
+                if (native && native.code === "ETIMEDOUT") this.owner.emit("timeout");
+                var write = this.pendingWrite;
+                this.pendingWrite = null;
+                if (write) write.callback(native);
+                if (this.response && !this.response.destroyed) this.response.destroy(native);
+                if (!this.owner.destroyed) this.owner.destroy(native);
+            }
+            write(chunk, callback: (error?: any) => void) {
+                if (this.destroyed || !this.started || !this.call) { callback(fail("HTTP request is not writable", "ERR_STREAM_DESTROYED")); return; }
+                var bytes = chunk instanceof Uint8Array ? chunk : Buffer.from(chunk);
+                if (bytes.length === 0) { callback(); return; }
+                this.pendingWrite = { bytes: bytes, offset: 0, callback: callback };
+                this._sendNextWriteChunk();
+            }
+            _sendNextWriteChunk() {
+                var write = this.pendingWrite;
+                if (!write || this.destroyed) return;
+                var end = Math.min(write.offset + 16 * 1024, write.bytes.length);
+                var piece = write.bytes.subarray(write.offset, end);
+                write.offset = end;
+                this._touchTimeout();
+                if (!runtime.streamSend(niva, this.call.id, piece, false)) {
+                    this.pendingWrite = null;
+                    write.callback(fail("HTTP request stream is full", "ENOBUFS"));
+                    this.destroy();
+                }
+            }
+            end(callback: (error?: any) => void) {
+                if (this.destroyed || !this.started || !this.call) { callback(fail("HTTP request is not writable", "ERR_STREAM_DESTROYED")); return; }
+                this._touchTimeout();
+                if (!runtime.streamSend(niva, this.call.id, new Uint8Array(0), true)) { callback(fail("HTTP request stream is full", "ENOBUFS")); this.destroy(); return; }
+                callback();
+            }
+            ackResponse() {
+                if (this.destroyed || !this.call) return;
+                if (!runtime.streamSend(niva, this.call.id, new Uint8Array(0), false)) this.destroy(fail("HTTP response stream is full", "ENOBUFS"));
+            }
+            setTimeout(timeout, callback?: () => void) {
+                this.timeout = Number(timeout) || 0;
+                this.timeoutCallback = callback || null;
+                this._touchTimeout();
+            }
+            _touchTimeout() {
+                if (this.timeoutId !== undefined) clearTimeout(this.timeoutId);
+                this.timeoutId = undefined;
+                if (!this.timeout || this.destroyed) return;
+                var self = this;
+                this.timeoutId = setTimeout(function () {
+                    self.timeoutId = undefined;
+                    if (self.owner && !self.owner.destroyed) self.owner.emit("timeout");
+                    if (self.timeoutCallback) self.timeoutCallback();
+                }, this.timeout);
+            }
+            _clearTimeout() { if (this.timeoutId !== undefined) clearTimeout(this.timeoutId); this.timeoutId = undefined; }
+            destroy(error?) {
+                if (this.destroyed) return;
+                this.destroyed = true;
+                this._clearTimeout();
+                var write = this.pendingWrite;
+                this.pendingWrite = null;
+                if (write) write.callback(error || fail("HTTP request was destroyed", "ABORT_ERR"));
+                if (this.call && !this.callSettled && typeof this.call.cancel === "function") this.call.cancel();
+            }
+        }
         class ClientRequest extends OutgoingMessage {
             constructor(input, options, callback) {
                 if (typeof options === "function") {
@@ -265,6 +408,8 @@
                     throw new RangeError("Invalid port");
                 if (opts.createConnection || opts.socketPath)
                     throw fail("Custom HTTP connections are unsupported", "ENOTSUP");
+                if (opts.timeout !== undefined && (!Number.isInteger(opts.timeout) || opts.timeout < 0 || opts.timeout > 30000))
+                    throw new RangeError("timeout must be between 0 and 30000");
                 var method = String(opts.method || "GET").toUpperCase();
                 if (!token.test(method)) throw fail("Invalid HTTP method", "ERR_INVALID_HTTP_TOKEN");
                 var requestPath = opts.path || (url ? url.pathname + url.search : "/");
@@ -274,33 +419,29 @@
                     var values = Array.isArray(opts.headers[name]) ? opts.headers[name] : [opts.headers[name]];
                     values.forEach(value => header(name, value));
                 });
-                var socketOptions = Object.assign({}, opts, { host: hostname, port: port });
-                delete socketOptions.path;
-                delete socketOptions.method;
-                delete socketOptions.headers;
-                var socket = transport().connect(socketOptions);
-                super(socket, { autoDestroy: false });
+                var requestUrl = protocol + "://" + (hostname.indexOf(":") >= 0 ? "[" + hostname + "]" : hostname) + ((protocol === "https" ? 443 : 80) !== port ? ":" + port : "") + requestPath;
+                var socket = new NativeHttpTransport();
+                super(socket, Object.assign({}, opts, { autoDestroy: false, nativeClient: true }));
+                socket.setOwner(this);
                 this.method = method;
                 this.path = requestPath;
                 this.host = hostname;
                 this.protocol = protocol + ":";
+                this.url = requestUrl;
+                this._requestTimeout = opts.timeout || undefined;
                 this.aborted = false;
                 Object.keys(opts.headers || {}).forEach(name => this.setHeader(name, opts.headers[name]));
                 if (!this.hasHeader("host"))
                     this.setHeader("Host", (hostname.indexOf(":") >= 0 ? "[" + hostname + "]" : hostname) + ((protocol === "https" ? 443 : 80) !== port ? ":" + port : ""));
                 if (callback)
                     this.once("response", callback);
-                parseSocket(socket, Parser.RESPONSE, response => { this.res = response; this.emit("response", response); }, error => this.destroy(error), this.method === "HEAD");
-                socket.on("error", error => this.destroy(error));
-                socket.on("close", () => { if (!this.res && !this.destroyed)
-                    this.destroy(fail("socket hang up", "ECONNRESET")); this.emit("close"); });
+                if (opts.timeout) this.setTimeout(opts.timeout, undefined);
                 queueMicrotask(() => this.emit("socket", socket));
-                if (opts.timeout)
-                    socket.setTimeout(opts.timeout, () => this.emit("timeout"));
             }
             _startLine() { return this.method + " " + this.path + " HTTP/1.1"; }
             abort() { this.aborted = true; this.emit("abort"); this.destroy(); }
-            _destroy(error, callback) { this.socket.destroy(); callback(error); }
+            _destroy(error, callback) { if (this.res && !this.res.complete && !this.res.destroyed)
+                this.res.destroy(error || fail("HTTP request was destroyed", "ABORT_ERR")); this.socket.destroy(error); callback(error); }
         }
         function request(input, options, callback) { return new ClientRequest(input, options, callback); }
         function get(input, options, callback) { var req = request(input, options, callback); req.end(); return req; }

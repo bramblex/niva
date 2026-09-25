@@ -2,18 +2,24 @@
 (async function () {
   const config = await (await fetch('/fixture')).json();
   const checks = [];
+  const pageMarker = `${performance.timeOrigin}:${Math.random().toString(36).slice(2)}`;
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
+  async function publishProgress(lastCheck, extra = {}) {
+    await fetch('/progress', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({lastCheck, checks, pageMarker, documentHidden: document.hidden, ...extra})}).catch(() => {});
+  }
   async function check(name, callback) {
     try { await callback(); checks.push({name, ok: true}); }
     catch (error) { checks.push({name, ok: false, error: String(error), stack: error.stack}); }
-    await fetch('/progress', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({lastCheck: name, checks})}).catch(() => {});
+    await publishProgress(name);
   }
   async function rejects(callback) {
     let rejected = false;
     try { await callback(); } catch (_) { rejected = true; }
     assert(rejected, 'unsupported call did not reject');
   }
+  const leaseOnly = new URL(window.location.href).searchParams.get('leaseOnly') === '1';
+  if (!leaseOnly) {
   await check('page selects IPC after WS is unavailable', async () => {
     const deadline = Date.now() + 8000;
     while (!Niva.bridge.isIpcOnly() && Date.now() < deadline) {
@@ -89,32 +95,101 @@
   await check('IPC cannot obtain a persistent file descriptor', () => rejects(() => Niva.bridge.call('fs.node', ['open', {path: config.file, flag: 'r'}])));
   await check('file unlink over IPC', () => Niva.fs.promises.unlink(config.file));
   await check('active IPC heartbeat keeps a long exec alive', async () => {
-    const result = await Niva.child_process.execFileText(config.python,
-      ['-c', 'import time; time.sleep(4); print("heartbeat-alive")']);
+    await publishProgress('active IPC heartbeat request started');
+    const outcome = await Promise.race([
+      Niva.child_process.execFileText(config.python,
+        ['-c', 'import time; time.sleep(4); print("heartbeat-alive")'])
+        .then(result => ({result}), error => ({error})),
+      new Promise(resolve => setTimeout(() => resolve({timedOut: true}), 10000)),
+    ]);
+    await publishProgress('active IPC heartbeat request settled', {
+      timedOut: !!outcome.timedOut,
+      rejected: !!outcome.error,
+    });
+    assert(!outcome.timedOut, 'active IPC heartbeat call did not settle within 10 seconds');
+    assert(!outcome.error, `active IPC heartbeat call rejected: ${String(outcome.error)}`);
+    const result = outcome.result;
     assert(result.status === 0 && result.stdout.trim() === 'heartbeat-alive', 'active lease was not renewed');
   });
-  await check('unresponsive page loses its IPC lease', async () => {
-    // This is deliberately last: an expired realm must not revive its requests.
-    const program = 'import pathlib,time; pathlib.Path(' + JSON.stringify(config.started) +
-      ').write_text("started"); time.sleep(6); pathlib.Path(' + JSON.stringify(config.orphan) +
-      ').write_text("orphan survived")';
-    const pending = Niva.child_process.execFileText(config.python, ['-c', program]);
-    let failure;
-    const settled = pending.then(() => {}, error => { failure = error; });
-    const deadline = Date.now() + 5000;
-    let started = false;
-    while (Date.now() < deadline) {
-      started = (await (await fetch('/child-started')).json()).started;
-      if (started) break;
-      await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  if (leaseOnly) {
+    await check('page selects IPC after WS is unavailable', async () => {
+      const deadline = Date.now() + 8000;
+      while (!Niva.bridge.isIpcOnly() && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      assert(Niva.bridge.isIpcOnly(), 'unexpected WS transport');
+    });
+  }
+  await check('lost IPC heartbeat delivery expires the lease and cancels exec', async () => {
+    await publishProgress('lease check entered', {pageVisible: !document.hidden, ipcOnly: Niva.bridge.isIpcOnly()});
+    // Keep WebKit's page loop and Native reply path intact while suppressing
+    // only the runtime's one-second lease-renewal timer in this harness.
+    const timerDescriptor = Object.getOwnPropertyDescriptor(window, 'setTimeout');
+    const originalSetTimeout = window.setTimeout.bind(window);
+    let suppressedHeartbeatTimers = 0;
+    Object.defineProperty(window, 'setTimeout', {
+      configurable: true,
+      writable: true,
+      value(callback, delay, ...args) {
+        if (Number(delay) === 1000) {
+          suppressedHeartbeatTimers++;
+          return 0;
+        }
+        return originalSetTimeout(callback, delay, ...args);
+      },
+    });
+    try {
+      await publishProgress('IPC heartbeat timer suppression installed');
+      // This is deliberately last: an expired realm must not revive its requests.
+      const program = 'import pathlib,time; pathlib.Path(' + JSON.stringify(config.started) +
+        ').write_text("started"); time.sleep(6); pathlib.Path(' + JSON.stringify(config.orphan) +
+        ').write_text("orphan survived")';
+      const pending = Niva.child_process.execFileText(config.python, ['-c', program]);
+      let failure;
+      const settled = pending.then(() => {}, error => { failure = error; });
+      await publishProgress('pending exec dispatched', {nativeRequestStarted: true});
+      await publishProgress('child-status fetch started', {started: false});
+      let statusResponse = await fetch('/child-started', {cache: 'no-store'});
+      let status = await statusResponse.json();
+      await publishProgress('child-status fetch returned', {
+        started: status.started,
+        httpStatus: statusResponse.status,
+      });
+      const deadline = Date.now() + 5000;
+      let started = status.started;
+      let childStatusFetches = 1;
+      while (!started && Date.now() < deadline) {
+        statusResponse = await fetch('/child-started', {cache: 'no-store'});
+        status = await statusResponse.json();
+        childStatusFetches++;
+        started = status.started;
+        if (started) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      assert(started, 'fixture child never started');
+      await publishProgress('child-status fetch confirmed child started', {started: true,
+        childStatusFetches});
+      const heartbeatDeadline = Date.now() + 2500;
+      while (suppressedHeartbeatTimers === 0 && Date.now() < heartbeatDeadline) {
+        await new Promise(resolve => originalSetTimeout(resolve, 25));
+      }
+      assert(suppressedHeartbeatTimers > 0, 'the harness did not suppress an IPC heartbeat timer');
+      await publishProgress('lease child started; waiting for Native result', {started: true,
+        suppressedHeartbeatTimers, childStatusFetches});
+      const outcome = await Promise.race([
+        settled.then(() => 'settled'),
+        new Promise(resolve => originalSetTimeout(() => resolve('reply-timeout'), 7000)),
+      ]);
+      await publishProgress('Native IPC promise settled', {outcome, failure: String(failure)});
+      assert(outcome === 'settled', 'Native did not reject the pending call after heartbeat delivery stopped');
+      assert(failure && /session|lease|disconnect|失联|连接/i.test(String(failure)), 'lease loss was not reported');
+    } finally {
+      if (timerDescriptor) Object.defineProperty(window, 'setTimeout', timerDescriptor);
+      else delete window.setTimeout;
     }
-    assert(started, 'fixture child never started');
-    const until = Date.now() + 4200;
-    while (Date.now() < until) { /* Deliberately prevent JS heartbeat callbacks. */ }
-    await settled;
-    assert(failure && /session|lease|disconnect|失联|连接/i.test(String(failure)), 'lease loss was not reported');
   });
-  const report = {ok: checks.every(check => check.ok), checks};
+  const report = {ok: checks.every(check => check.ok), checks, pageMarker, documentHidden: document.hidden};
   document.getElementById('status').textContent = JSON.stringify(report, null, 2);
   await fetch('/result', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(report)});
 })().catch(async error => {

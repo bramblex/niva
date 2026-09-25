@@ -1,19 +1,19 @@
 # Niva Roadmap / 待完善事项
 
-> 更新：2026-09-23。Windows 真机有限 smoke 见 [验证记录](windows-validation-2026-09-23.md)；当前实现与平台验收边界见下文。
+> 更新：2026-09-26。Windows 真机有限 smoke 见 [验证记录](windows-validation-2026-09-23.md)；当前实现与平台验收边界见下文。
 > v1.0 门禁见下一节；源码交付不等于目标平台真机验收。
 
 ## v1.0 门禁（盖章前必须清零）
 
-- [ ] **origin 权限**：打包本地资源已通过 Wry 异步自定义协议加载；macOS 页面 origin
-  为 `niva://app`，Windows WebView2 origin 为 `http://niva.app`。WS token 按窗口绑定，
+- [ ] **origin 权限**：打包本地资源已通过带应用UUID的 Wry 异步自定义协议加载；macOS/Linux页面 origin
+  为 `niva-<uuid>://app`，Windows WebView2 origin 为 `http://niva-<uuid>.app`。macOS 26.6.2固定bundle identity的临时.app已通过同UUID跨进程重启存储、异UUID隔离 smoke；当前macOS最低目标版本11.0尚无真机验收。稳定origin隔离不同应用的Web存储，但不代替调用授权。WS token 按窗口绑定，
   握手校验页面 `Origin`、服务 `Host` 与 token；显式 debug Vite 入口单独受精确
   loopback origin 规则约束。macOS 有限 smoke 已完成；Windows 打包主页面与同源
   iframe 的固定 origin/WS 调用已实测，远端 IPC 与完整威胁用例未验收，门禁保持开放（`docs/permission-design.md`、
   `docs/wry-custom-protocol-plan.md`）。
 - [ ] **资源路径穿越 + HTTP 路径边界验收**：`FileSystemResource` 已加入解码后
   canonical 根目录约束，`/__niva_fs/<window-token>/` 已有按窗口 token 校验。打包
-  普通静态资源改由 `niva://app/` 提供，打包模式普通 HTTP 静态路由关闭；WS 与
+  普通静态资源改由当前应用UUID派生的Wry协议提供，打包模式普通 HTTP 静态路由关闭；WS 与
   `__niva_fs` 仍使用动态 loopback 服务。显式 debug HTTP 静态/NodeCompat 路由没有
   窗口 token 鉴权；从新打包 origin 直接 fetch `__niva_fs` 属跨源请求，文件服务仅对
   token 所属窗口的精确 `trusted_ws_origin` 返回 CORS allow header。macOS smoke 已验证
@@ -60,8 +60,8 @@
   根目录，含符号链接逃逸拒绝；见 `docs/security.md`。此源码能力不代表整个
   HTTP 静态服务都已鉴权，v1.0 对应 HTTP 边界验收仍开放。
 - [ ] **wry 能力验收及 tao 缺口**（1.x）：`evaluate_script`/`load_url`/`reload`/cookie/标题跟随等基础源码已补齐，macOS 已验证部分实际调用；Windows 真机与 `docs/api-coverage.md` §3 的未测方法仍待验收，tao 侧缺口见同文件 §1–2。
-- [x] **WS Host/Origin 校验**：握手要求 Niva 服务 `Host`、窗口 token 与该窗口被授权的精确页面 `Origin`。打包页为 macOS `niva://app` / Windows `http://niva.app`；显式 debug 可授权精确 loopback Vite 源。两平台均有限验证打包主页面和同源 iframe 的原生调用；Windows 远端 IPC 及负向 WS 握手矩阵仍待验收。
-- [x] **CSP 默认模板**：新建简单项目带可编辑的严格 CSP meta；默认关闭 NodeCompat。协议页和显式 `debug-resource` 文档导航会补本次 loopback WS/HTTP 到 `connect-src`，并给 Niva 文件 URL 常用的图片、媒体、字体、样式 source 加精确 HTTP origin。启用 NodeCompat 且页面自带 CSP meta 时，Niva 注入块移到 CSP meta 后，仅两条 Niva 注入脚本获每次导航随机 nonce；没有 CSP meta 的旧页面不增加强制策略。macOS WKWebView 已验证 debug-resource 与打包 `niva://app` 正负例；Windows WebView2 已有限实测严格 CSP 下的原生调用、NodeCompat、文件 URL 读取和作者内联脚本拒绝；完整 CSP 矩阵仍待验收。宿主额外的 CSP response header 无法由本功能修改，完整边界见 `docs/security.md`。
+- [x] **WS Host/Origin 校验**：握手要求 Niva 服务 `Host`、窗口 token 与该窗口被授权的精确页面 `Origin`。打包页为 macOS/Linux `niva-<uuid>://app` / Windows `http://niva-<uuid>.app`；显式 debug 可授权精确 loopback Vite 源。既有 macOS/Windows smoke 记录的是此前固定origin；UUID变体的全平台真机及负向握手矩阵仍待验收。
+- [x] **CSP 默认模板**：新建简单项目带可编辑的严格 CSP meta；默认关闭 NodeCompat。协议页和显式 `debug-resource` 文档导航会补本次 loopback WS/HTTP 到 `connect-src`，并给 Niva 文件 URL 常用的图片、媒体、字体、样式 source 加精确 HTTP origin。启用 NodeCompat 且页面自带 CSP meta 时，Niva 注入块移到 CSP meta 后，仅两条 Niva 注入脚本获每次导航随机 nonce；没有 CSP meta 的旧页面不增加强制策略。此前固定origin的macOS WKWebView已验证debug-resource与打包页正负例；Windows WebView2已有有限CSP真机证据，UUID origin变体及完整矩阵仍待验收。宿主额外的 CSP response header 无法由本功能修改，完整边界见 `docs/security.md`。
 
 ## P2 —— 发布与工程
 
@@ -84,7 +84,7 @@
 - [ ] **clippy 剩余 warning**（多为历史遗留）。
 - [ ] **JS 封装的 base64 编解码全量进内存**：大文件场景可接受，注明即可。
 
-## 已验证记录与边界（2026-09-23）
+## 已验证记录与边界（2026-09-23，历史验收快照）
 
 - 本轮候选的双架构 zip 名为 `NivaDevtools_v0_9_10-18-gf3f9036-dirty_MacOS_{aarch64,x86_64}.zip`。核对结果为 arm64 裸二进制 2,835,264 字节、x86_64 3,175,264 字节；zip 均通过 `unzip -tq`，内部 Mach-O 架构分别正确。两份 `Info.plist` 的 `CFBundleShortVersionString` 均为 `0.9.9.0`，来自项目顶层 `version: "0.9.9"`。这是带未提交改动的本机候选，不代表已签名/下载的发布包；Windows release 体积见本轮 Windows 验证记录。此前未启用 `codegen-units=1` 的本机 arm64 `target/release/niva` 为 2,904,944 字节，不应与双架构产物混为一数。
 - macOS 手工 WebView 验证：本地主 frame 与同源 iframe 分别走 WS，跨源顶层页与 iframe 走 IPC；授权/拒绝、CSP `connect-src 'none'`、文件 URL 有无凭据均得到预期结果。Windows 已另做打包页与原生 API 的有限真机 smoke，见 Windows 验证记录。

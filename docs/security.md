@@ -1,4 +1,4 @@
-# Niva 安全评估（2026-09-23，以当前源码为准）
+# Niva 安全评估（2026-09-26，以当前源码为准）
 
 ## 0. 信任模型
 
@@ -11,13 +11,12 @@
 
 ### 本地 bridge 与远端 IPC
 
-- 打包本地页面由 Wry 异步自定义协议从 `niva://app/` 加载；macOS 页面 origin 为
-  `niva://app`，Windows WebView2 页面 origin 为 `http://niva.app`。非 Windows 源码分支
-  也选择 `niva://app`，但 Linux 尚无构建或运行验收。窗口以本地包启动时才建立可信
+- 打包本地页面由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，因此同一应用跨重启及窗口保持稳定，不同应用使用不同origin。Windows WebView2将其映射为 `http://niva-<uuid>.app`；macOS/Linux使用协议origin。`niva://app/`仅作为配置入口别名。Linux尚无构建或运行验收。窗口以本地包启动时才建立可信
   origin；初始化脚本只在顶层文档的当前 origin 精确匹配该值、且路径不在 `__niva_fs`
   下时注入按窗口生成且仅存内存的 WS token。同源页面导航仍满足 origin 条件。WS 握手
   继续校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID
   绑定到该 token。
+- macOS 26.6.2固定bundle identity的临时`.app`已实测同UUID重启保留localStorage、不同UUID互相不可见；当前最低构建目标macOS 11.0尚未真机复测。
 - 远端页面和 frame 通过原生 IPC 来源 URL 按窗口 grant 授权。grant 使用精确
   HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 不提供流式调用，且
   `window.open`、`webview.baseFileSystemUrl` 不允许经 grant 开放。
@@ -25,7 +24,7 @@
 - 显式开发启动中的本机 Vite 页仍使用精确 loopback HTTP origin。打包模式的普通
   HTTP 静态和 NodeCompat 路由关闭；`/__niva_ws` 与按窗口 token 验证的
   `/__niva_fs/<window-token>/...` 仍由动态 loopback HTTP 服务提供。
-- `niva://` 协议处理器只读取本应用资源；拒绝 `__niva_*` 内部路径，NodeCompat
+- UUID派生的 `niva-<uuid>://` 协议处理器只读取本应用资源；拒绝 `__niva_*` 内部路径，NodeCompat
   仅在启用且 asset 通过模块 allowlist 时可读。异步队列为 4 个工作线程、32 个等待
   请求；超时 15 秒，响应上限 32 MiB。该限制不构成性能测试结果。
 
@@ -63,10 +62,10 @@
 ## 2. 剩余风险与验收边界
 
 - bridge 权限隔离不等于远端内容可信。仅授予确有需要的 API；不要在有原生权限的
-  frame 执行未经信任的网络脚本。`http.requestStream` 现在只接受 HTTP(S) 且拒绝
-  userinfo、代理、非公开网络解析地址；每次重定向重新校验，唯一 loopback 例外是
-  当前 Niva 服务的精确 `127.0.0.1:<port>`。该 IP 范围策略无法识别企业网络把
-  公网编号地址私有路由的情况，依赖升级时需复核 ureq resolver 接口。
+  frame 执行未经信任的网络脚本。`http.requestText` 与受信 WS 上的 `http.requestStream`
+  接受任意绝对 HTTP(S) 地址并拒绝 URL userinfo；客户端关闭环境代理和自动重定向，
+  但不限制目标是否为 loopback、私网或公网地址。应用代码应把原生网络权限视为可访问
+  本机网络的能力；如需限制目标范围，必须另行定义产品策略并在 Native resolver 层实施。
 - 显式调试模式下普通 HTTP 静态资源与 NodeCompat 路由不在 `__niva_fs` token 校验范围
   内；仅有 macOS smoke 证明打包模式 `/index.html` 返回 404，其他平台和调试路由仍需
   按预期暴露范围核查。不要把 WS token 或 IPC grant 当成通用 HTTP 鉴权。

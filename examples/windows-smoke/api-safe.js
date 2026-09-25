@@ -67,7 +67,7 @@
   });
 
   await check("webview.url", async () => {
-    expect((await api.webview.url()).startsWith("http://niva.app/api-safe.html"), "unexpected page URL");
+    expect((await api.webview.url()).startsWith(new URL(location.href).origin + "/api-safe.html"), "unexpected page URL");
   });
   await check("webview.baseUrl", async () => {
     expect(/^http:\/\/127\.0\.0\.1:\d+\/$/.test(await api.webview.baseUrl()), "unexpected loopback base URL");
@@ -90,22 +90,24 @@
     expect((await api.webview.canGoForward()) === false, "fresh page unexpectedly has forward history");
   });
   const cookieName = "niva_api_smoke_" + Date.now();
-  const cookie = `${cookieName}=verified; Domain=niva.app; Path=/; Max-Age=60`;
+  const appOrigin = new URL(location.href).origin;
+  const appHost = new URL(appOrigin).hostname;
+  const cookie = `${cookieName}=verified; Domain=${appHost}; Path=/; Max-Age=60`;
   try {
     await check("webview.setCookie", async () => {
       await api.webview.setCookie(cookie);
-      expect((await api.webview.cookiesForUrl("http://niva.app/")).some(c => c.includes(cookieName + "=verified")), "cookie not stored");
+      expect((await api.webview.cookiesForUrl(appOrigin + "/")).some(c => c.includes(cookieName + "=verified")), "cookie not stored");
     });
     await check("webview.cookiesForUrl", async () => {
-      expect((await api.webview.cookiesForUrl("http://niva.app/")).some(c => c.includes(cookieName + "=verified")), "URL cookie missing");
+      expect((await api.webview.cookiesForUrl(appOrigin + "/")).some(c => c.includes(cookieName + "=verified")), "URL cookie missing");
     });
     await check("webview.cookies", async () => {
       expect((await api.webview.cookies()).some(c => c.includes(cookieName + "=verified")), "shared cookie missing");
     });
   } finally {
     await check("webview.deleteCookie", async () => {
-      await api.webview.deleteCookie(`${cookieName}=; Domain=niva.app; Path=/`);
-      expect(!(await api.webview.cookiesForUrl("http://niva.app/")).some(c => c.includes(cookieName + "=")), "cookie remained after delete");
+      await api.webview.deleteCookie(`${cookieName}=; Domain=${appHost}; Path=/`);
+      expect(!(await api.webview.cookiesForUrl(appOrigin + "/")).some(c => c.includes(cookieName + "=")), "cookie remained after delete");
     });
   }
 

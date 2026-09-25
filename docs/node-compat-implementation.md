@@ -45,7 +45,7 @@
 
 ## 已落地的分层与加载
 
-Native 提供文件、进程、系统信息、TCP/UDP/TLS。HTTP/HTTPS 客户端和应用服务器、DNS 报文处理在 JS；`dns.lookup` 使用系统 resolver，记录查询使用 UDP，并在截断时退回 TCP。原 `ureq` / `http.requestStream` / `Niva.api.http` 应用客户端路径已移除；Niva 内部资源、同步调用和 WS 服务继续保留。
+Native 提供文件、进程、系统信息、TCP/UDP/TLS。HTTP/HTTPS客户端通过WS调用Rust ureq的`http.requestStream`；JS只保留Node ClientRequest/IncomingMessage适配，IPC页面继续使用有界`http.requestText`。应用服务器和DNS报文处理仍在JS；`dns.lookup`使用系统resolver，记录查询使用UDP，并在截断时退回TCP。Niva内部资源、同步调用和WS服务独立保留。
 
 可信本地页面使用 WS 传递事件和二进制；同步调用使用鉴权 XHR，由 Rust 校验 token、精确 Origin、Host、请求大小及可同步执行的方法。socket/文件句柄绑定窗口和 WS 连接，断连清理资源。Socket 接收采用 256 KiB credit 窗口；仅订阅 `onChunk` 的调用不保留历史 Blob 分片。WS 断开会拒绝旧连接的 pending calls。
 

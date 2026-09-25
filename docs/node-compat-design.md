@@ -4,7 +4,7 @@
 
 ## Native 能力优先复用
 
-文件、进程、网络、TLS及其它已有Native能力以Rust为实现来源；JavaScript层只保留Node接口与Native契约之间必要的适配，不再另造同一能力。Rust接口暂缺Node所需的流、背压、取消或生命周期语义时，应扩展Native桥接，再由JS包装成Node对象，同时保留已声明的行为范围。HTTP/HTTPS客户端使用Rust ureq，JS `http`/`https`只负责Node调用契约；服务端`createServer`另有服务端语义，不能误认为ureq客户端可替代。具体落地和release证据见[实施台账](architecture-implementation-plan.md)。
+文件、进程、网络、TLS及其它已有Native能力以Rust为实现来源；JavaScript层只保留Node接口与Native契约之间必要的适配，不再另造同一能力。Rust接口暂缺Node所需的流、背压、取消或生命周期语义时，应扩展Native桥接，再由JS包装成Node对象，同时保留已声明的行为范围。HTTP/HTTPS的`requestText`和Node `http.request/get`客户端都复用Rust ureq；Node流式客户端通过本地WebSocket逐块上传、逐块读取响应，JS只适配ClientRequest/IncomingMessage对象。`createServer`是独立的服务端能力，继续在JS上复用Native TCP/TLS，不由ureq替代。客户端连接复用、定制socket、upgrade、response trailers及原始自定义reason phrase不在当前支持范围内。进度和验收边界见[实施台账](architecture-implementation-plan.md)。
 
 ## 一个实现，多个导出入口
 

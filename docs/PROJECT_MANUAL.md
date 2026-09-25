@@ -55,7 +55,7 @@ niva/
 Niva 并非只使用 WebSocket，也并非统一改用 IPC。每个窗口根据启动方式、平台和页面来源选择通信路径：
 
 - 受信任的本地页面在支持且满足条件时使用该窗口专属 WebSocket；窗口管理器为每个窗口生成独立凭据，调用和事件使用 `initialize_script.js` 中的 wire 协议。
-- **打包本地页**由 Wry 异步自定义协议从 `niva://app/` 加载；macOS origin 是 `niva://app`，Windows WebView2 origin 是 `http://niva.app`。WebSocket 与 `__niva_fs` 仍经动态 `127.0.0.1:<port>` 服务；打包模式普通 HTTP 静态路由关闭。
+- **打包本地页**由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，同一应用跨重启和窗口使用相同origin，不同应用使用不同origin。Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`仅作为配置入口别名。WebSocket 与 `__niva_fs` 仍经动态 `127.0.0.1:<port>` 服务；打包模式普通 HTTP 静态路由关闭。
 - macOS 通过 WKWebView 消息处理器传递 IPC；Windows 通过 WebView2 WebMessage 与 frame 处理器传递 IPC。跨源页面/iframe 等需要 IPC 的上下文可走平台 IPC 路径。
 - 显式 debug 启动可加载跨端口开发入口并授予该窗口桥接；带 `--debug-resource` 的开发启动继续通过 loopback HTTP 加载静态资源。普通打包启动忽略配置中的 debug entry。每个原生 API 调用仍需在 Rust 侧做窗口、来源与授权校验。
 - WebSocket 断开、事件转发和页面来源边界应以 `docs/bridge.md`、`docs/security.md` 及对应平台代码为准。
@@ -80,7 +80,7 @@ WebSocket wire 协议和二进制帧格式以 `docs/bridge.md` 与 `crates/niva/
 
 `niva.json` 同时包含应用元数据、窗口/托盘/快捷键/API 设置和平台覆盖。项目配置字段与类型以 `packages/types/Niva_zh.d.ts`、`crates/niva/src/app/options.rs` 和 Devtools 配置编辑器为准。`nodeCompat` 是显式 opt-in：可选 `true` 或模块/importmap 配置；默认关闭时不把适配文件加入应用资源。
 
-启用 NodeCompat 后，Devtools 按允许的模块集合暂存并打包 `packages/node-compat` 文件。运行时仅在符合条件的 HTML 文档导航响应中注入脚本和 importmap；打包模式下脚本和被 allowlist 的 ESM 资源通过 `niva://app/` 提供，文件系统 debug 模式沿用 loopback HTTP 路由。importmap 合并遵循实现中的用户映射优先规则。模块清单、配置格式和限制见 `docs/node-compat-design.md` 与 `packages/node-compat/README.md`。它不提供完整 Node.js 运行时或任意 npm 包兼容；真实 WebView smoke 覆盖了少量选中模块，不代表完整模块/API 验收。
+启用 NodeCompat 后，Devtools 按允许的模块集合暂存并打包 `packages/node-compat` 文件。运行时仅在符合条件的 HTML 文档导航响应中注入脚本和 importmap；打包模式下脚本和被 allowlist 的 ESM 资源通过当前应用UUID派生的Wry协议提供，文件系统 debug 模式沿用 loopback HTTP 路由。importmap 合并遵循实现中的用户映射优先规则。模块清单、配置格式和限制见 `docs/node-compat-design.md` 与 `packages/node-compat/README.md`。它不提供完整 Node.js 运行时或任意 npm 包兼容；真实 WebView smoke 覆盖了少量选中模块，不代表完整模块/API 验收。
 
 ## 5. Devtools 与构建
 

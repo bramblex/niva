@@ -32,8 +32,10 @@ def main():
                 raise RuntimeError(result["data"]["message"])
             assert result.get("name") == "csp-pass", result.get("name")
             data = result["data"]
+            configured_uuid = json.loads(Path(__file__).with_name("niva-csp.json").read_text())["uuid"]
+            expected_origin = "http://niva-" + configured_uuid.replace("-", "").lower() + ".app"
             assert data == {
-                "origin": "http://niva.app",
+                "origin": expected_origin,
                 "windowId": 0,
                 "pathResult": "a\\b",
                 "fileStatus": 200,

@@ -5,6 +5,7 @@
 
   function createModules(niva: any) {
     const modules: any = {
+      cluster: createClusterModule(niva),
       path: runtime.createPathModule ? runtime.createPathModule() : runtime.path,
       events: runtime.createEventsModule ? runtime.createEventsModule() : runtime.events,
       util: runtime.createUtilModule ? runtime.createUtilModule() : runtime.util,
@@ -44,6 +45,38 @@
     // in sync, including when the adapter is created for an isolated Niva.
     modules.constants = modules.fs?.constants;
     return modules;
+  }
+
+  function createClusterModule(niva: any) {
+    // Niva runs each backend in one main process. Model Node's primary-process
+    // state for libraries that only inspect cluster.worker/isMaster (for
+    // example shortid), and fail explicitly if code asks Niva to fork workers.
+    const cluster: any = new runtime.events.EventEmitter();
+    const unsupported = function () {
+      throw runtime.bridgeError("Node cluster workers are unavailable in Niva", "ERR_NIVA_CLUSTER_UNAVAILABLE");
+    };
+    Object.assign(cluster, {
+      isPrimary: true,
+      isMaster: true,
+      isWorker: false,
+      worker: undefined,
+      workers: {},
+      schedulingPolicy: 2,
+      SCHED_NONE: 1,
+      SCHED_RR: 2,
+      settings: {},
+      setupPrimary: unsupported,
+      setupMaster: unsupported,
+      fork: unsupported,
+      disconnect(callback?: Function) {
+        if (callback !== undefined) {
+          if (typeof callback !== "function") throw new TypeError("callback must be a function");
+          queueMicrotask(() => callback());
+        }
+        return cluster;
+      },
+    });
+    return cluster;
   }
 
   function registerNodeCompat(niva: any) {

@@ -21,7 +21,7 @@ use crate::{lock, log_err};
 
 /// Hand-written async loopback server hosting the API WebSocket and the
 /// authenticated `__niva_fs` route. Packaged static assets use Wry's
-/// asynchronous `niva://` protocol; ordinary HTTP static routes are reserved
+/// asynchronous per-app custom protocol; ordinary HTTP static routes are reserved
 /// for explicit debug launches.
 ///
 /// Only GET + `Connection: close` is implemented; that is all the webview
@@ -310,11 +310,9 @@ async fn handle_sync(
     let Some(window) = window else {
         return write_response(stream, 403, "Forbidden", "text/plain", b"unauthorized").await;
     };
-    let Some(origin) = head
-        .headers
-        .get("origin")
-        .filter(|origin| window.trusted_ws_origin.as_deref() == Some(origin.as_str()))
-    else {
+    let Some(origin) = head.headers.get("origin").filter(|origin| {
+        is_trusted_origin(window.trusted_ws_origin.as_deref(), Some(origin.as_str()))
+    }) else {
         return write_response(stream, 403, "Forbidden", "text/plain", b"unauthorized").await;
     };
     enum SyncOutcome {
@@ -483,10 +481,9 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
         // A browser page at the exact origin of the credential's native
         // window may fetch this bearer URL. Other origins receive no CORS
         // permission, even if they somehow learn the URL.
-        let cors_origin = head
-            .headers
-            .get("origin")
-            .filter(|origin| window.trusted_ws_origin.as_deref() == Some(origin.as_str()));
+        let cors_origin = head.headers.get("origin").filter(|origin| {
+            is_trusted_origin(window.trusted_ws_origin.as_deref(), Some(origin.as_str()))
+        });
         let rest = match super::resource_manager::percent_decode_path(rest) {
             Ok(rest) => rest,
             Err(_) => {
@@ -816,8 +813,7 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
         });
         let origin_ok = window
             .as_ref()
-            .and_then(|window| window.trusted_ws_origin.as_deref())
-            .is_some_and(|trusted_origin| origin == Some(trusted_origin));
+            .is_some_and(|window| is_trusted_origin(window.trusted_ws_origin.as_deref(), origin));
         if path_ok
             && origin_ok
             && host_ok
@@ -956,6 +952,10 @@ fn handle_ws_binary(
     state.app.api().on_binary(window.id, connection_id, bytes);
 }
 
+fn is_trusted_origin(expected: Option<&str>, actual: Option<&str>) -> bool {
+    expected.is_some_and(|expected| actual == Some(expected))
+}
+
 /// Server accessor stored on the app (populated after the Arc exists).
 pub type HttpServerSlot = ArcMut<Option<Arc<NivaHttpServer>>>;
 
@@ -969,6 +969,18 @@ pub fn app_server(app: &Arc<NivaApp>) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trusted_http_origins_are_exact_per_app() {
+        let expected =
+            crate::app::custom_protocol::origin_for_scheme("niva-a51c1728d17442d48f577d296c966b51");
+        let other =
+            crate::app::custom_protocol::origin_for_scheme("niva-b61c1728d17442d48f577d296c966b51");
+        assert!(is_trusted_origin(Some(&expected), Some(&expected)));
+        assert!(!is_trusted_origin(Some(&expected), Some(&other)));
+        assert!(!is_trusted_origin(Some(&expected), None));
+        assert!(!is_trusted_origin(None, Some(&expected)));
+    }
 
     #[test]
     fn ws_handshake_binds_hello_session_before_forwarding_calls_to_api_manager() {

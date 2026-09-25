@@ -23,7 +23,7 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
   let remainingWebSocketThrows = webSocketThrows;
   function resolve(specifier, parent) {
     if (specifier === "#native-fs") return "node:fs";
-    if (specifier === "#missing-builtin") return "node:cluster";
+    if (specifier === "#missing-builtin") return "node:inspector";
     const base = parent ? path.posix.dirname(parent) : "/app";
     const filename = path.posix.resolve(base, specifier);
     if (!fixtureFiles.has(filename)) throw new Error(`MODULE_NOT_FOUND: ${specifier}`);
@@ -178,6 +178,25 @@ test("constants builtin aliases fs.constants and exposes host open flags", () =>
     assert.equal(constants.O_RDWR, 2);
     assert.equal(constants.O_CREAT, createFlag);
   }
+});
+
+test("cluster builtin reports the Niva primary process and rejects worker creation", async () => {
+  const { context } = bootPage({ injectCommonJs: true });
+  const cluster = context.require("cluster");
+  assert.strictEqual(cluster, context.require("node:cluster"));
+  assert.ok(cluster instanceof context.Niva.events.EventEmitter);
+  assert.equal(cluster.isPrimary, true);
+  assert.equal(cluster.isMaster, true);
+  assert.equal(cluster.isWorker, false);
+  assert.equal(cluster.worker, undefined);
+  assert.deepEqual(Object.keys(cluster.workers), []);
+  assert.equal(cluster.SCHED_NONE, 1);
+  assert.equal(cluster.SCHED_RR, 2);
+  assert.throws(() => cluster.fork(), { code: "ERR_NIVA_CLUSTER_UNAVAILABLE" });
+  let called = false;
+  assert.strictEqual(cluster.disconnect(() => { called = true; }), cluster);
+  await new Promise((resolve) => queueMicrotask(resolve));
+  assert.equal(called, true);
 });
 
 test("CallSite compatibility installer leaves Error globals alone until CommonJS is enabled", () => {

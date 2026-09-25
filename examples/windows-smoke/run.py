@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 
-def check_native_owner(pid):
+def check_native_owner(pid, expected_host):
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ssize_t), ctypes.c_ssize_t]
     user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
@@ -31,14 +31,15 @@ def check_native_owner(pid):
         user32.GetWindowTextW(hwnd, title, length + 1)
         if window_pid.value == pid:
             candidates.append((title.value, window_pid.value, hwnd))
-        if window_pid.value == pid and title.value in ("niva.app/index.html", "niva.app/child.html"):
+        if window_pid.value == pid and title.value in (f"{expected_host}/index.html", f"{expected_host}/child.html"):
             found[title.value] = hwnd
         return True
 
     enum_result = user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ssize_t)(visit), 0)
-    assert set(found) == {"niva.app/index.html", "niva.app/child.html"}, (pid, found, candidates, enum_result, ctypes.get_last_error())
-    owner = user32.GetWindow(found["niva.app/child.html"], 4)
-    assert owner == found["niva.app/index.html"], (found, owner)
+    main_title, child_title = f"{expected_host}/index.html", f"{expected_host}/child.html"
+    assert set(found) == {main_title, child_title}, (pid, found, candidates, enum_result, ctypes.get_last_error())
+    owner = user32.GetWindow(found[child_title], 4)
+    assert owner == found[main_title], (found, owner)
     return True
 
 
@@ -87,11 +88,14 @@ def main():
             assert result.get("name") == "smoke", result.get("name")
             data = result["data"]
             public_data = {key: value for key, value in data.items() if key != "fsBase"}
-            assert data["origin"] == "http://niva.app", public_data
+            configured_uuid = json.loads(Path(__file__).with_name("niva.json").read_text())["uuid"]
+            expected_host = "niva-" + configured_uuid.replace("-", "").lower() + ".app"
+            expected_origin = "http://" + expected_host
+            assert data["origin"] == expected_origin, public_data
             assert data["windowId"] == 0, public_data
             assert data["resourceStatus"] == 200 and data["resourceText"] == "resource-ok", public_data
             assert data["fsStatus"] == 200 and data["fsText"] == "resource-ok", public_data
-            assert data["iframe"] == {"kind": "iframe", "id": 0, "origin": "http://niva.app"}, public_data
+            assert data["iframe"] == {"kind": "iframe", "id": 0, "origin": expected_origin}, public_data
             assert data["crossIframe"]["origin"] == "null" and data["crossIframe"]["outcome"] != "allowed", public_data
             assert data["runtimeModules"] == {
                 "path": "a\\b", "fsText": "resource-ok", "assert": "function",
@@ -101,7 +105,7 @@ def main():
             assert data["shortcutId"] >= 0, public_data
             assert data["childId"] > 0 and len(data["windows"]) == 2, public_data
             print("process", process.pid, "poll", process.poll(), "windows", data["windows"])
-            assert check_native_owner(process.pid)
+            assert check_native_owner(process.pid, expected_host)
             path = str(Path(__file__).with_name("probe.txt")).replace("\\", "/")
             valid_url = data["fsBase"] + urllib.parse.quote(path, safe="")
             status, cors, body = request(valid_url, data["origin"])

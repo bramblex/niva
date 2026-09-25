@@ -253,16 +253,19 @@ impl NivaBuilder {
         let explicit_debug = debug_entry.is_some();
 
         let configured_entry = options.entry.as_deref().unwrap_or_default();
+        let app_scheme = custom_protocol::scheme_for_uuid(&app.launch_info.uuid);
         let absolute_entry = url::Url::parse(configured_entry).ok();
-        let entry_is_niva_app = absolute_entry.as_ref().is_some_and(is_niva_app_url);
-        let entry_is_external = absolute_entry.is_some() && !entry_is_niva_app;
-        // Both packaged and explicitly selected directory resources use the
-        // fixed local app origin. Only an authorized debug entry uses the
+        let entry_is_local_app = absolute_entry
+            .as_ref()
+            .is_some_and(|url| custom_protocol::is_local_entry_url(url, &app_scheme));
+        let entry_is_external = absolute_entry.is_some() && !entry_is_local_app;
+        // Packaged resources and local directory entries use the current
+        // app's UUID-bound origin. Only an authorized debug entry uses the
         // loopback HTTP route; absolute remote app entries remain remote.
         let use_custom_protocol = !explicit_debug && !entry_is_external;
 
         let entry_url = if use_custom_protocol {
-            custom_protocol_entry(configured_entry)?
+            custom_protocol_entry(configured_entry, &app_scheme)?
         } else if let Some(absolute_entry) = absolute_entry {
             absolute_entry.to_string()
         } else {
@@ -270,13 +273,34 @@ impl NivaBuilder {
             resolve_entry_url(&base_url, configured_entry)
         };
 
+        // WebKitGTK registers protocol schemes on its shared WebContext,
+        // so subsequent windows must reuse the app-level handler instead
+        // of registering the same scheme again. That handler captures
+        // only app-level state and serves every same-origin window.
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd",
+        ))]
+        let register_protocol = !web_context.is_custom_protocol_registered(&app_scheme);
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd",
+        )))]
+        let register_protocol = true;
+
         let mut builder = WebViewBuilder::new_with_web_context(web_context);
         // Only an initially local window receives a credential, and only its
         // main frame stores it. Same-origin child frames may obtain it through
         // their parent; cross-origin frames cannot read the parent's globals.
         let initial_url = url::Url::parse(&entry_url).ok();
         let initial_origin = if use_custom_protocol {
-            Some(custom_protocol::platform_origin().to_string())
+            Some(custom_protocol::origin_for_scheme(&app_scheme))
         } else {
             initial_url
                 .as_ref()
@@ -319,13 +343,15 @@ impl NivaBuilder {
         );
         builder = builder.with_initialization_script_for_main_only(init_script, false);
 
-        if use_custom_protocol {
+        if use_custom_protocol && register_protocol {
             let dispatcher: CustomProtocolDispatcher = app._custom_protocol.clone();
             let resources: Arc<dyn ResourceManager> = app.resource();
+            let protocol_scheme = app_scheme.clone();
             builder = builder.with_asynchronous_custom_protocol(
-                custom_protocol::SCHEME.to_string(),
+                protocol_scheme.clone(),
                 move |_webview_id, request, responder| {
                     dispatcher.dispatch(
+                        protocol_scheme.clone(),
                         resources.clone(),
                         Some(node_compat.clone()),
                         server_port,
@@ -432,13 +458,14 @@ impl NivaBuilder {
         let load_app = app.clone();
         let trusted_load_origin = trusted_ws_origin.clone();
         let custom_origin = use_custom_protocol;
+        let page_scheme = app_scheme.clone();
         builder = builder.with_on_page_load_handler(move |event, url| {
             if matches!(event, wry::PageLoadEvent::Started) {
                 // On WebKit this Wry page-load event is for the main document;
                 // subframe cleanup uses the IPC session lease below.
                 load_app.api().cancel_ipc_window_for_navigation(id);
             }
-            let page_origin = page_origin(&url, custom_origin);
+            let page_origin = page_origin(&url, custom_origin, &page_scheme);
             if matches!(event, wry::PageLoadEvent::Finished)
                 && trusted_load_origin
                     .as_ref()
@@ -631,8 +658,21 @@ impl NivaBuilder {
     }
 }
 
-fn custom_protocol_entry(entry: &str) -> Result<String> {
-    let base = url::Url::parse("niva://app/")?;
+fn custom_protocol_entry(entry: &str, app_scheme: &str) -> Result<String> {
+    let base = url::Url::parse(&format!("{app_scheme}://app/"))?;
+    if let Ok(parsed) = url::Url::parse(entry)
+        && custom_protocol::is_local_entry_url(&parsed, app_scheme)
+    {
+        let mut local = base;
+        local.set_path(if parsed.path().is_empty() {
+            "/"
+        } else {
+            parsed.path()
+        });
+        local.set_query(parsed.query());
+        local.set_fragment(parsed.fragment());
+        return Ok(local.to_string());
+    }
     Ok(base.join(entry)?.to_string())
 }
 
@@ -647,34 +687,14 @@ fn resolve_entry_url(base: &str, entry: &str) -> String {
     }
 }
 
-fn page_origin(raw_url: &str, is_custom_protocol: bool) -> Option<String> {
+fn page_origin(raw_url: &str, is_custom_protocol: bool, app_scheme: &str) -> Option<String> {
     let parsed = url::Url::parse(raw_url).ok()?;
-    if is_custom_protocol && is_niva_app_url(&parsed) {
-        return Some(custom_protocol::platform_origin().to_string());
-    }
-    #[cfg(target_os = "windows")]
     if is_custom_protocol
-        && parsed.scheme() == "http"
-        && parsed
-            .host_str()
-            .is_some_and(|host| host.eq_ignore_ascii_case("niva.app"))
-        && parsed.port().is_none()
-        && parsed.username().is_empty()
-        && parsed.password().is_none()
+        && let Some(origin) = custom_protocol::origin_from_page_url(&parsed, app_scheme)
     {
-        return Some(custom_protocol::platform_origin().to_string());
+        return Some(origin);
     }
     Some(parsed.origin().ascii_serialization())
-}
-
-fn is_niva_app_url(url: &url::Url) -> bool {
-    url.scheme() == custom_protocol::SCHEME
-        && url
-            .host_str()
-            .is_some_and(|host| host.eq_ignore_ascii_case("app"))
-        && url.port().is_none()
-        && url.username().is_empty()
-        && url.password().is_none()
 }
 
 fn physical_to_logical(position: (i32, i32), scale_factor: f64) -> tao::dpi::LogicalPosition<f64> {
@@ -724,30 +744,51 @@ fn queue_webview_request_event(
 
 #[cfg(test)]
 mod tests {
+    use crate::app::custom_protocol;
     use crate::app::utils::error_page_html;
 
     #[test]
-    fn packaged_entry_and_origin_use_platform_custom_protocol_origin() {
+    fn packaged_entry_and_origin_use_uuid_bound_custom_protocol_origin() {
+        let scheme = custom_protocol::scheme_for_uuid("a51c1728-d174-42d4-8f57-7d296c966b51");
         assert_eq!(
-            super::custom_protocol_entry("index.html?view=main").unwrap(),
-            "niva://app/index.html?view=main"
+            super::custom_protocol_entry("index.html?view=main", &scheme).unwrap(),
+            format!("{scheme}://app/index.html?view=main")
         );
         assert_eq!(
-            super::custom_protocol_entry("/index.html").unwrap(),
-            "niva://app/index.html"
+            super::custom_protocol_entry("/index.html", &scheme).unwrap(),
+            format!("{scheme}://app/index.html")
         );
         assert_eq!(
-            super::page_origin("niva://app/index.html", true).as_deref(),
-            Some(crate::app::custom_protocol::platform_origin())
+            super::custom_protocol_entry("niva://app/index.html", &scheme).unwrap(),
+            format!("{scheme}://app/index.html")
         );
-        assert!(!super::is_niva_app_url(
-            &url::Url::parse("niva://user@app/index.html").unwrap()
+        assert!(custom_protocol::is_local_entry_url(
+            &url::Url::parse("niva://app/index.html").unwrap(),
+            &scheme
         ));
-
-        #[cfg(target_os = "windows")]
+        assert!(!custom_protocol::is_local_entry_url(
+            &url::Url::parse("niva://user@app/index.html").unwrap(),
+            &scheme
+        ));
+        let other_scheme = "niva-b61c1728d17442d48f577d296c966b51";
+        assert!(!custom_protocol::is_local_entry_url(
+            &url::Url::parse(&format!("{other_scheme}://app/index.html")).unwrap(),
+            &scheme
+        ));
+        let origin = custom_protocol::origin_for_scheme(&scheme);
         assert_eq!(
-            super::page_origin("http://niva.app/index.html", true).as_deref(),
-            Some("http://niva.app")
+            super::page_origin(&format!("{scheme}://app/index.html"), true, &scheme),
+            Some(origin.clone())
+        );
+        assert_ne!(
+            super::page_origin(&format!("{other_scheme}://app/index.html"), true, &scheme),
+            Some(origin.clone())
+        );
+
+        #[cfg(any(target_os = "windows", target_os = "android"))]
+        assert_eq!(
+            super::page_origin(&format!("http://{scheme}.app/index.html"), true, &scheme),
+            Some(origin)
         );
     }
 

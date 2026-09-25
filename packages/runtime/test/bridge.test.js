@@ -94,6 +94,62 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
   assert.equal(calls[0][1].mode,0o600);assert.equal(calls[0][1].flag,'wx');
 });
 
+test('fs.cp delegates the tree copy to Native with Node options', async () => {
+  const calls = [];
+  const fs = runtime.createFsModule({bridge:{call(method,args){calls.push([method,args]);return Promise.resolve(null);}}});
+  await fs.promises.cp('/source','/destination',{
+    recursive:true, force:false, errorOnExist:true, dereference:true,
+    preserveTimestamps:true, mode:2, includedPaths:['ignored'],
+  });
+  assert.deepEqual(calls,[['fs.node',['cp',{
+    path:'/source', destination:'/destination', recursive:true, force:false,
+    errorOnExist:true, dereference:true, preserveTimestamps:true,
+    mode:2,
+  }]]]);
+  await fs.promises.cp('/source','/verbatim',{recursive:true,verbatimSymlinks:true});
+  assert.deepEqual(calls[1],['fs.node',['cp',{
+    path:'/source', destination:'/verbatim', recursive:true, verbatimSymlinks:true,
+  }]]);
+  assert.throws(()=>fs.promises.cp('/source','/invalid',{dereference:true,verbatimSymlinks:true}),{code:'ERR_INCOMPATIBLE_OPTION_PAIR'});
+});
+
+test('fs.cp evaluates async filters in JS and delegates each accepted entry to Native', async () => {
+  const calls = [], filtered = [];
+  const directories = new Set(['/src','/src/empty','/src/sub']);
+  const fs = runtime.createFsModule({bridge:{call(method,args){
+    assert.equal(method,'fs.node');
+    const [operation,options]=args;
+    calls.push([operation,options]);
+    if(operation==='lstat'||operation==='stat')return Promise.resolve({
+      isDir:directories.has(options.path), isFile:!directories.has(options.path), isSymlink:false,
+    });
+    if(operation==='readdir')return Promise.resolve((options.path==='/src'
+      ? ['keep.txt','skip.txt','empty','sub'] : options.path==='/src/sub' ? ['leaf.txt'] : []).map(name=>({name})));
+    if(operation==='cp')return Promise.resolve(options.directoryOnly===true&&options.directoryFinalize!==true);
+    throw new Error(`Unexpected fs operation ${operation}`);
+  }}});
+  await new Promise((resolve,reject)=>fs.cp('/src','/dst',{recursive:true,filter:async(source,destination)=>{
+    filtered.push([source,destination]);
+    return source!=='/src/skip.txt';
+  }},error=>error?reject(error):resolve()));
+  assert.deepEqual(filtered,[
+    ['/src','/dst'], ['/src/keep.txt','/dst/keep.txt'],
+    ['/src/skip.txt','/dst/skip.txt'], ['/src/empty','/dst/empty'],
+    ['/src/sub','/dst/sub'], ['/src/sub/leaf.txt','/dst/sub/leaf.txt'],
+  ]);
+  assert.deepEqual(calls.filter(([operation])=>operation==='cp'),[
+    ['cp',{path:'/src',destination:'/dst',recursive:true,directoryOnly:true}],
+    ['cp',{path:'/src/keep.txt',destination:'/dst/keep.txt',recursive:true}],
+    ['cp',{path:'/src/empty',destination:'/dst/empty',recursive:true,directoryOnly:true}],
+    ['cp',{path:'/src/empty',destination:'/dst/empty',recursive:true,directoryOnly:true,directoryFinalize:true}],
+    ['cp',{path:'/src/sub',destination:'/dst/sub',recursive:true,directoryOnly:true}],
+    ['cp',{path:'/src/sub/leaf.txt',destination:'/dst/sub/leaf.txt',recursive:true}],
+    ['cp',{path:'/src/sub',destination:'/dst/sub',recursive:true,directoryOnly:true,directoryFinalize:true}],
+    ['cp',{path:'/src',destination:'/dst',recursive:true,directoryOnly:true,directoryFinalize:true}],
+  ]);
+  assert.equal(calls.some(([operation])=>operation==='copyFile'||operation==='mkdir'),false);
+});
+
 test('OS static information avoids bridge calls and dynamic values query each time',()=>{
   let queries=0;
   const os=runtime.createOsModule({bootstrap:{os:{platform:'darwin',arch:'arm64',homedir:'/home/u',tmpdir:'/tmp',EOL:'\n'}},bridge:{callSync(method,args){assert.equal(method,'os.freemem');assert.deepEqual(args,[]);return ++queries;}}});

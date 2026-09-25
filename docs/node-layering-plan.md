@@ -76,9 +76,9 @@ DNS通常走UDP，但必须处理TCP回退；Node lookup与resolve的语义也�
 
 ## 6. 现有 Native HTTP 的迁移与体积
 
-当前 Rust `http.requestStream` 使用 ureq；NodeCompat HTTP、初始化脚本的 `Niva.api.http.get/post/request`、Devtools版本检查及现有示例仍在调用。迁移所有调用后才删除这套旧Native客户端及相关依赖，目标不保留两套重复实现。[Native客户端](../crates/niva/src/app/api/http.rs#L10)、[NodeCompat调用](../packages/node-compat/src/runtime/http.js#L299)、[Devtools调用](../packages/devtools/src/common/utils.ts#L159)。
+AR-024 已将 Rust `http.requestStream` 接入统一runtime的 Node `http.request/get`：ureq负责客户端协议与TLS，JS负责Node流对象适配；有界 IPC `http.requestText`继续保留。HTTP服务端仍是JS协议层复用Native net/TLS。不要因Node客户端迁移删除ureq，它现在是两种Native客户端入口的共同实现。[Native客户端](../crates/niva/src/app/api/http.rs)、[统一runtime适配](../packages/runtime/src/runtime/http.ts)。
 
-依赖树中 `ureq-proto`、`utf8-zero`、`der`、`webpki-root-certs` 等是潜在随ureq退出的项；`native-tls`仍供TLS基座使用，`flate2`仍供资源解压使用，url/其他共用依赖不能一起删除。尚未做依赖移除的release A/B，**不提前计入任何节省字节**。
+当前`ureq`保留为`requestText`与Node `http.request/get`的共同Rust客户端；`native-tls-no-default`配合Niva平台TLS connector，`Cargo.lock`中不含`webpki-root-certs`根证书bundle。`flate2`供资源解压使用。HTTP客户端迁移的最终release体积按实施台账实测，不能用crate列表或JS源码体积代替。
 
 **Niva 内部的 Rust HTTP/WS 服务保留。** 它服务启动资源、鉴权文件路由和Native API WebSocket；它与应用开发者创建的Node http.Server是两个职责，后者在JS上依赖Native net.listen/accept即可。[内部服务](../crates/niva/src/app/http_server/mod.rs#L22)。
 

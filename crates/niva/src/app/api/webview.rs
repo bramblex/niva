@@ -329,6 +329,7 @@ mod tests {
         assert!(parse_load_url("data:text/html,hello").is_err());
         assert!(parse_load_url("file:///tmp/page.html").is_err());
         assert!(parse_load_url("niva://app/index.html").is_err());
+        assert!(parse_load_url("niva-a51c1728d17442d48f577d296c966b51://app/index.html").is_err());
         assert!(parse_load_url("ftp://example.com/file").is_err());
     }
 

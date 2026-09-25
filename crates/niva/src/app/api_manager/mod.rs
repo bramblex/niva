@@ -769,13 +769,8 @@ fn normalize_ipc_source_origin(url: &url::Url) -> Result<String> {
         url.username().is_empty() && url.password().is_none(),
         "IPC source URLs cannot contain credentials"
     );
-    #[cfg(target_os = "macos")]
-    if url.scheme() == "niva" {
-        anyhow::ensure!(
-            url.host_str() == Some("app") && url.port().is_none(),
-            "only niva://app is a trusted custom-protocol source"
-        );
-        return Ok(super::custom_protocol::platform_origin().to_owned());
+    if let Some(origin) = super::custom_protocol::origin_from_custom_uri(url) {
+        return Ok(origin);
     }
     let origin = url.origin().ascii_serialization();
     anyhow::ensure!(origin != "null", "opaque IPC source is denied");
@@ -2599,18 +2594,38 @@ mod lifecycle_tests {
 mod ipc_tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
-    fn macos_ipc_normalizes_only_the_native_niva_app_origin() {
+    fn ipc_normalizes_uuid_bound_custom_protocol_origins() {
+        let scheme = "niva-a51c1728d17442d48f577d296c966b51";
+        let origin = super::super::custom_protocol::origin_for_scheme(scheme);
         assert_eq!(
-            normalize_ipc_source_origin(&url::Url::parse("niva://app/index.html").unwrap())
-                .unwrap(),
-            super::super::custom_protocol::platform_origin()
+            normalize_ipc_source_origin(
+                &url::Url::parse(&format!("{scheme}://app/index.html")).unwrap()
+            )
+            .unwrap(),
+            origin
         );
+        let other_scheme = "niva-b61c1728d17442d48f577d296c966b51";
+        let other_origin = normalize_ipc_source_origin(
+            &url::Url::parse(&format!("{other_scheme}://app/index.html")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(other_origin, origin);
+
+        #[cfg(any(target_os = "windows", target_os = "android"))]
+        assert_eq!(
+            normalize_ipc_source_origin(
+                &url::Url::parse(&format!("http://{scheme}.app/index.html")).unwrap()
+            )
+            .unwrap(),
+            origin
+        );
+
         for source in [
-            "niva://other/index.html",
-            "niva://user@app/index.html",
-            "niva://app:9000/index.html",
+            "niva://app/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://other/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://user@app/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://app:9000/index.html",
             "file:///tmp/page.html",
         ] {
             assert!(

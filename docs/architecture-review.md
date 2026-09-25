@@ -2296,3 +2296,13 @@ R15只读一致性复核：luna_deep_worker（/root/architecture_inventory）核
 ### AR-024：Rust已有能力时JS不得另造一套实现
 
 2026-09-25，用户补充并授权按此原则复核实现：Rust已实现的文件、进程、网络/TLS等能力以Native为实现来源，JS Node API只适配既有桥接契约；若Native尚缺Node要求的流、背压、取消或对象生命周期语义，应扩展Rust桥接，再由JS包装。不能因“Rust已有某个高层API”而把更丰富的Node语义降级成单次文本调用，也不能把重复协议实现藏在vendor包里。HTTP/HTTPS明确采用Rust ureq客户端；客户端与Node http.createServer是不同职责。具体逐项复核和测量记录在[实施台账](architecture-implementation-plan.md)。
+
+2026-09-26执行结果：`http.requestText`及Node `http.request/get`共用Rust ureq；Node client流由Rust处理网络/TLS和逐块背压，JS只适配Node对象。`http.createServer`继续由JS处理协议并使用Native TCP/TLS。`fs.cp`无filter时一次Native递归复制；有filter时JS运行用户回调，Native完成实际文件复制。最初final release SHA `159b98...`的完整远端grant和trusted-debug IPC矩阵在前台bundle测试各24项通过；随后最终release加入stream header pair序列化修正，SHA `e0ba...`的NodeCompat真实WebView smoke通过178项，独立lease-only通过，但Mac锁定时完整IPC矩阵停在lease reply，待解锁后绑定最终SHA复跑。最终macOS ARM64 release实测2,974,288 bytes（实施台账有完整SHA）。Native仅不支持强制FICLONE，其余已知Node stream/Agent差异和平台边界记录在覆盖表。Windows真机及最低macOS 11均未实测。
+
+### D19 后续验收范围更新 — 2026-09-25
+
+用户表示Cypress Real World App依赖的ESM路径不能兼容时不强求，随后又取消替换验收项目的工作。维持D19既有选择，不新增json-server或其他项目，也不为了RWA增加`require(ESM)`；CJS-only边界按D14/D15继续有效。RWA因`require('dinero.js')`进入纯ESM包而未启动的结果保留为明确的范围外阻塞，不改上游代码、不减官方测试分母，并继续完成与该项目无关的Native、Bridge、平台和产物验收。
+
+### AR-025：本地custom protocol origin按应用UUID隔离
+
+2026-09-26。用户明确提出将应用UUID纳入Wry自定义协议名，使同一app重启后origin稳定，不同app拥有不同origin。macOS/Linux使用`niva-<32hex>://app`；按Wry 0.57规则，Windows/Android映射到`http://niva-<32hex>.app`。WebKit按origin隔离localStorage，因此不再依赖仅macOS 14+可用的`WKWebsiteDataStore`标识API。当前代码已把entry别名、静态资源处理、CSP、WebSocket、IPC来源归一化和`__niva_fs` CORS绑定到精确UUID origin；外部debug origin保持原策略。macOS 26.6.2固定bundle身份的`.app`三进程 smoke验证同UUID跨重启存储持久、异UUID隔离；裸debug进程未持久，不能代替产品`.app`证据。build脚本最低目标macOS 11.0，但该旧系统未真机验收；Windows缓存target check通过，无WebView2真机证据。不得删除或迁移现有默认store数据。此决定取代固定`niva://app`/`http://niva.app` origin以及此前等待macOS14以下策略的讨论。

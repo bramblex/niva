@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
-    path::Path,
+    path::{Component, Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
@@ -875,6 +875,68 @@ fn explicit_file_position(args: &Value) -> Result<Option<u64>> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct NodeFsCpOptions {
+    recursive: bool,
+    force: bool,
+    error_on_exist: bool,
+    dereference: bool,
+    preserve_timestamps: bool,
+    verbatim_symlinks: bool,
+    directory_only: bool,
+    directory_finalize: bool,
+    mode: u32,
+}
+
+fn node_cp_bool(args: &Value, name: &str, default: bool) -> Result<bool> {
+    match args.get(name) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => anyhow::bail!("ERR_INVALID_ARG_TYPE: options.{name} must be a boolean"),
+    }
+}
+
+fn node_cp_options(args: &Value) -> Result<NodeFsCpOptions> {
+    let mode = match args.get("mode") {
+        None | Some(Value::Null) => 0,
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "ERR_INVALID_ARG_VALUE: options.mode must be a non-negative 32-bit integer"
+                )
+            })?,
+        Some(_) => anyhow::bail!("ERR_INVALID_ARG_TYPE: options.mode must be an integer"),
+    };
+    anyhow::ensure!(mode & !7 == 0, "EINVAL: unsupported fs.cp mode flags");
+    let options = NodeFsCpOptions {
+        recursive: node_cp_bool(args, "recursive", false)?,
+        force: node_cp_bool(args, "force", true)?,
+        error_on_exist: node_cp_bool(args, "errorOnExist", false)?,
+        dereference: node_cp_bool(args, "dereference", false)?,
+        preserve_timestamps: node_cp_bool(args, "preserveTimestamps", false)?,
+        verbatim_symlinks: node_cp_bool(args, "verbatimSymlinks", false)?,
+        directory_only: node_cp_bool(args, "directoryOnly", false)?,
+        directory_finalize: node_cp_bool(args, "directoryFinalize", false)?,
+        mode,
+    };
+    anyhow::ensure!(
+        !(options.dereference && options.verbatim_symlinks),
+        "ERR_INCOMPATIBLE_OPTION_PAIR: dereference and verbatimSymlinks are mutually exclusive"
+    );
+    Ok(options)
+}
+
+fn node_fs_cp(source: &Path, destination: &Path, args: &Value) -> Result<Value> {
+    let options = node_cp_options(args)?;
+    let created = node_cp_copy(source, destination, &options)?;
+    if options.directory_only && !options.directory_finalize {
+        return Ok(json!(created));
+    }
+    Ok(Value::Null)
+}
+
 fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
     use base64::{Engine, engine::general_purpose::STANDARD};
     use std::io::{Read, Write};
@@ -955,26 +1017,7 @@ fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
         }
         "cp" => {
             let destination = node_destination(args)?;
-            let metadata = std::fs::symlink_metadata(path)?;
-            let force = args["force"].as_bool().unwrap_or(true);
-            let error_on_exist = args["errorOnExist"].as_bool().unwrap_or(false);
-            let options = crate::app::fs_ops::CopyOptions {
-                overwrite: force && !error_on_exist,
-                skip_exist: !force,
-                copy_inside: true,
-                content_only: true,
-                ..Default::default()
-            };
-            if metadata.is_dir() {
-                anyhow::ensure!(
-                    args["recursive"].as_bool().unwrap_or(false),
-                    "ERR_FS_EISDIR: recursive copy required"
-                );
-                crate::app::fs_ops::copy_dir(path, destination, &options)?;
-            } else {
-                crate::app::fs_ops::copy_file(path, destination, &options)?;
-            }
-            Ok(Value::Null)
+            node_fs_cp(path, destination, args)
         }
         "mkdir" => {
             let recursive = args["recursive"].as_bool().unwrap_or(false);
@@ -1051,6 +1094,358 @@ fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
         }
         _ => anyhow::bail!("unknown filesystem operation"),
     }
+}
+
+fn node_cp_metadata(path: &Path, dereference: bool) -> std::io::Result<std::fs::Metadata> {
+    if dereference {
+        fs::metadata(path)
+    } else {
+        fs::symlink_metadata(path)
+    }
+}
+
+fn node_cp_optional_metadata(path: &Path, dereference: bool) -> Result<Option<std::fs::Metadata>> {
+    match node_cp_metadata(path, dereference) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn node_cp_same_identity(
+    source: &Path,
+    destination: &Path,
+    source_metadata: &std::fs::Metadata,
+    destination_metadata: &std::fs::Metadata,
+) -> Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if source_metadata.ino() != 0
+            && source_metadata.dev() == destination_metadata.dev()
+            && source_metadata.ino() == destination_metadata.ino()
+        {
+            return Ok(true);
+        }
+    }
+    if source_metadata.file_type().is_symlink() || destination_metadata.file_type().is_symlink() {
+        return Ok(false);
+    }
+    #[cfg(windows)]
+    {
+        let _ = (source_metadata, destination_metadata);
+        if let (Ok(source), Ok(destination)) = (fs::File::open(source), fs::File::open(destination))
+        {
+            if same_file(&source, &destination)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(matches!(
+        (fs::canonicalize(source), fs::canonicalize(destination)),
+        (Ok(source), Ok(destination)) if source == destination
+    ))
+}
+
+fn node_cp_normalize_absolute(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(name) => normalized.push(name),
+        }
+    }
+    Ok(normalized)
+}
+
+fn node_cp_resolved_destination(path: &Path) -> Result<PathBuf> {
+    let absolute = node_cp_normalize_absolute(path)?;
+    let Some(file_name) = absolute.file_name() else {
+        return Ok(fs::canonicalize(&absolute).unwrap_or(absolute));
+    };
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("EINVAL: destination has no parent"))?;
+    let mut ancestor = parent.to_path_buf();
+    let mut suffix = Vec::new();
+    loop {
+        match fs::metadata(&ancestor) {
+            Ok(metadata) if metadata.is_dir() => break,
+            Ok(_) => anyhow::bail!("ENOTDIR: destination parent is not a directory"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = ancestor
+                    .file_name()
+                    .ok_or_else(|| anyhow::anyhow!("ENOENT: destination parent does not exist"))?
+                    .to_os_string();
+                suffix.push(name);
+                anyhow::ensure!(ancestor.pop(), "ENOENT: destination parent does not exist");
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let mut resolved = fs::canonicalize(&ancestor)?;
+    for name in suffix.iter().rev() {
+        resolved.push(name);
+    }
+    resolved.push(file_name);
+    node_cp_normalize_absolute(&resolved)
+}
+
+fn node_cp_is_subdirectory(source: &Path, destination: &Path) -> Result<bool> {
+    let source_absolute = node_cp_normalize_absolute(source)?;
+    let destination_absolute = node_cp_resolved_destination(destination)?;
+    if destination_absolute.starts_with(&source_absolute) {
+        return Ok(true);
+    }
+    let source_real = fs::canonicalize(source)?;
+    Ok(destination_absolute.starts_with(source_real))
+}
+
+fn node_cp_symlink_target(link: &Path, target: &Path, verbatim: bool) -> Result<PathBuf> {
+    if verbatim || target.is_absolute() {
+        return Ok(target.to_path_buf());
+    }
+    let parent = link.parent().unwrap_or_else(|| Path::new("."));
+    node_cp_normalize_absolute(&parent.join(target))
+}
+
+fn node_cp_path_is_within(parent: &Path, child: &Path) -> Result<bool> {
+    let parent = node_cp_normalize_absolute(parent)?;
+    let child = node_cp_normalize_absolute(child)?;
+    Ok(child.starts_with(parent))
+}
+
+fn node_cp_create_symlink(target: &Path, destination: &Path, source: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = source;
+        std::os::unix::fs::symlink(target, destination)?;
+    }
+    #[cfg(windows)]
+    {
+        let is_directory = fs::metadata(source).is_ok_and(|metadata| metadata.is_dir());
+        if is_directory {
+            std::os::windows::fs::symlink_dir(target, destination)?;
+        } else {
+            std::os::windows::fs::symlink_file(target, destination)?;
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (target, destination, source);
+        anyhow::bail!("ENOTSUP: symbolic link copying is not supported on this platform");
+    }
+    Ok(())
+}
+
+fn node_cp_copy_link(
+    source: &Path,
+    destination: &Path,
+    options: &NodeFsCpOptions,
+    destination_metadata: Option<&std::fs::Metadata>,
+) -> Result<()> {
+    let raw_target = fs::read_link(source)?;
+    let target = node_cp_symlink_target(source, &raw_target, options.verbatim_symlinks)?;
+    let Some(destination_metadata) = destination_metadata else {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        return node_cp_create_symlink(&target, destination, source);
+    };
+    if !destination_metadata.file_type().is_symlink() {
+        // Node attempts symlink() against a non-link destination; it reports
+        // EEXIST and leaves the existing path untouched.
+        anyhow::bail!("EEXIST: destination already exists");
+    }
+
+    let raw_destination_target = fs::read_link(destination)?;
+    let resolved_source_target = node_cp_symlink_target(source, &raw_target, false)?;
+    let resolved_destination_target =
+        node_cp_symlink_target(destination, &raw_destination_target, false)?;
+    anyhow::ensure!(
+        !node_cp_path_is_within(&resolved_source_target, &resolved_destination_target)?,
+        "ERR_FS_CP_EINVAL: source and destination symlink targets overlap"
+    );
+    let source_target_metadata = fs::metadata(source)?;
+    anyhow::ensure!(
+        !source_target_metadata.is_dir()
+            || !node_cp_path_is_within(&resolved_destination_target, &resolved_source_target)?,
+        "ERR_FS_CP_SYMLINK_TO_SUBDIRECTORY: cannot copy a symlink into its target directory"
+    );
+    fs::remove_file(destination)?;
+    node_cp_create_symlink(&target, destination, source)
+}
+
+fn node_cp_copy_file(
+    source: &Path,
+    destination: &Path,
+    source_metadata: &std::fs::Metadata,
+    destination_metadata: Option<&std::fs::Metadata>,
+    options: &NodeFsCpOptions,
+) -> Result<()> {
+    if let Some(destination_metadata) = destination_metadata {
+        anyhow::ensure!(
+            !destination_metadata.is_dir(),
+            "ERR_FS_CP_NON_DIR_TO_DIR: cannot overwrite a directory with a non-directory"
+        );
+        if options.force {
+            fs::remove_file(destination)?;
+        } else if options.error_on_exist {
+            anyhow::bail!("ERR_FS_CP_EEXIST: destination already exists");
+        } else {
+            return Ok(());
+        }
+    }
+    if options.mode & 4 != 0 {
+        anyhow::bail!("ENOTSUP: COPYFILE_FICLONE_FORCE is unavailable");
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if options.mode & 1 != 0 {
+        let mut input = fs::File::open(source)?;
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)?;
+        if let Err(error) = std::io::copy(&mut input, &mut output) {
+            drop(output);
+            let _ = fs::remove_file(destination);
+            return Err(error.into());
+        }
+    } else {
+        fs::copy(source, destination)?;
+    }
+    if options.preserve_timestamps {
+        let source_metadata = fs::metadata(source)?;
+        let times = std::fs::FileTimes::new()
+            .set_accessed(source_metadata.accessed()?)
+            .set_modified(source_metadata.modified()?);
+        OpenOptions::new()
+            .write(true)
+            .open(destination)?
+            .set_times(times)?;
+    }
+    fs::set_permissions(destination, source_metadata.permissions())?;
+    Ok(())
+}
+
+fn node_cp_copy_directory(
+    source: &Path,
+    destination: &Path,
+    source_metadata: &std::fs::Metadata,
+    destination_metadata: Option<&std::fs::Metadata>,
+    options: &NodeFsCpOptions,
+) -> Result<bool> {
+    if options.directory_finalize {
+        anyhow::ensure!(
+            destination_metadata.is_some_and(|metadata| metadata.is_dir()),
+            "ERR_FS_CP_EINVAL: cannot finalize a directory that was not created"
+        );
+        fs::set_permissions(destination, source_metadata.permissions())?;
+        return Ok(false);
+    }
+    let created = if destination_metadata.is_some() {
+        false
+    } else {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::create_dir(destination)?;
+        true
+    };
+    if !options.directory_only {
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            node_cp_copy(&entry.path(), &destination.join(entry.file_name()), options)?;
+        }
+    }
+    if created && !options.directory_only {
+        fs::set_permissions(destination, source_metadata.permissions())?;
+    }
+    Ok(created)
+}
+
+fn node_cp_copy(source: &Path, destination: &Path, options: &NodeFsCpOptions) -> Result<bool> {
+    let source_metadata = node_cp_metadata(source, options.dereference)?;
+    let destination_metadata = node_cp_optional_metadata(destination, options.dereference)?;
+    if let Some(destination_metadata) = destination_metadata.as_ref() {
+        anyhow::ensure!(
+            !node_cp_same_identity(source, destination, &source_metadata, destination_metadata)?,
+            "ERR_FS_CP_EINVAL: source and destination are the same file"
+        );
+        if source_metadata.is_dir() && !destination_metadata.is_dir() {
+            anyhow::bail!(
+                "ERR_FS_CP_DIR_TO_NON_DIR: cannot overwrite a non-directory with a directory"
+            );
+        }
+        if !source_metadata.is_dir() && destination_metadata.is_dir() {
+            anyhow::bail!(
+                "ERR_FS_CP_NON_DIR_TO_DIR: cannot overwrite a directory with a non-directory"
+            );
+        }
+    }
+    if source_metadata.is_dir() && node_cp_is_subdirectory(source, destination)? {
+        anyhow::bail!("ERR_FS_CP_EINVAL: cannot copy a directory to a subdirectory of itself");
+    }
+    let file_type = source_metadata.file_type();
+    if source_metadata.is_dir() {
+        if !options.recursive {
+            anyhow::bail!("ERR_FS_EISDIR: source is a directory (not copied)");
+        }
+        return node_cp_copy_directory(
+            source,
+            destination,
+            &source_metadata,
+            destination_metadata.as_ref(),
+            options,
+        );
+    }
+    if file_type.is_symlink() {
+        node_cp_copy_link(source, destination, options, destination_metadata.as_ref())?;
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if file_type.is_socket() {
+            anyhow::bail!("ERR_FS_CP_SOCKET: cannot copy a socket file");
+        }
+        if file_type.is_fifo() {
+            anyhow::bail!("ERR_FS_CP_FIFO_PIPE: cannot copy a FIFO pipe");
+        }
+        if file_type.is_char_device() || file_type.is_block_device() {
+            node_cp_copy_file(
+                source,
+                destination,
+                &source_metadata,
+                destination_metadata.as_ref(),
+                options,
+            )?;
+            return Ok(false);
+        }
+    }
+    if source_metadata.is_file() {
+        node_cp_copy_file(
+            source,
+            destination,
+            &source_metadata,
+            destination_metadata.as_ref(),
+            options,
+        )?;
+        return Ok(false);
+    }
+    anyhow::bail!("ERR_FS_CP_UNKNOWN: cannot copy an unknown file type")
 }
 
 fn node_destination(args: &Value) -> Result<&Path> {
@@ -1734,6 +2129,313 @@ mod tests {
         );
         node_fs_operation("rm", &json!({"path":root,"recursive":true})).unwrap();
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn node_cp_merges_directories_and_obeys_force_error_on_exist_and_mode() {
+        let temp = TestDir::new();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("existing.txt"), "new").unwrap();
+        fs::write(source.join("nested/new.txt"), "nested").unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("existing.txt"), "old").unwrap();
+
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true,"force":false}),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("existing.txt")).unwrap(),
+            "old"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("nested/new.txt")).unwrap(),
+            "nested"
+        );
+
+        let error = node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true,"force":false,"errorOnExist":true}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ERR_FS_CP_EEXIST"));
+        assert_eq!(
+            fs::read_to_string(destination.join("existing.txt")).unwrap(),
+            "old"
+        );
+
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true,"force":true,"errorOnExist":true}),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("existing.txt")).unwrap(),
+            "new"
+        );
+
+        let forced_clone = node_fs_operation(
+            "cp",
+            &json!({"path":source.join("existing.txt"),"destination":temp.path().join("clone.txt"),"mode":4}),
+        )
+        .unwrap_err();
+        assert!(forced_clone.to_string().contains("ENOTSUP"));
+    }
+
+    #[test]
+    fn node_cp_preserves_types_errors_and_rejects_copy_into_self() {
+        let temp = TestDir::new();
+        let source_dir = temp.path().join("source-dir");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::write(source_dir.join("file.txt"), "content").unwrap();
+        let destination_file = temp.path().join("destination-file");
+        fs::write(&destination_file, "old").unwrap();
+        let no_recursive = node_fs_operation(
+            "cp",
+            &json!({"path":source_dir,"destination":temp.path().join("copy")} ),
+        )
+        .unwrap_err();
+        assert!(no_recursive.to_string().contains("ERR_FS_EISDIR"));
+
+        let directory_to_file = node_fs_operation(
+            "cp",
+            &json!({"path":source_dir,"destination":destination_file,"recursive":true}),
+        )
+        .unwrap_err();
+        assert!(
+            directory_to_file
+                .to_string()
+                .contains("ERR_FS_CP_DIR_TO_NON_DIR")
+        );
+
+        let file_to_directory = node_fs_operation(
+            "cp",
+            &json!({"path":source_dir.join("file.txt"),"destination":source_dir,"recursive":true}),
+        )
+        .unwrap_err();
+        assert!(
+            file_to_directory
+                .to_string()
+                .contains("ERR_FS_CP_NON_DIR_TO_DIR")
+        );
+
+        let into_self = node_fs_operation(
+            "cp",
+            &json!({"path":source_dir,"destination":source_dir.join("child"),"recursive":true}),
+        )
+        .unwrap_err();
+        assert!(into_self.to_string().contains("ERR_FS_CP_EINVAL"));
+
+        let incompatible = node_fs_operation(
+            "cp",
+            &json!({"path":source_dir.join("file.txt"),"destination":temp.path().join("copy.txt"),"dereference":true,"verbatimSymlinks":true}),
+        )
+        .unwrap_err();
+        assert!(
+            incompatible
+                .to_string()
+                .contains("ERR_INCOMPATIBLE_OPTION_PAIR")
+        );
+    }
+
+    #[test]
+    fn node_cp_directory_only_defers_source_permissions_until_finalize() {
+        let temp = TestDir::new();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("should-not-copy.txt"), "content").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&source, fs::Permissions::from_mode(0o500)).unwrap();
+        }
+        let created = node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true,"directoryOnly":true}),
+        )
+        .unwrap();
+        assert_eq!(created, json!(true));
+        assert!(destination.is_dir());
+        assert!(fs::read_dir(&destination).unwrap().next().is_none());
+        node_fs_operation(
+            "cp",
+            &json!({"path":source.join("should-not-copy.txt"),"destination":destination.join("should-not-copy.txt")}),
+        )
+        .unwrap();
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true,"directoryOnly":true,"directoryFinalize":true}),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("should-not-copy.txt")).unwrap(),
+            "content"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(destination).unwrap().permissions().mode() & 0o777,
+                0o500
+            );
+        }
+    }
+
+    #[test]
+    fn node_cp_preserves_file_timestamps_when_requested() {
+        use std::time::{Duration, SystemTime};
+
+        let temp = TestDir::new();
+        let source = temp.path().join("source.txt");
+        let destination = temp.path().join("destination.txt");
+        fs::write(&source, "timestamped").unwrap();
+        let expected = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        fs::File::open(&source)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(expected))
+            .unwrap();
+
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"preserveTimestamps":true,"mode":2}),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::metadata(destination).unwrap().modified().unwrap(),
+            expected
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_cp_preserves_or_dereferences_symlinks_and_resolves_targets() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TestDir::new();
+        let source = temp.path().join("source");
+        fs::create_dir_all(source.join("target-dir")).unwrap();
+        fs::write(source.join("target.txt"), "link contents").unwrap();
+        fs::write(
+            source.join("target-dir/nested.txt"),
+            "directory link contents",
+        )
+        .unwrap();
+        symlink("target.txt", source.join("link.txt")).unwrap();
+        symlink("target-dir", source.join("link-dir")).unwrap();
+
+        let destination = temp.path().join("default-copy");
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":destination,"recursive":true}),
+        )
+        .unwrap();
+        let copied_link = destination.join("link.txt");
+        assert!(
+            fs::symlink_metadata(&copied_link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        let copied_target = fs::read_link(&copied_link).unwrap();
+        assert!(copied_target.is_absolute());
+        assert_eq!(fs::read_to_string(copied_target).unwrap(), "link contents");
+        assert!(
+            fs::symlink_metadata(destination.join("link-dir"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+
+        let dereferenced = temp.path().join("dereferenced-copy");
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":dereferenced,"recursive":true,"dereference":true}),
+        )
+        .unwrap();
+        assert!(
+            !fs::symlink_metadata(dereferenced.join("link.txt"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(dereferenced.join("link.txt")).unwrap(),
+            "link contents"
+        );
+        assert!(
+            !fs::symlink_metadata(dereferenced.join("link-dir"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(dereferenced.join("link-dir/nested.txt")).unwrap(),
+            "directory link contents"
+        );
+
+        let verbatim = temp.path().join("verbatim-copy");
+        node_fs_operation(
+            "cp",
+            &json!({"path":source,"destination":verbatim,"recursive":true,"verbatimSymlinks":true}),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_link(verbatim.join("link.txt")).unwrap(),
+            PathBuf::from("target.txt")
+        );
+
+        let conflicting_destination = temp.path().join("existing.txt");
+        fs::write(&conflicting_destination, "keep").unwrap();
+        let conflict = node_fs_operation(
+            "cp",
+            &json!({"path":source.join("link.txt"),"destination":conflicting_destination}),
+        )
+        .unwrap_err();
+        assert!(conflict.to_string().contains("EEXIST"));
+        assert_eq!(
+            fs::read_to_string(temp.path().join("existing.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_cp_rejects_symlink_target_cycles() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TestDir::new();
+        let source = temp.path().join("source");
+        fs::create_dir_all(source.join("target/sub")).unwrap();
+        symlink("target", source.join("link-to-target")).unwrap();
+
+        let destination_inside = temp.path().join("destination-inside");
+        symlink(source.join("target/sub"), &destination_inside).unwrap();
+        let cycle = node_fs_operation(
+            "cp",
+            &json!({"path":source.join("link-to-target"),"destination":destination_inside}),
+        )
+        .unwrap_err();
+        assert!(cycle.to_string().contains("ERR_FS_CP_EINVAL"));
+
+        let source_subdirectory = source.join("link-to-subdirectory");
+        symlink("target/sub", &source_subdirectory).unwrap();
+        let destination_ancestor = temp.path().join("destination-ancestor");
+        symlink(source.join("target"), &destination_ancestor).unwrap();
+        let ancestor = node_fs_operation(
+            "cp",
+            &json!({"path":source_subdirectory,"destination":destination_ancestor}),
+        )
+        .unwrap_err();
+        assert!(
+            ancestor
+                .to_string()
+                .contains("ERR_FS_CP_SYMLINK_TO_SUBDIRECTORY")
+        );
     }
 
     #[test]

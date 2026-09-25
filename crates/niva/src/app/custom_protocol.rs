@@ -18,11 +18,86 @@ use wry::{
 
 use super::{node_compat::NodeCompat, resource_manager::ResourceManager};
 
-pub(crate) const SCHEME: &str = "niva";
-#[cfg(not(target_os = "windows"))]
-pub(crate) const MACOS_ORIGIN: &str = "niva://app";
-#[cfg(target_os = "windows")]
-pub(crate) const WINDOWS_ORIGIN: &str = "http://niva.app";
+const LEGACY_ENTRY_SCHEME: &str = "niva";
+const SCHEME_PREFIX: &str = "niva-";
+const APP_HOST: &str = "app";
+
+/// Derive the WebView scheme from the app's canonical UUID. The scheme is a
+/// stable storage namespace: windows of one app and later launches keep the
+/// same origin, while other apps receive a different origin.
+pub(crate) fn scheme_for_uuid(uuid: &str) -> String {
+    let compact = uuid.chars().filter(|character| *character != '-');
+    format!(
+        "{SCHEME_PREFIX}{}",
+        compact.collect::<String>().to_ascii_lowercase()
+    )
+}
+
+fn is_app_scheme(scheme: &str) -> bool {
+    scheme
+        .strip_prefix(SCHEME_PREFIX)
+        .is_some_and(|uuid| uuid.len() == 32 && uuid.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+/// Return the exact browser origin Wry exposes for the given app scheme.
+pub(crate) fn origin_for_scheme(scheme: &str) -> String {
+    #[cfg(any(target_os = "windows", target_os = "android"))]
+    {
+        format!("http://{scheme}.{APP_HOST}")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "android")))]
+    {
+        format!("{scheme}://{APP_HOST}")
+    }
+}
+
+/// Normalize only a valid app-scheme URI with the exact local `app` host.
+/// On Windows and Android Wry exposes this scheme as `http://<scheme>.app`;
+/// on macOS and Linux the scheme URI itself is the origin.
+pub(crate) fn origin_from_custom_uri(url: &url::Url) -> Option<String> {
+    (is_app_scheme(url.scheme())
+        && url.host_str() == Some(APP_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none())
+    .then(|| origin_for_scheme(url.scheme()))
+}
+
+/// Normalize the URL reported by a WebView page-load callback. WebView2 and
+/// Android report Wry's HTTP workaround URL, while macOS/Linux report the
+/// registered custom scheme. Require the full expected scheme/host pair.
+pub(crate) fn origin_from_page_url(url: &url::Url, app_scheme: &str) -> Option<String> {
+    if url.scheme() == app_scheme
+        && url.host_str() == Some(APP_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+    {
+        return Some(origin_for_scheme(app_scheme));
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "android"))]
+    if url.scheme() == "http"
+        && url.host_str() == Some(format!("{app_scheme}.{APP_HOST}").as_str())
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+    {
+        return Some(origin_for_scheme(app_scheme));
+    }
+
+    None
+}
+
+/// `niva://app/` remains a config-level alias. It is always rewritten to the
+/// current app's UUID-derived scheme before a WebView is created.
+pub(crate) fn is_local_entry_url(url: &url::Url, app_scheme: &str) -> bool {
+    (url.scheme() == LEGACY_ENTRY_SCHEME || url.scheme() == app_scheme)
+        && url.host_str() == Some(APP_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+}
 
 const WORKER_COUNT: usize = 4;
 const QUEUE_CAPACITY: usize = 32;
@@ -30,19 +105,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wry currently accepts a complete `Vec<u8>` response. Bound each response
 /// allocation and let clients request large media in valid byte ranges.
 const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
-
-/// Return the exact origin emitted by the platform WebView for Niva's custom
-/// scheme. Wry maps `niva://app/` to `http://niva.app/` in WebView2.
-pub(crate) fn platform_origin() -> &'static str {
-    #[cfg(target_os = "windows")]
-    {
-        WINDOWS_ORIGIN
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        MACOS_ORIGIN
-    }
-}
 
 /// Dispatches protocol loads to a fixed number of background workers. A full
 /// queue is rejected immediately, so requests cannot create an unbounded
@@ -83,6 +145,7 @@ impl CustomProtocolDispatcher {
 
     pub(crate) fn dispatch(
         &self,
+        scheme: String,
         resources: Arc<dyn ResourceManager>,
         node_compat: Option<NodeCompat>,
         server_port: u16,
@@ -91,6 +154,7 @@ impl CustomProtocolDispatcher {
     ) {
         let gate = Arc::new(ResponseGate::new(responder));
         let job = ProtocolJob {
+            scheme,
             resources,
             node_compat,
             server_port,
@@ -193,6 +257,7 @@ fn arm_timeout(gate: Arc<ResponseGate>) -> std::io::Result<()> {
 }
 
 struct ProtocolJob {
+    scheme: String,
     resources: Arc<dyn ResourceManager>,
     node_compat: Option<NodeCompat>,
     server_port: u16,
@@ -210,6 +275,7 @@ impl ProtocolJob {
             self.resources.as_ref(),
             self.node_compat.as_ref(),
             self.server_port,
+            &self.scheme,
         );
         self.respond(response);
     }
@@ -224,9 +290,11 @@ fn response_for_request(
     resources: &dyn ResourceManager,
     node_compat: Option<&NodeCompat>,
     server_port: u16,
+    scheme: &str,
 ) -> Response<Vec<u8>> {
     let is_head = request.method() == Method::HEAD;
-    let mut response = response_for_request_impl(request, resources, node_compat, server_port);
+    let mut response =
+        response_for_request_impl(request, resources, node_compat, server_port, scheme);
     if is_head {
         let length = response
             .headers()
@@ -247,6 +315,7 @@ fn response_for_request_impl(
     resources: &dyn ResourceManager,
     node_compat: Option<&NodeCompat>,
     server_port: u16,
+    scheme: &str,
 ) -> Response<Vec<u8>> {
     let is_head = request.method() == Method::HEAD;
     if request.method() != Method::GET && !is_head {
@@ -258,7 +327,7 @@ fn response_for_request_impl(
                 error_response(StatusCode::METHOD_NOT_ALLOWED, "GET or HEAD only")
             });
     }
-    if !is_app_uri(request.uri()) {
+    if !is_app_uri(request.uri(), scheme) {
         return error_response(StatusCode::NOT_FOUND, "Not found");
     }
     if request.body().len() > 64 * 1024 {
@@ -562,12 +631,12 @@ fn prepare_document(
     Ok(body)
 }
 
-fn is_app_uri(uri: &Uri) -> bool {
+fn is_app_uri(uri: &Uri, scheme: &str) -> bool {
     let Some(authority) = uri.authority() else {
         return false;
     };
-    uri.scheme_str() == Some(SCHEME)
-        && authority.as_str().eq_ignore_ascii_case("app")
+    uri.scheme_str() == Some(scheme)
+        && authority.as_str().eq_ignore_ascii_case(APP_HOST)
         && uri.path().starts_with('/')
 }
 
@@ -1085,6 +1154,23 @@ mod tests {
 
     use super::*;
 
+    const TEST_APP_SCHEME: &str = "niva-a51c1728d17442d48f577d296c966b51";
+
+    fn app_response(
+        request: &Request<Vec<u8>>,
+        resources: &dyn ResourceManager,
+        node_compat: Option<&NodeCompat>,
+        server_port: u16,
+    ) -> Response<Vec<u8>> {
+        super::response_for_request(
+            request,
+            resources,
+            node_compat,
+            server_port,
+            TEST_APP_SCHEME,
+        )
+    }
+
     #[derive(Debug)]
     struct TestResources(HashMap<String, Vec<u8>>);
 
@@ -1174,17 +1260,73 @@ mod tests {
     }
 
     #[test]
-    fn protocol_origin_is_platform_specific() {
-        #[cfg(target_os = "windows")]
-        assert_eq!(platform_origin(), WINDOWS_ORIGIN);
-        #[cfg(not(target_os = "windows"))]
-        assert_eq!(platform_origin(), MACOS_ORIGIN);
+    fn app_scheme_and_origin_are_stable_and_uuid_specific() {
+        let uuid = "a51c1728-d174-42d4-8f57-7d296c966b51";
+        assert_eq!(scheme_for_uuid(uuid), TEST_APP_SCHEME);
+        assert_eq!(scheme_for_uuid(&uuid.to_ascii_uppercase()), TEST_APP_SCHEME);
+        assert_eq!(
+            scheme_for_uuid("b61c1728-d174-42d4-8f57-7d296c966b51"),
+            "niva-b61c1728d17442d48f577d296c966b51"
+        );
+
+        let origin = origin_for_scheme(TEST_APP_SCHEME);
+        assert_ne!(
+            origin,
+            origin_for_scheme("niva-b61c1728d17442d48f577d296c966b51")
+        );
+        #[cfg(any(target_os = "windows", target_os = "android"))]
+        assert_eq!(origin, "http://niva-a51c1728d17442d48f577d296c966b51.app");
+        #[cfg(not(any(target_os = "windows", target_os = "android")))]
+        assert_eq!(origin, "niva-a51c1728d17442d48f577d296c966b51://app");
+    }
+
+    #[test]
+    fn custom_uri_and_page_origin_require_the_exact_uuid_scheme() {
+        let uri = url::Url::parse(&format!("{TEST_APP_SCHEME}://app/index.html")).unwrap();
+        assert_eq!(
+            origin_from_custom_uri(&uri),
+            Some(origin_for_scheme(TEST_APP_SCHEME))
+        );
+
+        for raw in [
+            "niva://app/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://other/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://app:9000/index.html",
+            "niva-a51c1728d17442d48f577d296c966b51://user@app/index.html",
+        ] {
+            let url = url::Url::parse(raw).unwrap();
+            assert_eq!(origin_from_custom_uri(&url), None, "{raw}");
+        }
+
+        let other_scheme = "niva-b61c1728d17442d48f577d296c966b51";
+        let other_uri = url::Url::parse(&format!("{other_scheme}://app/index.html")).unwrap();
+        assert_ne!(
+            origin_from_custom_uri(&other_uri),
+            Some(origin_for_scheme(TEST_APP_SCHEME))
+        );
+        assert_eq!(
+            origin_from_page_url(&uri, TEST_APP_SCHEME),
+            Some(origin_for_scheme(TEST_APP_SCHEME))
+        );
+        assert_eq!(origin_from_page_url(&other_uri, TEST_APP_SCHEME), None);
+
+        #[cfg(any(target_os = "windows", target_os = "android"))]
+        assert_eq!(
+            origin_from_page_url(
+                &url::Url::parse(&format!("http://{TEST_APP_SCHEME}.app/index.html")).unwrap(),
+                TEST_APP_SCHEME
+            ),
+            Some(origin_for_scheme(TEST_APP_SCHEME))
+        );
     }
 
     #[test]
     fn serves_root_html_and_preserves_csp_sources_while_allowing_ws() {
-        let response = response_for_request(
-            &get_request("niva://app/", &[("accept", "text/html")]),
+        let response = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/",
+                &[("accept", "text/html")],
+            ),
             &resources(),
             None,
             43123,
@@ -1199,8 +1341,8 @@ mod tests {
     #[test]
     fn serves_assets_and_refuses_internal_routes_and_bad_authority() {
         let resources = resources();
-        let asset = response_for_request(
-            &get_request("niva://app/asset.js", &[]),
+        let asset = app_response(
+            &get_request("niva-a51c1728d17442d48f577d296c966b51://app/asset.js", &[]),
             &resources,
             None,
             43123,
@@ -1214,8 +1356,11 @@ mod tests {
             "__niva_other/asset.js",
             "__niva_runtime",
         ] {
-            let response = response_for_request(
-                &get_request(&format!("niva://app/{internal_path}"), &[]),
+            let response = app_response(
+                &get_request(
+                    &format!("niva-a51c1728d17442d48f577d296c966b51://app/{internal_path}"),
+                    &[],
+                ),
                 &resources,
                 None,
                 43123,
@@ -1223,20 +1368,42 @@ mod tests {
             assert_eq!(response.status(), StatusCode::NOT_FOUND, "{internal_path}");
         }
 
-        let bad_host = response_for_request(
-            &get_request("niva://other/asset.js", &[]),
+        let bad_host = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://other/asset.js",
+                &[],
+            ),
             &resources,
             None,
             43123,
         );
         assert_eq!(bad_host.status(), StatusCode::NOT_FOUND);
+
+        let other_app = app_response(
+            &get_request("niva-b61c1728d17442d48f577d296c966b51://app/asset.js", &[]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(other_app.status(), StatusCode::NOT_FOUND);
+
+        let legacy_runtime_origin = app_response(
+            &get_request("niva://app/asset.js", &[]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(legacy_runtime_origin.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
     fn serves_head_and_single_byte_ranges_with_exact_headers() {
         let resources = resources();
-        let partial = response_for_request(
-            &get_request("niva://app/asset.js", &[("range", "bytes=0-3")]),
+        let partial = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/asset.js",
+                &[("range", "bytes=0-3")],
+            ),
             &resources,
             None,
             43123,
@@ -1245,8 +1412,8 @@ mod tests {
         assert_eq!(partial.headers()[CONTENT_RANGE], "bytes 0-3/17");
         assert_eq!(partial.body(), b"cons");
 
-        let head = response_for_request(
-            &head_request("niva://app/asset.js", &[]),
+        let head = app_response(
+            &head_request("niva-a51c1728d17442d48f577d296c966b51://app/asset.js", &[]),
             &resources,
             None,
             43123,
@@ -1255,8 +1422,11 @@ mod tests {
         assert_eq!(head.headers()[CONTENT_LENGTH], "17");
         assert!(head.body().is_empty());
 
-        let invalid = response_for_request(
-            &get_request("niva://app/asset.js", &[("range", "bytes=17-")]),
+        let invalid = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/asset.js",
+                &[("range", "bytes=17-")],
+            ),
             &resources,
             None,
             43123,
@@ -1271,8 +1441,8 @@ mod tests {
             size: MAX_RESPONSE_BYTES as u64 + 4096,
             reads: Mutex::new(Vec::new()),
         };
-        let full = response_for_request(
-            &get_request("niva://app/large.bin", &[]),
+        let full = app_response(
+            &get_request("niva-a51c1728d17442d48f577d296c966b51://app/large.bin", &[]),
             &resources,
             None,
             43123,
@@ -1280,8 +1450,8 @@ mod tests {
         assert_eq!(full.status(), StatusCode::PAYLOAD_TOO_LARGE);
         assert!(resources.reads.lock().unwrap().is_empty());
 
-        let metadata = response_for_request(
-            &head_request("niva://app/large.bin", &[]),
+        let metadata = app_response(
+            &head_request("niva-a51c1728d17442d48f577d296c966b51://app/large.bin", &[]),
             &resources,
             None,
             43123,
@@ -1291,8 +1461,11 @@ mod tests {
         assert!(metadata.body().is_empty());
         assert!(resources.reads.lock().unwrap().is_empty());
 
-        let head = response_for_request(
-            &head_request("niva://app/large.bin", &[("range", "bytes=0-999999999")]),
+        let head = app_response(
+            &head_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/large.bin",
+                &[("range", "bytes=0-999999999")],
+            ),
             &resources,
             None,
             43123,
@@ -1303,8 +1476,11 @@ mod tests {
         assert!(head.body().is_empty());
         assert!(resources.reads.lock().unwrap().is_empty());
 
-        let small = response_for_request(
-            &get_request("niva://app/large.bin", &[("range", "bytes=4-7")]),
+        let small = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/large.bin",
+                &[("range", "bytes=4-7")],
+            ),
             &resources,
             None,
             43123,
@@ -1317,12 +1493,26 @@ mod tests {
 
     #[test]
     fn rejects_encoded_traversal_and_rewrites_only_document_navigation() {
-        assert!(asset_path(&"niva://app/%2e%2e/outside".parse().unwrap()).is_err());
-        assert!(asset_path(&"niva://app/folder%2f..%2foutside".parse().unwrap()).is_err());
+        assert!(
+            asset_path(
+                &"niva-a51c1728d17442d48f577d296c966b51://app/%2e%2e/outside"
+                    .parse()
+                    .unwrap()
+            )
+            .is_err()
+        );
+        assert!(
+            asset_path(
+                &"niva-a51c1728d17442d48f577d296c966b51://app/folder%2f..%2foutside"
+                    .parse()
+                    .unwrap()
+            )
+            .is_err()
+        );
 
-        let response = response_for_request(
+        let response = app_response(
             &get_request(
-                "niva://app/",
+                "niva-a51c1728d17442d48f577d296c966b51://app/",
                 &[("sec-fetch-mode", "cors"), ("accept", "text/html")],
             ),
             &resources(),
@@ -1338,8 +1528,11 @@ mod tests {
     fn runtime_importmaps_and_facades_are_served_but_bootstrap_is_private() {
         let compat = NodeCompat::new(true);
         let resources = resources();
-        let page = response_for_request(
-            &get_request("niva://app/", &[("accept", "text/html")]),
+        let page = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/",
+                &[("accept", "text/html")],
+            ),
             &resources,
             Some(&compat),
             43123,
@@ -1354,8 +1547,11 @@ mod tests {
             "__bootstrap__/bootstrap.js",
             "dist/bootstrap.js",
         ] {
-            let response = response_for_request(
-                &get_request(&format!("niva://app/__niva_runtime/{path}"), &[]),
+            let response = app_response(
+                &get_request(
+                    &format!("niva-a51c1728d17442d48f577d296c966b51://app/__niva_runtime/{path}"),
+                    &[],
+                ),
                 &resources,
                 Some(&compat),
                 43123,
@@ -1363,8 +1559,11 @@ mod tests {
             assert_eq!(response.status(), StatusCode::NOT_FOUND);
         }
 
-        let selected = response_for_request(
-            &get_request("niva://app/__niva_runtime/esm/path.mjs", &[]),
+        let selected = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/__niva_runtime/esm/path.mjs",
+                &[],
+            ),
             &resources,
             Some(&compat),
             43123,
@@ -1372,8 +1571,11 @@ mod tests {
         assert_eq!(selected.status(), StatusCode::OK);
         assert!(!selected.body().is_empty());
 
-        let disabled = response_for_request(
-            &get_request("niva://app/__niva_runtime/esm/fs.mjs", &[]),
+        let disabled = app_response(
+            &get_request(
+                "niva-a51c1728d17442d48f577d296c966b51://app/__niva_runtime/esm/fs.mjs",
+                &[],
+            ),
             &resources,
             Some(&NodeCompat::new(false)),
             43123,

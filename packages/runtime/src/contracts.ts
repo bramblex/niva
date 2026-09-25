@@ -194,6 +194,7 @@ export type NivaCrypto = Omit<Pick<typeof import("node:crypto"), "randomUUID" | 
     timingSafeEqual(a: NodeJS.ArrayBufferView, b: NodeJS.ArrayBufferView): boolean;
 };
 export type NivaZlib = Pick<typeof import("node:zlib"), "gzip" | "gunzip" | "gzipSync" | "gunzipSync">;
+/** HTTP clients stream through Native ureq over the trusted local WebSocket; their socket/connection fields expose a limited bridge adapter, not a net.Socket. createServer remains a JavaScript HTTP server over Native sockets. */
 export type NivaHttp = Pick<typeof import("node:http"), "request" | "get" | "createServer"> & {
     IncomingMessage: new (socket: import("node:net").Socket) => import("node:http").IncomingMessage;
     ServerResponse: new (request: import("node:http").IncomingMessage) => import("node:http").ServerResponse;
@@ -203,6 +204,7 @@ export type NivaHttp = Pick<typeof import("node:http"), "request" | "get" | "cre
     /** Promise UTF-8 request; this does not replace the Node stream request/get contract. */
     requestText(options: NivaHttpTextOptions): Promise<NivaHttpTextResult>;
 };
+/** HTTPS clients stream through Native ureq with platform root and hostname verification. */
 export type NivaHttps = Pick<typeof import("node:https"), "request" | "get" | "createServer"> & {
     IncomingMessage: NivaHttp["IncomingMessage"];
     ServerResponse: NivaHttp["ServerResponse"];

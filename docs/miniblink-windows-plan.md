@@ -1,6 +1,6 @@
 # Windows MiniBlink 按需兼容方案（方案，未实现）
 
-> 调研日期：2026-09-23。按用户决定，本方案暂缓实施。本文按“MiniBlink 是低版本 Windows 的额外兼容项”设计。普通 Windows 构建继续使用 WebView2；MiniBlink 版只加载本地页面，通过现有 WebSocket bridge 调用 Niva API，不做原生 IPC。本仓库目前没有 MiniBlink 实现，也没有 Windows 真机验收记录。**恢复本方案前须重定本地页面入口**：§“按顺序落地”中的 `http://127.0.0.1:<port>/` 是旧静态路由，而当前普通打包模式已改从 `niva://app/` 加载并关闭该 HTTP 静态路由；不能直接沿用下面的旧入口步骤。
+> 调研日期：2026-09-23。按用户决定，本方案暂缓实施。本文按“MiniBlink 是低版本 Windows 的额外兼容项”设计。普通 Windows 构建继续使用 WebView2；MiniBlink 版只加载本地页面，通过现有 WebSocket bridge 调用 Niva API，不做原生 IPC。本仓库目前没有 MiniBlink 实现，也没有 Windows 真机验收记录。**恢复本方案前须重定本地页面入口**：§“按顺序落地”中的 `http://127.0.0.1:<port>/` 是旧静态路由，而当前普通打包模式已改从应用UUID派生的Wry协议加载（`niva://app/`仅为配置别名）并关闭该 HTTP 静态路由；不能直接沿用下面的旧入口步骤。
 
 ## 结论
 

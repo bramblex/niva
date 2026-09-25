@@ -25,7 +25,7 @@ JS显式cancel必须结束对应Promise并释放本地状态。Native取消不�
 
 ## 来源与鉴权
 
-- 普通本地资源使用Wry固定协议origin：macOS为`niva://app`，Windows为`http://niva.app`。目录资源和内嵌资源使用相同授权模型；`--resource`/`--config`本身不授予调试权限。
+- 普通本地资源使用由应用UUID派生的Wry协议origin：macOS/Linux为`niva-<uuid>://app`，Windows WebView2为`http://niva-<uuid>.app`（UUID去掉连字符并转小写）。同一应用在重启和多个窗口间保持origin稳定，不同应用使用不同origin；`niva://app`仅是配置入口别名。origin隔离存储，不代替窗口token或API授权。`--resource`/`--config`本身不授予调试权限。
 - 显式`--debug-entry`，或显式开发开关启用的本机debug.entry，可为精确localhost/127.0.0.1开发origin授予窗口凭据；普通启动忽略调试入口配置。
 - Native为窗口生成随机内存token。WS与同步XHR检查token、窗口绑定、精确Origin及本地Host；`hello.wid`不能换成别的窗口。凭据不得进入资源文件、日志或外部输入配置。
 - 本地/明确开发origin走IPC fallback时仍核验相同窗口凭据及原生来源，不能只因为“WS失败”放行。
@@ -61,7 +61,7 @@ S -> C {t:"event",id?,seq,name,data}
 
 IPC请求JSON最多256KiB，响应JSON最多8MiB（容纳文本转义开销）。HTTP body最多1MiB；exec stdout+stderr总计最多64KiB；网络/exec默认10秒、最多30秒，调用选项只可收紧。读取阶段实施限额，不先无限缓冲。文本接口不是二进制编码隧道；编码/大小不支持时明确拒绝。
 
-普通Node `http.request/get/createServer`、TCP/UDP/TLS、watch、流式子进程和文件句柄仍依赖WS。HTTP是否可访问某地址与IPC是否有调用权限是不同检查；已授权应用拥有与普通Node程序相同的内外网访问方向。
+Node `http.request/get`通过受授权的本地WS调用`http.requestStream`，由Rust ureq负责HTTP/HTTPS协议、TLS校验和流式I/O；JS仅适配ClientRequest/IncomingMessage对象。上传消费与响应读取都有逐块确认，取消会关闭Native请求。`createServer`继续由JS处理HTTP协议并复用Native TCP/TLS。IPC-only页面不能调用流接口，只能使用有界的`http.requestText`。HTTP是否可访问某地址与IPC是否有调用权限是不同检查；已授权应用拥有与普通Node程序相同的内外网访问方向。
 
 ## IPC会话与失联
 

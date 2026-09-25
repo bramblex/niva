@@ -69,7 +69,7 @@
 - IPC文本RPC：`fs.readText(path,encoding?,options?)`、`fs.writeText/appendText(path,text,encoding?,options?)`；首版明确UTF-8。`fs.node`仅允许Rust枚举的stat/lstat/readdir/access/realpath/mkdir/rename/copyFile/rm/unlink/cp JSON元数据/一次性操作。
 - `http.requestText(options)`返回`{statusCode,statusMessage,headers,body}`；`process.execText(command,options?)`与`execFileText(file,args?,options?)`返回`{stdout,stderr,status,signal?}`。这是单次文本接口，Node流式对象仍须WS。
 - 当前边界：IPC请求JSON最多256KiB；HTTP文本body最多1MiB；IPC响应JSON上限8MiB覆盖文本JSON转义膨胀；exec stdout+stderr合计最多64KiB；高层网络/exec默认10秒、最多30秒，调用选项只可收紧。Native必须在读取阶段限制，不能完整缓冲后才检查。
-- 模块解析采用固定版本oxc_resolver，HTTP采用ureq与已有Native TLS，关闭默认Rustls并显式使用系统信任（ureq 3.4.2公开connector受native-tls feature门禁，仍会引入webpki-root-certs依赖，其链接体积待实测；不使用该静态根作为实际信任来源）。取消真实资源与最终体积仍须验收，新增依赖本身不算已通过。
+- 模块解析采用固定版本oxc_resolver；`requestText`与Node `http.request/get`均复用Rust ureq和Niva平台TLS connector，使用`native-tls-no-default`且Cargo锁定图不含WebPKI根证书bundle。Node流式客户端通过WS分块上传/下载和背压确认，由JS只适配Node对象；`createServer`仍由JS处理服务端HTTP协议。
 
 ## 完成标准
 
@@ -170,7 +170,30 @@
 2026-09-25。用户要求完成上一轮额度暂停前的未完事项，并明确新增规则：Rust已具备的能力由Rust作为实现来源，JS Node API优先做适配；缺流、背压、取消等语义时扩展Native桥，不降低JS公开契约。
 
 - release基线仍为macOS ARM64 `target/release/niva` 3,106,128 bytes；降至严格小于3,000,000至少需省106,129 bytes。上一版实施报告为2,772,208 bytes。旧NodeCompat资源索引合计405,669 compressed bytes；当前统一runtime资源索引合计190,465 compressed bytes。因此整体增量并非由新JS bundle单独造成；其它Native代码/依赖需按真实release拆分。
-- ureq当前显式关闭默认feature，仅开`native-tls`；该feature图会拉入`webpki-root-certs`。Niva将`RootCerts::PlatformVerifier`写入每个请求配置。对本机最终Mach-O搜索证实，121张WebPKI根证书原始DER数据（129,143 bytes）全在release中。直接改成`native-tls-no-default`会因ureq 3.4.2同时把`NativeTlsConnector`门控到`native-tls` feature而编译失败；已经恢复原feature配置。继续尝试让同一系统TLS校验路径保留、但由Niva复用已有`native-tls` connector来避免链接未用根证书，并必须实测完整release与可信/不可信HTTPS。
+- ureq feature审计发现`native-tls`会拉入`webpki-root-certs`，但Niva只用`RootCerts::PlatformVerifier`。直接启用`native-tls-no-default`会隐藏ureq connector，所以commit `8fc43f7`改为Niva本地TLS Connector包装已有`native-tls`；保留系统根、SNI、host验证、超时/取消，排除Mozilla根证书bundle。
 - `oxc_resolver`无已启用可选feature；`yarn_pnp`关闭。little-endian目标的simd-json是oxc_resolver无条件依赖并用于package.json解析，不能误记为可关的feature。
 - `runtime/http.ts`的`requestText`已调用Rust `http.requestText`；Node `http.request/get`仍在JS通过Rust net/TLS socket自行做HTTP framing/parser；`createServer`是另一项服务端能力。review结论要求把高层HTTP/HTTPS客户端契约迁到Rust ureq的流式桥接后由JS适配，普通IPC页面保留有界`requestText`。
 - 本文首部的“quota暂停”记录仅为历史。按用户恢复指令，继续逐项完成真实RWA、debug-entry/token IPC、macOS UUID WebKit存储隔离、OPT-01及源码/平台/完整release验收；硬件、登录或目标机不可用的项目保留证据并如实标未验收。
+
+### 当前提交基线与体积验证 — 2026-09-25
+
+- 按用户要求先提交当前可运行实现，再调查尺寸：commit `8fc43f7401758d5193a5df3ccc17b1980eedcb26`（`Implement unified Niva runtime and native APIs`）；commit前工作树干净，pre-commit runtime/types检查通过。
+- ureq改用`native-tls-no-default`，由Niva本地Connector包装现有`native-tls`；仅允许`RootCerts::PlatformVerifier`，保留平台根、SNI、hostname验证、handshake超时/取消。`Cargo.lock`不再含`webpki-root-certs`。Rust工作区测试中该TLS路径通过本地不可信证书拒绝、handshake取消及超时；联网系统证书单测标记ignored。
+- 同平台完整release重建：macOS ARM64 **2,940,928 bytes**，SHA256 `05e49beeacc18d29329b8a9c51be385962b8dbff2cce87afc616c2a9c3bed4ae`，冻结于`/tmp/niva-native-reuse-release-05e49beeacc1`。比提交前同平台3,106,128 bytes少165,200 bytes；低于3,000,000目标59,072 bytes。只证实macOS ARM64，Windows/Mac Intel待目标构建。
+- 上述冻结release真实WebView IPC 24项全过，报告`/tmp/niva-ipc-fallback-postcommit/result.json`，SHA与产物一致；包括HTTPS通过系统证书校验、文件/目录、exec超限/超时及失联子进程清理。
+- commit验证：`cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`通过（Clippy有现存warnings）；`cargo test --workspace`中Niva 178 passed/1 ignored、niva-packager 22/22、validation 2/2、win-packager 10/10；`cargo check --target x86_64-pc-windows-msvc -p niva`通过但不代表Windows真机。
+- TypeScript runtime `npm test --workspace=packages/runtime`通过131/131；types typecheck、Devtools TS+Vite build及commit hook检查通过。真实RWA在`node:constants`处的旧报告为0/18；修复已进入commit，已启动新一轮验收但结果待报。trusted-debug IPC普通请求前22项过，末尾失联lease用例promise未回报；等待定位。macOS UUID storage隔离仍未接入，macOS<14策略正在等产品选择。
+- 用户随后取消更换项目的工作：D19继续保留原Cypress Real World App为主验收对象；`require(ESM)`不实现。RealWorld依赖`dinero.js` ESM-only导致的CJS启动失败作为已确认边界报告，不改上游应用，也不为它改变CJS-only架构；暂停新候选项目的准备和安装。
+
+### 2026-09-26 收尾实现、平台证据与最终尺寸
+
+- 按Rust-first规则把Node `http.request/get`客户端改为受信WS上的`http.requestStream`；Rust ureq负责HTTP/HTTPS framing、TLS、请求/响应流、取消和逐块背压，JS只适配`ClientRequest/IncomingMessage`。有界IPC `http.requestText`继续复用同一Rust客户端；`createServer`职责不同，仍由JS协议层复用Native TCP/TLS。缺少Agent连接池、真实底层`net.Socket`、自定义连接、upgrade、响应trailer、自定义reason phrase；Native总超时与Node idle timeout不完全一致。
+- `fs.cp`无filter时由Rust一次递归复制；有filter时JS执行Node异步filter和遍历，Native完成目录/文件/符号链接复制，内容不经JS或IPC。按Node v22.14补齐常用force/errorOnExist、递归、自指/循环、软链接、时间戳及权限边界。`COPYFILE_FICLONE`回退普通复制，`COPYFILE_FICLONE_FORCE`明确ENOTSUP。
+- 本地协议改成canonical app UUID派生`niva-<32hex>`。macOS/Linux origin为`niva-<uuid>://app`，Windows/Android按Wry映射为`http://niva-<uuid>.app`；`niva://app`只保留为配置别名。资源、页面origin、WS/CORS/IPC来源均按当前app精确校验。Linux共享WebContext每app只注册一次scheme。
+- `ureq`只启用`native-tls-no-default`并使用Niva复用的系统TLS connector；ureq feature图不再把121张未使用的Mozilla根证书（129,143原始字节）链接进Niva。`webpki-roots`仍在workspace lockfile，由`niva-packager`的`reqwest`使用；不能把它误当作Niva `ureq`路径。`oxc_resolver`没有误开的可选feature；`yarn_pnp`关闭，simd-json是resolver无条件依赖。未换验收项目、未为RWA的ESM-only `dinero.js`实现`require(ESM)`，不改原CJS-only选择。
+- macOS 26.6.2固定bundle identity的最终release `.app` A/A/B本地存储smoke通过：最终release SHA `e0ba2d28a1d9c9d8977a7a72833908def98d66606bb72d3e3f3ac672edfafc0b`；同UUID重启读回`persisted`，异UUID读到`null`。记录`/tmp/niva-per-app-origin-smoke/release-result-final.json`。build脚本最低目标macOS 11.0，但未在macOS 11真机验证。第二原生窗口可创建且与主窗口取得同scheme，但没有捕获子页面marker；多窗口页面加载/本地存储未验收。
+- 最终完整macOS ARM64 release：`cargo build --locked --release -p niva`通过，`target/release/niva` **2,974,288 bytes**，SHA与`/tmp/niva-final-release-e0ba2d28a1d9`相同，低于用户3,000,000目标 **25,712 bytes**。较3,106,128字节的最初基线少131,840字节；较去掉WebPKI证书bundle后的2,940,928字节基线新增33,360字节，增量来自后续HTTP stream、fs.cp和UUID协议功能。
+- 最终门禁：`cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace`通过（Niva 189 passed/2 ignored、niva_packager 22、validation 2、win_packager 10）；runtime全量测试136/136、types typecheck及Devtools `tsc+Vite`通过。新增真实macOS release WebView NodeCompat smoke通过178项，覆盖HTTP GET、POST上传和响应流。Windows MSVC target check使用共享缓存通过，但未做Windows真机验证。Devtools Vite保留现有大chunk warning。
+- 最终release真实WebView IPC矩阵在Mac解锁且Raise测试窗口后，以SHA `159b98...`的前一release `.app` 分别用显式remote grants和trusted-debug token跑过24/24；报告`/tmp/niva-ipc-visible-foreground/result.json`和`/tmp/niva-ipc-visible-foreground-trusted-debug/result.json`。随后最终release SHA `e0ba...`在Mac锁定、`document.hidden=true`环境下的完整remote矩阵停在最后lease reply，前22项通过；该最终SHA的独立lease-only通过。此差异只改了Node HTTP stream请求头pair编码；当前lease回复的最终完整remote E2E仍需在解锁的主机复跑。子进程已被Native清理，未产生延迟副作用。
+- `ureq`只启用`native-tls-no-default`并使用Niva复用的系统TLS connector；ureq feature图不再把121张未使用的Mozilla根证书（129,143原始字节）链接进Niva。`webpki-roots`仍在workspace lockfile，由`niva-packager`的`reqwest`使用；不能把它误当作Niva `ureq`路径。`oxc_resolver`没有误开的可选feature；`yarn_pnp`关闭，simd-json是resolver无条件依赖。未换验收项目、未为RWA的ESM-only `dinero.js`实现`require(ESM)`，不改原CJS-only选择。
+- `ureq`只启用`native-tls-no-default`并使用Niva复用的系统TLS connector；ureq feature图不再把121张未使用的Mozilla根证书（129,143原始字节）链接进Niva。`webpki-roots`仍在workspace lockfile，由`niva-packager`的`reqwest`使用；不能把它误当作Niva `ureq`路径。`oxc_resolver`没有误开的可选feature；`yarn_pnp`关闭，simd-json是resolver无条件依赖。未换验收项目、未为RWA的ESM-only `dinero.js`实现`require(ESM)`，不改原CJS-only选择。

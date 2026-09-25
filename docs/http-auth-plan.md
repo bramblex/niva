@@ -1,7 +1,7 @@
 # HTTP 资源鉴权：现状与后续边界
 
 > 状态：原 session-cookie 方案已被当前按窗口 scoped file-token 实现取代；打包普通
-> 静态资源现由 `niva://app/` 自定义协议提供，不再经过普通 HTTP 静态路由。loopback
+> 静态资源现由应用UUID派生的Wry自定义协议（macOS/Linux `niva-<uuid>://app/`，Windows `http://niva-<uuid>.app/`）提供，不再经过普通 HTTP 静态路由。loopback
 > 服务继续承载 WS、`__niva_fs` 和显式调试模式下的静态/NodeCompat HTTP 路由。不要将
 > 下文旧设计视为待实现要求或当前协议；源码见 `http_server`、`custom_protocol`、
 > `window_manager/builder.rs` 与 `docs/bridge.md`。
@@ -16,11 +16,11 @@
 - 成功的文件响应带 `Content-Security-Policy: sandbox` 与
   `X-Content-Type-Options: nosniff`。
 - 文件响应只在请求 `Origin` 与 token 所属窗口的 `trusted_ws_origin` 精确相同时返回
-  `Access-Control-Allow-Origin`。macOS smoke 验证 `niva://app` 页面通过
+  `Access-Control-Allow-Origin`。2026-09-23 macOS smoke验证当时固定origin `niva://app` 页面通过
   `webview.baseFileSystemUrl()` 跨源 fetch 读取成功；带有效 token 但 Origin 不匹配时
   返回 HTTP 200 但没有 ACAO，缺失/无效 token 返回 403。
 - `FileSystemResource` 对开发资源目录执行解码、路径组件与 canonical 根目录约束。
-- 打包模式的普通 HTML、JS、CSS 等资源由 `niva://app/` 异步协议提供。该处理器只读
+- 打包模式的普通 HTML、JS、CSS 等资源由当前应用UUID的异步Wry协议提供。该处理器只读
   包内资源、限制并发/超时/响应大小，拒绝所有 `__niva_*` 内部路径；启用 NodeCompat
   时仅放行通过模块 allowlist 的 `__niva_compat/*` 文件。
 - 显式调试启动仍允许 loopback HTTP 静态资源与 NodeCompat 资源。NodeCompat HTTP 路由
@@ -44,13 +44,13 @@
 
 ## 3. 仍需确认的事项
 
-- 确认打包 `niva://` 资源与显式调试 HTTP 静态资源的预期暴露范围；后者只在调试参数
+- 确认打包的UUID派生协议资源与显式调试 HTTP 静态资源的预期暴露范围；后者只在调试参数
   打开时服务，不能误作生产鉴权。WS 的 `Origin`/`Host` 与 API 权限 grant 不能替代
   HTTP 路由授权。
 - 确认本机其他进程及浏览器对调试模式 loopback 静态/NodeCompat 内容的威胁边界。若
   未来增加通用 HTTP 鉴权，设计需与当前窗口 token、固定打包 origin 和开发 entry
   协调，不能直接照搬旧 cookie 草案。
-- Windows WebView2 的实际 `http://niva.app` origin、iframe/CORS 请求及宿主 CSP header
+- Windows WebView2 的实际 `http://niva-<uuid>.app` origin、iframe/CORS 请求及宿主 CSP header
   行为仍需 Windows 真机验证；macOS smoke 和 Windows target check 不能替代该验收。
 - 发布门禁仍要求 Windows 真机、CI 和 roadmap 中其他 P0 完成；本文件更新不构成
   v1.0 验收。

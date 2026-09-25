@@ -1,6 +1,6 @@
 {
   "imports": {
     "#native-fs": "node:fs",
-    "#missing-builtin": "node:cluster"
+    "#missing-builtin": "node:inspector"
   }
 }

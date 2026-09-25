@@ -32,14 +32,14 @@
 
 ## 传输边界
 
-打包本地页面由 Wry 异步自定义协议从 `niva://app/` 加载：macOS 精确页面 origin 是 `niva://app`，Windows WebView2 实际页面 origin 是 `http://niva.app`。本地 WS 仍连接动态 `ws://127.0.0.1:<port>`，握手同时校验 loopback 服务 `Host`、对应窗口 token 和该窗口的平台精确页面 `Origin`；token 对应的窗口必须仍然存在。token 每窗单独随机生成并保存在内存。hello 帧中的 `wid` 必须等于 token 绑定的窗口 ID。每个 frame 的 WS 连接拥有独立调用 ID 空间；跨源 frame 不能读取主 frame 的本地凭据，因此只能使用自己的远端 IPC 来源与权限。
+打包本地页面由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载：应用UUID去掉连字符并转小写，同一应用重启和多窗口使用相同origin，不同应用使用不同origin；Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`只作为配置入口别名。该origin边界用于Web存储隔离，不是调用授权。本地 WS 仍连接动态 `ws://127.0.0.1:<port>`，握手同时校验 loopback 服务 `Host`、对应窗口 token 和该窗口的平台精确页面 `Origin`；token 对应的窗口必须仍然存在。token 每窗单独随机生成并保存在内存。hello 帧中的 `wid` 必须等于 token 绑定的窗口 ID。每个 frame 的 WS 连接拥有独立调用 ID 空间；跨源 frame 不能读取主 frame 的本地凭据，因此只能使用自己的远端 IPC 来源与权限。
 
-显式开发启动可把本机 Vite 入口的精确 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 作为该窗口的 WS 来源；握手仍逐窗校验 token、精确 `Origin` 和 Niva 服务 `Host`。带 `--debug-resource` 的文件系统资源调试也保留 loopback 静态服务。打包模式关闭普通 HTTP 静态路由，改从 `niva://app/` 读取包内静态文件；WS 和按窗口 token 鉴权的 `__niva_fs` 仍通过动态 loopback 服务。普通打包启动忽略嵌入配置的 `debug.entry`，不会因其指向本机端口而授予完整 bridge。
+显式开发启动可把本机 Vite 入口的精确 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 作为该窗口的 WS 来源；握手仍逐窗校验 token、精确 `Origin` 和 Niva 服务 `Host`。带 `--debug-resource` 的文件系统资源调试也保留 loopback 静态服务。打包模式关闭普通 HTTP 静态路由，改从当前应用UUID对应的Wry协议读取包内静态文件；WS 和按窗口 token 鉴权的 `__niva_fs` 仍通过动态 loopback 服务。普通打包启动忽略嵌入配置的 `debug.entry`，不会因其指向本机端口而授予完整 bridge。
 
-若页面直接 `fetch` `webview.baseFileSystemUrl` 返回的 `__niva_fs` URL，打包 origin 与 loopback HTTP 是跨源。协议 CSP 会允许当前 WS 与 HTTP endpoint；文件路由先校验窗口 token，再仅对与该 token 所属窗口 `trusted_ws_origin` 精确匹配的 `Origin` 返回 `Access-Control-Allow-Origin`。macOS 临时 app smoke 已验证 `niva://app` 页带 token fetch 成功；无效 token 返回 403，非匹配 Origin 即使带有效 token 也不返回 CORS allow header。Windows 尚未真机验收。
+若页面直接 `fetch` `webview.baseFileSystemUrl` 返回的 `__niva_fs` URL，打包 origin 与 loopback HTTP 是跨源。协议 CSP 会允许当前 WS 与 HTTP endpoint；文件路由先校验窗口 token，再仅对与该 token 所属窗口 `trusted_ws_origin` 精确匹配的 `Origin` 返回 `Access-Control-Allow-Origin`。2026-09-23 固定origin的macOS临时app smoke已验证 `niva://app` 页带token fetch成功；无效token返回403，非匹配Origin即使带有效token也不返回CORS allow header。当前UUID origin及Windows仍未在真机验收。
 
 远端页面及跨源 frame 的 bridge 能力由原生来源 URL 和每窗 grant 限定，不会因拿到主窗口的 `wid` 而继承本地 WS 身份。HTTP `__niva_fs` 的认证与调试模式下普通 HTTP 静态路由的暴露属于另一条路径，不由本篇的 IPC grant 替代；包内普通资源由自定义协议按资源路径读取。
 
 ## 尚需实际验收
 
-代码路径和类型定义描述了预期契约，但 Windows 尚无真机验收。2026-09-23 的 macOS 临时 app smoke 实际观察到 `niva://app`，主页面与同源 iframe 分别通过 WS 调用 `window.current` 和 `fs.createDir`；主页面通过 `webview.baseFileSystemUrl()` 对 `__niva_fs` 做跨源 fetch 成功，非法 token 和非匹配 Origin 的行为也已探测。另一临时包仅选 `path/fs/assert/stream`，验证了部分 NodeCompat import/require 路径和未选模块 404。smoke 没有覆盖跨源 frame、窗口间 token 隔离、二进制流、重启存储、完整 NodeCompat 语义或导航/关窗时序。macOS IPC 授权/拒绝的既有测试证据见 [`bridge.md`](bridge.md)；Windows target check 不能替代 WebView2 真机验证。HTTP/资源服务的鉴权与路径安全也应按各自文档和独立验收记录判断。
+代码路径和类型定义描述了预期契约，但 Windows 尚无UUID origin真机验收。2026-09-23 的 macOS 临时 app smoke 实际观察到固定 `niva://app`，主页面与同源 iframe 分别通过 WS 调用 `window.current` 和 `fs.createDir`；主页面通过 `webview.baseFileSystemUrl()` 对 `__niva_fs` 做跨源 fetch 成功，非法 token 和非匹配 Origin 的行为也已探测。2026-09-26 macOS 26.6.2固定bundle identity的临时`.app`用三个独立进程验证了同UUID localStorage跨重启保留、异UUID读不到；该测试不覆盖最低macOS 11。另一临时包仅选 `path/fs/assert/stream`，验证了部分 NodeCompat import/require 路径和未选模块 404。尚未覆盖跨源frame、窗口间token隔离、二进制流、完整NodeCompat语义或导航/关窗时序。macOS IPC 授权/拒绝的既有测试证据见 [`bridge.md`](bridge.md)；Windows target check 不能替代 WebView2 真机验证。HTTP/资源服务的鉴权与路径安全也应按各自文档和独立验收记录判断。

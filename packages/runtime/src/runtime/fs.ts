@@ -68,6 +68,18 @@
                     args.destination = path(values[1]);
                     args.flags = values[2];
                     break;
+                case "cp":
+                    args.destination = path(values[1]);
+                    opts = options(values[2]);
+                    ["recursive", "force", "errorOnExist", "dereference", "preserveTimestamps", "verbatimSymlinks", "mode"].forEach(function (name) {
+                        if (opts[name] !== undefined) args[name] = opts[name];
+                    });
+                    if (values[3] === "createDirectory") args.directoryOnly = true;
+                    if (values[3] === "finalizeDirectory") {
+                        args.directoryOnly = true;
+                        args.directoryFinalize = true;
+                    }
+                    break;
                 case "access":
                     args.mode = values[1];
                     break;
@@ -228,22 +240,75 @@
                 throw error;
             return false;
         } };
-        promises.cp = function (source, destination, opts) {
-            opts = opts || {};
-            if (opts.filter)
-                return Promise.resolve(opts.filter(source, destination)).then(function (keep) { if (keep)
-                    return promises.cp(source, destination, Object.assign({}, opts, { filter: undefined })); });
-            return promises.lstat(source).then(function (stat) {
-                if (stat.isDirectory()) {
-                    if (!opts.recursive)
-                        throw runtime.bridgeError("recursive required for directory copy", "ERR_FS_EISDIR");
-                    return promises.mkdir(destination, { recursive: true }).then(function () { return promises.readdir(source); }).then(function (names) { return names.reduce(function (p, name) { return p.then(function () { return promises.cp(runtime.path.join(source, name), runtime.path.join(destination, name), opts); }); }, Promise.resolve()); });
+        function validateCpOptions(value) {
+            if (value === undefined) return {};
+            if (value === null || typeof value !== "object") {
+                var invalidOptions = new TypeError("options must be an object");
+                invalidOptions.code = "ERR_INVALID_ARG_TYPE";
+                throw invalidOptions;
+            }
+            var opts = Object.assign({}, value);
+            ["dereference", "errorOnExist", "force", "preserveTimestamps", "recursive", "verbatimSymlinks"].forEach(function (name) {
+                if (opts[name] !== undefined && typeof opts[name] !== "boolean") {
+                    var invalidBoolean = new TypeError("options." + name + " must be a boolean");
+                    invalidBoolean.code = "ERR_INVALID_ARG_TYPE";
+                    throw invalidBoolean;
                 }
-                if (stat.isSymbolicLink())
-                    throw runtime.bridgeError("Symbolic link copy is not supported", "ENOTSUP");
-                return promises.copyFile(source, destination, opts.force === false ? 1 : 0).catch(function (error) { if (error.code === "EEXIST" && !opts.errorOnExist)
-                    return; throw error; });
             });
+            if (opts.mode !== undefined && opts.mode !== null) {
+                if (!Number.isInteger(opts.mode)) {
+                    var invalidMode = new TypeError("options.mode must be an integer");
+                    invalidMode.code = "ERR_INVALID_ARG_TYPE";
+                    throw invalidMode;
+                }
+                if (opts.mode < 0 || opts.mode > 7) {
+                    var outOfRange = new RangeError("options.mode must be between 0 and 7");
+                    outOfRange.code = "ERR_OUT_OF_RANGE";
+                    throw outOfRange;
+                }
+            }
+            if (opts.dereference === true && opts.verbatimSymlinks === true) {
+                var incompatible = new TypeError("The \"dereference\" and \"verbatimSymlinks\" options are mutually exclusive");
+                incompatible.code = "ERR_INCOMPATIBLE_OPTION_PAIR";
+                throw incompatible;
+            }
+            if (opts.filter !== undefined && typeof opts.filter !== "function") {
+                var invalidFilter = new TypeError("options.filter must be a function");
+                invalidFilter.code = "ERR_INVALID_ARG_TYPE";
+                throw invalidFilter;
+            }
+            return opts;
+        }
+        promises.cp = function (source, destination, opts) {
+            opts = validateCpOptions(opts);
+            var sourcePath = path(source), destinationPath = path(destination);
+            if (opts.filter === undefined)
+                return invoke("cp", [sourcePath, destinationPath, opts], false).then(function () { return undefined; });
+            var filter = opts.filter;
+            function visit(sourceEntry, destinationEntry) {
+                return Promise.resolve().then(function () { return filter(sourceEntry, destinationEntry); }).then(function (keep) {
+                    if (!keep) return;
+                    var metadata = opts.dereference ? promises.stat(sourceEntry) : promises.lstat(sourceEntry);
+                    return metadata.then(function (stat) {
+                        if (!stat.isDirectory() || !opts.recursive)
+                            return invoke("cp", [sourceEntry, destinationEntry, opts], false).then(function () { return undefined; });
+                        var created;
+                        return invoke("cp", [sourceEntry, destinationEntry, opts, "createDirectory"], false).then(function (wasCreated) {
+                            created = wasCreated;
+                            return promises.readdir(sourceEntry).then(function (names) {
+                                return names.reduce(function (pending, name) {
+                                    return pending.then(function () {
+                                        return visit(runtime.path.join(sourceEntry, name), runtime.path.join(destinationEntry, name));
+                                    });
+                                }, Promise.resolve());
+                            });
+                        }).then(function () {
+                            if (created) return invoke("cp", [sourceEntry, destinationEntry, opts, "finalizeDirectory"], false).then(function () { return undefined; });
+                        });
+                    });
+                });
+            }
+            return visit(sourcePath, destinationPath);
         };
         module.cp = function (source, destination, opts, callback) { if (typeof opts === "function") {
             callback = opts;
