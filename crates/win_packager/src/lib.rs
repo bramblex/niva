@@ -27,6 +27,49 @@ pub const DEFAULT_LANG: u16 = 1033;
 /// 默认图标组 ID：与现有脚本的 `ICONGROUP,1` 保持一致。
 pub const DEFAULT_ICON_GROUP_ID: u16 = 1;
 
+/// Compare an already-opened file handle with a path that was re-resolved
+/// after opening. On Windows this uses the stable file ID API rather than
+/// unstable std `MetadataExt` file-index methods.
+pub fn opened_file_matches_path(
+    file: &std::fs::File,
+    path: &std::path::Path,
+) -> anyhow::Result<bool> {
+    let current = std::fs::File::open(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows::{
+            Win32::Foundation::HANDLE,
+            Win32::Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
+        };
+        fn info(file: &std::fs::File) -> anyhow::Result<BY_HANDLE_FILE_INFORMATION> {
+            let mut info = BY_HANDLE_FILE_INFORMATION::default();
+            unsafe {
+                GetFileInformationByHandle(HANDLE(file.as_raw_handle() as *mut _), &mut info)?;
+            }
+            Ok(info)
+        }
+        let opened = info(file)?;
+        let current = info(&current)?;
+        return Ok(opened.dwVolumeSerialNumber == current.dwVolumeSerialNumber
+            && opened.nFileIndexHigh == current.nFileIndexHigh
+            && opened.nFileIndexLow == current.nFileIndexLow);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let opened = file.metadata()?;
+        let current = current.metadata()?;
+        Ok(opened.dev() == current.dev() && opened.ino() == current.ino())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let opened = file.metadata()?;
+        let current = current.metadata()?;
+        Ok(opened.len() == current.len() && opened.modified().ok() == current.modified().ok())
+    }
+}
+
 /// 一条 `RCDATA` 资源（低层模式）：`name` 是 exe 内的资源名
 /// （如 `RESOURCE_INDEXES`），`file` 是磁盘上已备好的资源文件。
 #[derive(Debug, Clone)]

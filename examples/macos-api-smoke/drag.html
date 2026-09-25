@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Niva window drag smoke</title></head>
+  <head><meta charset="utf-8"><title>Niva window drag smoke</title><script src="fixture-protocol.js"></script></head>
   <body style="margin:0;background:#f8fafc">
     <button id="handle" style="position:absolute;left:60px;top:70px;width:160px;height:70px">Drag this window</button>
     <script>
       (() => {
-        const win = Niva.api.window;
-        const send = (name, data) => Niva.api.host.send(name, data);
+        const win = Niva.window;
+        const send = (name, data) => NivaFixture.send(name, data);
         let before = null;
         document.querySelector("#handle").addEventListener("mousedown", () => {
           win.dragWindow().then(async () => {
@@ -16,6 +16,7 @@
           });
         });
         window.addEventListener("load", () => setTimeout(async () => {
+          await NivaFixture.ready("drag-window");
           try {
             before = await win.outerPosition();
             await send("drag-ready", { before, size: await win.innerSize() });

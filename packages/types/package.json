@@ -1,6 +1,129 @@
 {
-  "name": "types",
+  "name": "@niva/types",
   "version": "0.9.9",
-  "private": true,
-  "main": "./Niva_zh.d.ts"
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/Niva_zh.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/Niva_zh.d.ts"
+    },
+    "./commonjs": {
+      "types": "./dist/Niva_commonjs.d.ts"
+    },
+    "./node": {
+      "types": "./dist/Niva_node.d.ts"
+    },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts"
+    },
+    "./fs": {
+      "types": "./dist/modules/fs.d.ts"
+    },
+    "./fs/promises": {
+      "types": "./dist/modules/fs/promises.d.ts"
+    },
+    "./path": {
+      "types": "./dist/modules/path.d.ts"
+    },
+    "./module": {
+      "types": "./dist/modules/module.d.ts"
+    },
+    "./os": {
+      "types": "./dist/modules/os.d.ts"
+    },
+    "./process": {
+      "types": "./dist/modules/process.d.ts"
+    },
+    "./child_process": {
+      "types": "./dist/modules/child_process.d.ts"
+    },
+    "./http": {
+      "types": "./dist/modules/http.d.ts"
+    },
+    "./https": {
+      "types": "./dist/modules/https.d.ts"
+    },
+    "./events": {
+      "types": "./dist/modules/events.d.ts"
+    },
+    "./stream": {
+      "types": "./dist/modules/stream.d.ts"
+    },
+    "./stream/promises": {
+      "types": "./dist/modules/stream/promises.d.ts"
+    },
+    "./buffer": {
+      "types": "./dist/modules/buffer.d.ts"
+    },
+    "./assert": {
+      "types": "./dist/modules/assert.d.ts"
+    },
+    "./assert/strict": {
+      "types": "./dist/modules/assert/strict.d.ts"
+    },
+    "./dns": {
+      "types": "./dist/modules/dns.d.ts"
+    },
+    "./dns/promises": {
+      "types": "./dist/modules/dns/promises.d.ts"
+    },
+    "./net": {
+      "types": "./dist/modules/net.d.ts"
+    },
+    "./tls": {
+      "types": "./dist/modules/tls.d.ts"
+    },
+    "./dgram": {
+      "types": "./dist/modules/dgram.d.ts"
+    },
+    "./crypto": {
+      "types": "./dist/modules/crypto.d.ts"
+    },
+    "./url": {
+      "types": "./dist/modules/url.d.ts"
+    },
+    "./util": {
+      "types": "./dist/modules/util.d.ts"
+    },
+    "./querystring": {
+      "types": "./dist/modules/querystring.d.ts"
+    },
+    "./zlib": {
+      "types": "./dist/modules/zlib.d.ts"
+    },
+    "./timers": {
+      "types": "./dist/modules/timers.d.ts"
+    },
+    "./timers/promises": {
+      "types": "./dist/modules/timers/promises.d.ts"
+    },
+    "./string_decoder": {
+      "types": "./dist/modules/string_decoder.d.ts"
+    },
+    "./tty": {
+      "types": "./dist/modules/tty.d.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:consumer": "tsc -p tsconfig.consumer.json --noEmit",
+    "typecheck:consumers": "npm run typecheck:consumer && tsc -p tsconfig.consumer.commonjs.json --noEmit && tsc -p tsconfig.consumer.node.json --noEmit",
+    "test:fresh-pack": "node scripts/test-fresh-pack.mjs"
+  },
+  "peerDependencies": {
+    "@types/node": "22.14.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/node": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0"
+  }
 }

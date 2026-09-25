@@ -1,16 +1,14 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Niva system supervised smoke</title></head>
+  <head><meta charset="utf-8"><title>Niva system supervised smoke</title><script src="fixture-protocol.js"></script></head>
   <body>
     <h1>Niva system supervised smoke</h1>
     <script>
       (() => {
-        const api = Niva.api;
         const acknowledgements = new Map();
-        const send = (name, data) => api.host.send(name, data);
-        Niva.addEventListener("host:message", (_event, message) => {
-          if (!message || message.name !== "system-command") return;
-          const data = message.data || {};
+        const send = (name, data) => NivaFixture.send(name, data);
+        NivaFixture.onCommand("system-command", (command) => {
+          const data = command || {};
           if (data.kind === "ack") {
             const resolve = acknowledgements.get(data.phase);
             if (resolve) { acknowledgements.delete(data.phase); resolve(); }
@@ -38,55 +36,58 @@
         async function run(data) {
           if (data.kind === "hide-show") {
             try {
-              await api.extra.hideApplication();
+              await Niva.extra.hideApplication();
               await phase("hidden");
-            } finally { await api.extra.showApplication(); }
+            } finally { await Niva.extra.showApplication(); }
             await phase("shown");
           } else if (data.kind === "activation") {
             try {
-              await api.extra.setActivationPolicy("accessory");
+              await Niva.extra.setActivationPolicy("accessory");
               await phase("accessory");
-            } finally { await api.extra.setActivationPolicy("regular"); }
+            } finally { await Niva.extra.setActivationPolicy("regular"); }
             await phase("regular");
           } else if (data.kind === "activation-extra") {
             try {
-              await api.windowExtra.setActivationPolicyAtRuntime("accessory");
+              await Niva.windowExtra.setActivationPolicyAtRuntime("accessory");
               await phase("extra-accessory");
-            } finally { await api.windowExtra.setActivationPolicyAtRuntime("regular"); }
+            } finally { await Niva.windowExtra.setActivationPolicyAtRuntime("regular"); }
             await phase("extra-regular");
           } else if (data.kind === "dock-visibility") {
             try {
-              await api.windowExtra.setDockVisibility(false);
+              await Niva.windowExtra.setDockVisibility(false);
               await phase("dock-hidden");
-            } finally { await api.windowExtra.setDockVisibility(true); }
+            } finally { await Niva.windowExtra.setDockVisibility(true); }
             await phase("dock-shown");
           } else if (data.kind === "dock-badge") {
             try {
-              await api.windowExtra.setBadgeLabel("NivaSmoke7");
+              await Niva.windowExtra.setBadgeLabel("NivaSmoke7");
               await phase("badge-set");
-            } finally { await api.windowExtra.setBadgeLabel(null); }
+            } finally { await Niva.windowExtra.setBadgeLabel(null); }
             await phase("badge-cleared");
           } else if (data.kind === "progress") {
             try {
-              await api.window.setProgressBar({ state: "error", progress: 55 });
+              await Niva.window.setProgressBar({ state: "error", progress: 55 });
               await phase("progress-set");
-            } finally { await api.window.setProgressBar({ state: "none", progress: 0 }); }
+            } finally { await Niva.window.setProgressBar({ state: "none", progress: 0 }); }
             await phase("progress-cleared");
           } else if (data.kind === "hide-others") {
-            await api.extra.hideOtherApplications();
+            await Niva.extra.hideOtherApplications();
             await phase("others-hidden");
           } else if (data.kind === "open") {
-            await api.process.open(data.path);
+            await Niva.bridge.call("process.open", [data.path]);
             await phase("opened");
           } else if (data.kind === "print") {
-            await api.webview.print();
+            await Niva.webview.print();
             await phase("print-opened");
           } else if (data.kind === "load-html") {
             await send("system-phase", { phase: "load-html-started" });
-            await api.webview.loadHtml("<!doctype html><title>Niva inline HTML verified</title><h1 id='marker'>Niva inline HTML verified</h1>");
+            await Niva.webview.loadHtml("<!doctype html><title>Niva inline HTML verified</title><h1 id='marker'>Niva inline HTML verified</h1>");
           }
         }
-        window.addEventListener("load", () => setTimeout(() => send("system-ready", { url: location.href }), 100));
+        window.addEventListener("load", () => setTimeout(async () => {
+          await NivaFixture.ready("system-supervised");
+          await send("system-ready", { url: location.href });
+        }, 100));
       })();
     </script>
   </body>

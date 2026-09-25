@@ -1,5 +1,7 @@
 (async () => {
-  const api = Niva.api;
+  const api = Niva;
+  await NivaFixture.ready("windows-api");
+  const process = require("node:process");
   const checks = {};
   const expect = (value, message) => { if (!value) throw new Error(message); };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -21,11 +23,9 @@
     return hash.toString(16).padStart(8, "0");
   };
   const nativeWaiters = new Map();
-  Niva.addEventListener("host:message", (_event, message) => {
-    if (message.name === "native-result") {
-      nativeWaiters.get(message.data.name)?.(message.data);
-      nativeWaiters.delete(message.data.name);
-    }
+  NivaFixture.onCommand("native-result", (data) => {
+    nativeWaiters.get(data.name)?.(data);
+    nativeWaiters.delete(data.name);
   });
   const nativeState = async (name, expected) => {
     const response = new Promise((resolve, reject) => {
@@ -34,7 +34,7 @@
         if (nativeWaiters.delete(name)) reject(new Error(`native ${name} probe timed out`));
       }, 3000);
     });
-    await api.host.send("native-probe", { name, expected });
+    await NivaFixture.send("native-probe", { name, expected });
     const result = await response;
     expect(!result.error && result.value === expected, `native ${name}: ${JSON.stringify(result)}`);
   };
@@ -74,7 +74,7 @@
   });
   await check("webview.baseFileSystemUrl", async () => {
     const base = await api.webview.baseFileSystemUrl();
-    const cwd = (await api.process.currentDir()).replaceAll("\\", "/");
+    const cwd = process.cwd().replaceAll("\\", "/");
     const response = await fetch(base + encodeURIComponent(cwd + "/examples/windows-smoke/probe.txt"));
     expect(response.status === 200 && (await response.text()).trim() === "resource-ok", "file-token fetch failed");
   });
@@ -339,5 +339,5 @@
   });
   if (childId !== null) await api.window.close(childId).catch(() => {});
 
-  await api.host.send("api-results", { checks, clipboardDigest });
-})().catch(error => Niva.api.host.send("api-fatal", { message: String(error) }));
+  await NivaFixture.send("api-results", { checks, clipboardDigest });
+})().catch(error => NivaFixture.send("api-fatal", { message: String(error) }));

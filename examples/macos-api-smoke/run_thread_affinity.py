@@ -20,9 +20,10 @@ import uuid
 from pathlib import Path
 
 
-PAGE = r'''<!doctype html><html><body><script>
+PAGE = r'''<!doctype html><html><body><script src="fixture-protocol.js"></script><script>
 window.addEventListener("load", () => setTimeout(async () => {
-  const windowApi = Niva.api.window;
+  await NivaFixture.ready("thread-affinity");
+  const windowApi = Niva.window;
   const methods = [];
   let active = "startup";
   try {
@@ -84,9 +85,9 @@ window.addEventListener("load", () => setTimeout(async () => {
         await windowApi.setCursorIcon("default");
       }
     }
-    await Niva.api.host.send("thread-affinity-result", { methods });
+    await NivaFixture.send("thread-affinity-result", { methods });
   } catch (error) {
-    await Niva.api.host.send("thread-affinity-result", {
+    await NivaFixture.send("thread-affinity-result", {
       methods, failed: active, error: String(error)
     }).catch(() => {});
   }
@@ -117,22 +118,19 @@ def main() -> int:
         root = Path(temporary)
         app_uuid = str(uuid.uuid4())
         name = "NivaThreadAffinitySmoke"
-        id_name = f"{name.lower()}_{app_uuid[:8]}"
-        (root / "niva.json").write_text(json.dumps({
-            "name": name,
-            "uuid": app_uuid,
-            "window": {
-                "entry": "index.html",
-                "title": "Niva thread affinity smoke",
-                "size": {"width": 260, "height": 180},
-            },
-        }), encoding="utf-8")
+        id_name = str(uuid.UUID(app_uuid))
         (root / "index.html").write_text(PAGE, encoding="utf-8")
+        shutil.copy2(Path(__file__).with_name("fixture-protocol.js"), root / "fixture-protocol.js")
         env = os.environ.copy()
         env["TMPDIR"] = temporary
+        config = root / "niva.json"
+        config.write_text(json.dumps({
+            "name": name, "uuid": app_uuid,
+            "injectCommonJs": True, "injectEsm": True,
+            "window": {"entry": "index.html", "title": "Niva thread affinity smoke", "size": {"width": 260, "height": 180}},
+        }), encoding="utf-8")
         process = subprocess.Popen(
-            [str(binary), "--stdio", f"--debug-config={root / 'niva.json'}",
-             f"--debug-resource={root}"],
+            [str(binary), f"--config={config}", f"--resource={root}"],
             cwd=Path(__file__).resolve().parents[2],
             env=env,
             stdin=subprocess.PIPE,
@@ -154,13 +152,17 @@ def main() -> int:
                     if not line:
                         break
                     frame = json.loads(line)
-                    if frame == {"t": "ready", "v": 1}:
+                    if frame.get("event") == "ready" and frame.get("name") == "macos-api":
                         ready = True
-                    elif frame.get("t") == "msg" and frame.get("name") == "thread-affinity-result":
+                    elif frame.get("event") == "message" and frame.get("name") == "thread-affinity-result":
                         result = frame.get("data")
                         break
                 if result is not None:
                     break
+            if result is not None and process.stdin is not None:
+                process.stdin.write(json.dumps({"protocol": "niva-fixture", "version": 1, "event": "command", "name": "fixture-exit", "data": 0}) + "\n")
+                process.stdin.flush()
+                process.wait(timeout=10)
         finally:
             if process.poll() is None:
                 process.terminate()

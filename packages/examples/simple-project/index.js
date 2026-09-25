@@ -1,6 +1,6 @@
 
 (function () {
-  Niva.api.window.current().then(id => console.log(`Current window id: ${id}`));
+  Niva.window.current().then(id => console.log(`Current window id: ${id}`));
 
   Niva.addEventListener('*', (event, data) => {
     console.log(event, data);
@@ -13,7 +13,7 @@
   })
 
 
-  const { window, monitor, webview, extra } = Niva.api;
+  const { window, monitor, webview, extra } = Niva;
 
   webview.openDevtools();
 
@@ -58,7 +58,7 @@
     if (id === 1) {
       (async () => {
 
-        // const currentActiveWindow = await Niva.api.extra.getActiveWindow();
+        // const currentActiveWindow = await Niva.extra.getActiveWindow();
         // console.log("currentActiveWindow:", currentActiveWindow);
         const [isVisible, isFocused] = await Promise.all([window.isVisible(), window.isFocused()]);
 

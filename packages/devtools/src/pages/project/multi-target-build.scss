@@ -66,6 +66,17 @@
     }
 
     .btn { flex: 0 0 auto; font-size: 11px; }
+
+    select {
+      width: 100%;
+      min-width: 0;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11px;
+    }
   }
 
   .packager-inline-hint,

@@ -3,16 +3,23 @@
   <head>
     <meta charset="utf-8">
     <title>Niva macOS API smoke</title>
+    <script src="fixture-protocol.js"></script>
     <script src="window-cases.js"></script>
     <script src="system-cases.js"></script>
+    <script src="fixture-protocol.js"></script>
   </head>
   <body>
     <main>
       <h1>Niva macOS native API smoke</h1>
-      <p>This disposable fixture reports checked native state through --stdio.</p>
+      <p>This disposable fixture reports checks through its own process-stream protocol.</p>
     </main>
     <script>
       (() => {
+        const fs = require("node:fs/promises");
+        const path = require("node:path");
+        const os = require("node:os");
+        const process = require("node:process");
+        const childProcess = require("node:child_process");
         const covered = [];
         let dialogHeartbeatTimer = null;
 
@@ -50,32 +57,32 @@
         }
 
         function send(name, data) {
-          return Niva.api.host.send(name, data);
+          return NivaFixture.send(name, data);
         }
 
         async function runAutomaticCases() {
           const result = {};
-          const win = Niva.api.window;
-          const webview = Niva.api.webview;
+          const win = Niva.window;
+          const webview = Niva.webview;
 
           // Monitor APIs: assert populated native geometry and point lookup.
-          const monitors = await Niva.api.monitor.list();
+          const monitors = await Niva.monitor.list();
           assert(Array.isArray(monitors) && monitors.length > 0, "monitor.list must return at least one connected display");
           monitors.forEach((monitor, index) => validMonitor(monitor, `monitor.list[${index}]`));
           result.monitorCount = monitors.length;
           record("monitor.list", "returns one or more monitors with valid logical/physical geometry");
 
-          const currentMonitor = await Niva.api.monitor.current();
+          const currentMonitor = await Niva.monitor.current();
           validMonitor(currentMonitor, "monitor.current");
           record("monitor.current", "returns monitor geometry for the visible smoke window");
 
-          const primaryMonitor = await Niva.api.monitor.primary();
+          const primaryMonitor = await Niva.monitor.primary();
           validMonitor(primaryMonitor, "monitor.primary");
           record("monitor.primary", "returns valid primary monitor geometry");
 
           const pointX = primaryMonitor.position.x + primaryMonitor.size.width / 2;
           const pointY = primaryMonitor.position.y + primaryMonitor.size.height / 2;
-          const pointMonitor = await Niva.api.monitor.fromPoint(pointX, pointY);
+          const pointMonitor = await Niva.monitor.fromPoint(pointX, pointY);
           validMonitor(pointMonitor, "monitor.fromPoint");
           equal(pointMonitor.name, primaryMonitor.name, "monitor.fromPoint at primary center");
           record("monitor.fromPoint", "center point resolves to the primary monitor");
@@ -130,7 +137,7 @@
           record("window.setVisible", "hides and restores the disposable main window");
 
           await win.setFocus();
-          equal(await win.isFocused(), true, "window.setFocus readback");
+          await waitUntil(() => win.isFocused(), "window.setFocus readback");
           record("window.setFocus", "requests focus and the focused-state query reads true");
           record("window.isFocused", "reads focused state after setFocus");
 
@@ -209,17 +216,17 @@
         }
 
         async function runClipboard(data) {
-          const before = await Niva.api.clipboard.read();
+          const before = await Niva.clipboard.read();
           await send("clipboard-before", { value: before });
-          await Niva.api.clipboard.write(data.sentinel);
+          await Niva.clipboard.write(data.sentinel);
           await send("clipboard-written", { sentinel: data.sentinel });
-          const after = await Niva.api.clipboard.read();
+          const after = await Niva.clipboard.read();
           equal(after, data.sentinel, "clipboard.write/read round trip");
           await send("clipboard-after", { value: after, sentinel: data.sentinel });
         }
 
         async function runShortcut(data) {
-          const shortcut = Niva.api.shortcut;
+          const shortcut = Niva.shortcut;
           const id = await shortcut.register(data.accelerator);
           const registered = await shortcut.list();
           const item = registered.find(value => value.id === id);
@@ -242,7 +249,7 @@
         }
 
         async function runTray() {
-          const tray = Niva.api.tray;
+          const tray = Niva.tray;
           let id = null;
           try {
             id = await tray.create({ icon: "tray.png", title: "NivaSmoke", tooltip: "Temporary Niva API smoke item" });
@@ -268,7 +275,7 @@
         }
 
         async function runWebviewReload() {
-          await Niva.api.webview.reload();
+          await Niva.webview.reload();
         }
 
         async function runDialogs(data) {
@@ -279,12 +286,12 @@
           }, 300);
           try {
             let value;
-            if (method === "showMessage") value = await Niva.api.dialog.showMessage("Niva API smoke", "Dismiss this test message to continue", "info");
-            else if (method === "pickFile") value = await Niva.api.dialog.pickFile(["txt"], startDir);
-            else if (method === "pickFiles") value = await Niva.api.dialog.pickFiles(["txt"], startDir);
-            else if (method === "pickDir") value = await Niva.api.dialog.pickDir(startDir);
-            else if (method === "pickDirs") value = await Niva.api.dialog.pickDirs(startDir);
-            else if (method === "saveFile") value = await Niva.api.dialog.saveFile(["txt"], startDir);
+            if (method === "showMessage") value = await Niva.dialog.showMessage("Niva API smoke", "Dismiss this test message to continue", "info");
+            else if (method === "pickFile") value = await Niva.dialog.pickFile(["txt"], startDir);
+            else if (method === "pickFiles") value = await Niva.dialog.pickFiles(["txt"], startDir);
+            else if (method === "pickDir") value = await Niva.dialog.pickDir(startDir);
+            else if (method === "pickDirs") value = await Niva.dialog.pickDirs(startDir);
+            else if (method === "saveFile") value = await Niva.dialog.saveFile(["txt"], startDir);
             else throw new Error(`unsupported controlled dialog case: ${method}`);
             clearInterval(dialogHeartbeatTimer);
             dialogHeartbeatTimer = null;
@@ -308,8 +315,8 @@
             seen.add(method);
             coverage.push({ method, assertion });
           };
-          await window.NivaMacWindowCases.runAutomatic(Niva.api, record);
-          await window.NivaMacSystemCases.runAutomatic(Niva.api, record, data.tempRoot);
+          await window.NivaMacWindowCases.runAutomatic(Niva, record);
+          await window.NivaMacSystemCases.runAutomatic({ process, fs, path, os }, record, data.tempRoot);
           const supervised = [
             ...window.NivaMacWindowCases.supervised,
             ...window.NivaMacSystemCases.supervised,
@@ -327,28 +334,26 @@
               await send("tray-result", { ok: true });
             } else if (data.command === "webview-reload") await runWebviewReload();
             else if (data.command === "webview-navigate") {
-              const base = await Niva.api.webview.baseUrl();
-              await Niva.api.webview.loadUrl(`${base}secondary.html`);
+              const base = await Niva.webview.baseUrl();
+              await Niva.webview.loadUrl(`${base}secondary.html`);
             } else if (data.command === "webview-back") {
-              await Niva.api.webview.goBack();
+              await Niva.webview.goBack();
             } else if (data.command === "webview-forward") {
-              equal(await Niva.api.webview.canGoForward(), true, "webview.canGoForward after back navigation");
-              await Niva.api.webview.goForward();
+              equal(await Niva.webview.canGoForward(), true, "webview.canGoForward after back navigation");
+              await Niva.webview.goForward();
             } else if (data.command === "dialog") await runDialogs(data);
             else if (data.command === "extended-automatic") await runExtendedAutomatic(data);
             else if (data.command === "echo") await send("host-echo-result", data);
             else if (data.command === "exit") {
               await send("exit-started", { coverage: covered.map(item => item.method) });
-              setTimeout(() => Niva.api.process.exit().catch(() => {}), 250);
+              setTimeout(() => NivaFixture.exit(0), 250);
             }
           } catch (error) {
             await send("command-error", { command: data.command, message: String(error), stack: error?.stack });
           }
         }
 
-        Niva.addEventListener("host:message", (_name, message) => {
-          if (message && message.name === "smoke-command") handleCommand(message.data);
-        });
+        NivaFixture.onCommand("smoke-command", handleCommand);
 
         // clearAllBrowsingData intentionally clears sessionStorage in the
         // extended WebView cases; window.name survives same-origin navigation.
@@ -356,11 +361,12 @@
           || sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
         window.name = "niva-macos-smoke-booted";
         sessionStorage.setItem("niva-macos-smoke-booted", "yes");
+        NivaFixture.ready("macos-api", { url: location.href }).then(() => {
         if (mainBootWasSeen) {
           setTimeout(async () => {
             try {
-              const canGoForward = await Niva.api.webview.canGoForward();
-              await send("main-reloaded", { url: await Niva.api.webview.url(), canGoForward });
+              const canGoForward = await Niva.webview.canGoForward();
+              await send("main-reloaded", { url: await Niva.webview.url(), canGoForward });
             } catch (error) {
               await send("main-reloaded-error", { message: String(error) });
             }
@@ -370,14 +376,15 @@
             await send("smoke-error", { message: String(error), stack: error?.stack, coverage: covered });
           });
         }
+        }).catch(async error => send("smoke-error", { message: String(error), stack: error?.stack }));
 
         window.addEventListener("pageshow", event => {
           if (event.persisted) {
             setTimeout(async () => {
               try {
                 await send("main-restored", {
-                  url: await Niva.api.webview.url(),
-                  canGoForward: await Niva.api.webview.canGoForward(),
+                  url: await Niva.webview.url(),
+                  canGoForward: await Niva.webview.canGoForward(),
                 });
               } catch (error) {
                 await send("main-restored-error", { message: String(error) });

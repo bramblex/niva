@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import selectors
@@ -13,16 +14,17 @@ import sys
 import tempfile
 import time
 import uuid
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-PACKAGE = REPO / "packages" / "node-compat"
 EXPECTED_MODULES = {
     "path", "os", "fs", "child_process", "events", "util", "querystring",
-    "buffer", "url", "crypto", "zlib", "http", "https", "assert", "stream",
+    "buffer", "url", "crypto", "zlib", "http", "https", "assert", "stream", "tty",
 }
 RESULT_NAMES = {"nodecompat-macos-result", "nodecompat-macos-failure"}
 
@@ -32,7 +34,7 @@ class SmokeError(RuntimeError):
 
 
 class FrameReader:
-    """Read the Niva --stdio NDJSON protocol without blocking past a deadline."""
+    """Read only the disposable fixture-owned process stream protocol."""
 
     def __init__(self, process: subprocess.Popen[bytes]):
         if process.stdout is None:
@@ -55,19 +57,21 @@ class FrameReader:
                 try:
                     frame = json.loads(line)
                 except json.JSONDecodeError as error:
-                    raise SmokeError(f"invalid Niva stdio JSON frame: {error}: {line[:200]!r}") from error
+                    raise SmokeError(f"invalid fixture JSON frame: {error}: {line[:200]!r}") from error
                 if not isinstance(frame, dict):
-                    raise SmokeError(f"unexpected non-object Niva stdio frame: {frame!r}")
-                if frame.get("t") == "err":
-                    raise SmokeError(f"Niva stdio reported an error: {frame.get('error')}")
+                    raise SmokeError(f"unexpected non-object fixture frame: {frame!r}")
+                if frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+                    raise SmokeError(f"unexpected fixture stdout frame: {frame!r}")
+                if frame.get("event") == "protocol-error":
+                    raise SmokeError(f"fixture stdin protocol failed: {frame.get('message')}")
                 return frame
 
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TimeoutError("timed out waiting for Niva stdio frame")
+                raise TimeoutError("timed out waiting for fixture process-stream frame")
             events = self.selector.select(remaining)
             if not events:
-                raise TimeoutError("timed out waiting for Niva stdio frame")
+                raise TimeoutError("timed out waiting for fixture process-stream frame")
             assert self.process.stdout is not None
             chunk = os.read(self.process.stdout.fileno(), 65536)
             if not chunk:
@@ -84,22 +88,11 @@ def _run(command: list[str], *, cwd: Path, timeout: float = 120) -> None:
         print(result.stdout.strip())
 
 
-def build_compat_bundle() -> Path:
-    _run(["npm", "run", "build:classic"], cwd=PACKAGE)
-    bundle = PACKAGE / "dist" / "niva-node-compat.js"
-    if not bundle.is_file():
-        raise SmokeError(f"classic bundle was not generated: {bundle}")
-    return bundle
-
-
-def prepare_resources(resources: Path, bundle: Path) -> None:
+def prepare_resources(resources: Path) -> None:
     resources.mkdir(parents=True)
-    compat = resources / "__niva_compat"
-    compat.mkdir()
-    shutil.copy2(bundle, compat / "node-compat.js")
-    shutil.copytree(PACKAGE / "src", compat / "src")
     shutil.copy2(HERE / "index.html", resources / "index.html")
     shutil.copy2(HERE / "cases.js", resources / "cases.js")
+    shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
 
 
 def create_config(config: Path, run_id: str) -> None:
@@ -108,7 +101,8 @@ def create_config(config: Path, run_id: str) -> None:
             {
                 "name": "NivaNodeCompatSmoke",
                 "uuid": run_id,
-                "nodeCompat": True,
+                "injectCommonJs": True,
+                "injectEsm": True,
                 "window": {
                     "entry": "index.html",
                     "title": "Niva NodeCompat macOS smoke",
@@ -165,12 +159,32 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
     if not binary.is_file():
         raise SmokeError(f"Niva binary not found: {binary}; build it first with cargo build --bin niva")
 
-    bundle = build_compat_bundle()
     root = Path(tempfile.mkdtemp(prefix="niva-node-compat-macos-"))
     log_path = root / "niva-stderr.log"
     process: subprocess.Popen[bytes] | None = None
     frames: FrameReader | None = None
     result_report: dict[str, Any] | None = None
+    class HttpFixture(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            body = b'NodeCompat macOS integration smoke'
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            if body != b'buffered':
+                self.send_response(400)
+                self.end_headers()
+                return
+            body = b'POST accepted'
+            self.send_response(201)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    http_fixture = ThreadingHTTPServer(('127.0.0.1', 0), HttpFixture)
+    threading.Thread(target=http_fixture.serve_forever, daemon=True).start()
 
     try:
         home = root / "home"
@@ -180,16 +194,16 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
         resources = root / "resources"
         config = root / "niva.json"
         run_id = str(uuid.uuid4())
-        prepare_resources(resources, bundle)
+        prepare_resources(resources)
         create_config(config, run_id)
         child_env = os.environ.copy()
         child_env["HOME"] = str(home)
         child_env["TMPDIR"] = str(tmp)
+        child_env["NIVA_SMOKE_HTTP_URL"] = f'http://127.0.0.1:{http_fixture.server_port}/'
         with log_path.open("wb") as log_file:
             process = subprocess.Popen(
                 [
-                    str(binary), "--stdio", f"--debug-config={config}",
-                    f"--debug-resource={resources}",
+                    str(binary), f"--config={config}", f"--resource={resources}",
                 ],
                 cwd=REPO,
                 env=child_env,
@@ -201,13 +215,13 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
         frames = FrameReader(process)
         deadline = time.monotonic() + timeout
         ready = frames.next(min(45, max(0.1, deadline - time.monotonic())))
-        if ready != {"t": "ready", "v": 1}:
-            raise SmokeError(f"unexpected first Niva stdio frame: {ready!r}")
+        if ready.get("event") != "ready" or ready.get("name") != "node-compat-macos":
+            raise SmokeError(f"unexpected fixture ready event: {ready!r}")
         print(f"Niva WebView launched: pid={process.pid}; disposable profile and resources={root}", flush=True)
 
         while time.monotonic() < deadline:
             frame = frames.next(max(0.1, deadline - time.monotonic()))
-            if frame.get("t") != "msg" or frame.get("name") not in RESULT_NAMES:
+            if frame.get("event") != "message" or frame.get("name") not in RESULT_NAMES:
                 continue
             report = frame.get("data")
             if not isinstance(report, dict):
@@ -223,6 +237,11 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
         if result_report is None:
             raise TimeoutError(f"NodeCompat case page did not report within {timeout:.1f}s")
         method_count, methods = validate_report(result_report)
+        (root / "result.json").write_text(json.dumps({
+            "ok": True, "engine": "niva-webview", "methodCount": method_count,
+            "nativeBinarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+            **result_report,
+        }, indent=2) + "\n")
 
         try:
             status = process.wait(timeout=8)
@@ -232,13 +251,17 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
         if status != 0:
             raise SmokeError(f"Niva exited with status {status} after the page reported success")
 
-        print(f"PASS: {method_count} documented NodeCompat method and alias checks in {len(result_report['cases'])} cases", flush=True)
+        print(f"PASS: {method_count} documented runtime method and alias checks in {len(result_report['cases'])} cases", flush=True)
         print("Modules: " + ", ".join(sorted(result_report["modules"])), flush=True)
         for case in result_report["cases"]:
             print(f"  {case['id']}: {len(case['methods'])} methods", flush=True)
-        print("HTTPS limitation: request/get/post wrappers are checked for protocol rejection; no outbound TLS request is made.", flush=True)
+        print("HTTPS limitation: request/get wrappers are checked for protocol rejection; outbound TLS is covered separately by ipc-fallback-smoke.", flush=True)
         return 0
     except BaseException as error:
+        (root / "result.json").write_text(json.dumps({
+            "ok": False, "engine": "niva-webview", "error": str(error),
+            "nativeBinarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+        }, indent=2) + "\n")
         if process is not None and process.poll() is None:
             process.terminate()
             try:
@@ -251,6 +274,8 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
             print("Niva stderr tail:\n" + details, file=sys.stderr)
         raise SmokeError(str(error)) from error
     finally:
+        http_fixture.shutdown()
+        http_fixture.server_close()
         if frames is not None:
             frames.close()
         if process is not None and process.stdout is not None:

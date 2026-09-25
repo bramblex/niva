@@ -6,6 +6,8 @@
 	"api": {
 		"timeoutMs": 600000
 	},
+	"injectCommonJs": false,
+	"injectEsm": false,
 	"debug": {
 		"entry": "http://localhost:3000",
 		"resource": "public"

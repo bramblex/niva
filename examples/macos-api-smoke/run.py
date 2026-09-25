@@ -69,41 +69,41 @@ WEBVIEW_HISTORY_METHODS = {
 }
 HEADLESS_PAGE_METHODS = {
     "process.pid": "returns a positive child process id",
-    "process.currentDir": "matches the runner-selected repository working directory",
-    "process.currentExe": "matches the resolved Niva binary path",
-    "process.args": "contains --stdio and this run's isolated config/resource paths",
-    "process.version": "matches the niva crate package version",
-    "os.info": "returns macOS plus non-empty architecture/version strings",
-    "os.dirs": "returns an isolated per-run temp path and an app data path",
-    "os.sep": "returns the macOS path separator",
-    "os.eol": "returns the macOS line ending",
-    "os.locale": "returns a non-empty system locale string",
-    "resource.exists": "finds a file in the isolated debug resource tree",
-    "resource.read": "streams and decodes the isolated fixture resource",
-    "fs.exists": "observes missing, created, moved, and removed paths",
-    "fs.createDir": "creates temporary directories and stat reads them as directories",
-    "fs.createDirAll": "creates nested temporary directories and stat reads the leaf directory",
-    "fs.write": "writes a new file under the temporary fixture root",
-    "fs.read": "reads exact UTF-8 file contents from the temporary fixture root",
-    "fs.append": "appends UTF-8 content and preserves the preceding bytes",
+    "process.cwd": "matches the runner-selected repository working directory",
+    "process.execPath": "matches the resolved Niva binary path",
+    "process.argv": "contains this run's isolated config/resource paths",
+    "process.version": "reports the Node compatibility target separately from the actual Niva version",
+    "Niva.os.info": "returns macOS plus non-empty architecture/version strings",
+    "Niva.os.dirs": "returns an isolated per-run temp path and an app data path",
+    "path.sep": "returns the macOS path separator",
+    "os.EOL": "returns the macOS line ending",
+    "Niva.bridge.callOsLocale": "returns a non-empty system locale string",
+    "Niva.resource.exists": "finds a file in the isolated debug resource tree",
+    "Niva.resource.read": "reads and decodes the isolated fixture resource",
+    "fs.access": "observes missing, created, moved, and removed paths",
+    "fs.mkdir": "creates temporary directories and stat reads them as directories",
+    "fs.mkdirRecursive": "creates nested temporary directories and stat reads the leaf directory",
+    "fs.writeFile": "writes a new file under the temporary fixture root",
+    "fs.readFile": "reads exact UTF-8 file contents from the temporary fixture root",
+    "fs.appendFile": "appends UTF-8 content and preserves the preceding bytes",
     "fs.stat": "reports file type and exact byte size",
-    "fs.copy": "copies the fixture file and preserves exact contents",
-    "fs.move": "moves the fixture file, removes its source, and preserves contents",
-    "fs.readDir": "lists direct files in the isolated directory",
-    "fs.readDirAll": "lists recursive file paths under the isolated directory",
-    "fs.remove": "removes fixture files and confirms their paths are absent",
+    "fs.copyFile": "copies the fixture file and preserves exact contents",
+    "fs.rename": "moves the fixture file, removes its source, and preserves contents",
+    "fs.readdir": "lists direct files in the isolated directory",
+    "fs.readdirRecursive": "lists recursive file paths under the isolated directory",
+    "fs.rm": "removes fixture files and confirms their paths are absent",
 }
-HEADLESS_METHODS = set(HEADLESS_PAGE_METHODS) | {"host.send", "process.exit"}
+HEADLESS_METHODS = set(HEADLESS_PAGE_METHODS) | {"fixture.processStream", "process.exit"}
 HEADLESS_GROUP_METHODS = {
     "process-os": {
         method: assertion
         for method, assertion in HEADLESS_PAGE_METHODS.items()
-        if method.startswith("process.") or method.startswith("os.")
+        if method.startswith("process.") or method.startswith("os.") or method.startswith("Niva.os.") or method.startswith("path.") or method.startswith("Niva.bridge.callOs")
     },
     "resource": {
         method: assertion
         for method, assertion in HEADLESS_PAGE_METHODS.items()
-        if method.startswith("resource.")
+        if method.startswith("resource.") or method.startswith("Niva.resource.")
     },
     "fs": {
         method: assertion
@@ -112,7 +112,7 @@ HEADLESS_GROUP_METHODS = {
     },
 }
 HEADLESS_GROUP_EXPECTED = {
-    group: set(methods) | {"host.send", "process.exit"}
+    group: set(methods) | {"fixture.processStream", "process.exit"}
     for group, methods in HEADLESS_GROUP_METHODS.items()
 }
 EXTENDED_WINDOW_METHODS = {
@@ -139,7 +139,7 @@ EXTENDED_WINDOW_METHODS = {
     "windowExtra.hasUndecoratedShadow",
 }
 EXTENDED_SYSTEM_METHODS = {
-    "process.env", "process.setCurrentDir", "process.exec", "resource.extract",
+    "process.env", "process.chdir", "child_process.execFile", "Niva.resource.extract",
     "extra.getActiveWindowId", "extra.focusByWindowId",
     "webview.setCookie", "webview.cookies", "webview.cookiesForUrl", "webview.deleteCookie",
     "webview.clearAllBrowsingData", "webview.isDevtoolsOpen", "webview.openDevtools", "webview.closeDevtools",
@@ -156,7 +156,7 @@ EXTENDED_WINDOW_SUPERVISED = {
 }
 EXTENDED_SYSTEM_SUPERVISED = {
     "dialog.pickFiles", "dialog.pickDir", "dialog.pickDirs", "extra.hideApplication", "extra.showApplication",
-    "extra.hideOtherApplications", "extra.setActivationPolicy", "process.open", "webview.loadHtml", "webview.print",
+    "extra.hideOtherApplications", "extra.setActivationPolicy", "Niva.bridge.callProcessOpen", "webview.loadHtml", "webview.print",
 }
 EXTENDED_SUPERVISED_METHODS = EXTENDED_WINDOW_SUPERVISED | EXTENDED_SYSTEM_SUPERVISED
 
@@ -177,14 +177,20 @@ class Harness:
         assert self.process.stdout is not None
         for line in self.process.stdout:
             try:
-                self.frames.put(json.loads(line))
+                frame = json.loads(line)
+                if not isinstance(frame, dict) or frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+                    self.frames.put({"event": "bad-json", "frame": frame, "line": line.rstrip()})
+                else:
+                    self.frames.put(frame)
             except json.JSONDecodeError as error:
-                self.frames.put({"t": "bad-json", "error": str(error), "line": line.rstrip()})
-        self.frames.put({"t": "eof"})
+                self.frames.put({"event": "bad-json", "error": str(error), "line": line.rstrip()})
+        self.frames.put({"protocol": "niva-fixture", "version": 1, "event": "eof"})
 
     def _check_error(self, frame: dict) -> None:
-        if frame.get("t") == "bad-json":
-            raise SmokeError(f"Niva stdout was not NDJSON: {frame}")
+        if frame.get("event") == "bad-json":
+            raise SmokeError(f"fixture stdout was not NDJSON: {frame}")
+        if frame.get("event") == "protocol-error":
+            raise SmokeError(f"fixture stdin protocol failed: {frame}")
         name = frame.get("name")
         if name in {"smoke-error", "command-error", "dialog-error", "main-reloaded-error", "main-restored-error", "secondary-error", "headless-error"}:
             raise SmokeError(f"page reported {name}: {frame.get('data')}")
@@ -195,22 +201,22 @@ class Harness:
         except queue.Empty as error:
             raise SmokeError(f"timed out after {timeout:.1f}s waiting for Niva output") from error
         self._check_error(frame)
-        if frame.get("t") == "eof":
-            raise SmokeError(f"Niva stdout closed (status {self.process.poll()})")
+        if frame.get("event") == "eof":
+            raise SmokeError(f"fixture stdout closed (status {self.process.poll()})")
         return frame
 
     def next_frame(self, timeout: float) -> dict:
         if self.backlog:
             frame = self.backlog.pop(0)
             self._check_error(frame)
-            if frame.get("t") == "eof":
-                raise SmokeError(f"Niva stdout closed (status {self.process.poll()})")
+            if frame.get("event") == "eof":
+                raise SmokeError(f"fixture stdout closed (status {self.process.poll()})")
             return frame
         return self._read_new_frame(timeout)
 
     def wait_message(self, name: str, timeout: float = 20) -> dict:
         for index, frame in enumerate(self.backlog):
-            if frame.get("t") == "msg" and frame.get("name") == name:
+            if frame.get("event") == "message" and frame.get("name") == name:
                 self.backlog.pop(index)
                 return frame
         deadline = time.monotonic() + timeout
@@ -219,13 +225,13 @@ class Harness:
             if remaining <= 0:
                 raise SmokeError(f"timed out after {timeout:.1f}s waiting for message {name!r}")
             frame = self._read_new_frame(remaining)
-            if frame.get("t") == "msg" and frame.get("name") == name:
+            if frame.get("event") == "message" and frame.get("name") == name:
                 return frame
             self.backlog.append(frame)
 
     def wait_one_of(self, names: set[str], timeout: float = 20) -> dict:
         for index, frame in enumerate(self.backlog):
-            if frame.get("t") == "msg" and frame.get("name") in names:
+            if frame.get("event") == "message" and frame.get("name") in names:
                 self.backlog.pop(index)
                 return frame
         deadline = time.monotonic() + timeout
@@ -234,16 +240,14 @@ class Harness:
             if remaining <= 0:
                 raise SmokeError(f"timed out after {timeout:.1f}s waiting for one of {sorted(names)}")
             frame = self._read_new_frame(remaining)
-            if frame.get("t") == "msg" and frame.get("name") in names:
+            if frame.get("event") == "message" and frame.get("name") in names:
                 return frame
             self.backlog.append(frame)
 
     def send(self, name: str, data: dict | None = None) -> None:
         if self.process.stdin is None or self.process.stdin.closed:
             raise SmokeError("Niva stdin is closed")
-        frame: dict = {"t": "msg", "name": name}
-        if data is not None:
-            frame["data"] = data
+        frame: dict = {"protocol": "niva-fixture", "version": 1, "event": "command", "name": name, "data": data}
         self.process.stdin.write(json.dumps(frame, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
 
@@ -423,8 +427,7 @@ class ClipboardGuard:
 
 
 def safe_app_dirs(app_name: str, app_uuid: str) -> list[Path]:
-    short_id = app_uuid[:8]
-    id_name = f"{app_name.lower()}_{short_id}"
+    id_name = str(uuid.UUID(app_uuid))
     return [
         Path.home() / "Library" / "Application Support" / id_name,
         Path.home() / "Library" / "Caches" / id_name,
@@ -526,7 +529,7 @@ def run_webview_history(harness: Harness, cases: dict[str, str]) -> None:
     try:
         first_secondary = expect_message_data(harness, "secondary-ready")
     except SmokeError as error:
-        observed = [(frame.get("t"), frame.get("name")) for frame in harness.backlog[-20:]]
+        observed = [(frame.get("event"), frame.get("name")) for frame in harness.backlog[-20:]]
         raise SmokeError(f"{error}; navigation frames={observed}") from error
     if not first_secondary.get("url", "").endswith("/secondary.html") or first_secondary.get("canGoBack") is not True:
         raise SmokeError(f"webview.loadUrl did not create a back-history entry: {first_secondary!r}")
@@ -712,6 +715,7 @@ def run_headless_invocation(binary: Path, group: str) -> tuple[dict[str, str], s
             resources = root / "resources"
             resources.mkdir()
             shutil.copy2(HERE / "headless.html", resources / "headless.html")
+            shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
             (resources / "headless-resource.txt").write_text("headless-resource-ok\n", encoding="utf-8")
             fs_root = root / "fs-root"
             fs_root.mkdir()
@@ -722,6 +726,8 @@ def run_headless_invocation(binary: Path, group: str) -> tuple[dict[str, str], s
                     {
                         "name": app_name,
                         "uuid": app_uuid,
+                        "injectCommonJs": True,
+                        "injectEsm": True,
                         "window": {
                             "entry": "headless.html",
                             "title": f"Niva headless {group} smoke",
@@ -742,7 +748,7 @@ def run_headless_invocation(binary: Path, group: str) -> tuple[dict[str, str], s
             child_env["TMPDIR"] = str(root)
             try:
                 process = subprocess.Popen(
-                    [str(binary), "--stdio", f"--debug-config={config}", f"--debug-resource={resources}"],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO,
                     env=child_env,
                     stdin=subprocess.PIPE,
@@ -757,8 +763,8 @@ def run_headless_invocation(binary: Path, group: str) -> tuple[dict[str, str], s
             try:
                 harness = Harness(process)
                 ready = harness.next_frame(timeout=30)
-                if ready != {"t": "ready", "v": 1}:
-                    raise SmokeError(f"unexpected first stdio frame: {ready!r}")
+                if ready.get("event") != "ready" or ready.get("name") != "headless":
+                    raise SmokeError(f"unexpected fixture ready event: {ready!r}")
                 page_ready = expect_message_data(harness, "headless-ready", timeout=30)
                 if not page_ready.get("path", "").endswith("/headless.html"):
                     raise SmokeError(f"headless fixture loaded the wrong entry: {page_ready!r}")
@@ -820,8 +826,8 @@ def run_headless_invocation(binary: Path, group: str) -> tuple[dict[str, str], s
                 harness.send("headless-command", {"command": "echo", "nonce": nonce})
                 echo = expect_message_data(harness, "headless-echo-result")
                 if echo.get("nonce") != nonce:
-                    raise SmokeError(f"{group} host.send echo changed its nonce: {echo!r}")
-                register_case(cases, "host.send", "sends a unique payload through stdio and receives the exact echo")
+                    raise SmokeError(f"{group} fixture process stream echo changed its nonce: {echo!r}")
+                register_case(cases, "fixture.processStream", "receives a host command on process.stdin and returns the exact nonce on process.stdout")
 
                 harness.send("headless-command", {"command": "exit"})
                 exit_started = expect_message_data(harness, "headless-exit-started", timeout=15)
@@ -903,8 +909,8 @@ def run_default_suite(
     harness.send("smoke-command", {"command": "echo", "nonce": nonce})
     echo = expect_message_data(harness, "host-echo-result")
     if echo.get("nonce") != nonce:
-        raise SmokeError(f"host.send echo changed its nonce: {echo!r}")
-    register_case(cases, "host.send", "sends a unique payload through stdio and receives the exact echo")
+        raise SmokeError(f"fixture process stream echo changed its nonce: {echo!r}")
+    register_case(cases, "fixture.processStream", "receives a host command on process.stdin and returns the exact nonce on process.stdout")
 
     if args.extended_automatic:
         extended_cases, supervised = run_extended_automatic(harness, temp_root)
@@ -935,7 +941,7 @@ def run_default_suite(
         raise SmokeError(f"process.exit child returned status {status}")
     register_case(cases, "process.exit", "terminates the isolated Niva child with status 0 after all temporary API state is cleaned up")
 
-    expected = set(AUTOMATIC_METHODS) | WEBVIEW_HISTORY_METHODS | {"host.send", "process.exit"} | TRAY_METHODS
+    expected = set(AUTOMATIC_METHODS) | WEBVIEW_HISTORY_METHODS | {"fixture.processStream", "process.exit"} | TRAY_METHODS
     if args.extended_automatic:
         expected |= EXTENDED_AUTOMATIC_METHODS
     if args.clipboard:
@@ -1013,7 +1019,7 @@ def main() -> int:
             root = Path(temporary)
             resources = root / "resources"
             resources.mkdir()
-            for filename in ("index.html", "secondary.html", "headless.html", "window-cases.js", "system-cases.js"):
+            for filename in ("index.html", "secondary.html", "headless.html", "window-cases.js", "system-cases.js", "fixture-protocol.js"):
                 shutil.copy2(HERE / filename, resources / filename)
             (resources / "child.html").write_text(
                 "<!doctype html><html><body><h1>Isolated child</h1></body></html>\n",
@@ -1037,6 +1043,8 @@ def main() -> int:
                     {
                         "name": app_name,
                         "uuid": app_uuid,
+                        "injectCommonJs": True,
+                        "injectEsm": True,
                         "window": {
                             "entry": "index.html",
                             "title": "Niva macOS API smoke",
@@ -1057,12 +1065,7 @@ def main() -> int:
             child_env["TMPDIR"] = str(root)
             try:
                 process = subprocess.Popen(
-                    [
-                        str(binary),
-                        "--stdio",
-                        f"--debug-config={config}",
-                        f"--debug-resource={resources}",
-                    ],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO,
                     env=child_env,
                     stdin=subprocess.PIPE,
@@ -1076,8 +1079,8 @@ def main() -> int:
             harness = Harness(process)
 
             ready = harness.next_frame(timeout=30)
-            if ready != {"t": "ready", "v": 1}:
-                raise SmokeError(f"unexpected first stdio frame: {ready!r}")
+            if ready.get("event") != "ready" or ready.get("name") != "macos-api":
+                raise SmokeError(f"unexpected fixture ready event: {ready!r}")
             if args.clipboard:
                 clipboard_guard = ClipboardGuard(root)
             run_default_suite(harness, process, args, root, dialog_root, clipboard_guard, cases)

@@ -1,5 +1,7 @@
 # NodeCompat：Native 系统基座与 JS 协议层
 
+> 2026-09-25 后续决定：本文早期的 JS-first HTTP 分层已被 AR-024 取代。Rust已有能力优先复用；JS保留Node契约适配，需要流/背压/取消时先扩展Native接口。本文后续章节作为旧方案比较记录，现状以[实施台账](architecture-implementation-plan.md)和源码为准。
+
 > 2026-09-24 · 22 个模块 / 179 项 API 的分层重评。此文是目标方案及隔离测量，不代表接口已经完成。总体积仍以全部目标完成后的 3.3 MB release 门禁验收。
 
 ## 1. 结论

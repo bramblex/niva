@@ -3,13 +3,14 @@
   "workspaces": [
     "packages/devtools",
     "packages/types",
-    "packages/node-compat"
+    "packages/runtime"
   ],
   "devDependencies": {
-    "husky": "^8.0.0"
+    "husky": "^8.0.0",
+    "@types/node": "22.14.0"
   },
   "scripts": {
     "prepare": "husky install",
-    "type-checker": "cd ./packages/devtools && npx tsc --noEmit && cd ../.."
+    "type-checker": "npm run build --workspace=packages/runtime && npm run typecheck --workspace=packages/types && npm exec --workspace=packages/devtools -- tsc --noEmit"
   }
 }

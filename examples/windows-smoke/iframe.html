@@ -1,6 +1,6 @@
 <!doctype html>
 <html><body><script>
-  Niva.api.window.current().then(
+  Niva.window.current().then(
     id => parent.postMessage({ kind: "iframe", id, origin: location.origin }, "*"),
     error => parent.postMessage({ kind: "iframe", error: String(error) }, "*"),
   );

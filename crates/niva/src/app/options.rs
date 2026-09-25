@@ -32,8 +32,13 @@ pub struct NivaOptions {
     // thread-pool `workers` setting is gone).
     pub api: Option<ApiOptions>,
 
-    /// Node-shaped browser adapters; assets are embedded by the Niva runtime.
-    pub node_compat: Option<NodeCompatOption>,
+    /// Install CommonJS globals (require/module/process/Buffer) in the page.
+    #[serde(default)]
+    pub inject_common_js: bool,
+
+    /// Install Node builtin ESM import-map entries in the page.
+    #[serde(default)]
+    pub inject_esm: bool,
 
     // dev options (also used as defaults when the matching CLI flags are absent)
     pub debug: Option<NivaDebugOptions>,
@@ -42,20 +47,6 @@ pub struct NivaOptions {
     #[cfg(target_os = "macos")]
     #[serde(flatten)]
     pub macos_extra: Option<MacExtraOptions>,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-#[serde(untagged)]
-pub enum NodeCompatOption {
-    Switch(bool),
-    Config(NodeCompatConfig),
-}
-
-#[derive(Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeCompatConfig {
-    pub modules: Option<Vec<String>>,
-    pub importmap: Option<bool>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -23,6 +23,8 @@ enum Command {
         output_dir: PathBuf,
         #[arg(long, required = true)]
         target: Vec<niva_packager::Target>,
+        #[arg(long, value_enum, default_value_t = niva_packager::ResourceLayout::Embedded)]
+        resource_layout: niva_packager::ResourceLayout,
     },
 }
 fn main() {
@@ -32,8 +34,16 @@ fn main() {
         resource_dir,
         output_dir,
         target,
+        resource_layout,
     } = Cli::parse().command;
-    let report = niva_packager::build(&manifest, &config, &resource_dir, &output_dir, &target);
+    let report = niva_packager::build(
+        &manifest,
+        &config,
+        &resource_dir,
+        &output_dir,
+        &target,
+        resource_layout,
+    );
     match report {
         Ok(report) => {
             println!(

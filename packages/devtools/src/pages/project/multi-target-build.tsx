@@ -2,12 +2,19 @@ import "./multi-target-build.scss";
 
 import { FolderOpen } from "@icon-park/react";
 import { useState } from "react";
-import { pathJoin } from "../../common/utils";
 import { ErrorCode } from "../../common/error";
 import { useApp, useLocale } from "../../models/app.model";
 import type { ProjectModel } from "../../models/project.model";
+import { niva, openExternal } from "../../common/niva";
+import {
+  runPackager,
+  validatePackagerKit,
+  packagerKitStorageKey,
+  type BuildTarget,
+  type PackagerTargetResult,
+  type ResourceLayout,
+} from "../../build-scripts/packager";
 
-const packagerKitStorageKey = "niva-devtools-packager-kit";
 const outputDirectoryStorageKey = "niva-devtools-packager-output";
 
 const targetOptions = [
@@ -16,18 +23,8 @@ const targetOptions = [
   { value: "macos-x86_64", label: "macOS Intel" },
 ] as const;
 
-type BuildTarget = (typeof targetOptions)[number]["value"];
 type BuildStatus = "complete" | "failed";
-
-interface TargetResult {
-  target: string;
-  status: BuildStatus;
-  path?: string;
-  sha256?: string;
-  signature?: string;
-  runtimeVersion?: string;
-  error?: string;
-}
+type TargetResult = PackagerTargetResult & { status: BuildStatus };
 
 function readSetting(key: string): string {
   try {
@@ -45,29 +42,10 @@ function saveSetting(key: string, value: string) {
   }
 }
 
-async function hostPackagerName(): Promise<string> {
-  const os = (await Niva.api.os.info()).os.toLowerCase().replace(/\s/g, "");
-  if (os === "windows") return "niva-packager.exe";
-  if (os === "macos") return "niva-packager";
-  throw new Error(`Unsupported host operating system: ${os}`);
-}
-
-function parseResults(stdout: string, targets: BuildTarget[]): TargetResult[] {
-  const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const lastLine = lines[lines.length - 1];
-  if (!lastLine) throw new Error("The packager returned no result JSON.");
-
-  const response = JSON.parse(lastLine) as { results?: unknown; error?: unknown };
-  if (!Array.isArray(response.results)) {
-    throw new Error("The packager result must contain a results array.");
-  }
-  const topLevelError = typeof response.error === "string" ? response.error : undefined;
-  if (response.results.length === 0 && topLevelError) {
-    return targets.map((target) => ({ target, status: "failed", error: topLevelError }));
-  }
-
+function parseResults(report: { results: PackagerTargetResult[]; error?: string }, targets: BuildTarget[]): TargetResult[] {
+  const topLevelError = report.error;
   const returned = new Map<string, any>();
-  for (const item of response.results) {
+  for (const item of report.results) {
     if (item && typeof item.target === "string") returned.set(item.target, item);
   }
 
@@ -107,6 +85,7 @@ export function MultiTargetBuildPanel(props: {
   const [outputDirectory, setOutputDirectory] = useState(() =>
     readSetting(outputDirectoryStorageKey)
   );
+  const [resourceLayout, setResourceLayout] = useState<ResourceLayout>("embedded");
   const [selectedTargets, setSelectedTargets] = useState<BuildTarget[]>(() =>
     targetOptions.map(({ value }) => value)
   );
@@ -117,26 +96,12 @@ export function MultiTargetBuildPanel(props: {
   const chooseKitDirectory = async () => {
     setError("");
     const selected = await app.state.modal.showNative(() =>
-      Niva.api.dialog.pickDir(kitDirectory || undefined)
+      niva.dialog.pickDir(kitDirectory || undefined)
     );
     if (!selected) return;
 
     try {
-      const manifestPath = pathJoin(selected, "manifest.json");
-      if (!(await Niva.api.fs.exists(manifestPath))) {
-        setError(locale.t("PACKAGER_MANIFEST_MISSING"));
-        return;
-      }
-      const manifest = JSON.parse(await Niva.api.fs.read(manifestPath));
-      if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
-        setError(locale.t("PACKAGER_MANIFEST_INVALID"));
-        return;
-      }
-      const executablePath = pathJoin(selected, await hostPackagerName());
-      if (!(await Niva.api.fs.exists(executablePath))) {
-        setError(locale.t("PACKAGER_HOST_BINARY_MISSING"));
-        return;
-      }
+      await validatePackagerKit(selected);
       setKitDirectory(selected);
       saveSetting(packagerKitStorageKey, selected);
     } catch (cause) {
@@ -147,7 +112,7 @@ export function MultiTargetBuildPanel(props: {
   const chooseOutputDirectory = async () => {
     setError("");
     const selected = await app.state.modal.showNative(() =>
-      Niva.api.dialog.pickDir(outputDirectory || undefined)
+      niva.dialog.pickDir(outputDirectory || undefined)
     );
     if (!selected) return;
     setOutputDirectory(selected);
@@ -157,7 +122,7 @@ export function MultiTargetBuildPanel(props: {
   const openOutputDirectory = async () => {
     setError("");
     try {
-      await Niva.api.process.open(outputDirectory);
+      await openExternal(outputDirectory);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -202,43 +167,13 @@ export function MultiTargetBuildPanel(props: {
         return;
       }
 
-      const { process } = Niva.api;
-      const executablePath = pathJoin(kitDirectory, await hostPackagerName());
-      const manifestPath = pathJoin(kitDirectory, "manifest.json");
-      if (!(await Niva.api.fs.exists(manifestPath))) {
-        throw new Error(locale.t("PACKAGER_MANIFEST_MISSING"));
-      }
-      const manifest = JSON.parse(await Niva.api.fs.read(manifestPath));
-      if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
-        throw new Error(locale.t("PACKAGER_MANIFEST_INVALID"));
-      }
-      if (!(await Niva.api.fs.exists(executablePath))) {
-        throw new Error(locale.t("PACKAGER_HOST_BINARY_MISSING"));
-      }
-      const args = [
-        "build",
-        "--manifest",
-        manifestPath,
-        "--config",
-        project.state.configPath,
-        "--resource-dir",
-        pathJoin(project.state.path, project.state.config.build?.resource),
-        "--output-dir",
-        outputDirectory,
-      ];
-      for (const target of selectedTargets) args.push("--target", target);
-
-      const execution = await process.exec(executablePath, args) as {
-        status: number | null;
-        stdout: string;
-        stderr: string;
-      };
-      const parsedResults = parseResults(execution.stdout, selectedTargets);
+      const execution = await runPackager(project, kitDirectory, outputDirectory, selectedTargets, resourceLayout);
+      const parsedResults = parseResults(execution.report, selectedTargets);
       setResults(parsedResults);
-      if (execution.status !== 0 && !parsedResults.some((result) => result.status === "failed")) {
+      if (execution.exitCode !== 0 && !parsedResults.some((result) => result.status === "failed")) {
         setError(locale.t("PACKAGER_EXITED_WITH_ERROR"));
       }
-      if (execution.status !== 0 && execution.stderr.trim()) {
+      if (execution.exitCode !== 0 && execution.stderr.trim()) {
         setError((current) => current
           ? `${current}\n${execution.stderr.trim()}`
           : execution.stderr.trim());
@@ -293,6 +228,20 @@ export function MultiTargetBuildPanel(props: {
             {locale.t(outputDirectory ? "PACKAGER_CHANGE_OUTPUT" : "PACKAGER_CHOOSE_OUTPUT")}
           </button>
         </div>
+
+        <label className="packager-setting">
+          <span className="packager-setting-label">
+            <strong>{locale.t("PACKAGER_RESOURCE_LAYOUT")}</strong>
+          </span>
+          <select
+            value={resourceLayout}
+            disabled={isBuilding}
+            onChange={(event) => setResourceLayout(event.target.value as ResourceLayout)}
+          >
+            <option value="embedded">{locale.t("PACKAGER_EMBEDDED")}</option>
+            <option value="external">{locale.t("PACKAGER_EXTERNAL")}</option>
+          </select>
+        </label>
       </div>
 
       {!kitDirectory && (

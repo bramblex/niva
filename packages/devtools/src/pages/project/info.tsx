@@ -3,6 +3,7 @@ import { useLocale, useProject } from "../../models/app.model";
 import { useRef, useState } from "react";
 import { ProjectDetails } from "./details";
 import { ConfigEditor } from "./config-editor";
+import { niva } from "../../common/niva";
 
 export function ProjectInfo() {
   const project = useProject();
@@ -34,7 +35,7 @@ export function ProjectInfo() {
         onMouseDownCapture={(ev) => {
           const t = ev.target as HTMLElement;
           if (t.tagName !== "BUTTON") {
-            Niva.api.window.dragWindow();
+            niva.window.dragWindow();
           }
         }}
       >

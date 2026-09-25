@@ -178,12 +178,15 @@ async fn close(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) 
     run_on_main(&app, move |_target, control_flow| {
         let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
         let id = id.unwrap_or(window.id);
+        let close_result = WindowManager::close_window_and_cleanup(
+            &app2,
+            id,
+            (id == window.id).then(|| window.clone()),
+        );
         if id == 0 {
             *control_flow = ControlFlow::Exit;
-            return Ok(());
         }
-        let closed = app2.window()?.close_window(id)?;
-        WindowManager::cleanup_window(&app2, &closed)
+        close_result
     })
     .await
 }

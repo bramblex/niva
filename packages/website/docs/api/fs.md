@@ -1,168 +1,18 @@
 # 文件系统 fs
 
-## Niva.api.fs.stat
-```ts
-/**
- * 返回文件的元数据信息。
- * @param path 要获取元数据的文件路径。
- * @returns 一个 Promise，在获取元数据成功时解析该 Promise 以返回表示文件元数据的对象，或在发生错误时拒绝该 Promise。
- */
-export function stat(path: string): Promise<{
-    isDir: boolean;
-    isFile: boolean;
-    isSymlink: boolean;
-    size: number;
-    modified: number;
-    accessed: number;
-    created: number;
-}>;
+`Niva.fs`提供Node风格callback、promises与同步接口；开启对应环境后，CommonJS/ESM导出同一个对象。
+
+```js
+const fs = Niva.fs.promises;
+await fs.mkdir('/absolute/path/example', {recursive: true});
+await fs.writeFile('/absolute/path/example/file.txt', '你好', 'utf8');
+const text = await fs.readFile('/absolute/path/example/file.txt', 'utf8');
+const stat = await fs.stat('/absolute/path/example/file.txt');
+console.log(text, stat.isFile(), stat.size);
 ```
 
-当前 `stat` 使用系统 `metadata()`，会跟随符号链接；`isSymlink` 因此不报告传入路径本身是否为链接。`modified`、`accessed`、`created` 是 Unix 毫秒时间戳，不是权限标志。
+异步方法按可用通道执行；同步方法仅在可信页面通过同步XHR调用。`stat`跟随链接，`lstat`观察链接本身；具体支持的参数与签名以同版本runtime/types为准。
 
-## Niva.api.fs.exists
-```ts
-/**
- * 检查文件或目录是否存在。
- * @param path 要检查的文件或目录路径。
- * @returns 一个 Promise，在检查文件或目录是否存在时解析该 Promise 以返回一个 boolean 值，表示文件或目录是否存在。
- */
-export function exists(path: string): Promise<boolean>;
-```
+IPC fallback支持显式UTF-8文本读写/追加，以及stat/lstat/readdir/access/realpath/mkdir/rename/copyFile/rm/unlink/cp的一次性JSON分支。默认readFile返回Buffer，因此无encoding的readFile不能经IPC；Buffer/ArrayBuffer写入、流、文件句柄、watch和所有Native同步方法也不支持IPC。
 
-## Niva.api.fs.read
-```ts
-/**
- * 读取文件的内容，并将其作为字符串返回。
- * @param path 要读取的文件路径。
- * @param encode 要使用的编码格式。默认为 UTF-8。
- * @returns 一个 Promise，在读取文件成功时解析该 Promise 以返回文件的内容字符串，或在发生错误时拒绝该 Promise。
- */
-export function read(path: string, encode?: 'utf8' | 'base64'): Promise<string>;
-```
-
-## Niva.api.fs.write
-```ts
-/**
- * 将字符串写入文件。
- * @param path 要写入的文件路径。
- * @param content 要写入文件的字符串。
- * @param encode 要使用的编码格式。默认为 UTF-8。
- * @returns 一个 Promise，在写入文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function write(path: string, content: string, encode?: 'utf8' | 'base64'): Promise<void>;
-```
-
-## Niva.api.fs.append
-```ts
-/**
- * 将字符串追加到文件的末尾。
- * @param path 要追加的文件路径。
- * @param content 要追加到文件的字符串。
- * @param encode 要使用的编码格式。默认为 UTF-8。
- * @returns 一个 Promise，在追加字符串到文件成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function append(path: string, content: string, encode?: 'utf8' | 'base64'): Promise<void>;
-```
-## Niva.api.fs.move
-```ts
-
-/**
- * 将文件或目录移动到新位置。
- * @param from 要移动的文件或目录的路径。
- * @param to 新位置的路径。
- * @param options 可选的参数对象，表示可选的复制选项。
- * @returns 一个 Promise，在移动文件或目录成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function move(from: string, to: string, options?: {
-    overwrite?: boolean;
-    skipExist?: boolean;
-    copyInside?: boolean;
-    contentOnly?: boolean;
-    depth?: number;
-}): Promise<void>;
-```
-## Niva.api.fs.copy
-```ts
-
-/**
- * 将文件或目录复制到新位置。
- * @param from 要复制的文件或目录的路径。
- * @param to 新位置的路径。
- * @param options 可选的参数对象，表示可选的复制选项。
- * @returns 一个 Promise，在复制文件或目录成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function copy(from: string, to: string, options?: {
-    overwrite?: boolean;
-    skipExist?: boolean;
-    copyInside?: boolean;
-    contentOnly?: boolean;
-    depth?: number;
-}): Promise<void>;
-```
-## Niva.api.fs.remove
-```ts
-
-/**
- * 删除文件或目录。
- * @param path 要删除的文件或目录的路径。
- * @returns 一个 Promise，在删除文件或目录时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function remove(path: string): Promise<void>;
-```
-## Niva.api.fs.createDir
-```ts
-/**
- * 创建一个新目录。
- * @param path 要创建的目录路径。
- * @returns 一个 Promise，在创建目录成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function createDir(path: string): Promise<void>;
-```
-## Niva.api.fs.createDirAll
-```ts
-/**
- * 创建指定的目录及其所有父目录。
- * @param path 要创建的目录路径。
- * @returns 一个 Promise，在创建目录成功时解析该 Promise，或在发生错误时拒绝该 Promise。
- */
-export function createDirAll(path: string): Promise<void>;
-```
-## Niva.api.fs.readDir
-```ts
-/**
- * 读取指定目录的内容，并返回目录中的所有文件和子目录的名称。
- * @param path 要读取的目录路径。默认值为当前工作目录。
- * @returns 一个 Promise，在读取目录成功时解析该 Promise 以返回目录中的文件和子目录名称组成的字符串数组，或在发生错误时拒绝该 Promise。
- */
-export function readDir(path?: string): Promise<string[]>;
-```
-## Niva.api.fs.readDirAll
-```ts
-/**
- * 读取指定目录（包括子目录）的内容，并返回目录中的所有文件的相对路径（相对于所提供的目录）。
- * @param path 要读取的目录路径。
- * @param excludes 一个字符串数组，包含要排除的文件路径的 glob 模式。默认为空数组。
- * @returns 一个 Promise，在读取目录中的所有文件成功时解析该 Promise 以返回所有文件的相对路径组成的字符串数组，或在发生错误时拒绝该 Promise。
- */
-export function readDirAll(path: string, excludes?: string[]): Promise<string[]>;
-```
-
-## 流式文件读写
-
-`fs.readStream(path)` 和 `fs.writeStream(path, append?)` 是原生流式 handler。配合 `Niva.stream` 获取/发送二进制分片：
-
-```ts
-const read = Niva.stream("fs.readStream", ["data.bin"], {
-  onChunk(bytes) {
-    console.log("read bytes:", bytes.byteLength);
-  },
-});
-await read.promise;
-
-const write = Niva.stream("fs.writeStream", ["data.bin"]);
-Niva.streamSend(write.id, new Uint8Array([1, 2, 3]), true);
-await write.promise;
-```
-
-`Niva.api.fs.read/write/append` 是初始化脚本的 Promise wrapper，会将完整数据收集或发送完毕后再完成；它们需要本地 WebSocket bridge。远端 IPC 不能调用流式文件 handler，且 Rust 没有单独注册 unary `fs.read/write/append` 方法。较大的文件应使用 stream API，见[流式调用](./stream)。`stat`、`exists`、目录和文件操作仍是独立 unary 原生 API。
+文本/目录响应有大小限额；原生已开始的文件修改不保证可回滚。Bridge不通且无有效fallback时明确报错，不挂起等待或静默换结果类型。详见[Bridge](./bridge)。

@@ -1,7 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Niva API child</title></head>
 <body><script>
   Niva.addEventListener("window.message", (_event, payload) => {
-    if (payload.message === "ping") Niva.api.window.sendMessage("pong", 0);
+    if (payload.message === "ping") Niva.window.sendMessage("pong", 0);
   });
-  Niva.api.window.sendMessage("child-ready", 0);
+  Niva.window.sendMessage("child-ready", 0);
 </script></body></html>

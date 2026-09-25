@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the embedded adapter through a real Niva WebView and native bridge."""
+"""Exercise the unified runtime through a real Niva WebView and native bridge."""
 import argparse,json,os,selectors,subprocess,tempfile,time,uuid,shutil,zlib
 from pathlib import Path
 
@@ -19,19 +19,20 @@ def run(binary,packaged=False,trace=False):
         specs=[{'api':item['api'],'module':item['module']} for item in inventory['apis']]
         html=Path(__file__).with_name('index.html').read_text().replace('__SMOKE_DIR__',json.dumps(directory)).replace('__API_SPECS__',json.dumps(specs)).replace('__TRACE__',json.dumps(trace))
         (root/'index.html').write_text(html)
-        (root/'niva.json').write_text(json.dumps({'name':'NivaNodeIntegration','uuid':str(uuid.uuid4()),'window':{'entry':'index.html','title':'Niva Node integration','size':{'width':600,'height':400},'visible':False}}))
-        command=[str(binary),'--stdio','--debug-resource='+directory]
+        shutil.copy2(Path(__file__).with_name('fixture-protocol.js'), root/'fixture-protocol.js')
+        (root/'niva.json').write_text(json.dumps({'name':'NivaNodeIntegration','uuid':str(uuid.uuid4()),'injectCommonJs':True,'injectEsm':True,'window':{'entry':'index.html','title':'Niva Node integration','size':{'width':600,'height':400},'visible':False}}))
+        command=[str(binary),'--config='+str(root/'niva.json'),'--resource='+directory]
         if packaged:
             executable=root/'Smoke.app/Contents/MacOS/niva';executable.parent.mkdir(parents=True)
             resources=executable.parent.parent/'Resources';resources.mkdir()
             shutil.copy2(binary,executable)
             data=b'';indexes={}
-            for name in ['niva.json','index.html']:
+            for name in ['niva.json','index.html','fixture-protocol.js']:
                 content=(root/name).read_bytes();indexes[name]=[len(data),len(content)];data+=content
             compressor=zlib.compressobj(wbits=-15)
             (resources/'RESOURCE_INDEXES').write_text(json.dumps(indexes))
             (resources/'RESOURCE_DATA').write_bytes(compressor.compress(data)+compressor.flush())
-            command=[str(executable),'--stdio']
+            command=[str(executable)]
         child_env=os.environ.copy()
         for name,relative in [('HOME','home'),('TMPDIR','tmp')]:
             (root/relative).mkdir()
@@ -39,7 +40,7 @@ def run(binary,packaged=False,trace=False):
         with (root/'stderr.log').open('wb') as errors:
             process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,env=child_env)
             selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
-            buffer=b'';deadline=time.monotonic()+60;ready=False;result=None;progress=[]
+            buffer=b'';deadline=time.monotonic()+60;fixture_ready=False;result=None;progress=[]
             try:
                 while result is None and time.monotonic()<deadline:
                     for _,_ in selector.select(1):
@@ -48,14 +49,14 @@ def run(binary,packaged=False,trace=False):
                         buffer+=chunk
                         while b'\n' in buffer:
                             line,buffer=buffer.split(b'\n',1);message=json.loads(line)
-                            if message.get('t')=='ready':ready=True
+                            if message.get('event')=='ready' and message.get('name')=='node-compat-integration':fixture_ready=True
                             if message.get('name')=='implementation-progress' and trace:
                                 label=message['data']['label'];progress.append(label);print('[node-compat] '+label,flush=True)
-                            if message.get('name')=='implementation-result':result=message['data']
+                            if message.get('event')=='message' and message.get('name')=='implementation-result':result=message['data']
                 if result is None:raise TimeoutError('No WebView result; progress='+repr(progress)+'; '+(root/'stderr.log').read_text())
-                result['nativeReady']=ready;result['packaged']=packaged
+                result['fixtureReady']=fixture_ready;result['packaged']=packaged
                 print(json.dumps(result,ensure_ascii=False,indent=2))
-                if not result.get('ok') or not ready:raise RuntimeError('Native integration checks failed')
+                if not result.get('ok') or not fixture_ready:raise RuntimeError('Runtime integration checks failed')
             finally:
                 selector.close();process.stdin.close()
                 try:process.wait(timeout=5)

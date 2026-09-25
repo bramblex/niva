@@ -216,14 +216,14 @@
   window.NivaMacWindowCases = {
     automatic,
     supervised,
-    async runAutomatic(api, record) {
-      const win = api.window;
-      const ext = api.windowExtra;
+    async runAutomatic(niva, record) {
+      const win = niva.window;
+      const ext = niva.windowExtra;
       const id = await win.open({ entry: "child.html", title: "Niva extra window cases", size: { width: 360, height: 240 }, visible: true });
       try {
         for (const item of automatic) {
-          await api.host.send("extended-progress", { method: item.method }).catch(() => {});
-          await item.run({ api, win, ext, id });
+          await NivaFixture.send("extended-progress", { method: item.method }).catch(() => {});
+          await item.run({ win, ext, id });
           record(item.method, item.assertion);
         }
       } finally {

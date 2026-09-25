@@ -3,27 +3,51 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Niva stdio host example</title>
+    <title>Niva process streams example</title>
   </head>
   <body>
-    <h1>Niva stdio host</h1>
-    <p>Waiting for the parent process to send <code>sayHello</code>.</p>
+    <h1>Niva process streams</h1>
+    <p id="status">Waiting for a line from the parent process.</p>
+    <p>Send a name followed by a newline. Closing the parent's input ends
+      <code>process.stdin</code>, while this window stays open.</p>
     <script>
-      Niva.addEventListener("host:message", function (_eventName, message) {
-        if (message.name === "sayHello") {
-          Niva.api.host.send("sayHelloResult", {
-            text: "Hello, " + message.data.name + "!"
-          }).catch(function (error) {
-            console.error("Unable to reply to host:", error);
-          });
+      const nodeProcess = window.require("node:process");
+      const status = document.getElementById("status");
+      let pending = "";
+
+      function writeLine(line) {
+        nodeProcess.stdout.write(line + "\n");
+      }
+
+      nodeProcess.stdin.setEncoding("utf8");
+      nodeProcess.stdin.on("data", function (chunk) {
+        pending += chunk;
+        let newline;
+        while ((newline = pending.indexOf("\n")) !== -1) {
+          const name = pending.slice(0, newline).replace(/\r$/, "");
+          pending = pending.slice(newline + 1);
+          status.textContent = "Received: " + name;
+          writeLine("Hello, " + name + "!");
         }
       });
 
-      // ready confirms the native WS bridge; this message confirms that the
-      // page has installed its host:message listener.
-      Niva.api.host.send("page:ready").catch(function (error) {
-        console.error("Unable to notify host:", error);
+      nodeProcess.stdin.on("end", function () {
+        if (pending) {
+          status.textContent = "Input ended with an unterminated line.";
+        } else {
+          status.textContent = "Input ended. This window is still running.";
+        }
+        writeLine("stdin-eof");
       });
+
+      nodeProcess.stdin.on("error", function (error) {
+        status.textContent = "Input error: " + error.message;
+        nodeProcess.stderr.write("process.stdin error: " + error.message + "\n");
+      });
+
+      // These lines are the example application's own protocol. Niva itself
+      // writes no startup or framework messages to the process streams.
+      writeLine("ready");
     </script>
   </body>
 </html>

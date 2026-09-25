@@ -1,123 +1,75 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import ts from "typescript";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const read = (name) => readFileSync(path.join(root, name), "utf8");
 
-function publicApiMethods() {
-  const typePath = path.join(root, "packages/types/Niva_zh.d.ts");
-  const source = ts.createSourceFile(
-    typePath,
-    readFileSync(typePath, "utf8"),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const interfaces = new Map(
-    source.statements
-      .filter(ts.isInterfaceDeclaration)
-      .map((declaration) => [declaration.name.text, declaration]),
-  );
-  const api = interfaces.get("NivaObj")?.members.find(
-    (member) => member.name?.getText(source) === "api",
-  );
-  assert.ok(api && ts.isTypeLiteralNode(api.type), "NivaObj.api must describe the public namespaces");
+function sourceFiles(directory) {
+  return readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const name = path.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(name);
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [name] : [];
+  });
+}
 
-  const methods = new Set();
-  for (const namespace of api.type.members) {
-    const name = namespace.name.getText(source);
-    const interfaceName = namespace.type.typeName.getText(source);
-    const declaration = interfaces.get(interfaceName);
-    assert.ok(declaration, `Missing ${interfaceName} for Niva.api.${name}`);
-    for (const member of declaration.members) {
-      if (ts.isMethodSignature(member)) {
-        methods.add(`${name}.${member.name.getText(source)}`);
-      }
-    }
+test("Devtools source uses direct Niva namespaces and Node-style imports", () => {
+  const source = sourceFiles("packages/devtools/src")
+    .map((name) => read(name))
+    .join("\n");
+  assert.doesNotMatch(source, /Niva\.api\b/);
+  assert.doesNotMatch(source, /Niva\.stream(?:Send)?\b/);
+  assert.doesNotMatch(source, /process\.execStream/);
+  for (const specifier of [
+    "node:fs/promises", "node:path", "node:os", "node:process",
+    "node:child_process", "node:https",
+  ]) {
+    assert.ok(source.includes(specifier), `Devtools must use ${specifier}`);
   }
-  return methods;
-}
-
-function registeredMethods() {
-  const directory = path.join(root, "crates/niva/src/app/api");
-  const methods = new Set();
-  for (const file of readdirSync(directory).filter((name) => name.endsWith(".rs"))) {
-    const source = readFileSync(path.join(directory, file), "utf8");
-    for (const match of source.matchAll(/register_(?:blocking_|stream_)?api(?:_with)?\s*\(\s*"([^"]+)"/g)) {
-      methods.add(match[1]);
-    }
+  for (const namespace of ["window", "dialog", "clipboard", "webview", "os"]) {
+    assert.ok(source.includes(`niva.${namespace}`), `Devtools must use Niva.${namespace} directly`);
   }
-  return methods;
-}
-
-function pageOverrides() {
-  const source = readFileSync(path.join(root, "crates/niva/assets/initialize_script.js"), "utf8");
-  return new Set(
-    [...source.matchAll(/overrideApi\(\s*"([^"]+)"\s*,\s*"([^"]+)"/g)]
-      .map((match) => `${match[1]}.${match[2]}`),
-  );
-}
-
-function bridgeMethods() {
-  const typePath = path.join(root, "packages/types/Niva_zh.d.ts");
-  const source = ts.createSourceFile(typePath, readFileSync(typePath, "utf8"), ts.ScriptTarget.Latest, true);
-  const object = source.statements.find((statement) => ts.isInterfaceDeclaration(statement) && statement.name.text === "NivaObj");
-  assert.ok(object);
-  return new Set(object.members.filter(ts.isMethodSignature).map((method) => `Niva.${method.name.getText(source)}`));
-}
-
-test("every typed Niva.api method has a native handler or explicit page override", () => {
-  const native = registeredMethods();
-  const overrides = pageOverrides();
-  const missing = [...publicApiMethods()].filter((method) => !native.has(method) && !overrides.has(method));
-  assert.deepEqual(missing.sort(), []);
 });
 
-test("native-only API methods are explicitly internal bridge operations", () => {
-  const publicMethods = publicApiMethods();
-  const nativeOnly = [...registeredMethods()].filter((method) => !publicMethods.has(method));
-  assert.deepEqual(nativeOnly.sort(), [
-    "fs.handle",
-    "fs.node",
-    "fs.openHandle",
-    "fs.readStream",
-    "fs.watch",
-    "fs.writeStream",
-    "os.cpus",
-    "os.dnsLookup",
-    "os.dnsServers",
-    "os.freemem",
-    "os.networkInterfaces",
-    "os.timingSafeEqual",
-    "os.uptime",
-    "process.execStream",
-    "process.signal",
-    "process.spawnSync",
-    "process.stdin",
-    "process.write",
-    "resource.readStream",
-    "socket.control",
-    "socket.tcpAttach",
-    "socket.tcpConnect",
-    "socket.tcpConnectGuarded",
-    "socket.tcpListen",
-    "socket.tlsAttach",
-    "socket.tlsConnect",
-    "socket.tlsConnectGuarded",
-    "socket.tlsListen",
-    "socket.udpBind",
-    "socket.udpSend",
-  ]);});
+test("Vite maps Node-style imports to the live Niva module objects", () => {
+  const vite = read("packages/devtools/vite.config.ts");
+  const config = JSON.parse(read("packages/devtools/niva.json"));
+  assert.match(vite, /name: "niva-node-builtins"/);
+  assert.match(vite, /globalThis\.Niva\.fs\.promises/);
+  for (const namespace of ["path", "os", "process", "child_process", "https"]) {
+    assert.match(vite, new RegExp(`globalThis\\.Niva\\.${namespace}`));
+  }
+  assert.equal(config.injectCommonJs, false);
+  assert.equal(config.injectEsm, false);
+});
 
-test("the coverage matrix tracks each public API and bridge method exactly once", () => {
-  const matrix = readFileSync(path.join(root, "docs/api-test-matrix.md"), "utf8");
-  const rows = [...matrix.matchAll(/^\| `(Niva(?:\.api)?\.[^`]+)` \|/gm)].map((match) => match[1]);
-  const expected = [
-    ...[...publicApiMethods()].map((method) => `Niva.api.${method}`),
-    ...bridgeMethods(),
-  ];
-  assert.equal(rows.length, new Set(rows).size, "coverage matrix contains duplicate methods");
-  assert.deepEqual(rows.sort(), expected.sort());
+test("GUI and CLI builds share the unified packager and report CLI failures on stderr", () => {
+  const model = read("packages/devtools/src/models/project.model.ts");
+  const panel = read("packages/devtools/src/pages/project/multi-target-build.tsx");
+  const helper = read("packages/devtools/src/build-scripts/packager.ts");
+  const app = read("packages/devtools/src/app.tsx");
+  assert.match(model, /runPackager\(this,/);
+  assert.match(model, /`--config=\$\{configPath\}`/);
+  assert.match(model, /`--resource=\$\{resource\}`/);
+  assert.match(panel, /runPackager\(project,/);
+  assert.match(panel, /setResourceLayout/);
+  assert.match(helper, /execFile\(/);
+  for (const option of ["--manifest", "--config", "--resource-dir", "--output-dir", "--target"]) {
+    assert.ok(helper.includes(option), `packager call is missing ${option}`);
+  }
+  assert.match(app, /writeCliResult\("stderr"/);
+  assert.match(app, /process\.exit\(1\)/);
+  assert.doesNotMatch(app.slice(app.indexOf("async function runBuildCli"), app.indexOf("export function App")), /modal\.alert/);
+  for (const obsolete of ["base.ts", "build-macos.ts", "build-windows.ts", "sign-macos.ts", "sign-windows.ts"]) {
+    assert.equal(existsSync(path.join(root, "packages/devtools/src/build-scripts", obsolete)), false);
+  }
+});
+
+test("closing a project after save reloads persisted config before recording history", () => {
+  const source = read("packages/devtools/src/models/project.model.ts");
+  const dispose = source.slice(source.indexOf("async dispose()"), source.indexOf("async refresh()"));
+  assert.match(dispose, /await this\.loadConfig\(\)/);
+  assert.match(dispose, /await this\.app\.state\.history\.record\(this\)/);
 });

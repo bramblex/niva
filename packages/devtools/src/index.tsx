@@ -1,13 +1,13 @@
 import "normalize.css/normalize.css";
 import "./common.scss";
 import "./i18n/index";
-import "types";
 
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app";
 import { envReady } from "./common/utils";
 import { applyThemePreference, readThemePreference } from "./common/theme";
+import { niva } from "./common/niva";
 
 applyThemePreference(readThemePreference());
 
@@ -29,13 +29,13 @@ Niva.addEventListener("*", (event, data) => {
   console.log(`[Event] ${event}`, data);
 });
 
-const _call = Niva.call;
-Niva.call = function (method, args) {
+const _call = niva.bridge.call.bind(niva.bridge);
+niva.bridge.call = function (method, args) {
   console.log(`[Call] ${method}`, args);
   return _call(method, args);
 };
 
-Niva.api.window.blockCloseRequested(true);
+niva.window.blockCloseRequested(true);
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement

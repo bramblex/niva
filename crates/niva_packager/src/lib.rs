@@ -1,6 +1,7 @@
 mod archive;
 mod macos;
 mod resources;
+mod signing;
 mod windows;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -9,8 +10,11 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
+
+const MAX_RUNTIME_BYTES: u64 = 3_300_000;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, clap::ValueEnum,
@@ -36,6 +40,17 @@ impl Target {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResourceLayout {
+    /// Compress business resources into the runtime (Windows EXE / macOS app).
+    #[default]
+    Embedded,
+    /// Keep business files outside the runtime and read them on demand.
+    External,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Manifest {
@@ -54,6 +69,7 @@ pub struct Runtime {
 #[serde(rename_all = "camelCase")]
 pub struct BuildResult {
     pub target: Target,
+    pub resource_layout: ResourceLayout,
     pub status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
@@ -74,12 +90,27 @@ pub fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let length = file.read(&mut buffer)?;
+        if length == 0 {
+            break;
+        }
+        hasher.update(&buffer[..length]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 pub fn build(
     manifest_path: &Path,
     config_path: &Path,
     resource_dir: &Path,
     output_dir: &Path,
     targets: &[Target],
+    resource_layout: ResourceLayout,
 ) -> Result<Report> {
     let manifest: Manifest =
         serde_json::from_slice(&fs::read(manifest_path).context("read runtime manifest")?)
@@ -102,6 +133,8 @@ pub fn build(
         .and_then(|v| v.as_str())
         .context("niva.json requires a name")?;
     validate_name(name)?;
+    let project_root = config_path.parent().unwrap_or(Path::new("."));
+    let protected_files = signing::protected_project_files(&config)?;
     ensure!(!targets.is_empty(), "select at least one target");
     ensure!(
         targets
@@ -111,17 +144,35 @@ pub fn build(
             == targets.len(),
         "duplicate targets"
     );
-    let resources = resources::prepare(resource_dir, &config_bytes, &config)?;
+    let kit_root = manifest_path.parent().unwrap_or(Path::new("."));
+    resources::validate_licenses(kit_root)?;
+    fs::create_dir_all(output_dir).context("create output directory")?;
+    let build_staging = tempfile::Builder::new()
+        .prefix(".niva-packager-build-")
+        .tempdir_in(output_dir)?;
+    let resources = resources::prepare(
+        resource_dir,
+        &config_bytes,
+        &config,
+        resource_layout == ResourceLayout::External,
+        build_staging.path(),
+        &protected_files,
+        Some(kit_root),
+    )?;
     let icon = config
         .get("icon")
         .and_then(|v| v.as_str())
-        .map(|name| resources::safe_file(resource_dir, name))
+        .map(|name| {
+            let snapshot = build_staging.path().join("icon.png");
+            resources::snapshot_file(resource_dir, name, &snapshot)?;
+            Ok::<PathBuf, anyhow::Error>(snapshot)
+        })
         .transpose()?;
-    fs::create_dir_all(output_dir).context("create output directory")?;
     let mut results = Vec::new();
     for &target in targets {
         let mut result = BuildResult {
             target,
+            resource_layout,
             status: "failed",
             path: None,
             sha256: None,
@@ -131,24 +182,23 @@ pub fn build(
         };
         match build_target(
             &manifest,
-            manifest_path.parent().unwrap_or(Path::new(".")),
+            kit_root,
+            project_root,
             target,
             name,
             &config,
             &resources,
             icon.as_deref(),
             output_dir,
+            build_staging.path(),
+            resource_layout,
         ) {
-            Ok((path, hash, version)) => {
+            Ok((path, hash, version, signature)) => {
                 result.status = "complete";
                 result.path = Some(path);
                 result.sha256 = Some(hash);
                 result.runtime_version = Some(version);
-                result.signature = Some(if target == Target::WindowsX86_64 {
-                    "unsigned"
-                } else {
-                    "ad-hoc"
-                });
+                result.signature = Some(signature);
             }
             Err(error) => result.error = Some(format!("{error:#}")),
         }
@@ -160,13 +210,16 @@ pub fn build(
 fn build_target(
     manifest: &Manifest,
     root: &Path,
+    project_root: &Path,
     target: Target,
     name: &str,
     config: &serde_json::Value,
     resources: &resources::Package,
     icon: Option<&Path>,
     output_dir: &Path,
-) -> Result<(PathBuf, String, String)> {
+    build_staging: &Path,
+    resource_layout: ResourceLayout,
+) -> Result<(PathBuf, String, String, &'static str)> {
     let runtime = manifest
         .runtimes
         .get(&target)
@@ -175,13 +228,17 @@ fn build_target(
         runtime.version == manifest.version,
         "runtime version does not match kit version"
     );
-    let runtime_path = resources::safe_file(
-        root,
-        runtime
-            .path
-            .to_str()
-            .context("runtime path must be UTF-8")?,
-    )?;
+    let runtime_relative = runtime
+        .path
+        .to_str()
+        .context("runtime path must be UTF-8")?;
+    let runtime_path = build_staging.join(format!("runtime-{}", target.name()));
+    resources::snapshot_file(root, runtime_relative, &runtime_path)?;
+    ensure!(
+        fs::metadata(&runtime_path)?.len() < MAX_RUNTIME_BYTES,
+        "runtime exceeds the strict {} byte size limit",
+        MAX_RUNTIME_BYTES
+    );
     let bytes = fs::read(&runtime_path)?;
     ensure!(
         runtime.sha256.len() == 64 && runtime.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -192,15 +249,18 @@ fn build_target(
         "runtime SHA256 mismatch"
     );
     validate_architecture(target, &bytes)?;
-    let filename = format!(
-        "{name}-{}.{}",
-        target.name(),
-        if target == Target::WindowsX86_64 {
-            "exe"
-        } else {
-            "zip"
-        }
-    );
+    let is_windows = target == Target::WindowsX86_64;
+    let extension = if is_windows && resource_layout == ResourceLayout::Embedded {
+        "exe"
+    } else {
+        "zip"
+    };
+    let suffix = if is_windows && resource_layout == ResourceLayout::External {
+        "-green"
+    } else {
+        ""
+    };
+    let filename = format!("{name}-{}{suffix}.{extension}", target.name());
     let destination = output_dir.join(filename);
     ensure!(
         !destination.exists(),
@@ -211,32 +271,45 @@ fn build_target(
         .prefix(".niva-packager-")
         .tempdir_in(output_dir)?;
     let artifact = staging.path().join("artifact");
-    if target == Target::WindowsX86_64 {
-        windows::assemble(
-            &runtime_path,
-            &artifact,
-            config,
-            &resources.indexes,
-            &resources.data,
-            icon,
-        )?;
+    let signature = if is_windows && resource_layout == ResourceLayout::Embedded {
+        windows::assemble(&runtime_path, &artifact, config, resources, icon)?;
+        signing::sign_windows(config, project_root, &artifact)?.unwrap_or("unsigned")
+    } else if is_windows {
+        let package_root = staging.path().join("portable");
+        fs::create_dir(&package_root)?;
+        let executable = package_root.join(format!("{name}.exe"));
+        windows::assemble(&runtime_path, &executable, config, resources, icon)?;
+        let signature =
+            signing::sign_windows(config, project_root, &executable)?.unwrap_or("unsigned");
+        resources::copy_external_resources(resources, &package_root.join("resources"))?;
+        archive::zip_directory(&package_root, &artifact, "resources/")?;
+        signature
     } else {
         let app = staging.path().join(format!("{name}.app"));
-        macos::assemble(
+        let signature = macos::assemble(
             &runtime_path,
             &app,
             config,
-            &resources.indexes,
-            &resources.data,
+            resources,
             icon,
+            project_root,
+            staging.path(),
         )?;
-        archive::zip_app(&app, &artifact)?;
-    }
-    let hash = sha256(&fs::read(&artifact)?);
+        let stored_resource_prefix = (resource_layout == ResourceLayout::External)
+            .then(|| format!("{name}.app/Contents/Resources/app/"));
+        archive::zip_app(&app, &artifact, stored_resource_prefix.as_deref())?;
+        signature
+    };
+    let hash = sha256_file(&artifact)?;
     // Hard-link publication is atomic and refuses a concurrent overwrite. Both
     // paths are on the same filesystem because staging is under output_dir.
     fs::hard_link(&artifact, &destination).context("publish artifact without overwriting")?;
-    Ok((destination.canonicalize()?, hash, runtime.version.clone()))
+    Ok((
+        destination.canonicalize()?,
+        hash,
+        runtime.version.clone(),
+        signature,
+    ))
 }
 fn validate_name(name: &str) -> Result<()> {
     ensure!(

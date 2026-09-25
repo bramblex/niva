@@ -68,10 +68,14 @@ def clipboard_digest():
 def read_frames(process, frames):
     for line in process.stdout:
         try:
-            frames.put(json.loads(line))
+            frame = json.loads(line)
+            if not isinstance(frame, dict) or frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+                frames.put({"event": "bad-json", "frame": frame})
+            else:
+                frames.put(frame)
         except json.JSONDecodeError:
-            frames.put({"t": "invalid-json"})
-    frames.put({"t": "eof"})
+            frames.put({"event": "bad-json"})
+    frames.put({"event": "eof"})
 
 
 def native_child_state(pid, name):
@@ -125,14 +129,15 @@ def main():
     expected_clipboard = clipboard_digest()
     frames = queue.Queue()
     with open(Path.cwd() / "dist/windows-api-stderr.log", "wb") as errors:
-        process = subprocess.Popen([str(binary), "--stdio"], stdin=subprocess.PIPE,
+        process = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=errors)
         threading.Thread(target=read_frames, args=(process, frames), daemon=True).start()
         try:
-            assert frames.get(timeout=20) == {"t": "ready", "v": 1}
+            ready = frames.get(timeout=20)
+            assert ready.get("event") == "ready" and ready.get("name") == "windows-api", ready
             while True:
                 result = frames.get(timeout=90)
-                if result.get("name") != "native-probe":
+                if result.get("event") != "message" or result.get("name") != "native-probe":
                     break
                 probe = result["data"]
                 actual = None
@@ -146,11 +151,12 @@ def main():
                     if error is None and actual == probe["expected"]:
                         break
                     time.sleep(0.05)
-                answer = {"t": "msg", "name": "native-result", "data": {
+                answer = {"protocol": "niva-fixture", "version": 1, "event": "command", "name": "native-result", "data": {
                     "name": probe["name"], "value": actual, "error": error,
                 }}
                 process.stdin.write((json.dumps(answer) + "\n").encode("utf-8"))
                 process.stdin.flush()
+            assert result.get("event") == "message", result
             if result.get("name") == "api-fatal":
                 raise RuntimeError(result.get("data", {}).get("message", "API fixture failed"))
             assert result.get("name") == "api-results", result.get("name")
@@ -164,6 +170,8 @@ def main():
                 "unexpected": sorted(set(checks) - EXPECTED_METHODS),
             }
             assert data["clipboardDigest"] == expected_clipboard, "clipboard.read differs from native CF_UNICODETEXT"
+            process.stdin.write((json.dumps({"protocol": "niva-fixture", "version": 1, "event": "command", "name": "fixture-exit", "data": 0}) + "\n").encode("utf-8"))
+            process.stdin.flush()
             process.stdin.close()
             assert process.wait(timeout=10) == 0
             print(f"API: {len(checks)} behavioral checks passed; clipboard digest matched native Windows clipboard")

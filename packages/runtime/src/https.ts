@@ -1,0 +1,11 @@
+const http = globalThis.Niva.https;
+export const request = http.request;
+export const get = http.get;
+export const requestText = http.requestText;
+export const createServer = http.createServer;
+export const IncomingMessage = http.IncomingMessage;
+export const ServerResponse = http.ServerResponse;
+export const ClientRequest = http.ClientRequest;
+export const METHODS = http.METHODS;
+export const STATUS_CODES = http.STATUS_CODES;
+export default http;

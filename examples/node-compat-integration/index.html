@@ -1,18 +1,18 @@
-<!doctype html><html><head><meta charset="utf-8"></head><body><script>
+<!doctype html><html><head><meta charset="utf-8"><script src="fixture-protocol.js"></script></head><body><script>
 (async function(){
- const checks={};
- const trace=__TRACE__;
- const stage=label=>trace?Niva.api.host.send("implementation-progress",{label}):Promise.resolve();
+  const checks={};
+  const trace=__TRACE__;
+  const stage=label=>trace?NivaFixture.send("implementation-progress",{label}):Promise.resolve();
  const within=(promise,label,ms=10000)=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error(label+' timeout')),ms);Promise.resolve(promise).then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
  try {
-  await window.NivaNodeCompatReady;
+  await NivaFixture.ready("node-compat-integration");
   const bufferModuleForLimit=require('buffer'), originalMax=bufferModuleForLimit.kMaxLength;
   bufferModuleForLimit.kMaxLength=64;
   const lazyZlib=require('zlib');
   bufferModuleForLimit.kMaxLength=originalMax;
   try { lazyZlib.gunzipSync(Buffer.from('H4sIAAAAAAAAA0tMHFgAAIw2K/GAAAAA','base64'));checks.zlibLazyCommonJS=false; }
   catch(error) { checks.zlibLazyCommonJS=error instanceof RangeError; }
-  checks.zlibModuleIdentity=lazyZlib===require('node:zlib')&&lazyZlib===await Niva.import('zlib')&&lazyZlib===(await import('/__niva_compat/src/zlib.js')).default;
+  checks.zlibModuleIdentity=lazyZlib===require('node:zlib')&&lazyZlib===(await import('zlib')).default;
   const nivaAssert=require('assert'), missingFeature=false, sourceReads=[];
   const SourceXHR=window.XMLHttpRequest;
   window.XMLHttpRequest=function(){const xhr=new SourceXHR(),open=xhr.open,send=xhr.send;let entry;
@@ -23,12 +23,12 @@
    if(!checks.assertSourceMessage)checks.assertSourceDiagnostic={message:error.message,stack:error.stack,sourceReads,hasCapture:typeof Error.captureStackTrace}; }
   finally { window.XMLHttpRequest=SourceXHR; }
   const fs=require('fs'), cp=require('child_process'), crypto=require('crypto');
-  const fsModule=await import('/__niva_compat/src/fs.js');
-  const bufferModule=await import('/__niva_compat/src/buffer.js');
-  checks.wrapperModuleIdentity=fsModule.default===fs && bufferModule.Buffer===require('buffer').Buffer;
+  const fsModule=await import('fs');
+  const bufferModule=await import('buffer');
+  checks.wrapperModuleIdentity=fsModule.default===fs && bufferModule.default.Buffer===require('buffer').Buffer && bufferModule.Buffer===require('buffer').Buffer;
   const file=__SMOKE_DIR__+'/bytes.bin';
   checks.mainProcess=!!window.process && process.pid===Niva.bootstrap.process.pid;
-  checks.dynamicCwd=process.cwd()===Niva.callSync('process.currentDir',[]);
+  checks.dynamicCwd=process.cwd()===Niva.bridge.callSync('process.currentDir',[]);
   fs.writeFileSync(file,Buffer.from([0,255,254,97]));
   checks.syncBytes=fs.readFileSync(file).toString('hex')==='00fffe61';
   fs.appendFileSync(file,'b');
@@ -39,7 +39,7 @@
   checks.spawnSync=cp.execFileSync('/bin/sh',['-c','printf hello']).toString()==='hello';
   checks.hash=crypto.createHash('sha256').update('abc').digest('hex')==='ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
   checks.timingSafeEqual=crypto.timingSafeEqual(Buffer.from('same'),Buffer.from('same'));
-  try{Niva.callSync('window.open',[{}]);checks.rejectUI=false;}catch(_){checks.rejectUI=true;}
+  try{Niva.bridge.callSync('window.open',[{}]);checks.rejectUI=false;}catch(_){checks.rejectUI=true;}
   checks.readStream=await new Promise((resolve,reject)=>{let chunks=[];const stream=fs.createReadStream(file,{highWaterMark:2});stream.on('data',chunk=>chunks.push(chunk));stream.on('end',()=>resolve(Buffer.concat(chunks).toString('hex')==='00fffe6162'));stream.on('error',reject);});
   const written=__SMOKE_DIR__+'/stream.bin';
   await new Promise((resolve,reject)=>{const stream=fs.createWriteStream(written);stream.on('finish',resolve);stream.on('error',reject);stream.write(Buffer.from([0,255]));stream.end(Buffer.from([97]));});
@@ -205,7 +205,8 @@
   checks.apiSurface=missing.length===0;
   checks.apiSurfaceCount=specs.length-missing.length;
   if(missing.length)throw new Error('Missing API entries: '+missing.join(', '));
-  await Niva.api.host.send('implementation-result',{checks,ok:Object.values(checks).every(Boolean)});
- }catch(error){await Niva.api.host.send('implementation-result',{checks,error:error&&error.message||String(error),code:error&&error.code,data:error&&error.data,stack:error&&error.stack});}
+  await NivaFixture.send('implementation-result',{checks,ok:Object.values(checks).every(Boolean)});
+  NivaFixture.exit(0);
+ }catch(error){await NivaFixture.send('implementation-result',{checks,error:error&&error.message||String(error),code:error&&error.code,data:error&&error.data,stack:error&&error.stack});NivaFixture.exit(1);}
 })();
 </script></body></html>

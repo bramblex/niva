@@ -2,11 +2,11 @@ import {useModel} from "../common/state";
 import classNames from "classnames";
 import { XPromise } from "../common/utils";
 
-import { ModalComponentProps, ProgressModel } from "../models/modal.model";
+import { ModalComponentProps } from "../models/modal.model";
 
 import "./style.scss";
 import { useLocale, useModal } from "../models/app.model";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 export function NativeModal(_: ModalComponentProps) {
   return <></>;
@@ -174,96 +174,6 @@ export function PromptProjectNameModal({
         <button type="submit" className="btn btn-md btn-primary" disabled={!isValid}>{locale.t("CHOOSE_LOCATION")}</button>
       </footer>
     </form>
-  );
-}
-
-export function ProgressModal({
-  close,
-  title,
-  progress,
-}: ModalComponentProps & { title: string; progress: ProgressModel }) {
-  useModel(progress);
-  const locale = useLocale();
-  const { state } = progress;
-  const [input, setInput] = useState("");
-  const terminalRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-    }
-  }, [state.commands]);
-
-  const submitInput = (event: FormEvent) => {
-    event.preventDefault();
-    if (progress.sendInput(input)) setInput("");
-  };
-
-  return (
-    <div className={classNames("window active is-bright build-progress-modal", {
-      "has-terminal": state.commands.length > 0,
-    })} role="dialog" aria-modal="true" aria-label={title}>
-      <div className="window-body has-space progress">
-        <h4 className="instruction instruction-primary">{title}</h4>
-
-        <div className="build-progress-status" aria-live="polite">
-          {state.step > 0 && (
-            <span>{locale.t("PROGRESS_STEP", { step: String(state.step), total: String(state.total) })}</span>
-          )}
-          <span className="build-progress-text">{state.text}</span>
-        </div>
-        <div role="progressbar" className="marquee" aria-label={state.text || title}></div>
-
-        {state.commands.length > 0 && (
-          <section className="build-terminal" aria-label={locale.t("BUILD_OUTPUT")}>
-            <div className="build-terminal-output" ref={terminalRef}>
-              {state.commands.map((command, index) => (
-                <article className="build-terminal-command" key={`${index}-${command.label}`}>
-                  <header>
-                    <strong>{command.label}</strong>
-                    <span className={`build-command-status is-${command.status}`}>
-                      {command.status === "running"
-                        ? locale.t("COMMAND_RUNNING")
-                        : command.status === "success"
-                          ? locale.t("COMMAND_EXITED", { status: String(command.exitCode ?? 0) })
-                          : locale.t("COMMAND_FAILED", { status: String(command.exitCode ?? "?") })}
-                    </span>
-                  </header>
-                  {command.transcript.map((entry, outputIndex) => (
-                    <pre className={`is-${entry.kind}`} key={outputIndex}>{entry.text}</pre>
-                  ))}
-                  {command.transcript.length === 0 && command.status === "running" && (
-                    <p className="build-terminal-waiting">{locale.t("COMMAND_WAITING_OUTPUT")}</p>
-                  )}
-                </article>
-              ))}
-            </div>
-
-            {state.stdinOpen ? (
-              <form className="build-terminal-input" onSubmit={submitInput}>
-                <label htmlFor="build-stdin">{locale.t("BUILD_STDIN")}</label>
-                <input
-                  id="build-stdin"
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  placeholder={locale.t("BUILD_STDIN_PLACEHOLDER")}
-                  autoComplete="off"
-                  autoFocus
-                />
-                <button className="btn btn-primary" type="submit">{locale.t("SEND_INPUT")}</button>
-                <button className="btn" type="button" onClick={() => progress.closeStdin()}>
-                  {locale.t("CLOSE_STDIN")}
-                </button>
-              </form>
-            ) : (
-              state.commands[state.commands.length - 1]?.status === "running" && (
-                <p className="build-terminal-stdin-closed">{locale.t("STDIN_CLOSED")}</p>
-              )
-            )}
-          </section>
-        )}
-      </div>
-    </div>
   );
 }
 

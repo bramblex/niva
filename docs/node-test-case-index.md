@@ -1,5 +1,7 @@
 # NodeCompat 测试用例索引
 
+> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+
 2026-09-24，按当前源码、冻结清单和已保存执行报告核对。
 
 ## 统计口径

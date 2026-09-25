@@ -1,5 +1,7 @@
 # Node 模块补齐难度与新增体积预算
 
+> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+
 > 本页保留实施前预算。当前 macOS arm64 主程序（含内嵌 JS/索引）实测 **2,772,208 bytes**；功能检查、官方契约和 Windows 边界见[实施记录](node-compat-implementation.md)，不是所有 Node 契约均已验收。
 > 2026-09-24 · 当前 22 模块 / 179 API 范围 · KiB = 1024 bytes。Native 非零区间为未实测的工程预算；JS 库样本另列实测。
 

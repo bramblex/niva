@@ -42,7 +42,7 @@ struct ServerState {
 
 impl NivaHttpServer {
     pub fn start(app: &Arc<NivaApp>) -> Result<Arc<Self>> {
-        let node_compat = NodeCompat::from_option(&app.launch_info.options.node_compat)?;
+        let node_compat = Some(NodeCompat::new(app.launch_info.options.inject_esm));
         let listener = smol::block_on(TcpListener::bind("127.0.0.1:0"))?;
         let port = listener.local_addr()?.port();
 
@@ -51,9 +51,10 @@ impl NivaHttpServer {
             resource: app.resource(),
             port,
             node_compat,
-            debug_static_enabled: app.launch_info.arguments.debug_resource.is_some()
-                || app.launch_info.arguments.debug_config.is_some()
-                || app.launch_info.arguments.debug_entry.is_some(),
+            debug_static_enabled: app
+                .launch_info
+                .arguments
+                .has_explicit_debug_entry(&app.launch_info.options),
         });
 
         // Single driver thread pumps the accept loop and all static-file
@@ -259,8 +260,10 @@ fn sync_body_length(headers: &HashMap<String, String>) -> Result<usize> {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SyncEnvelope {
     token: String,
+    session_id: String,
     request: super::api_manager::ApiRequest,
 }
 
@@ -314,11 +317,30 @@ async fn handle_sync(
     else {
         return write_response(stream, 403, "Forbidden", "text/plain", b"unauthorized").await;
     };
-    let response = state
-        .app
-        .api()
-        .sync_call(window.id, envelope.request)
-        .await?;
+    enum SyncOutcome {
+        Response(Result<String>),
+        ClientDisconnected,
+    }
+    let api = state.app.api();
+    let window_id = window.id;
+    let session_id = envelope.session_id;
+    let request = envelope.request;
+    let outcome = smol::future::or(
+        async move { SyncOutcome::Response(api.sync_call(window_id, &session_id, request).await) },
+        async {
+            // A synchronous XHR cannot heartbeat while JavaScript is blocked.
+            // Watching the request socket lets navigation/close abort owned
+            // work immediately without inventing a lease timeout.
+            let mut extra = [0u8; 1];
+            let _ = stream.read(&mut extra).await;
+            SyncOutcome::ClientDisconnected
+        },
+    )
+    .await;
+    let response = match outcome {
+        SyncOutcome::Response(response) => response?,
+        SyncOutcome::ClientDisconnected => return Ok(()),
+    };
     write_response_headers(stream, 200, "OK", "application/json", response.as_bytes(),
         &format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n")).await
 }
@@ -369,11 +391,8 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
     let (path, query) = split_target(&head.target);
 
     if let Some(relative) = path.strip_prefix('/')
-        && relative.starts_with("__niva_compat/")
+        && relative.starts_with("__niva_runtime/")
     {
-        if !state.debug_static_enabled {
-            return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
-        }
         let Some(compat) = &state.node_compat else {
             return write_response(&mut stream, 404, "Not Found", "text/plain", b"not found").await;
         };
@@ -384,11 +403,6 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
             .ok_or_else(|| anyhow!("missing embedded asset"))
         {
             Ok(content) => {
-                let content = if relative == "__niva_compat/node-compat.js" {
-                    compat.classic_script(&content)?
-                } else {
-                    content
-                };
                 write_response_headers(
                     &mut stream, 200, "OK", "text/javascript; charset=utf-8", &content,
                     "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n",
@@ -523,7 +537,11 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
             }
             Err(err) => {
                 // The request path embeds the per-window credential.
-                eprintln!("[niva] fs response failed: {:?}", err.kind());
+                crate::niva_log!(
+                    crate::app::logging::Level::Warn,
+                    "fs response failed: {:?}",
+                    err.kind()
+                );
                 let (_, body) = error_page_html(404, "Not Found", path, &err.to_string());
                 write_response(
                     &mut stream,
@@ -606,7 +624,10 @@ async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream)
             write_response(&mut stream, 200, "OK", &mime, &content).await
         }
         Err(err) => {
-            eprintln!("[niva] static {path} -> 404: {err}");
+            crate::niva_log!(
+                crate::app::logging::Level::Warn,
+                "static {path} -> 404: {err}"
+            );
             let (_, body) = error_page_html(404, "Not Found", path, &err.to_string());
             write_response(
                 &mut stream,
@@ -820,23 +841,19 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
 
     ws.get_ref()
         .set_read_timeout(Some(Duration::from_secs(5)))?;
-    let claimed_window_id: u8 = match ws.read()? {
-        Message::Text(text) => parse_hello(&text).ok_or(anyhow!("Bad hello"))?,
+    let hello_text = match ws.read()? {
+        Message::Text(text) => text.to_string(),
         _ => return Err(anyhow!("Bad hello")),
     };
 
-    if claimed_window_id != window.id {
-        return Err(anyhow!("WS hello window id does not match credential"));
-    }
-
     let (tx, rx) = mpsc::channel::<crate::app::window_manager::window::WsOut>();
     let connection_id = window.register_ws_sender(tx.clone());
-    if window.id == 0
-        && let Some(bridge) = state.app.stdio_bridge()
-    {
-        bridge.send_ready_once()?;
+    let api = state.app.api();
+    if let Err(error) = register_ws_hello(&api, window.id, connection_id, &hello_text) {
+        window.remove_ws_sender(connection_id);
+        api.cancel_connection(window.id, connection_id);
+        return Err(error);
     }
-
     ws.get_ref()
         .set_read_timeout(Some(Duration::from_millis(10)))?;
     // Drain on every iteration, including while uploads are active. Previously
@@ -875,19 +892,49 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
     Ok(())
 }
 
-/// `{t:"hello", wid, v}` — first text frame on a fresh connection.
+#[derive(Debug, PartialEq, Eq)]
+struct WsHello {
+    window_id: u8,
+    session_id: String,
+}
+
+/// `{t:"hello", wid, v, sessionId}` — first text frame on a fresh connection.
 /// Version mismatches are refused loudly (fail fast, never half-talk).
-fn parse_hello(text: &str) -> Option<u8> {
+fn parse_hello(text: &str) -> Option<WsHello> {
     use crate::app::api_manager::protocol::{ClientMsg, WIRE_VERSION};
 
     match serde_json::from_str::<ClientMsg>(text).ok()? {
-        ClientMsg::Hello { wid, v } if v == WIRE_VERSION => Some(wid),
+        ClientMsg::Hello { wid, v, session_id } if v == WIRE_VERSION => Some(WsHello {
+            window_id: wid,
+            session_id,
+        }),
         ClientMsg::Hello { v, .. } => {
-            eprintln!("[niva] ws hello wire version mismatch: got {v}");
+            crate::niva_log!(
+                crate::app::logging::Level::Warn,
+                "ws hello wire version mismatch: got {v}"
+            );
             None
         }
         _ => None,
     }
+}
+
+/// Bind the authenticated transport's first frame to the ApiManager before
+/// allowing any following call frame on this connection.
+fn register_ws_hello(
+    api: &crate::app::api_manager::ApiManager,
+    window_id: u8,
+    connection_id: u64,
+    text: &str,
+) -> Result<()> {
+    let hello = parse_hello(text).ok_or_else(|| anyhow!("Bad hello"))?;
+    if hello.window_id != window_id {
+        return Err(anyhow!("WS hello window id does not match credential"));
+    }
+    if !api.bind_ws_session(window_id, connection_id, &hello.session_id) {
+        return Err(anyhow!("WS hello has an invalid session id"));
+    }
+    Ok(())
 }
 
 fn handle_ws_request(
@@ -922,6 +969,108 @@ pub fn app_server(app: &Arc<NivaApp>) -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ws_handshake_binds_hello_session_before_forwarding_calls_to_api_manager() {
+        use crate::app::{
+            api_manager::{ApiManager, protocol::WIRE_VERSION},
+            options::NivaOptions,
+            window_manager::window::WsOut,
+        };
+
+        let options: NivaOptions = serde_json::from_value(serde_json::json!({
+            "name": "ws-handshake-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let hello = serde_json::json!({
+            "t": "hello",
+            "wid": 7,
+            "v": WIRE_VERSION,
+            "sessionId": session_id
+        })
+        .to_string();
+
+        register_ws_hello(&manager, 7, 44, &hello).unwrap();
+        assert!(manager.ws_session_matches(7, 44, session_id));
+
+        // Exercise the same ApiManager receive entry used immediately after
+        // ws_pump consumes Hello. A valid session reaches normal dispatch;
+        // a different session is rejected at the transport boundary.
+        let (tx, rx) = mpsc::channel();
+        manager.on_text(
+            7,
+            44,
+            &tx,
+            &serde_json::json!({
+                "t": "call",
+                "id": 1,
+                "method": "test.unregistered",
+                "args": [],
+                "sessionId": session_id
+            })
+            .to_string(),
+        );
+        let WsOut::Text(accepted) = rx.recv().unwrap() else {
+            panic!("expected a unary text response");
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&accepted).unwrap()["message"],
+            "API manager not ready"
+        );
+
+        manager.on_text(
+            7,
+            44,
+            &tx,
+            &serde_json::json!({
+                "t": "call",
+                "id": 2,
+                "method": "test.unregistered",
+                "args": [],
+                "sessionId": "abcdef0123456789abcdef0123456789"
+            })
+            .to_string(),
+        );
+        let WsOut::Text(rejected) = rx.recv().unwrap() else {
+            panic!("expected a unary text response");
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&rejected).unwrap()["message"],
+            "invalid WebSocket session id"
+        );
+
+        manager.cancel_connection(7, 44);
+        assert!(!manager.ws_session_matches(7, 44, session_id));
+    }
+
+    #[test]
+    fn ws_handshake_rejects_bad_or_mismatched_hello_before_binding() {
+        use crate::app::{api_manager::ApiManager, options::NivaOptions};
+
+        let options: NivaOptions = serde_json::from_value(serde_json::json!({
+            "name": "ws-handshake-reject-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let valid_session = "0123456789abcdef0123456789abcdef";
+        let mismatch = serde_json::json!({
+            "t": "hello", "wid": 8, "v": 1, "sessionId": valid_session
+        })
+        .to_string();
+        assert!(register_ws_hello(&manager, 7, 45, &mismatch).is_err());
+
+        let invalid_session = serde_json::json!({
+            "t": "hello", "wid": 7, "v": 1, "sessionId": "not-a-session"
+        })
+        .to_string();
+        assert!(register_ws_hello(&manager, 7, 46, &invalid_session).is_err());
+        assert!(!manager.ws_session_matches(7, 45, valid_session));
+        assert!(!manager.ws_session_matches(7, 46, "not-a-session"));
+    }
 
     #[test]
     fn rejected_post_body_drain_accepts_length_and_chunked_framing() {

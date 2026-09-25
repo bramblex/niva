@@ -30,7 +30,8 @@ impl NivaShortcutManager {
             Ok(manager) => (Some(manager), None),
             Err(err) => {
                 let reason = err.to_string();
-                eprintln!(
+                crate::niva_log!(
+                    crate::app::logging::Level::Warn,
                     "[niva] global shortcuts are disabled because manager initialization failed: {reason}"
                 );
                 (None, Some(reason))

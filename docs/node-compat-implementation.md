@@ -1,5 +1,7 @@
 # NodeCompat 实施与验收记录
 
+> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+
 2026-09-24，基于 `3787257` 的未提交工作区。机器证据见 [JSON 报告](node-api-implementation-evidence.json)。
 
 ## 当前结果

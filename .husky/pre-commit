@@ -4,11 +4,14 @@ COLOR_GREEN="\033[0;32m"
 COLOR_RED="\033[31m"
 ESC="\033[0m"
 echo "$COLOR_GREEN [Niva-devtools]Checking TS...$ESC"
-yarn run type-checker || echo "$COLOR_RED TS checkfailed, exiting...$ESC" || exit 1
+npm run type-checker || {
+    echo "$COLOR_RED TS check failed, exiting...$ESC"
+    exit 1
+}
 
 echo "$COLOR_GREEN [Niva-devtools]Checking registry... $ESC"
 registry=$(npm config get registry)
-if [ $registry == "https://registry.npmjs.org/" ] || [ $registry == "https://registry.npmmirror.com/" ]; then
+if [ "$registry" = "https://registry.npmjs.org/" ] || [ "$registry" = "https://registry.npmmirror.com/" ]; then
     exit 0
 else 
     echo "$COLOR_RED [Niva-devtools]Registry is not npm or taobao, exiting... $ESC"

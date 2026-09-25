@@ -1,17 +1,20 @@
 use crate::app::NivaApp;
-use crate::app::api_manager::{ApiManager, ApiRequest, CallContext};
+use crate::app::api_manager::{
+    ApiCallOwner, ApiManager, ApiRequest, CallContext, CancellationContext,
+};
 use crate::app::main_exec::run_on_main;
 use crate::app::window_manager::window::NivaWindow;
-use anyhow::{Ok, Result};
+use anyhow::{Ok, Result, anyhow};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tao::event_loop::ControlFlow;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.pid", pid);
-    api_manager.register_blocking_api_with("process.spawnSync", Some(None), spawn_sync);
+    api_manager.register_cancellable_api("process.spawnSync", spawn_sync);
     api_manager.register_blocking_api("process.write", write_stdio);
     api_manager.register_stream_api_with("process.stdin", Some(None), read_stdin);
     api_manager.register_api("process.currentDir", current_dir);
@@ -24,6 +27,8 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_blocking_api("process.open", open);
     api_manager.register_stream_api_with("process.execStream", Some(None), exec_stream);
     api_manager.register_stream_api("process.signal", signal_child);
+    api_manager.register_cancellable_api("process.execText", exec_text);
+    api_manager.register_cancellable_api("process.execFileText", exec_file_text);
 }
 
 async fn pid(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<u32> {
@@ -131,7 +136,317 @@ fn build_exec_command(
     cmd.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     (cmd, detached)
+}
+
+const MAX_TEXT_EXEC_OUTPUT_BYTES: usize = 64 * 1024;
+const DEFAULT_TEXT_EXEC_TIMEOUT_MS: u64 = 10_000;
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TextExecOptions {
+    cwd: Option<String>,
+    env: Option<std::collections::HashMap<String, String>>,
+    timeout_ms: Option<u64>,
+    max_output_bytes: Option<usize>,
+}
+
+fn build_text_exec_command(
+    program: String,
+    args: Vec<String>,
+    options: &TextExecOptions,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    if let Some(cwd) = &options.cwd {
+        command.current_dir(cwd);
+    }
+    if let Some(env) = &options.env {
+        command.env_clear().envs(env);
+    }
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+}
+
+async fn exec_text(
+    context: CancellationContext,
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    let (command, options): (String, Option<TextExecOptions>) = request.args().optional(2)?;
+    anyhow::ensure!(!command.is_empty(), "EINVAL: command must not be empty");
+    execute_text_command(context, command, None, options.unwrap_or_default()).await
+}
+
+async fn exec_file_text(
+    context: CancellationContext,
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    let (file, args, options): (String, Vec<String>, Option<TextExecOptions>) =
+        request.args().optional(3)?;
+    anyhow::ensure!(
+        !file.is_empty(),
+        "EINVAL: executable path must not be empty"
+    );
+    anyhow::ensure!(
+        !file.contains('\0') && args.iter().all(|argument| !argument.contains('\0')),
+        "EINVAL: executable and arguments cannot contain null bytes"
+    );
+    execute_text_command(context, file, Some(args), options.unwrap_or_default()).await
+}
+
+async fn execute_text_command(
+    context: CancellationContext,
+    program: String,
+    args: Option<Vec<String>>,
+    options: TextExecOptions,
+) -> Result<Value> {
+    let timeout_ms = options.timeout_ms.unwrap_or(DEFAULT_TEXT_EXEC_TIMEOUT_MS);
+    anyhow::ensure!(
+        (1..=30_000).contains(&timeout_ms),
+        "EINVAL: timeoutMs must be between 1 and 30000 ms"
+    );
+    let max_output_bytes = options
+        .max_output_bytes
+        .unwrap_or(MAX_TEXT_EXEC_OUTPUT_BYTES);
+    anyhow::ensure!(
+        (1..=MAX_TEXT_EXEC_OUTPUT_BYTES).contains(&max_output_bytes),
+        "EINVAL: maxOutputBytes must be between 1 and 65536"
+    );
+
+    let command = match args {
+        Some(args) => build_text_exec_command(program, args, &options),
+        None => build_text_exec_shell_command(&program, &options),
+    };
+    let owner = process_owner(&context);
+    let worker_context = context.clone();
+    let cancel_context = context.clone();
+    let work = crate::blocking!({
+        run_text_command(
+            command,
+            owner,
+            Duration::from_millis(timeout_ms),
+            max_output_bytes,
+            move || worker_context.is_cancelled(),
+        )
+    });
+    smol::future::or(work, async move {
+        cancel_context.cancelled().await;
+        Err(anyhow!(
+            "ECANCELED: process call was cancelled with its owner"
+        ))
+    })
+    .await
+}
+
+fn build_text_exec_shell_command(
+    command: &str,
+    options: &TextExecOptions,
+) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        build_text_exec_command(
+            "cmd.exe".into(),
+            vec!["/d".into(), "/s".into(), "/c".into(), command.into()],
+            options,
+        )
+    }
+    #[cfg(unix)]
+    {
+        build_text_exec_command("/bin/sh".into(), vec!["-c".into(), command.into()], options)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        build_text_exec_command(command.into(), Vec::new(), options)
+    }
+}
+
+fn process_owner(context: &CancellationContext) -> ProcessCallOwner {
+    match &context.owner {
+        ApiCallOwner::WebSocket { connection_id } => ProcessCallOwner::WebSocket {
+            window_id: context.window_id,
+            connection_id: *connection_id,
+            call_id: context.call_id,
+        },
+        ApiCallOwner::Synchronous { session_id } => ProcessCallOwner::Synchronous {
+            window_id: context.window_id,
+            session_id: session_id.clone(),
+            call_id: context.call_id,
+        },
+        ApiCallOwner::Ipc {
+            source_origin,
+            session_id,
+            frame_id,
+            generation,
+        } => ProcessCallOwner::Ipc {
+            window_id: context.window_id,
+            source_origin: source_origin.clone(),
+            session_id: session_id.clone(),
+            frame_id: *frame_id,
+            generation: *generation,
+            call_id: context.call_id,
+        },
+    }
+}
+
+struct CapturedOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    total: usize,
+    limit: usize,
+}
+
+fn spawn_output_capture<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+    stderr: bool,
+    captured: Arc<std::sync::Mutex<CapturedOutput>>,
+    overflow: Arc<std::sync::atomic::AtomicBool>,
+) -> std::io::Result<std::thread::JoinHandle<std::io::Result<()>>> {
+    std::thread::Builder::new()
+        .name(if stderr {
+            "niva-exec-text-stderr".into()
+        } else {
+            "niva-exec-text-stdout".into()
+        })
+        .spawn(move || {
+            let mut buffer = [0u8; 8192];
+            loop {
+                let size = reader.read(&mut buffer)?;
+                if size == 0 {
+                    return std::result::Result::Ok(());
+                }
+                let complete = {
+                    let mut output = captured
+                        .lock()
+                        .map_err(|_| std::io::Error::other("process output capture poisoned"))?;
+                    let keep = size.min(output.limit.saturating_sub(output.total));
+                    if stderr {
+                        output.stderr.extend_from_slice(&buffer[..keep]);
+                    } else {
+                        output.stdout.extend_from_slice(&buffer[..keep]);
+                    }
+                    output.total += keep;
+                    keep == size
+                };
+                if !complete {
+                    overflow.store(true, std::sync::atomic::Ordering::Release);
+                    return std::result::Result::Ok(());
+                }
+            }
+        })
+}
+
+fn run_text_command(
+    mut command: std::process::Command,
+    owner: ProcessCallOwner,
+    timeout: std::time::Duration,
+    max_output_bytes: usize,
+    is_cancelled: impl Fn() -> bool,
+) -> Result<Value> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    anyhow::ensure!(!is_cancelled(), "ECANCELED: process call was cancelled");
+    let raw_child = command.spawn()?;
+    let pid = raw_child.id();
+    let mut child = SpawnSyncChild::new(raw_child, pid, cfg!(unix))?;
+    let _registration = register_child(owner, child.control.clone())?;
+    if is_cancelled() {
+        child.terminate_and_wait()?;
+        anyhow::bail!("ECANCELED: process call was cancelled");
+    }
+    let stdout = child
+        .child_mut()
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("EIO: child stdout pipe unavailable"))?;
+    let stderr = child
+        .child_mut()
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("EIO: child stderr pipe unavailable"))?;
+    let captured = Arc::new(std::sync::Mutex::new(CapturedOutput {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        total: 0,
+        limit: max_output_bytes,
+    }));
+    let overflow = Arc::new(AtomicBool::new(false));
+    let stdout_reader = spawn_output_capture(stdout, false, captured.clone(), overflow.clone())?;
+    let stderr_reader = spawn_output_capture(stderr, true, captured.clone(), overflow.clone())?;
+    let started = std::time::Instant::now();
+    let exit = loop {
+        if is_cancelled() {
+            child.terminate_and_wait()?;
+            break Err(anyhow!("ECANCELED: process call was cancelled"));
+        }
+        if overflow.load(Ordering::Acquire) {
+            child.terminate_and_wait()?;
+            break Err(anyhow!("ENOBUFS: child output exceeded maxOutputBytes"));
+        }
+        if started.elapsed() >= timeout {
+            child.terminate_and_wait()?;
+            break Err(anyhow!("ETIMEDOUT: child process exceeded timeoutMs"));
+        }
+        if let Some(status) = child.try_wait()? {
+            // A descendant may inherit a pipe after the direct process exits.
+            // Stop the owned tree before joining readers, so it cannot stall
+            // this request indefinitely.
+            child.terminate_descendants();
+            break Ok(status);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let stdout_result = stdout_reader
+        .join()
+        .map_err(|_| anyhow!("EIO: stdout capture thread panicked"))?;
+    let stderr_result = stderr_reader
+        .join()
+        .map_err(|_| anyhow!("EIO: stderr capture thread panicked"))?;
+    stdout_result?;
+    stderr_result?;
+    let exit = exit?;
+    anyhow::ensure!(
+        !is_cancelled(),
+        "ECANCELED: process call was cancelled before the result was delivered"
+    );
+    let output = captured
+        .lock()
+        .map_err(|_| anyhow!("process output capture poisoned"))?;
+    let stdout = String::from_utf8(output.stdout.clone())
+        .map_err(|_| anyhow!("ERR_INVALID_ENCODING: child stdout is not valid UTF-8"))?;
+    let stderr = String::from_utf8(output.stderr.clone())
+        .map_err(|_| anyhow!("ERR_INVALID_ENCODING: child stderr is not valid UTF-8"))?;
+    #[cfg(unix)]
+    let signal = {
+        use std::os::unix::process::ExitStatusExt;
+        exit.signal()
+    };
+    #[cfg(not(unix))]
+    let signal: Option<i32> = None;
+    let mut result = json!({
+        "stdout": stdout,
+        "stderr": stderr,
+        "status": exit.code(),
+    });
+    if let Some(signal) = signal {
+        result["signal"] = json!(signal);
+    }
+    Ok(result)
 }
 
 fn open(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
@@ -155,35 +470,36 @@ fn package_version() -> String {
 /// Full-duplex streaming exec: stdout/stderr arrive as `stdout`/`stderr`
 /// stream events, stdin is fed from inbound binary chunks (END closes it),
 /// and the terminal result carries the exit status. Cancellation, timeout,
-/// or loss of the owning connection kills and reaps the child. `detached`
-/// explicitly opts out: the child outlives the stream call.
+/// or loss of the owning connection kills and reaps the owned child tree.
 async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
     use std::io::Write;
 
     let (program, args, options): (String, Option<Vec<String>>, Option<ExecOptions>) =
         request.args().optional(3)?;
     let (mut cmd, detached) = build_exec_command(program, args, options);
-    let mut child = cmd.spawn()?;
-    let owner = (ctx.window.id, ctx.connection_id, ctx.id);
-    child_pids()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("child registry poisoned"))?
-        .insert(owner, child.id());
-    let _registration = ChildRegistration(owner);
+    anyhow::ensure!(
+        !detached,
+        "ENOTSUP: detached child processes are disabled; use an owned process stream"
+    );
+    anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: process call was cancelled");
+    let raw_child = cmd.spawn()?;
+    let pid = raw_child.id();
+    let mut child = SpawnSyncChild::new(raw_child, pid, cfg!(unix))?;
+    let owner = ProcessCallOwner::WebSocket {
+        window_id: ctx.window.id,
+        connection_id: ctx.connection_id,
+        call_id: ctx.id,
+    };
+    let _registration = register_child(owner, child.control.clone())?;
+    if ctx.is_cancelled() {
+        child.terminate_and_wait()?;
+        anyhow::bail!("ECANCELED: process call was cancelled");
+    }
     ctx.push("spawn", json!({"pid":child.id()}));
 
-    // Detached: answer child id immediately, no pumps, no wait.
-    if detached {
-        let id = child.id();
-        // Detached children intentionally outlive this call; nobody consumes
-        // stdio (the parent ends of the pipes close when `child` is dropped).
-        ctx.respond(Ok(json!(id)));
-        return Ok(());
-    }
-
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let stdin = child.stdin.take();
+    let stdout = child.child_mut().stdout.take();
+    let stderr = child.child_mut().stderr.take();
+    let stdin = child.child_mut().stdin.take();
 
     // Keep Child ownership on a dedicated thread. The async handler only
     // awaits its result, so timeout/cancellation never blocks the API driver.
@@ -193,8 +509,7 @@ async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
         spawn_child_supervisor(child, move || ctx2.is_cancelled(), wait_tx)
     {
         return crate::blocking!({
-            let _ = child.kill();
-            child.wait()?;
+            let _ = child.terminate_and_wait();
             Err(anyhow::anyhow!("spawn child supervisor failed: {err}"))
         })
         .await;
@@ -261,24 +576,17 @@ enum ChildWaitOutcome {
 
 /// Poll without blocking the API driver, killing and reaping on cancellation.
 fn wait_for_child(
-    mut child: std::process::Child,
+    mut child: SpawnSyncChild,
     is_cancelled: impl Fn() -> bool,
 ) -> std::io::Result<ChildWaitOutcome> {
     loop {
-        if let Some(status) = child.try_wait()? {
-            return std::result::Result::Ok(ChildWaitOutcome::Exited(status));
-        }
         if is_cancelled() {
-            // The child can exit between try_wait() and kill(). If so, collect
-            // its status rather than treating that harmless race as an error.
-            if let Err(kill_error) = child.kill() {
-                if let Some(status) = child.try_wait()? {
-                    return std::result::Result::Ok(ChildWaitOutcome::Exited(status));
-                }
-                return Err(kill_error);
-            }
-            child.wait()?;
+            child.terminate_and_wait()?;
             return std::result::Result::Ok(ChildWaitOutcome::Cancelled);
+        }
+        if let Some(status) = child.try_wait()? {
+            child.terminate_descendants();
+            return std::result::Result::Ok(ChildWaitOutcome::Exited(status));
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -286,10 +594,10 @@ fn wait_for_child(
 
 /// Start the sole owner of a child process and report when it has been reaped.
 fn spawn_child_supervisor(
-    child: std::process::Child,
+    child: SpawnSyncChild,
     is_cancelled: impl Fn() -> bool + Send + 'static,
     wait_tx: async_channel::Sender<std::io::Result<ChildWaitOutcome>>,
-) -> std::result::Result<(), (std::io::Error, std::process::Child)> {
+) -> std::result::Result<(), (std::io::Error, SpawnSyncChild)> {
     use std::sync::Mutex;
 
     // Retain a recoverable handle if OS thread creation fails so the caller
@@ -355,20 +663,14 @@ fn pump_bytes<R: std::io::Read + Send + 'static>(
         .map_err(|err| anyhow::anyhow!("spawn pump failed: {err}"))
 }
 
-fn write_stdio(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
+fn write_stdio(_app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
     use base64::Engine;
     use std::io::Write;
     anyhow::ensure!(window.id == 0, "process stdio is main-window-only");
     let (channel, data): (String, String) = request.args().get()?;
     let data = base64::engine::general_purpose::STANDARD.decode(data)?;
     match channel.as_str() {
-        "stdout" => {
-            anyhow::ensure!(
-                !app.launch_info.arguments.stdio,
-                "ERR_STDIO_RESERVED: stdout carries the host protocol"
-            );
-            std::io::stdout().lock().write_all(&data)?;
-        }
+        "stdout" => std::io::stdout().lock().write_all(&data)?,
         "stderr" => std::io::stderr().lock().write_all(&data)?,
         _ => anyhow::bail!("invalid stdio channel"),
     }
@@ -377,10 +679,6 @@ fn write_stdio(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) 
 
 async fn read_stdin(ctx: CallContext, _request: ApiRequest) -> Result<()> {
     anyhow::ensure!(ctx.window.id == 0, "process stdio is main-window-only");
-    anyhow::ensure!(
-        !ctx.app.launch_info.arguments.stdio,
-        "ERR_STDIO_RESERVED: stdin carries the host protocol"
-    );
     let owner = (ctx.window.id, ctx.connection_id, ctx.id);
     #[cfg(unix)]
     {
@@ -524,23 +822,61 @@ fn read_stdin_windows(ctx: CallContext, owner: StdinReaderKey) -> Result<()> {
     Ok(())
 }
 
-fn spawn_sync(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
+async fn spawn_sync(
+    context: CancellationContext,
+    _app: Arc<NivaApp>,
+    _window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
     let (program, args, options): (String, Option<Vec<String>>, Option<Value>) =
         request.args().optional(3)?;
-    spawn_sync_command(
-        program,
-        args.unwrap_or_default(),
-        options.unwrap_or_else(|| json!({})),
-    )
+    let owner = process_owner(&context);
+    let worker_context = context.clone();
+    crate::blocking!({
+        spawn_sync_command_owned(
+            program,
+            args.unwrap_or_default(),
+            options.unwrap_or_else(|| json!({})),
+            owner,
+            move || worker_context.is_cancelled(),
+        )
+    })
+    .await
 }
 
 fn spawn_sync_command(program: String, args: Vec<String>, options: Value) -> Result<Value> {
+    static NEXT_OWNER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = NEXT_OWNER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    spawn_sync_command_owned(
+        program,
+        args,
+        options,
+        ProcessCallOwner::Synchronous {
+            window_id: u8::MAX,
+            session_id: format!("spawn-sync-test-{id}"),
+            call_id: id,
+        },
+        || false,
+    )
+}
+
+fn spawn_sync_command_owned(
+    program: String,
+    args: Vec<String>,
+    options: Value,
+    owner: ProcessCallOwner,
+    is_cancelled: impl Fn() -> bool,
+) -> Result<Value> {
     use base64::{Engine, engine::general_purpose::STANDARD};
     use std::{
         io::{Read, Write},
         sync::atomic::{AtomicBool, Ordering},
         time::{Duration, Instant},
     };
+    anyhow::ensure!(
+        !options["detached"].as_bool().unwrap_or(false),
+        "ENOTSUP: detached child processes are disabled"
+    );
     let mut command = std::process::Command::new(program);
     command.args(args);
     if let Some(cwd) = options["cwd"].as_str() {
@@ -568,10 +904,12 @@ fn spawn_sync_command(program: String, args: Vec<String>, options: Value) -> Res
     }
     let child = command.spawn()?;
     let pid = child.id();
-    #[cfg(unix)]
-    let mut child = SpawnSyncChild::new(child, pid, true);
-    #[cfg(not(unix))]
-    let mut child = SpawnSyncChild::new(child, pid);
+    let mut child = SpawnSyncChild::new(child, pid, cfg!(unix))?;
+    let _registration = register_child(owner, child.control.clone())?;
+    if is_cancelled() {
+        child.terminate_and_wait()?;
+        anyhow::bail!("ECANCELED: synchronous process call was cancelled");
+    }
     let max = options["maxBuffer"]
         .as_u64()
         .unwrap_or(1024 * 1024)
@@ -627,7 +965,12 @@ fn spawn_sync_command(program: String, args: Vec<String>, options: Value) -> Res
     let timeout = options["timeout"].as_u64().unwrap_or(0);
     let mut failure = None;
     let status = loop {
+        if is_cancelled() {
+            failure = Some("ECANCELED");
+            break child.terminate_and_wait()?;
+        }
         if let Some(status) = child.try_wait()? {
+            child.terminate_descendants();
             break status;
         }
         if overflow.load(Ordering::Acquire)
@@ -670,34 +1013,42 @@ fn spawn_sync_command(program: String, args: Vec<String>, options: Value) -> Res
 
 struct SpawnSyncChild {
     child: std::process::Child,
-    #[cfg(unix)]
-    pid: u32,
-    #[cfg(unix)]
-    process_group: bool,
+    control: Arc<ChildControl>,
     reaped: bool,
 }
 
 impl SpawnSyncChild {
-    #[cfg(unix)]
-    fn new(child: std::process::Child, pid: u32, process_group: bool) -> Self {
-        Self {
+    fn new(child: std::process::Child, pid: u32, process_group: bool) -> std::io::Result<Self> {
+        #[cfg(windows)]
+        let mut child = child;
+        #[cfg(not(windows))]
+        let child = child;
+        #[cfg(windows)]
+        let control = match ChildJob::assign(&child) {
+            std::result::Result::Ok(job) => Arc::new(ChildControl { pid, job }),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        #[cfg(unix)]
+        let control = Arc::new(ChildControl { pid, process_group });
+        #[cfg(not(unix))]
+        let _ = process_group;
+        std::result::Result::Ok(Self {
             child,
-            pid,
-            process_group,
+            control,
             reaped: false,
-        }
-    }
-
-    #[cfg(not(unix))]
-    fn new(child: std::process::Child, _pid: u32) -> Self {
-        Self {
-            child,
-            reaped: false,
-        }
+        })
     }
 
     fn child_mut(&mut self) -> &mut std::process::Child {
         &mut self.child
+    }
+
+    fn id(&self) -> u32 {
+        self.control.pid
     }
 
     fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
@@ -716,22 +1067,26 @@ impl SpawnSyncChild {
     }
 
     fn terminate(&mut self) {
-        #[cfg(unix)]
-        if self.process_group {
-            // SAFETY: this process group was created specifically for this child.
-            let _ = unsafe { libc::kill(-(self.pid as i32), libc::SIGKILL) };
-        }
+        self.control.kill_tree();
         let _ = self.child.kill();
+    }
+
+    fn terminate_descendants(&mut self) {
+        // The direct child may already have exited while background
+        // descendants still hold inherited stdout/stderr pipes.
+        self.control.kill_tree();
     }
 }
 
 impl Drop for SpawnSyncChild {
     fn drop(&mut self) {
         if self.reaped {
+            self.terminate_descendants();
             return;
         }
         if matches!(self.child.try_wait(), std::result::Result::Ok(Some(_))) {
             self.reaped = true;
+            self.terminate_descendants();
             return;
         }
         self.terminate();
@@ -740,32 +1095,290 @@ impl Drop for SpawnSyncChild {
     }
 }
 
-type ChildKey = (u8, u64, u64);
-fn child_pids() -> &'static std::sync::Mutex<std::collections::HashMap<ChildKey, u32>> {
-    static PIDS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<ChildKey, u32>>> =
-        std::sync::OnceLock::new();
-    PIDS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+#[cfg(windows)]
+struct ChildJob(windows::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl ChildJob {
+    fn assign(child: &std::process::Child) -> std::io::Result<Self> {
+        use std::{mem::size_of, os::windows::io::AsRawHandle};
+        use windows::{
+            Win32::{
+                Foundation::{CloseHandle, HANDLE},
+                System::JobObjects::{
+                    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+                    SetInformationJobObject,
+                },
+            },
+            core::PCWSTR,
+        };
+
+        let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if let Err(error) = configured {
+            let _ = unsafe { CloseHandle(job) };
+            return Err(std::io::Error::other(error.to_string()));
+        }
+        let process = HANDLE(child.as_raw_handle() as _);
+        if let Err(error) = unsafe { AssignProcessToJobObject(job, process) } {
+            let _ = unsafe { CloseHandle(job) };
+            return Err(std::io::Error::other(format!(
+                "assign child process to kill-on-close job: {error}"
+            )));
+        }
+        std::result::Result::Ok(Self(job))
+    }
 }
-struct ChildRegistration(ChildKey);
-impl Drop for ChildRegistration {
+
+#[cfg(windows)]
+impl Drop for ChildJob {
     fn drop(&mut self) {
-        if let std::result::Result::Ok(mut map) = child_pids().lock() {
-            map.remove(&self.0);
+        use windows::Win32::{Foundation::CloseHandle, System::JobObjects::TerminateJobObject};
+        // Closing a kill-on-close job is the normal cancellation path. Try
+        // termination first so descendants are also stopped if the handle's
+        // close policy is changed unexpectedly.
+        unsafe {
+            let _ = TerminateJobObject(self.0, 1);
+            let _ = CloseHandle(self.0);
         }
     }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+enum ProcessCallOwner {
+    WebSocket {
+        window_id: u8,
+        connection_id: u64,
+        call_id: u64,
+    },
+    Synchronous {
+        window_id: u8,
+        session_id: String,
+        call_id: u64,
+    },
+    Ipc {
+        window_id: u8,
+        source_origin: String,
+        session_id: String,
+        frame_id: u64,
+        generation: u64,
+        call_id: u64,
+    },
+}
+
+struct ChildControl {
+    pid: u32,
+    #[cfg(unix)]
+    process_group: bool,
+    #[cfg(windows)]
+    job: ChildJob,
+}
+
+impl ChildControl {
+    fn kill_tree(&self) {
+        #[cfg(unix)]
+        if self.process_group {
+            // SAFETY: process_group(0) assigned this unique child-owned PGID.
+            // Unix children can deliberately escape with setsid(); that is
+            // outside what a process group can contain.
+            let _ = unsafe { libc::kill(-(self.pid as i32), libc::SIGKILL) };
+        }
+        #[cfg(windows)]
+        unsafe {
+            use windows::Win32::System::JobObjects::TerminateJobObject;
+            let _ = TerminateJobObject(self.job.0, 1);
+        }
+    }
+}
+
+#[cfg(windows)]
+unsafe impl Send for ChildJob {}
+#[cfg(windows)]
+unsafe impl Sync for ChildJob {}
+
+type ProcessCallControls = std::collections::HashMap<ProcessCallOwner, Arc<ChildControl>>;
+
+fn process_controls() -> &'static std::sync::Mutex<ProcessCallControls> {
+    static CONTROLS: std::sync::OnceLock<std::sync::Mutex<ProcessCallControls>> =
+        std::sync::OnceLock::new();
+    CONTROLS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn register_child(
+    owner: ProcessCallOwner,
+    control: Arc<ChildControl>,
+) -> Result<ChildRegistration> {
+    let mut controls = process_controls()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("child registry poisoned"))?;
+    anyhow::ensure!(
+        !controls.contains_key(&owner),
+        "EBUSY: duplicate child owner"
+    );
+    controls.insert(owner.clone(), control.clone());
+    Ok(ChildRegistration { owner, control })
+}
+
+struct ChildRegistration {
+    owner: ProcessCallOwner,
+    control: Arc<ChildControl>,
+}
+
+impl Drop for ChildRegistration {
+    fn drop(&mut self) {
+        // A normally completed direct child may have left descendants holding
+        // pipes open. Also make future cancellation fail closed if the async
+        // handler is dropped outside the usual dispatcher path.
+        self.control.kill_tree();
+        if let std::result::Result::Ok(mut controls) = process_controls().lock()
+            && controls
+                .get(&self.owner)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.control))
+        {
+            controls.remove(&self.owner);
+        }
+    }
+}
+
+fn cancel_processes_matching(mut matches: impl FnMut(&ProcessCallOwner) -> bool) {
+    let controls = process_controls()
+        .lock()
+        .map(|controls| {
+            controls
+                .iter()
+                .filter(|(owner, _)| matches(owner))
+                .map(|(_, control)| control.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for control in controls {
+        control.kill_tree();
+    }
+}
+
+pub(crate) fn cancel_ws_child(window_id: u8, connection_id: u64, call_id: u64) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::WebSocket { window_id: wid, connection_id: cid, call_id: id }
+            if *wid == window_id && *cid == connection_id && *id == call_id)
+    });
+}
+
+pub(crate) fn cancel_ws_connection(window_id: u8, connection_id: u64) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::WebSocket { window_id: wid, connection_id: cid, .. }
+            if *wid == window_id && *cid == connection_id)
+    });
+}
+
+pub(crate) fn cancel_window_children(window_id: u8) {
+    cancel_processes_matching(|owner| match owner {
+        ProcessCallOwner::WebSocket { window_id: wid, .. }
+        | ProcessCallOwner::Synchronous { window_id: wid, .. }
+        | ProcessCallOwner::Ipc { window_id: wid, .. } => *wid == window_id,
+    });
+}
+
+pub(crate) fn cancel_sync_child(window_id: u8, session_id: &str, call_id: u64) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::Synchronous {
+            window_id: wid,
+            session_id: session,
+            call_id: id,
+        } if *wid == window_id && session == session_id && *id == call_id)
+    });
+}
+
+pub(crate) fn cancel_sync_session(window_id: u8, session_id: &str) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::Synchronous {
+            window_id: wid,
+            session_id: session,
+            ..
+        } if *wid == window_id && session == session_id)
+    });
+}
+
+pub(crate) fn cancel_ipc_child(
+    window_id: u8,
+    source_origin: &str,
+    session_id: &str,
+    frame_id: u64,
+    generation: u64,
+    call_id: u64,
+) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::Ipc {
+            window_id: wid,
+            source_origin: origin,
+            session_id: session,
+            frame_id: fid,
+            generation: generation_id,
+            call_id: id,
+        } if *wid == window_id && origin == source_origin && session == session_id
+            && *fid == frame_id && *generation_id == generation && *id == call_id)
+    });
+}
+
+pub(crate) fn cancel_ipc_session(
+    window_id: u8,
+    source_origin: &str,
+    session_id: &str,
+    frame_id: u64,
+    generation: u64,
+) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::Ipc {
+            window_id: wid,
+            source_origin: origin,
+            session_id: session,
+            frame_id: fid,
+            generation: generation_id,
+            ..
+        } if *wid == window_id && origin == source_origin && session == session_id
+            && *fid == frame_id && *generation_id == generation)
+    });
+}
+
+pub(crate) fn cancel_ipc_frame(window_id: u8, frame_id: u64, generation: u64) {
+    cancel_processes_matching(|owner| {
+        matches!(owner, ProcessCallOwner::Ipc { window_id: wid, frame_id: fid, generation: generation_id, .. }
+            if *wid == window_id && *fid == frame_id && *generation_id == generation)
+    });
+}
+
+pub(crate) fn cancel_ipc_window(window_id: u8) {
+    cancel_processes_matching(
+        |owner| matches!(owner, ProcessCallOwner::Ipc { window_id: wid, .. } if *wid == window_id),
+    );
 }
 async fn signal_child(ctx: CallContext, request: ApiRequest) -> Result<()> {
     let (call_id, signal): (u64, Option<String>) = request.args().optional(2)?;
     let signal = signal.as_deref().unwrap_or("SIGTERM");
-    let pid = child_pids()
+    let process = process_controls()
         .lock()
         .map_err(|_| anyhow::anyhow!("child registry poisoned"))?
-        .get(&(ctx.window.id, ctx.connection_id, call_id))
-        .copied();
-    let Some(pid) = pid else {
+        .get(&ProcessCallOwner::WebSocket {
+            window_id: ctx.window.id,
+            connection_id: ctx.connection_id,
+            call_id,
+        })
+        .cloned();
+    let Some(process) = process else {
         ctx.respond(Ok(false));
         return Ok(());
     };
+    let pid = process.pid;
     #[cfg(unix)]
     {
         let signal = match signal {
@@ -930,23 +1543,33 @@ mod tests {
 
     #[test]
     fn cancellation_kills_and_reaps_a_controlled_child() {
-        let child = std::process::Command::new(std::env::current_exe().unwrap())
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
             .args(["child_process_entrypoint", "--nocapture"])
             .env(CHILD_TEST_ENV, "1")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
+            .stderr(std::process::Stdio::null());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let child = command.spawn().unwrap();
+        let pid = child.id();
+        let child = SpawnSyncChild::new(child, pid, cfg!(unix)).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let (wait_tx, wait_rx) = async_channel::bounded(1);
-        spawn_child_supervisor(
+        let supervisor = spawn_child_supervisor(
             child,
             move || worker_cancel.load(Ordering::Acquire),
             wait_tx,
-        )
-        .unwrap();
+        );
+        if let Err((error, mut child)) = supervisor {
+            let _ = child.terminate_and_wait();
+            panic!("spawn child supervisor failed: {error}");
+        }
 
         let cancel_signal = Arc::clone(&cancel);
         let signal_thread = std::thread::spawn(move || {
@@ -1017,7 +1640,146 @@ mod node_process_tests {
     use super::*;
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
+
+    static NEXT_TEST_OWNER: AtomicU64 = AtomicU64::new(0);
+
+    fn test_owner() -> ProcessCallOwner {
+        ProcessCallOwner::WebSocket {
+            window_id: 253,
+            connection_id: NEXT_TEST_OWNER.fetch_add(1, Ordering::Relaxed),
+            call_id: NEXT_TEST_OWNER.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+
+    fn shell_command(script: &str) -> std::process::Command {
+        build_text_exec_command(
+            "/bin/sh".into(),
+            vec!["-c".into(), script.into()],
+            &TextExecOptions::default(),
+        )
+    }
+
+    #[test]
+    fn exec_text_uses_the_platform_shell_for_command_strings() {
+        let result = run_text_command(
+            build_text_exec_shell_command(
+                "printf 'niva-ipc'; printf 'diagnostic' >&2; exit 7",
+                &TextExecOptions::default(),
+            ),
+            test_owner(),
+            Duration::from_secs(2),
+            MAX_TEXT_EXEC_OUTPUT_BYTES,
+            || false,
+        )
+        .unwrap();
+        assert_eq!(result["stdout"], "niva-ipc");
+        assert_eq!(result["stderr"], "diagnostic");
+        assert_eq!(result["status"], 7);
+
+        let result = run_text_command(
+            build_text_exec_command(
+                "/usr/bin/printf".into(),
+                vec!["execFile".into()],
+                &TextExecOptions::default(),
+            ),
+            test_owner(),
+            Duration::from_secs(2),
+            MAX_TEXT_EXEC_OUTPUT_BYTES,
+            || false,
+        )
+        .unwrap();
+        assert_eq!(result["stdout"], "execFile");
+    }
+
+    #[test]
+    fn text_process_captures_strict_utf8_and_nonzero_status() {
+        let result = run_text_command(
+            shell_command("printf '中文'; printf 'diagnostic' >&2; exit 7"),
+            test_owner(),
+            Duration::from_secs(2),
+            MAX_TEXT_EXEC_OUTPUT_BYTES,
+            || false,
+        )
+        .unwrap();
+        assert_eq!(result["stdout"], "中文");
+        assert_eq!(result["stderr"], "diagnostic");
+        assert_eq!(result["status"], 7);
+        assert!(result.get("signal").is_none());
+    }
+
+    #[test]
+    fn text_process_timeout_kills_and_reaps_the_owned_group() {
+        let started = Instant::now();
+        let error = run_text_command(
+            shell_command("sleep 5"),
+            test_owner(),
+            Duration::from_millis(75),
+            MAX_TEXT_EXEC_OUTPUT_BYTES,
+            || false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ETIMEDOUT"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn text_process_bounds_combined_stdout_and_stderr() {
+        let error = run_text_command(
+            shell_command("printf 123456; printf 789 >&2"),
+            test_owner(),
+            Duration::from_secs(2),
+            8,
+            || false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ENOBUFS"));
+    }
+
+    #[test]
+    fn text_process_rejects_invalid_utf8() {
+        let error = run_text_command(
+            shell_command("printf '\\377'"),
+            test_owner(),
+            Duration::from_secs(2),
+            8,
+            || false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ERR_INVALID_ENCODING"));
+    }
+
+    #[test]
+    fn synchronous_owner_cancellation_kills_the_registered_child_tree() {
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .args(["-c", "exec sleep 5"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+        let raw_child = command.spawn().unwrap();
+        let pid = raw_child.id();
+        let mut child = SpawnSyncChild::new(raw_child, pid, true).unwrap();
+        let owner = ProcessCallOwner::Synchronous {
+            window_id: 254,
+            session_id: "test-sync-owner".into(),
+            call_id: 99,
+        };
+        let _registration = register_child(owner, child.control.clone()).unwrap();
+        let started = Instant::now();
+        cancel_sync_child(254, "test-sync-owner", 99);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(started.elapsed() < Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(!status.success());
+    }
     #[test]
     fn synchronous_process_preserves_binary_and_exit_status() {
         let result = spawn_sync_command(
@@ -1077,6 +1839,17 @@ mod node_process_tests {
         )
         .unwrap_err();
         assert!(error.to_string().to_lowercase().contains("base64"));
+    }
+
+    #[test]
+    fn synchronous_process_rejects_detached_children() {
+        let error = spawn_sync_command(
+            "/definitely/not/an/executable".into(),
+            Vec::new(),
+            json!({"detached":true}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ENOTSUP"));
     }
 
     #[test]

@@ -32,9 +32,9 @@ def wait_message(harness: Harness, name: str, timeout: float = 20) -> dict:
     deadline = time.monotonic() + timeout
     while True:
         frame = harness.next_frame(max(0.1, deadline - time.monotonic()))
-        if frame.get("t") == "msg" and frame.get("name") == "drag-error":
+        if frame.get("event") == "message" and frame.get("name") == "drag-error":
             raise SmokeError(f"native drag API reported {frame.get('data')}")
-        if frame.get("t") == "msg" and frame.get("name") == name:
+        if frame.get("event") == "message" and frame.get("name") == name:
             data = frame.get("data")
             if not isinstance(data, dict):
                 raise SmokeError(f"{name} returned no object")
@@ -58,9 +58,11 @@ def run(binary: Path, native_titlebar_control: bool = False) -> int:
             resources = root / "resources"
             resources.mkdir()
             shutil.copy2(HERE / "drag.html", resources / "drag.html")
+            shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
             config = root / "niva.json"
             config.write_text(json.dumps({
                 "name": app_name, "uuid": app_uuid,
+                "injectCommonJs": True, "injectEsm": True,
                 "window": {"entry": "drag.html", "title": "Niva window drag smoke",
                            "size": {"width": 360, "height": 250},
                            "position": {"x": 300, "y": 200}, "visible": True,
@@ -78,13 +80,14 @@ def run(binary: Path, native_titlebar_control: bool = False) -> int:
             environment["TMPDIR"] = str(root)
             with stderr_path.open("wb") as stderr_file:
                 process = subprocess.Popen(
-                    [str(binary), "--stdio", f"--debug-config={config}", f"--debug-resource={resources}"],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=stderr_file, text=True, bufsize=1,
                 )
             harness = Harness(process)
-            if harness.next_frame(30) != {"t": "ready", "v": 1}:
-                raise SmokeError("Niva stdio bridge did not report ready")
+            ready_event = harness.next_frame(30)
+            if ready_event.get("event") != "ready" or ready_event.get("name") != "drag-window":
+                raise SmokeError(f"unexpected fixture ready event: {ready_event!r}")
             ready = wait_message(harness, "drag-ready", 30)
             before = ready.get("before")
             if not isinstance(before, dict) or not all(isinstance(before.get(axis), (int, float)) for axis in ("x", "y")):
@@ -117,9 +120,10 @@ def run(binary: Path, native_titlebar_control: bool = False) -> int:
                 raise SmokeError(f"window.dragWindow did not move the native window: before={before}, after={after}")
             evidence = f"mouseDown/drag/up moved window from {before} to {after} (delta {delta_x},{delta_y})"
             if process.stdin and not process.stdin.closed:
+                harness.send("fixture-exit", 0)
                 process.stdin.close()
             if process.wait(timeout=15) != 0:
-                raise SmokeError("Niva did not exit cleanly after stdio EOF")
+                raise SmokeError("Niva did not exit cleanly after fixture exit")
     except Exception as error:
         failure = f"{type(error).__name__}: {error}"
     finally:

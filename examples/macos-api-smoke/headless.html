@@ -3,11 +3,17 @@
   <head>
     <meta charset="utf-8">
     <title>Niva macOS headless safe API smoke</title>
+    <script src="fixture-protocol.js"></script>
   </head>
   <body>
     <h1>Niva headless safe API smoke</h1>
     <script>
       (() => {
+        const fs = require("node:fs/promises");
+        const path = require("node:path");
+        const os = require("node:os");
+        const process = require("node:process");
+        const childProcess = require("node:child_process");
         const covered = [];
         let running = false;
         let activeMethod = null;
@@ -22,7 +28,7 @@
           assert(actual === expected, `${message}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
         }
 
-        const send = (name, data) => Niva.api.host.send(name, data);
+        const send = (name, data) => NivaFixture.send(name, data);
 
         function reportProgress(progressUrl, method, phase) {
           if (typeof progressUrl !== "string" || !progressUrl) return;
@@ -83,145 +89,151 @@
 
         async function testProcessOs(data) {
           const { tempRoot, expectedCwd, expectedExe, expectedConfig, expectedResources, expectedVersion } = data;
-          const processApi = Niva.api.process;
-          const os = Niva.api.os;
-
           const pid = await checkMethod("process.pid", "returns a positive child process id", async () => {
-            const value = await processApi.pid();
+            const value = process.pid;
             assert(Number.isInteger(value) && value > 0, "process.pid must return a positive integer");
             return value;
           });
 
-          await checkMethod("process.currentDir", "matches the runner-selected repository working directory", async () => {
-            equal(await processApi.currentDir(), expectedCwd, "process.currentDir");
+          await checkMethod("process.cwd", "matches the runner-selected repository working directory", async () => {
+            equal(process.cwd(), expectedCwd, "process.cwd");
           });
 
-          await checkMethod("process.currentExe", "matches the resolved Niva binary path", async () => {
-            equal(await processApi.currentExe(), expectedExe, "process.currentExe");
+          await checkMethod("process.execPath", "matches the resolved Niva binary path", async () => {
+            equal(process.execPath, expectedExe, "process.execPath");
           });
 
-          await checkMethod("process.args", "contains --stdio and this run's isolated config/resource paths", async () => {
-            const args = await processApi.args();
+          await checkMethod("process.argv", "contains this run's isolated config/resource paths", async () => {
+            const args = process.argv;
             assert(Array.isArray(args), "process.args must return an array");
-            assert(args.includes("--stdio"), "process.args must include --stdio");
-            assert(args.includes(`--debug-config=${expectedConfig}`), "process.args must include the isolated config path");
-            assert(args.includes(`--debug-resource=${expectedResources}`), "process.args must include the isolated resource path");
+            assert(args.includes(`--config=${expectedConfig}`), "process.argv must include the isolated config path");
+            assert(args.includes(`--resource=${expectedResources}`), "process.argv must include the isolated resource path");
           });
 
-          await checkMethod("process.version", "matches the niva crate package version", async () => {
-            equal(await processApi.version(), expectedVersion, "process.version");
+          await checkMethod("process.version", "reports the Node compatibility target separately from the actual Niva version", async () => {
+            equal(process.version, `v${process.versions.nodeCompat}`, "process.version target");
+            equal(process.versions.node, process.versions.nodeCompat, "Node compatibility target");
+            equal(process.versions.niva, expectedVersion, "actual Niva version");
           });
 
-          await checkMethod("os.info", "returns macOS plus non-empty architecture/version strings", async () => {
-            const info = await os.info();
+          await checkMethod("Niva.os.info", "returns macOS plus non-empty architecture/version strings", async () => {
+            const info = Niva.os.info;
             assert(info && typeof info.os === "string" && info.os.toLowerCase().includes("mac"), "os.info must identify macOS");
             assert(typeof info.arch === "string" && info.arch.length > 0 && typeof info.version === "string" && info.version.length > 0, "os.info must include architecture and OS version");
           });
 
-          await checkMethod("os.dirs", "returns an isolated per-run temp path and an app data path", async () => {
-            const dirs = await os.dirs();
+          await checkMethod("Niva.os.dirs", "returns an isolated per-run temp path and an app data path", async () => {
+            const dirs = await Niva.os.dirs();
             assert(dirs && typeof dirs.temp === "string" && dirs.temp.startsWith(tempRoot), "os.dirs.temp must be under this run's temporary directory");
             assert(typeof dirs.data === "string" && dirs.data.length > 0, "os.dirs.data must be a non-empty path");
           });
 
-          await checkMethod("os.sep", "returns the macOS path separator", async () => {
-            equal(await os.sep(), "/", "os.sep");
+          await checkMethod("path.sep", "returns the macOS path separator", async () => {
+            equal(path.sep, "/", "path.sep");
           });
 
-          await checkMethod("os.eol", "returns the macOS line ending", async () => {
-            equal(await os.eol(), "\n", "os.eol");
+          await checkMethod("os.EOL", "returns the macOS line ending", async () => {
+            equal(os.EOL, "\n", "os.EOL");
           });
 
-          await checkMethod("os.locale", "returns a non-empty system locale string", async () => {
-            const locale = await os.locale();
+          await checkMethod("Niva.bridge.callOsLocale", "returns a non-empty system locale string", async () => {
+            const locale = await Niva.bridge.call("os.locale", []);
             assert(typeof locale === "string" && locale.length > 0, "os.locale must return a non-empty locale string");
           });
           return pid;
         }
 
         async function testResource() {
-          const resource = Niva.api.resource;
-          await checkMethod("resource.exists", "finds a file in the isolated debug resource tree", async () => {
+          const resource = Niva.resource;
+          await checkMethod("Niva.resource.exists", "finds a file in the isolated debug resource tree", async () => {
             equal(await resource.exists("headless-resource.txt"), true, "resource.exists for fixture resource");
           });
 
-          await checkMethod("resource.read", "streams and decodes the isolated fixture resource", async () => {
+          await checkMethod("Niva.resource.read", "reads and decodes the isolated fixture resource", async () => {
             equal(await resource.read("headless-resource.txt", "utf8"), "headless-resource-ok\n", "resource.read");
           });
         }
 
         async function testFs(fsRoot) {
-          const fs = Niva.api.fs;
-          const work = `${fsRoot}/work`;
-          const simpleDir = `${work}/simple`;
-          const nestedDir = `${work}/nested/a/b`;
-          const file = `${simpleDir}/sample.txt`;
-          const copied = `${simpleDir}/copy.txt`;
-          const moved = `${nestedDir}/moved.txt`;
+          const work = path.join(fsRoot, "work");
+          const simpleDir = path.join(work, "simple");
+          const nestedDir = path.join(work, "nested", "a", "b");
+          const file = path.join(simpleDir, "sample.txt");
+          const copied = path.join(simpleDir, "copy.txt");
+          const moved = path.join(nestedDir, "moved.txt");
+          const exists = async (target) => fs.access(target).then(() => true, () => false);
 
-          await checkMethod("fs.exists", "observes missing, created, moved, and removed paths", async () => {
-            equal(await fs.exists(work), false, "fs.exists before setup");
+          await checkMethod("fs.access", "observes missing, created, moved, and removed paths", async () => {
+            equal(await exists(work), false, "fs.access before setup");
           });
 
-          await checkMethod("fs.createDir", "creates temporary directories", async () => {
-            await fs.createDir(work);
-            await fs.createDir(simpleDir);
-            assert(await fs.exists(work) && await fs.exists(simpleDir), "fs.createDir must create both direct temporary directories");
+          await checkMethod("fs.mkdir", "creates temporary directories", async () => {
+            await fs.mkdir(work);
+            await fs.mkdir(simpleDir);
+            assert(await exists(work) && await exists(simpleDir), "fs.mkdir must create both direct temporary directories");
           });
 
-          await checkMethod("fs.createDirAll", "creates nested temporary directories", async () => {
-            await fs.createDirAll(nestedDir);
-            assert(await fs.exists(nestedDir), "fs.createDirAll must create the nested leaf directory");
+          await checkMethod("fs.mkdirRecursive", "creates nested temporary directories", async () => {
+            await fs.mkdir(nestedDir, { recursive: true });
+            assert(await exists(nestedDir), "fs.mkdir recursive must create the nested leaf directory");
           });
 
           const firstText = "headless-alpha\n";
           const finalText = `${firstText}headless-beta\n`;
-          await checkMethod("fs.write", "writes a new file under the temporary fixture root", async () => {
-            await fs.write(file, firstText, "utf8");
+          await checkMethod("fs.writeFile", "writes a new file under the temporary fixture root", async () => {
+            await fs.writeFile(file, firstText, "utf8");
           });
 
-          await checkMethod("fs.read", "reads exact UTF-8 file contents from the temporary fixture root", async () => {
-            equal(await fs.read(file, "utf8"), firstText, "fs.read initial content");
+          await checkMethod("fs.readFile", "reads exact UTF-8 file contents from the temporary fixture root", async () => {
+            equal(await fs.readFile(file, "utf8"), firstText, "fs.readFile initial content");
           });
 
-          await checkMethod("fs.append", "appends UTF-8 content and preserves the preceding bytes", async () => {
-            await fs.append(file, "headless-beta\n", "utf8");
-            equal(await fs.read(file, "utf8"), finalText, "fs.append readback");
+          await checkMethod("fs.appendFile", "appends UTF-8 content and preserves the preceding bytes", async () => {
+            await fs.appendFile(file, "headless-beta\n", "utf8");
+            equal(await fs.readFile(file, "utf8"), finalText, "fs.appendFile readback");
           });
 
           await checkMethod("fs.stat", "reports file type and exact byte size", async () => {
             const stat = await fs.stat(file);
-            assert(stat.isFile && !stat.isDir && stat.size === new TextEncoder().encode(finalText).length, "fs.stat must report the file type and exact byte length");
-            assert((await fs.stat(work)).isDir && (await fs.stat(simpleDir)).isDir && (await fs.stat(nestedDir)).isDir, "fs.stat must identify fixture directories");
+            assert(stat.isFile() && !stat.isDirectory() && stat.size === new TextEncoder().encode(finalText).length, "fs.stat must report the file type and exact byte length");
+            assert((await fs.stat(work)).isDirectory() && (await fs.stat(simpleDir)).isDirectory() && (await fs.stat(nestedDir)).isDirectory(), "fs.stat must identify fixture directories");
           });
 
-          await checkMethod("fs.copy", "copies the fixture file and preserves exact contents", async () => {
-            await fs.copy(file, copied);
-            equal(await fs.read(copied, "utf8"), finalText, "fs.copy readback");
+          await checkMethod("fs.copyFile", "copies the fixture file and preserves exact contents", async () => {
+            await fs.copyFile(file, copied);
+            equal(await fs.readFile(copied, "utf8"), finalText, "fs.copyFile readback");
           });
 
-          await checkMethod("fs.move", "moves the fixture file, removes its source, and preserves contents", async () => {
-            await fs.move(copied, moved);
-            equal(await fs.exists(copied), false, "fs.move source removal");
-            equal(await fs.read(moved, "utf8"), finalText, "fs.move destination readback");
+          await checkMethod("fs.rename", "moves the fixture file, removes its source, and preserves contents", async () => {
+            await fs.rename(copied, moved);
+            equal(await exists(copied), false, "fs.rename source removal");
+            equal(await fs.readFile(moved, "utf8"), finalText, "fs.rename destination readback");
           });
 
-          await checkMethod("fs.readDir", "lists direct files in the isolated directory", async () => {
-            const directEntries = await fs.readDir(simpleDir);
+          await checkMethod("fs.readdir", "lists direct files in the isolated directory", async () => {
+            const directEntries = await fs.readdir(simpleDir);
             assert(directEntries.includes("sample.txt") && !directEntries.includes("moved.txt"), "fs.readDir must list only direct fixture files");
           });
 
-          await checkMethod("fs.readDirAll", "lists recursive file paths under the isolated directory", async () => {
-            const recursiveEntries = await fs.readDirAll(work);
+          await checkMethod("fs.readdirRecursive", "lists recursive file paths under the isolated directory", async () => {
+            const recursiveEntries = [];
+            async function walk(directory) {
+              for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+                const fullPath = path.join(directory, entry.name);
+                if (entry.isDirectory()) await walk(fullPath);
+                else if (entry.isFile()) recursiveEntries.push(path.relative(work, fullPath));
+              }
+            }
+            await walk(work);
             const recursiveSet = new Set(recursiveEntries);
             assert(recursiveSet.has("simple/sample.txt") && recursiveSet.has("nested/a/b/moved.txt"), "fs.readDirAll must list recursive file paths");
           });
 
-          await checkMethod("fs.remove", "removes fixture files and confirms their paths are absent", async () => {
-            await fs.remove(file);
-            await fs.remove(moved);
-            equal(await fs.exists(file), false, "fs.remove source");
-            equal(await fs.exists(moved), false, "fs.remove moved file");
+          await checkMethod("fs.rm", "removes fixture files and confirms their paths are absent", async () => {
+            await fs.rm(file);
+            await fs.rm(moved);
+            equal(await exists(file), false, "fs.rm source");
+            equal(await exists(moved), false, "fs.rm moved file");
           });
         }
 
@@ -261,7 +273,7 @@
               await send("headless-echo-result", { nonce: data.nonce });
             } else if (data.command === "exit") {
               await send("headless-exit-started", { coverage: covered.map(item => item.method) });
-              setTimeout(() => Niva.api.process.exit().catch(() => {}), 250);
+              setTimeout(() => NivaFixture.exit(0), 250);
             }
           } catch (error) {
             const details = safeError(error, data);
@@ -269,8 +281,8 @@
           }
         }
 
-        Niva.addEventListener("host:message", (_name, message) => handle(message));
-        send("headless-ready", { path: location.pathname }).catch(async error => {
+        NivaFixture.onCommand("headless-command", (data) => handle({ name: "headless-command", data }));
+        NivaFixture.ready("headless", { path: location.pathname }).then(() => send("headless-ready", { path: location.pathname })).catch(async error => {
           await send("headless-error", safeError(error, null));
         });
       })();

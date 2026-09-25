@@ -1,6 +1,6 @@
 # 事件
 
-## WebView 与宿主事件
+## WebView事件
 
 | 事件 | 数据与边界 |
 | --- | --- |
@@ -8,7 +8,6 @@
 | `webview.newWindowRequested` | `{ url, pageUrl, decision: "denied" }`；`target=_blank` / `window.open` 默认拒绝。 |
 | `webview.downloadStarted` | `{ url, pageUrl, decision: "denied" }`；下载默认拒绝。 |
 | `webview.permissionDenied` | `{ kind, pageUrl, decision: "denied" }`；对 Niva 明确拒绝的 Wry 权限请求发送。 |
-| `host:message` | `{ name, data? }`；仅 `--stdio` 启动时由宿主 stdin 发给主窗口，见[stdio Host Bridge](/docs/api/stdio)。 |
 
 以上 `pageUrl` 是事件投递时读取的顶层页面地址，不代表跨源 iframe 的实际发起地址，不能当作来源授权依据。Wry 的权限回调不提供请求源 URL；macOS 当前也无法通过该回调拦截定位权限。
 
@@ -199,3 +198,5 @@ Niva.addEventListener(
   }
 );
 ```
+
+宿主输入使用主窗口process.stdin的data/end/error事件；不再提供host:message或专用stdio开关，见[标准流说明](/docs/api/stdio)。

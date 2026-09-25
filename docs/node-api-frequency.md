@@ -1,5 +1,7 @@
 # Node 内置 API 使用频率调研与 Niva 落地顺序
 
+> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+
 > **2026-09-24 逐项盘点**：模块与 API 的当前覆盖、频率档位及补齐难度见 [Node.js 模块与常用 API 覆盖盘点](node-api-coverage.md)，可复算数据见 [node-api-inventory.json](node-api-inventory.json)。本文件保留早期调研与候选方案；下文模块名次是定性判断，没有可复算的频率样本，不能作为真实调用占比。§2 和 §6 的简写/历史签名也不替代 Node 官方契约；覆盖统计以新表逐项状态为准。
 
 > **难度口径**：沿用双向 WS、本地同步 XHR、跨域有限 IPC 三条路径。先判断 Niva Native 是否具备所需能力，再估算 JS API 封装；仅封装为低、扩展现有 Native 或复杂 JS 语义为中、新增整类 Native 后端为高、引入大型第三方库或完整运行时为很高。同步机制本身按低难度，库大小未实测时只列选型条件或风险。

@@ -60,6 +60,20 @@ impl WindowPermissions {
                     .is_some_and(|(namespace, _)| methods.contains(&format!("{namespace}.*")))
         })
     }
+
+    /// Whether an exact HTTP(S) origin has any configured grants. IPC lease
+    /// heartbeats use this only to scope a lifecycle control message; API
+    /// authorization still checks an explicit method with [`Self::allows`].
+    pub fn allows_origin(&self, source_url: &str) -> bool {
+        let Ok(source) = Url::parse(source_url) else {
+            return false;
+        };
+        if !matches!(source.scheme(), "http" | "https") {
+            return false;
+        }
+        let origin = source.origin().ascii_serialization();
+        self.0.contains_key(&origin)
+    }
 }
 
 #[cfg(test)]

@@ -12,8 +12,8 @@ import { ConfigType, generateConfig } from "../templates/config-template";
 import { LocaleModel } from "./locale.model";
 import { generateNewProject } from "../templates/new-project-template";
 import { initEndPromise } from "../app";
-
-const { fs } = Niva.api;
+import { fileExists, fs } from "../common/node";
+import { niva } from "../common/niva";
 
 export class AppModel extends StateModel<{
   history: HistoryModel;
@@ -35,12 +35,12 @@ export class AppModel extends StateModel<{
     });
   }
 
-  async init() {
+  async init(options: { interactive?: boolean } = {}) {
     Niva.addEventListener("window.closeRequested", () =>
       tryOrAlert(this, this.exit())
     );
     const { history, locale } = this.state;
-    await Promise.all([history.init(), locale.init()])
+    await Promise.all([history.init(options.interactive !== false), locale.init()])
     initEndPromise.then(async () => {
       const availableVersion = await checkVersion();
       if (availableVersion) {
@@ -65,7 +65,7 @@ export class AppModel extends StateModel<{
     if (this.state.packagerBuild) return Err(ErrorCode.PACKAGER_BUILD_IN_PROGRESS);
     const { modal } = this.state;
     const path = await modal.showNative<string | null>(() =>
-      Niva.api.dialog.pickDir()
+      niva.dialog.pickDir()
     );
 
     if (path) {
@@ -82,17 +82,17 @@ export class AppModel extends StateModel<{
     const configPath = pathJoin(path, "niva.json");
     const packageJsonPath = pathJoin(path, "package.json");
     const [isExists, isConfigExists, isPackageJsonExists] = await Promise.all([
-      fs.exists(path),
-      fs.exists(configPath),
-      fs.exists(packageJsonPath),
+      fileExists(path),
+      fileExists(configPath),
+      fileExists(packageJsonPath),
     ]);
 
     if (!isExists) {
       return Err(ErrorCode.PROJECT_PATH_NOT_EXISTS, { path });
     }
 
-    const { isDir } = await fs.stat(path);
-    if (!isDir) {
+    const stats = await fs.stat(path);
+    if (!stats.isDirectory()) {
       return Err(ErrorCode.PROJECT_PATH_IS_NOT_DIR, { path });
     }
 
@@ -112,7 +112,7 @@ export class AppModel extends StateModel<{
       let projectName = path.split(/\/|\\/).pop() as string;
       const configType: AppResult<ConfigType> = isPackageJsonExists
         ? await fromThrowableAsync<ConfigType>(async () => {
-          const packageJson = JSON.parse(await fs.read(packageJsonPath));
+          const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
           if (packageJson?.name) {
             projectName = packageJson.name;
           }
@@ -134,7 +134,7 @@ export class AppModel extends StateModel<{
       );
 
       const createConfigFileResult = await fromThrowableAsync(async () => {
-        await fs.write(configPath, JSON.stringify(configContent, null, 2));
+        await fs.writeFile(configPath, JSON.stringify(configContent, null, 2), "utf8");
       });
 
       if (createConfigFileResult.isErr()) {
@@ -219,14 +219,14 @@ export class AppModel extends StateModel<{
     }
 
     const parentPath = await modal.showNative<string | null>(() =>
-      Niva.api.dialog.pickDir()
+      niva.dialog.pickDir()
     );
     if (!parentPath) {
       return Ok(void 0);
     }
 
     const path = pathJoin(parentPath, projectName);
-    if (await fs.exists(path)) {
+    if (await fileExists(path)) {
       return Err(ErrorCode.PROJECT_ALREADY_EXISTS, { path });
     }
 
@@ -246,10 +246,10 @@ export class AppModel extends StateModel<{
     // createDir is atomic and fails if another item appears after the
     // preflight check, so existing project data can never be overwritten.
     const createDirectoryResult = await fromThrowableAsync(() =>
-      fs.createDir(path)
+      fs.mkdir(path)
     );
     if (createDirectoryResult.isErr()) {
-      if (await fs.exists(path)) {
+      if (await fileExists(path)) {
         return Err(ErrorCode.PROJECT_ALREADY_EXISTS, { path });
       }
       return Err(ErrorCode.PROJECT_CREATE_FAILED, {
@@ -261,7 +261,7 @@ export class AppModel extends StateModel<{
     const newProjectResult = await fromThrowableAsync(async () => {
       const files = generateNewProject(projectName);
       await Promise.all(
-        files.map(([name, content]) => fs.write(pathJoin(path, name), content))
+        files.map(([name, content]) => fs.writeFile(pathJoin(path, name), content, "utf8"))
       );
     });
 
@@ -287,7 +287,7 @@ export class AppModel extends StateModel<{
       return result;
     }
 
-    Niva.api.window.close();
+    await niva.window.close();
     return Ok(void 0);
   }
 }

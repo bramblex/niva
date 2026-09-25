@@ -1,0 +1,15 @@
+exports.name = "a";
+const other = require("./cycle-b.cjs");
+exports.otherName = other.name;
+exports.sawPartialExports = other.aName === "a";
+exports.topLevelThisIsExports = this === exports;
+exports.wrapperArgumentCount = arguments.length;
+exports.filename = __filename;
+exports.dirname = __dirname;
+exports.mainId = require.main.id;
+exports.isMain = require.main === module;
+exports.parentId = module.parent && module.parent.id;
+exports.moduleIsInstance = module instanceof require("module");
+exports.cacheEntryIsModule = require.cache[__filename] === module;
+exports.modulePaths = module.paths;
+exports.childIds = module.children.map((child) => child.id);

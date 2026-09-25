@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <title>Niva macOS supervised window API cases</title>
+    <script src="fixture-protocol.js"></script>
   </head>
   <body>
     <main>
@@ -15,7 +16,7 @@
       (() => {
         "use strict";
 
-        const api = Niva.api;
+        const api = Niva;
         const passed = [];
         const invoked = [];
         const skipped = [];
@@ -41,11 +42,25 @@
           }
         });
 
-        Niva.addEventListener("host:message", (_eventName, message) => {
-          if (!message || message.name !== "window-supervised-command") return;
-          const data = message.data || {};
+        NivaFixture.onCommand("window-supervised-command", async (command) => {
+          const data = command || {};
           if (data.kind === "exit") {
-            api.process.exit().catch(() => {});
+            NivaFixture.exit(0);
+            return;
+          }
+          if (data.kind === "exit-with-child") {
+            const child = await api.window.open({
+              entry: "window-supervised-child.html",
+              title: `Niva exit cleanup child ${Date.now()}`,
+              size: { width: 320, height: 220 },
+              visible: true,
+            });
+            await waitForWindowMessage(
+              payload => payload.from === child && payload.message === `ready:${child}`,
+              "exit-cleanup child ready",
+            );
+            await NivaFixture.send("window-exit-child-ready", { id: child });
+            setTimeout(() => NivaFixture.exit(0), 100);
             return;
           }
           if (data.kind === "observation") {
@@ -109,7 +124,7 @@
               resolve(value);
             });
           });
-          await api.host.send("window-supervised-observe", { requestId, title: childTitle, stage, captureWindowId, showsCursor });
+          await NivaFixture.send("window-supervised-observe", { requestId, title: childTitle, stage, captureWindowId, showsCursor });
           const snapshot = await result;
           assert(snapshot && Array.isArray(snapshot.windows), `native window snapshot missing for ${stage}`);
           return snapshot;
@@ -136,7 +151,7 @@
               resolve(value);
             });
           });
-          await api.host.send("window-supervised-accessibility", { requestId, title: childTitle, stage });
+          await NivaFixture.send("window-supervised-accessibility", { requestId, title: childTitle, stage });
           const response = await result;
           if (response.error) throw new Error(response.error);
           assert(Array.isArray(response.positions) && response.positions.length === 1,
@@ -156,7 +171,7 @@
               resolve(value);
             });
           });
-          await api.host.send("window-supervised-accessibility", {
+          await NivaFixture.send("window-supervised-accessibility", {
             requestId, title: childTitle, stage, action: "press-close",
           });
           const response = await result;
@@ -167,19 +182,19 @@
         async function record(method, assertion) {
           passed.push(method);
           document.querySelector("#status").textContent = `PASS ${method}`;
-          await api.host.send("window-supervised-case", { method, assertion, status: "passed" });
+          await NivaFixture.send("window-supervised-case", { method, assertion, status: "passed" });
         }
 
         async function recordInvocation(method, evidence) {
           invoked.push({ method, evidence });
           document.querySelector("#status").textContent = `INVOKED ${method}`;
-          await api.host.send("window-supervised-invocation", { method, evidence, status: "invoked-only" });
+          await NivaFixture.send("window-supervised-invocation", { method, evidence, status: "invoked-only" });
         }
 
         async function recordSkip(method, reason) {
           skipped.push({ method, reason });
           document.querySelector("#status").textContent = `SKIP ${method}: ${reason}`;
-          await api.host.send("window-supervised-skip", { method, reason });
+          await NivaFixture.send("window-supervised-skip", { method, reason });
         }
 
         async function runMessageCase() {
@@ -607,7 +622,7 @@
           } catch (error) {
             failure = `${error?.message || String(error)}\n${error?.stack || ""}`;
             document.querySelector("#status").textContent = `FAIL ${activeMethod}: ${failure}`;
-            await api.host.send("window-supervised-error", { method: activeMethod, message: failure }).catch(() => {});
+            await NivaFixture.send("window-supervised-error", { method: activeMethod, message: failure }).catch(() => {});
           } finally {
             if (childId !== null) {
               await api.window.setContentProtection(false, childId).catch(() => {});
@@ -616,13 +631,13 @@
               await api.window.setFocusable(true, childId).catch(() => {});
               await api.window.close(childId).catch(() => {});
             }
-            await api.host.send("window-supervised-done", { passed, invoked, skipped, failed: failure }).catch(() => {});
+            await NivaFixture.send("window-supervised-done", { passed, invoked, skipped, failed: failure }).catch(() => {});
           }
         }
 
         window.addEventListener("load", () => {
           setTimeout(() => {
-            api.host.send("window-supervised-ready", { title: document.title }).then(runSuite).catch(error => {
+            NivaFixture.ready("window-supervised").then(() => NivaFixture.send("window-supervised-ready", { title: document.title })).then(runSuite).catch(error => {
               document.querySelector("#status").textContent = `FAIL setup: ${String(error)}`;
             });
           }, 200);

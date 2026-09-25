@@ -8,11 +8,15 @@ export function generateConfig(type: ConfigType, name: string) {
 		simple: {
 			name,
 			uuid: uuid(),
+			injectCommonJs: false,
+			injectEsm: false,
 		},
 
 		vueVite: {
 			name,
 			uuid: uuid(),
+			injectCommonJs: false,
+			injectEsm: false,
 
 			debug: {
 				entry: "http://localhost:5173",
@@ -27,6 +31,8 @@ export function generateConfig(type: ConfigType, name: string) {
 		vue: {
 			name,
 			uuid: uuid(),
+			injectCommonJs: false,
+			injectEsm: false,
 
 			debug: {
 				entry: "http://localhost:8080",
@@ -41,6 +47,8 @@ export function generateConfig(type: ConfigType, name: string) {
 		react: {
 			name,
 			uuid: uuid(),
+			injectCommonJs: false,
+			injectEsm: false,
 
 			debug: {
 				entry: "http://localhost:3000",

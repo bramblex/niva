@@ -9,6 +9,21 @@
 - 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
 - 快速上手： [https://bramblex.github.io/niva/docs/tutorial/new-project](https://bramblex.github.io/niva/docs/tutorial/new-project)
 
+当前架构重构与验收进度见[实施台账](docs/architecture-implementation-plan.md)。基础API位于`Niva`命名空间；`injectCommonJs`和`injectEsm`分别控制Node CommonJS环境与浏览器ESM import map，默认关闭。窗口/文件/进程能力及传输边界见[Bridge合约](docs/bridge.md)，历史报告不代表本次重构已通过验收。
+
+## 从源码构建
+
+页面运行时由`packages/runtime`中的TypeScript生成，需先构建再编译Native：
+
+```sh
+npm ci
+npm run build --workspace=packages/runtime
+cargo build --release -p niva -p niva-packager
+npm run build --workspace=packages/devtools
+```
+
+修改运行时源码后需重新生成产物。Cargo编译不下载npm依赖；发行build kit包含编译好的主程序与统一打包器，使用kit打包业务应用不需要开发者安装Node或Rust。Windows单EXE/绿色ZIP与macOS app/ZIP使用同一个打包核心，详见[打包说明](docs/packager-usage.md)。
+
 ## 目标
 
 以下保留原产品定位文案；当前实现、平台验收与体积实测以[路线图](docs/roadmap.md)为准。特别是 macOS 产物为 `.app` 应用包，Windows 产物为 `.exe`；“Electron 的 1/10”尚无本轮可复核的对照记录。
@@ -46,11 +61,11 @@ Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os
 
 - [ ] Niva 1.0
 
-  - [x] Niva API TypeScript 类型声明（`packages/types/Niva_zh.d.ts`；仍需持续与实现核对）。
+  - [x] Niva API TypeScript 类型声明（从 `packages/runtime` 同源构建到 `@niva/types`；仍需持续与实现核对）。
   - [ ] 应用程序签名
     - [ ] MacOS
     - [ ] Windows
-  - [ ] Node.js 宿主完整兼容（当前已有 `--stdio` Host Bridge；Windows 管道行为尚未真机验收）。
+  - [ ] Node契约与真实项目验收（目标子集不等于完整Node运行时；stdio宿主使用主窗口普通process流，见[宿主说明](docs/stdio-host-design.md)）。
   - [ ] 支持系统通知 Notification。
 
 - [ ] Niva 2.0

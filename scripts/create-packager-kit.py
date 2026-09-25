@@ -16,6 +16,7 @@ TARGETS = {
     'macos-aarch64': 'niva-macos-aarch64',
     'macos-x86_64': 'niva-macos-x86_64',
 }
+RUNTIME_LIMIT_BYTES = 3_300_000
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -35,17 +36,34 @@ def main():
         kit = pathlib.Path(tmp) / 'niva-build-kit'
         (kit / 'runtimes').mkdir(parents=True)
         runtimes = {}
+        runtime_sizes = {}
         for target, filename in TARGETS.items():
             source = args.runtime_dir / filename
+            size_bytes = source.stat().st_size
+            if size_bytes >= RUNTIME_LIMIT_BYTES:
+                raise SystemExit(
+                    f'{target} runtime is {size_bytes} bytes; limit is strictly below {RUNTIME_LIMIT_BYTES}'
+                )
             dest = kit / 'runtimes' / filename
             shutil.copyfile(source, dest)
             dest.chmod(0o755)
             runtimes[target] = {'path': f'runtimes/{filename}', 'version': version,
                                 'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()}
+            runtime_sizes[target] = {
+                'path': f'runtimes/{filename}',
+                'sizeBytes': dest.stat().st_size,
+                'limitBytesExclusive': RUNTIME_LIMIT_BYTES,
+                'sha256': hashlib.sha256(dest.read_bytes()).hexdigest(),
+            }
         tool = kit / ('niva-packager.exe' if args.packager.suffix == '.exe' else 'niva-packager')
         shutil.copyfile(args.packager, tool)
         tool.chmod(0o755)
         (kit / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'version': version, 'runtimes': runtimes}, indent=2)+'\n')
+        (kit / 'runtime-sizes.json').write_text(json.dumps({
+            'schemaVersion': 1,
+            'method': 'exact precompiled runtime file sizes copied into this kit',
+            'runtimes': runtime_sizes,
+        }, indent=2)+'\n')
         shutil.copyfile(ROOT / 'LICENSE', kit / 'LICENSE')
         shutil.copyfile(ROOT / 'docs/packager-usage.md', kit / 'README.md')
         # Preserve the dependency notices, and supply exact source download links.
@@ -73,13 +91,13 @@ def main():
                     directory = kit / 'licenses' / f'{name}-{ver}'
                     directory.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(file, directory / file.name)
-        node_notice = ROOT / 'packages/node-compat/src/vendor/THIRD_PARTY_NOTICES.txt'
+        node_notice = ROOT / 'packages/runtime/src/vendor/THIRD_PARTY_NOTICES.txt'
         if not node_notice.is_file():
-            raise SystemExit(f'Missing embedded NodeCompat notices: {node_notice}')
-        node_notice_dest = kit / 'licenses/node-compat/THIRD_PARTY_NOTICES.txt'
+            raise SystemExit(f'Missing embedded runtime JavaScript notices: {node_notice}')
+        node_notice_dest = kit / 'licenses/runtime/THIRD_PARTY_NOTICES.txt'
         node_notice_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(node_notice, node_notice_dest)
-        notices.append('NodeCompat JavaScript vendor dependencies\nSee licenses/node-compat/THIRD_PARTY_NOTICES.txt\n')
+        notices.append('Niva runtime JavaScript dependencies\nSee licenses/runtime/THIRD_PARTY_NOTICES.txt\n')
         (kit / 'THIRD_PARTY.txt').write_text('\n'.join(notices), encoding='utf-8')
         (kit / 'SHA256SUMS').write_text('\n'.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(kit).as_posix()}' for p in sorted(kit.rglob('*')) if p.is_file())+'\n')
         archive = pathlib.Path(tmp) / 'kit.zip'

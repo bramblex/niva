@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Run the stdio example app and exchange one NDJSON message with it."""
+"""Exchange newline-delimited text with a Niva app's ordinary process streams."""
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 
-def read_frame(process):
+def read_line(process):
     line = process.stdout.readline()
     if not line:
-        raise RuntimeError(f"Niva exited before sending a frame (status {process.poll()})")
-    return json.loads(line.decode("utf-8"))
+        raise RuntimeError(f"Niva exited before writing a line (status {process.poll()})")
+    return line.decode("utf-8").rstrip("\r\n")
 
 
 def main():
@@ -21,37 +20,31 @@ def main():
     binary = Path(sys.argv[1]).resolve()
     resource_dir = Path(__file__).resolve().parent / "stdio-host"
     process = subprocess.Popen(
-        [str(binary), "--stdio", f"--debug-resource={resource_dir}"],
+        [str(binary), f"--resource={resource_dir}"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
     )
 
     try:
-        ready = read_frame(process)
-        if ready != {"t": "ready", "v": 1}:
-            raise RuntimeError(f"unexpected first frame: {ready!r}")
+        ready = read_line(process)
+        if ready != "ready":
+            raise RuntimeError(f"unexpected first line: {ready!r}")
 
-        # Invalid input is reported on stderr and must not terminate the bridge.
-        process.stdin.write(b"not-json\n")
+        process.stdin.write(b"parent\n")
         process.stdin.flush()
+        reply = read_line(process)
+        print(reply)
+        if reply != "Hello, parent!":
+            raise RuntimeError(f"unexpected reply: {reply!r}")
 
-        while True:
-            frame = read_frame(process)
-            if frame.get("t") == "msg" and frame.get("name") == "page:ready":
-                break
-
-        request = {"t": "msg", "name": "sayHello", "data": {"name": "parent"}}
-        process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
-        process.stdin.flush()
-
-        while True:
-            frame = read_frame(process)
-            if frame.get("t") == "msg" and frame.get("name") == "sayHelloResult":
-                print(frame["data"]["text"])
-                break
-
+        # EOF finishes only process.stdin. The Niva window remains open until
+        # the user closes it; this blocks here intentionally for the demo.
         process.stdin.close()
-        status = process.wait(timeout=15)
+        eof = read_line(process)
+        if eof != "stdin-eof":
+            raise RuntimeError(f"unexpected EOF notification: {eof!r}")
+        print("Input stream ended; close the Niva window to finish.", flush=True)
+        status = process.wait()
         if status != 0:
             raise RuntimeError(f"Niva exited with status {status}")
     finally:

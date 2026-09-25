@@ -2,8 +2,9 @@ import { StateModel } from "@bramblex/state-model";
 import { AppModel } from "./app.model";
 import { dataDirWith, tryOrAlert } from "../common/utils";
 import { ProjectModel } from "./project.model";
-import { fromThrowable, fromThrowableAsync } from "../common/result";
+import { fromThrowableAsync } from "../common/result";
 import { maxBy } from "lodash";
+import { fileExists, fs } from "../common/node";
 
 export interface HistoryItem {
   name: string;
@@ -17,8 +18,6 @@ interface HistoryModelState {
   history: HistoryItem[];
 }
 
-const { fs } = Niva.api;
-
 export class HistoryModel extends StateModel<HistoryModelState> {
   private historyFilePath!: string;
 
@@ -28,25 +27,24 @@ export class HistoryModel extends StateModel<HistoryModelState> {
     });
   }
 
-  async init() {
-    await tryOrAlert(
-      this.app,
-      fromThrowableAsync(async () => {
+  async init(interactive = true) {
+    const result = await fromThrowableAsync(async () => {
         this.historyFilePath = dataDirWith("history.json");
-        await fs.createDirAll(dataDirWith());
-        if (!(await fs.exists(this.historyFilePath))) {
-          await fs.write(this.historyFilePath, '{"history": []}');
+        await fs.mkdir(dataDirWith(), { recursive: true });
+        if (!(await fileExists(this.historyFilePath))) {
+          await fs.writeFile(this.historyFilePath, '{"history": []}', "utf8");
         }
-        const content = JSON.parse(await fs.read(this.historyFilePath));
+        const content = JSON.parse(await fs.readFile(this.historyFilePath, "utf8"));
         this.update({
           ...this.state,
           ...content,
         });
-      })
-    );
+      });
+    if (interactive) await tryOrAlert(this.app, Promise.resolve(result));
+    if (result.isErr()) return;
 
     this.onUpdate(async () => {
-      await fs.write(this.historyFilePath, JSON.stringify(this.state));
+      await fs.writeFile(this.historyFilePath, JSON.stringify(this.state), "utf8");
     });
   }
 

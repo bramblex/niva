@@ -4,7 +4,7 @@
     let code = null;
     try {
       if (window.Niva) {
-        await Niva.api.window.current();
+        await Niva.window.current();
         outcome = "allowed";
       }
     } catch (error) {

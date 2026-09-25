@@ -18,6 +18,12 @@ SPEC = importlib.util.spec_from_file_location("niva_macos_api_smoke_runner", RUN
 assert SPEC is not None and SPEC.loader is not None
 RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
+RUN_ALL_SPEC = importlib.util.spec_from_file_location(
+    "niva_macos_api_smoke_run_all", Path(__file__).with_name("run_all.py")
+)
+assert RUN_ALL_SPEC is not None and RUN_ALL_SPEC.loader is not None
+RUN_ALL = importlib.util.module_from_spec(RUN_ALL_SPEC)
+RUN_ALL_SPEC.loader.exec_module(RUN_ALL)
 
 
 class FakeHarness(RUNNER.Harness):
@@ -38,8 +44,8 @@ class FakeHarness(RUNNER.Harness):
 
 class HarnessBacklogTests(unittest.TestCase):
     def test_wait_message_reads_a_fresh_frame_after_an_unrelated_message(self):
-        unrelated = {"t": "msg", "name": "unrelated"}
-        target = {"t": "msg", "name": "wanted"}
+        unrelated = {"protocol": "niva-fixture", "version": 1, "event": "message", "name": "unrelated"}
+        target = {"protocol": "niva-fixture", "version": 1, "event": "message", "name": "wanted"}
         harness = FakeHarness([unrelated, target])
 
         self.assertEqual(harness.wait_message("wanted", timeout=0.2), target)
@@ -49,14 +55,36 @@ class HarnessBacklogTests(unittest.TestCase):
     def test_progress_sink_records_only_method_and_phase(self):
         sink = RUNNER.ProgressSink()
         try:
-            with urllib.request.urlopen(f"{sink.url}?method=resource.read&phase=start", timeout=1) as response:
+            with urllib.request.urlopen(f"{sink.url}?method=Niva.resource.read&phase=start", timeout=1) as response:
                 self.assertEqual(response.status, 204)
-            self.assertEqual(sink.last_progress, {"method": "resource.read", "phase": "start"})
+            self.assertEqual(sink.last_progress, {"method": "Niva.resource.read", "phase": "start"})
         finally:
             sink.close()
 
 
 class HeadlessGroupRegistryTests(unittest.TestCase):
+    def test_native_case_crosswalk_preserves_only_the_tracked_denominator(self):
+        expected = RUN_ALL.expected_methods()
+        self.assertEqual(len(expected), 164)
+        self.assertTrue(set(RUN_ALL.CASE_ID_CROSSWALK.values()).issubset(expected))
+        self.assertEqual(len(RUN_ALL.CASE_ID_CROSSWALK.values()), len(set(RUN_ALL.CASE_ID_CROSSWALK.values())))
+        self.assertEqual(RUN_ALL.case_id("fixture.processStream"), "host.send")
+
+    def test_fixture_code_uses_process_streams_and_no_removed_bridge_aliases(self):
+        roots = [RUNNER.HERE, RUNNER.HERE.parent / "node-compat-macos-smoke",
+                 RUNNER.HERE.parent / "node-compat-integration", RUNNER.HERE.parent / "windows-smoke"]
+        sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for root in roots
+            for pattern in ("*.html", "*.js")
+            for path in root.glob(pattern)
+        )
+        self.assertNotIn("Niva.api", sources)
+        self.assertNotIn("Niva.api.host", sources)
+        self.assertNotIn("--stdio", sources)
+        self.assertIn("process.stdin", sources)
+        self.assertIn("process.stdout", sources)
+
     def test_headless_groups_partition_all_page_methods_and_keep_exact_counts(self):
         groups = RUNNER.HEADLESS_GROUP_METHODS
         self.assertEqual(set(groups), {"process-os", "resource", "fs"})
@@ -71,7 +99,7 @@ class HeadlessGroupRegistryTests(unittest.TestCase):
         self.assertEqual(len(RUNNER.HEADLESS_METHODS), 26)
 
     def test_stress_registry_is_exact_union_of_the_three_groups(self):
-        self.assertEqual(set(RUNNER.HEADLESS_METHODS), set(RUNNER.HEADLESS_PAGE_METHODS) | {"host.send", "process.exit"})
+        self.assertEqual(set(RUNNER.HEADLESS_METHODS), set(RUNNER.HEADLESS_PAGE_METHODS) | {"fixture.processStream", "process.exit"})
 
     def test_runner_selects_three_independent_groups(self):
         calls = []
@@ -128,7 +156,7 @@ class HeadlessGroupRegistryTests(unittest.TestCase):
         self.assertEqual(len(methods["window"]), len(set(methods["window"])))
         self.assertEqual(len(methods["system"]), len(set(methods["system"])))
         self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 59)
-        default_methods = set(RUNNER.AUTOMATIC_METHODS) | RUNNER.WEBVIEW_HISTORY_METHODS | RUNNER.TRAY_METHODS | {"host.send", "process.exit"}
+        default_methods = set(RUNNER.AUTOMATIC_METHODS) | RUNNER.WEBVIEW_HISTORY_METHODS | RUNNER.TRAY_METHODS | {"fixture.processStream", "process.exit"}
         self.assertTrue(default_methods.isdisjoint(RUNNER.EXTENDED_AUTOMATIC_METHODS))
 
     def test_extended_python_registry_matches_case_script_sources(self):
@@ -162,8 +190,8 @@ class HeadlessGroupRegistryTests(unittest.TestCase):
         self.assertEqual(len(RUNNER.EXTENDED_AUTOMATIC_METHODS), 59)
 
     def test_wait_one_of_reads_a_fresh_frame_after_an_unrelated_message(self):
-        unrelated = {"t": "msg", "name": "unrelated"}
-        target = {"t": "msg", "name": "accepted"}
+        unrelated = {"protocol": "niva-fixture", "version": 1, "event": "message", "name": "unrelated"}
+        target = {"protocol": "niva-fixture", "version": 1, "event": "message", "name": "accepted"}
         harness = FakeHarness([unrelated, target])
 
         self.assertEqual(harness.wait_one_of({"accepted", "also-accepted"}, timeout=0.2), target)

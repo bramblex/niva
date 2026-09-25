@@ -1,0 +1,157 @@
+{
+  "name": "@niva/runtime",
+  "version": "0.9.9",
+  "private": true,
+  "type": "module",
+  "description": "Unified TypeScript page runtime and Node-style adapters for Niva",
+  "main": "./dist/esm/index.mjs",
+  "types": "./dist/types/modules/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/modules/index.d.ts",
+      "import": "./dist/esm/index.mjs",
+      "default": "./dist/esm/index.mjs"
+    },
+    "./path": {
+      "types": "./dist/types/modules/path.d.ts",
+      "import": "./dist/esm/path.mjs"
+    },
+    "./os": {
+      "types": "./dist/types/modules/os.d.ts",
+      "import": "./dist/esm/os.mjs"
+    },
+    "./fs": {
+      "types": "./dist/types/modules/fs.d.ts",
+      "import": "./dist/esm/fs.mjs"
+    },
+    "./fs/promises": {
+      "types": "./dist/types/modules/fs/promises.d.ts",
+      "import": "./dist/esm/fs/promises.mjs"
+    },
+    "./child_process": {
+      "types": "./dist/types/modules/child_process.d.ts",
+      "import": "./dist/esm/child_process.mjs"
+    },
+    "./events": {
+      "types": "./dist/types/modules/events.d.ts",
+      "import": "./dist/esm/events.mjs"
+    },
+    "./util": {
+      "types": "./dist/types/modules/util.d.ts",
+      "import": "./dist/esm/util.mjs"
+    },
+    "./querystring": {
+      "types": "./dist/types/modules/querystring.d.ts",
+      "import": "./dist/esm/querystring.mjs"
+    },
+    "./buffer": {
+      "types": "./dist/types/modules/buffer.d.ts",
+      "import": "./dist/esm/buffer.mjs"
+    },
+    "./url": {
+      "types": "./dist/types/modules/url.d.ts",
+      "import": "./dist/esm/url.mjs"
+    },
+    "./crypto": {
+      "types": "./dist/types/modules/crypto.d.ts",
+      "import": "./dist/esm/crypto.mjs"
+    },
+    "./zlib": {
+      "types": "./dist/types/modules/zlib.d.ts",
+      "import": "./dist/esm/zlib.mjs"
+    },
+    "./http": {
+      "types": "./dist/types/modules/http.d.ts",
+      "import": "./dist/esm/http.mjs"
+    },
+    "./https": {
+      "types": "./dist/types/modules/https.d.ts",
+      "import": "./dist/esm/https.mjs"
+    },
+    "./module": {
+      "types": "./dist/types/modules/module.d.ts",
+      "import": "./dist/esm/module.mjs"
+    },
+    "./assert": {
+      "types": "./dist/types/modules/assert.d.ts",
+      "import": "./dist/esm/assert.mjs"
+    },
+    "./assert/strict": {
+      "types": "./dist/types/modules/assert/strict.d.ts",
+      "import": "./dist/esm/assert/strict.mjs"
+    },
+    "./stream": {
+      "types": "./dist/types/modules/stream.d.ts",
+      "import": "./dist/esm/stream.mjs"
+    },
+    "./stream/promises": {
+      "types": "./dist/types/modules/stream/promises.d.ts",
+      "import": "./dist/esm/stream/promises.mjs"
+    },
+    "./process": {
+      "types": "./dist/types/modules/process.d.ts",
+      "import": "./dist/esm/process.mjs"
+    },
+    "./net": {
+      "types": "./dist/types/modules/net.d.ts",
+      "import": "./dist/esm/net.mjs"
+    },
+    "./dgram": {
+      "types": "./dist/types/modules/dgram.d.ts",
+      "import": "./dist/esm/dgram.mjs"
+    },
+    "./tls": {
+      "types": "./dist/types/modules/tls.d.ts",
+      "import": "./dist/esm/tls.mjs"
+    },
+    "./dns": {
+      "types": "./dist/types/modules/dns.d.ts",
+      "import": "./dist/esm/dns.mjs"
+    },
+    "./dns/promises": {
+      "types": "./dist/types/modules/dns/promises.d.ts",
+      "import": "./dist/esm/dns/promises.mjs"
+    },
+    "./string_decoder": {
+      "types": "./dist/types/modules/string_decoder.d.ts",
+      "import": "./dist/esm/string_decoder.mjs"
+    },
+    "./timers": {
+      "types": "./dist/types/modules/timers.d.ts",
+      "import": "./dist/esm/timers.mjs"
+    },
+    "./timers/promises": {
+      "types": "./dist/types/modules/timers/promises.d.ts",
+      "import": "./dist/esm/timers/promises.mjs"
+    },
+    "./tty": {
+      "types": "./dist/types/modules/tty.d.ts",
+      "import": "./dist/esm/tty.mjs"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run typecheck && node ./scripts/build-runtime.mjs",
+    "build:assets": "node ./scripts/build-runtime.mjs --skip-types",
+    "test": "npm run build && node --import ./test/setup-runtime.js --test ./test/*.test.js",
+    "test:upstream": "node ./scripts/test-upstream.mjs",
+    "test:upstream:harness": "node ./scripts/test-upstream.mjs --self-test"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "@niva/types": "0.9.9",
+    "acorn": "8.14.0",
+    "acorn-walk": "8.3.4",
+    "buffer": "6.0.3",
+    "dns-packet": "5.6.1",
+    "fflate": "0.8.3",
+    "http-parser-js": "0.5.10",
+    "readable-stream": "4.7.0",
+    "string_decoder": "1.3.0",
+    "url": "0.11.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "~5.9.0"
+  }
+}

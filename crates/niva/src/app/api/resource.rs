@@ -29,9 +29,43 @@ fn resource_exists(resources: &dyn ResourceManager, path: &str) -> bool {
 }
 
 fn extract_resource(resources: &dyn ResourceManager, from: &str, to: &Path) -> Result<()> {
-    let content = resources.load(from)?;
-    std::fs::write(to, content)?;
-    Ok(())
+    anyhow::ensure!(!to.is_dir(), "resource extraction target must be a file");
+    let existing_permissions = std::fs::metadata(to)
+        .ok()
+        .map(|metadata| metadata.permissions());
+    let parent = to
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    anyhow::ensure!(
+        parent.is_dir(),
+        "resource destination directory does not exist"
+    );
+    if to.exists() {
+        // Replacing atomically must not bypass the destination's ordinary
+        // write permission merely because its parent directory is writable.
+        std::fs::OpenOptions::new().write(true).open(to)?;
+    }
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random)
+        .map_err(|error| anyhow::anyhow!("temporary resource path: {error}"))?;
+    let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    let temporary = parent.join(format!(".niva-extract-{suffix}"));
+    // Both backends stream into a new sibling file. Only a complete copy may
+    // replace the requested destination, preserving the public overwrite
+    // behavior without materializing a large resource in memory.
+    let result = (|| -> Result<()> {
+        resources.extract(from, &temporary)?;
+        if let Some(permissions) = existing_permissions {
+            std::fs::set_permissions(&temporary, permissions)?;
+        }
+        std::fs::rename(&temporary, to)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
 }
 
 /// Streaming embedded-resource read: binary chunks + terminal `{size}`.
@@ -133,6 +167,10 @@ mod tests {
         let resources = FileSystemResource::new(&root).unwrap();
         let destination = temp.path().join("extracted.bin");
 
+        extract_resource(resources.as_ref(), "nested/guide.bin", &destination).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), [0, 255, 1, 128]);
+
+        std::fs::write(&destination, b"old destination").unwrap();
         extract_resource(resources.as_ref(), "nested/guide.bin", &destination).unwrap();
         assert_eq!(std::fs::read(&destination).unwrap(), [0, 255, 1, 128]);
 

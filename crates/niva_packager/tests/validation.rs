@@ -5,6 +5,14 @@ use std::{fs, path::Path};
 fn fixture(root: &Path) {
     fs::create_dir(root.join("resources")).unwrap();
     fs::write(root.join("resources/index.html"), "hello").unwrap();
+    fs::write(root.join("LICENSE"), "Niva license").unwrap();
+    fs::write(root.join("THIRD_PARTY.txt"), "Third-party notices").unwrap();
+    fs::create_dir_all(root.join("licenses/runtime")).unwrap();
+    fs::write(
+        root.join("licenses/runtime/LICENSE"),
+        "Runtime dependency license",
+    )
+    .unwrap();
     fs::write(
         root.join("niva.json"),
         r#"{"name":"Smoke","uuid":"test","version":"1.0.0"}"#,
@@ -28,6 +36,7 @@ fn bad_hash_and_missing_target_are_reported_independently_without_publishing() {
         &root.join("resources"),
         &root.join("output"),
         &[Target::MacosAarch64, Target::WindowsX86_64],
+        niva_packager::ResourceLayout::Embedded,
     )
     .unwrap();
     assert_eq!(report.results.len(), 2);
@@ -64,6 +73,7 @@ fn existing_artifact_is_never_overwritten() {
         &root.join("resources"),
         &root.join("output"),
         &[Target::MacosAarch64],
+        niva_packager::ResourceLayout::Embedded,
     )
     .unwrap();
     assert!(

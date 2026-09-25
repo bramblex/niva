@@ -10,8 +10,12 @@ from pathlib import Path
 
 def read_frames(process, frames):
     for line in process.stdout:
-        frames.put(json.loads(line))
-    frames.put({"t": "eof"})
+        frame = json.loads(line)
+        if not isinstance(frame, dict) or frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+            frames.put({"event": "bad-json", "frame": frame})
+        else:
+            frames.put(frame)
+    frames.put({"event": "eof"})
 
 
 def main():
@@ -19,12 +23,14 @@ def main():
     output = Path.cwd() / "dist/windows-stream-stage/output.txt"
     frames = queue.Queue()
     with open(Path.cwd() / "dist/windows-stream-stderr.log", "wb") as errors:
-        process = subprocess.Popen([str(binary), "--stdio"], stdin=subprocess.PIPE,
+        process = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=errors)
         threading.Thread(target=read_frames, args=(process, frames), daemon=True).start()
         try:
-            assert frames.get(timeout=20) == {"t": "ready", "v": 1}
+            ready = frames.get(timeout=20)
+            assert ready.get("event") == "ready" and ready.get("name") == "windows-stream", ready
             result = frames.get(timeout=30)
+            assert result.get("event") == "message", result
             if result.get("name") == "stream-error":
                 raise RuntimeError(result["data"]["message"])
             assert result.get("name") == "stream-ok", result.get("name")
@@ -34,6 +40,8 @@ def main():
             child = data["child"]
             assert child["status"] == 0 and "STDOUT" in child["stdout"] and "STDERR" in child["stderr"], data
             assert output.read_bytes() == b"A" * 150000 + b"tail", "native file content differs from streamed read"
+            process.stdin.write((json.dumps({"protocol": "niva-fixture", "version": 1, "event": "command", "name": "fixture-exit", "data": 0}) + "\n").encode("utf-8"))
+            process.stdin.flush()
             process.stdin.close()
             assert process.wait(timeout=10) == 0
             print("Streams: 150 KB fs.write/append/read, 150 KB resource.read and process.exec stdout/stderr passed")

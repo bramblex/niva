@@ -2,7 +2,7 @@
 
 > Niva is an open-source Rust desktop app runtime with developer tools for packaging web-based applications on macOS and Windows. The documentation is in Simplified Chinese.
 
-Use the matching `Niva.api.<namespace>` link below to find methods. Repository documents marked as plans are not implemented features; check the source and release status before claiming platform support or security acceptance.
+Use the matching `Niva.<namespace>` link below to find methods. Repository documents marked as plans are not implemented features; check the source and release status before claiming platform support or security acceptance.
 
 ## Getting started
 
@@ -25,28 +25,30 @@ Use the matching `Niva.api.<namespace>` link below to find methods. Repository d
 - [Remote page permissions](https://bramblex.github.io/niva/docs/api/permissions): Permission configuration and current validation boundary.
 - [Streaming and binary data](https://bramblex.github.io/niva/docs/api/stream): Stream call lifecycle and payloads.
 
-## Niva.api namespaces
+## Niva namespaces
 
-- [Niva.api.clipboard](https://bramblex.github.io/niva/docs/api/clipboard): Read and write clipboard data.
-- [Niva.api.dialog](https://bramblex.github.io/niva/docs/api/dialog): Native file and message dialogs.
-- [Niva.api.extra](https://bramblex.github.io/niva/docs/api/extra): Additional system methods.
-- [Niva.api.fs](https://bramblex.github.io/niva/docs/api/fs): File system access and streaming.
-- [Niva.api.monitor](https://bramblex.github.io/niva/docs/api/monitor): Display information.
-- [Niva.api.os](https://bramblex.github.io/niva/docs/api/os): Operating system information and paths.
-- [Niva.api.process](https://bramblex.github.io/niva/docs/api/process): Process information, execution, and streams.
-- [Niva.api.resource](https://bramblex.github.io/niva/docs/api/resource): Bundled resource access.
-- [Niva.api.shortcut](https://bramblex.github.io/niva/docs/api/shortcut): Global shortcuts.
-- [Niva.api.tray](https://bramblex.github.io/niva/docs/api/tray): System tray controls.
-- [Niva.api.webview](https://bramblex.github.io/niva/docs/api/webview): WebView controls.
-- [Niva.api.window](https://bramblex.github.io/niva/docs/api/window): Window controls.
-- [Niva.api.windowExtra](https://bramblex.github.io/niva/docs/api/window_extra): Platform-specific window controls.
+- [Niva.clipboard](https://bramblex.github.io/niva/docs/api/clipboard): Read and write clipboard data.
+- [Niva.dialog](https://bramblex.github.io/niva/docs/api/dialog): Native file and message dialogs.
+- [Niva.extra](https://bramblex.github.io/niva/docs/api/extra): Additional system methods.
+- [Niva.fs](https://bramblex.github.io/niva/docs/api/fs): File system access and streaming.
+- [Niva.monitor](https://bramblex.github.io/niva/docs/api/monitor): Display information.
+- [Niva.os](https://bramblex.github.io/niva/docs/api/os): Operating system information and paths.
+- [Niva.process](https://bramblex.github.io/niva/docs/api/process): Process information, execution, and streams.
+- [Niva.resource](https://bramblex.github.io/niva/docs/api/resource): Bundled resource access.
+- [Niva.shortcut](https://bramblex.github.io/niva/docs/api/shortcut): Global shortcuts.
+- [Niva.tray](https://bramblex.github.io/niva/docs/api/tray): System tray controls.
+- [Niva.webview](https://bramblex.github.io/niva/docs/api/webview): WebView controls.
+- [Niva.window](https://bramblex.github.io/niva/docs/api/window): Window controls.
+- [Niva.windowExtra](https://bramblex.github.io/niva/docs/api/window_extra): Platform-specific window controls.
 - [Events](https://bramblex.github.io/niva/docs/event): Window, menu, tray, shortcut, and file-drop events.
 
 ## Optional
 
 - [NodeCompat](https://bramblex.github.io/niva/docs/api/node-compat): Embedded Node-shaped browser modules, enabled by default, with API and platform limits.
-- [NodeCompat HTTP and HTTPS](https://bramblex.github.io/niva/docs/api/http): Node-style HTTP clients and application servers; these are modules, not Niva.api namespaces.
+- [NodeCompat HTTP and HTTPS](https://bramblex.github.io/niva/docs/api/http): Node-style HTTP clients and application servers; these are modules, not Niva namespaces.
 - [stdio host bridge](https://bramblex.github.io/niva/docs/api/stdio): Host messaging and protocol limits.
 - [Type declarations](https://github.com/bramblex/niva/blob/main/packages/types/Niva_zh.d.ts): Public TypeScript API signatures.
 - [Source code](https://github.com/bramblex/niva): Source of truth for current behavior.
 - [Roadmap](https://github.com/bramblex/niva/blob/main/docs/roadmap.md): Open work and proposed features; not a list of delivered capabilities.
+
+Architecture update: APIs live directly on Niva. injectCommonJs and injectEsm independently opt into Node globals and browser ESM facades. Niva.bridge owns transport; Niva.stream is the Node module. process stdio is main-window-only; there is no --stdio or api.host protocol. See repository architecture-implementation-plan.md for current implementation and evidence boundaries.

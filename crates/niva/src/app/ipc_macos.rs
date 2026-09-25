@@ -80,8 +80,9 @@ impl ReplyHandler {
 
         // Use the sending frame's URL, not the current WKWebView URL. A
         // navigation can occur while an asynchronous request is in flight;
-        // ipc_call owns all source validation.
+        // ipc_message owns all source validation.
         let frame_info = unsafe { message.frameInfo() };
+        let is_main_frame = unsafe { frame_info.isMainFrame() };
         let request = unsafe { frame_info.request() };
         let source_url = request
             .URL()
@@ -113,7 +114,16 @@ impl ReplyHandler {
             smol::spawn(async move {
                 let result = app
                     .api()
-                    .ipc_call(window_id, &source_url, &body)
+                    .ipc_message(
+                        window_id,
+                        super::api_manager::IpcFrameSource {
+                            source_url: source_url.clone(),
+                            frame_id: 0,
+                            generation: 0,
+                            is_main_frame,
+                        },
+                        &body,
+                    )
                     .await
                     .map_err(|error| error.to_string());
 
@@ -136,7 +146,10 @@ impl ReplyHandler {
                     // The event loop is already closed, so its main-thread
                     // callback cannot run. The block remains thread-local and
                     // is released when the main thread exits.
-                    eprintln!("[niva] unable to reply to nivaReply: event loop is closed");
+                    crate::niva_log!(
+                        crate::app::logging::Level::Warn,
+                        "[niva] unable to reply to nivaReply: event loop is closed"
+                    );
                 }
             })
         }));

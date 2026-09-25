@@ -1,6 +1,7 @@
 import { StateModel } from "@bramblex/state-model";
 import { AppModel } from "./app.model";
 import { Locale, TranslateKey, Translations, resources } from "../i18n";
+import { niva } from "../common/niva";
 
 interface LocaleModelState {
   current: Locale;
@@ -17,7 +18,7 @@ export class LocaleModel extends StateModel<LocaleModelState> {
   }
 
   async init() {
-    const locale: string = await Niva.api.os.locale();
+    const locale = await niva.bridge.call("os.locale", []) as string;
     if (locale.endsWith("CN")) {
       this.setLocale("zh_CN");
     }

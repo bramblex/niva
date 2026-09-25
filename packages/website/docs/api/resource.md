@@ -1,6 +1,6 @@
 # 资源 resource
 
-## Niva.api.resource.exists
+## Niva.resource.exists
 ```ts
 /**
  * 检查路径是否对应一个已打包的应用程序资源文件。
@@ -10,7 +10,7 @@
 export function exists(path: string): Promise<boolean>;
 ```
 
-## Niva.api.resource.read
+## Niva.resource.read
 ```ts
 /**
  * 读取虚拟文件系统中的文件。
@@ -21,7 +21,7 @@ export function exists(path: string): Promise<boolean>;
 export function read(path: string, encode?: "utf8" | "base64"): Promise<string>;
 ```
 
-## Niva.api.resource.extract
+## Niva.resource.extract
 ```ts
 /**
  * 将虚拟文件系统中的文件提取到本地文件系统上。
@@ -34,10 +34,10 @@ export function extract(from: string, to: string): Promise<void>;
 
 ## 流式读取
 
-`resource.readStream` 是原生二进制流式 handler，只能通过 `Niva.stream` 读取打包资源；没有 `Niva.api.resource.readStream` Promise proxy：
+`resource.readStream` 是原生二进制流式 handler，只能通过 `Niva.stream` 读取打包资源；没有 `Niva.resource.readStream` Promise proxy：
 
 ```ts
-const read = Niva.stream("resource.readStream", ["assets/data.bin"], {
+const read = Niva.bridge.stream("resource.readStream", ["assets/data.bin"], {
   onChunk(bytes) {
     console.log("read bytes:", bytes.byteLength);
   },
@@ -45,4 +45,4 @@ const read = Niva.stream("resource.readStream", ["assets/data.bin"], {
 await read.promise;
 ```
 
-`resource.exists` 只检查打包索引中的文件；目录本身不会单独写入索引。`Niva.api.resource.read` 是初始化脚本建立在 `readStream` 上的 Promise wrapper，会收集整个响应；它仅在本地 WebSocket 页面可用。远端 IPC 页面不能调用 `resource.readStream` 或该 wrapper。另见[流式调用](./stream)。
+`resource.exists` 只检查打包索引中的文件；目录本身不会单独写入索引。`Niva.resource.read` 是初始化脚本建立在 `readStream` 上的 Promise wrapper，会收集整个响应；它仅在本地 WebSocket 页面可用。远端 IPC 页面不能调用 `resource.readStream` 或该 wrapper。另见[流式调用](./stream)。

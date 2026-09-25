@@ -1,29 +1,12 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 pub type ArcMut<T> = Arc<Mutex<T>>;
-
-static STDIO_MODE: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn set_stdio_mode(enabled: bool) {
-    STDIO_MODE.store(enabled, Ordering::Relaxed);
-}
-
-pub(crate) fn log_output(args: std::fmt::Arguments<'_>) {
-    if STDIO_MODE.load(Ordering::Relaxed) {
-        eprintln!("{args}");
-    } else {
-        println!("{args}");
-    }
-}
 
 pub fn arc<T>(t: T) -> Arc<T> {
     Arc::new(t)
@@ -43,15 +26,18 @@ impl IdCounter {
     }
 
     pub fn next<T>(&mut self, excludes: &HashMap<u8, T>) -> Result<u8> {
-        for _ in 0..u8::MAX {
+        // There are 256 representable IDs. Advance for every examined value
+        // with explicit wrapping so the full range is searched in all build
+        // profiles and the next call continues after the returned ID.
+        for _ in 0..=u8::MAX {
             let id = self.next_id;
+            self.next_id = self.next_id.wrapping_add(1);
             if excludes.contains_key(&id) {
-                self.next_id += 1;
                 continue;
             }
             return Ok(id);
         }
-        Err(anyhow!("Failed to find a valid id."))
+        Err(anyhow!("all 256 IDs are already in use"))
     }
 }
 
@@ -122,7 +108,7 @@ macro_rules! logical_try {
 macro_rules! log_if_err {
     ($result:expr) => {
         if let Err(e) = $result {
-            $crate::app::utils::log_output(format_args!("[Error]: {}", e));
+            $crate::niva_log!($crate::app::logging::Level::Error, "{e}");
         }
     };
 }
@@ -130,14 +116,14 @@ macro_rules! log_if_err {
 #[macro_export]
 macro_rules! log {
     ($result:expr) => {
-        $crate::app::utils::log_output(format_args!("[Info]: {}", $result));
+        $crate::niva_log!($crate::app::logging::Level::Info, "{}", $result);
     };
 }
 
 #[macro_export]
 macro_rules! log_err {
     ($result:expr) => {
-        $crate::app::utils::log_output(format_args!("[Error]: {}", $result));
+        $crate::niva_log!($crate::app::logging::Level::Error, "{}", $result);
     };
 }
 
@@ -236,4 +222,29 @@ macro_rules! blocking {
     ($body:expr) => {
         smol::unblock(move || -> anyhow::Result<_> { $body })
     };
+}
+
+#[cfg(test)]
+mod id_counter_tests {
+    use super::IdCounter;
+    use std::collections::HashMap;
+
+    #[test]
+    fn counter_wraps_and_checks_all_256_ids() {
+        let mut counter = IdCounter { next_id: u8::MAX };
+        let excludes = HashMap::<u8, ()>::from([(u8::MAX, ()), (0, ())]);
+        assert_eq!(counter.next(&excludes).unwrap(), 1);
+
+        let all_ids = (u8::MIN..=u8::MAX).map(|id| (id, ())).collect();
+        assert!(counter.next(&all_ids).is_err());
+    }
+
+    #[test]
+    fn a_returned_id_is_not_repeated_before_the_counter_wraps() {
+        let mut counter = IdCounter::new();
+        let mut excludes = HashMap::new();
+        let first = counter.next(&excludes).unwrap();
+        excludes.insert(first, ());
+        assert_eq!(counter.next(&excludes).unwrap(), 1);
+    }
 }

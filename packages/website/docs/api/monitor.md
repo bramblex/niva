@@ -1,6 +1,6 @@
 # 监视器 monitor
 
-## Niva.api.monitor.list
+## Niva.monitor.list
 ```ts
 /**
  * 列出系统中可用的所有监视器，并返回它们的信息。包括每个监视器的名称、大小、位置、物理大小、物理位置和缩放因子。
@@ -16,7 +16,7 @@ export function list(): Promise<{
 }[]>;
 ```
 
-## Niva.api.monitor.current
+## Niva.monitor.current
 ```ts
 /**
  * 获取包含当前窗口的监视器的信息，包括该监视器的名称、大小、位置、物理大小、物理位置和缩放因子。
@@ -32,7 +32,7 @@ export function current(): Promise<{
 } | null>;
 ```
 
-## Niva.api.monitor.primary
+## Niva.monitor.primary
 ```ts
 /**
  * 获取系统中主监视器的信息，包括该监视器的名称、大小、位置、物理大小、物理位置和缩放因子。
@@ -48,7 +48,7 @@ export function primary(): Promise<{
 } | null>;
 ```
 
-## Niva.api.monitor.fromPoint
+## Niva.monitor.fromPoint
 ```ts
 /**
  * 获取指定坐标点所在的监视器的信息，包括该监视器的名称、大小、位置、物理大小、物理位置和缩放因子。

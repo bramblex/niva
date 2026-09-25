@@ -175,34 +175,38 @@ class Harness:
         assert self.process.stdout is not None
         for line in self.process.stdout:
             try:
-                self.frames.put(json.loads(line))
+                frame = json.loads(line)
+                if not isinstance(frame, dict) or frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+                    self.frames.put({"event": "bad-json", "frame": frame, "line": line.rstrip()})
+                else:
+                    self.frames.put(frame)
             except json.JSONDecodeError as error:
-                self.frames.put({"t": "bad-json", "error": str(error), "line": line.rstrip()})
-        self.frames.put({"t": "eof"})
+                self.frames.put({"event": "bad-json", "error": str(error), "line": line.rstrip()})
+        self.frames.put({"protocol": "niva-fixture", "version": 1, "event": "eof"})
 
     def next_frame(self, timeout: float) -> dict:
         try:
             frame = self.frames.get(timeout=timeout)
         except queue.Empty as error:
             raise SmokeError(f"timed out after {timeout:.1f}s waiting for Niva output") from error
-        if frame.get("t") == "bad-json":
-            raise SmokeError(f"Niva stdout was not NDJSON: {frame}")
-        if frame.get("t") == "eof":
-            raise SmokeError(f"Niva stdout closed (status {self.process.poll()})")
+        if frame.get("event") == "bad-json":
+            raise SmokeError(f"fixture stdout was not NDJSON: {frame}")
+        if frame.get("event") == "protocol-error":
+            raise SmokeError(f"fixture stdin protocol failed: {frame}")
+        if frame.get("event") == "eof":
+            raise SmokeError(f"fixture stdout closed (status {self.process.poll()})")
         return frame
 
     def send(self, name: str, data: dict | None = None) -> None:
         if self.process.stdin is None or self.process.stdin.closed:
             raise SmokeError("Niva stdin is closed")
-        frame: dict = {"t": "msg", "name": name}
-        if data is not None:
-            frame["data"] = data
+        frame: dict = {"protocol": "niva-fixture", "version": 1, "event": "command", "name": name, "data": data}
         self.process.stdin.write(json.dumps(frame, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
 
 
 def app_dirs(app_name: str, app_uuid: str) -> list[Path]:
-    id_name = f"{app_name.lower()}_{app_uuid[:8]}"
+    id_name = str(uuid.UUID(app_uuid))
     return [
         Path.home() / "Library" / "Application Support" / id_name,
         Path.home() / "Library" / "Caches" / id_name,
@@ -475,6 +479,7 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
             resources = root / "resources"
             resources.mkdir()
             shutil.copy2(HERE / "window-supervised.html", resources / "window-supervised.html")
+            shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
             (resources / "window-supervised-child.html").write_text(
                 """<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>IPC child</title></head>
                 <body style=\"margin:0;background:transparent\"><div style=\"position:fixed;left:0;top:0;width:32px;height:32px;background:rgb(241,31,197)\"></div>
@@ -482,28 +487,28 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
                 <script>
                   (() => {
                     Niva.addEventListener(\"window.closeRequested\", async () => {
-                      const id = await Niva.api.window.current();
-                      await Niva.api.window.sendMessage(`close-requested:${id}`, 0).catch(() => {});
+                      const id = await Niva.window.current();
+                      await Niva.window.sendMessage(`close-requested:${id}`, 0).catch(() => {});
                     });
                     Niva.addEventListener(\"window.message\", (_name, payload) => {
                       if (payload && payload.from === 0 && payload.message === \"focus-ime\") {
                         document.querySelector(\"#imeProbe\").focus();
                         setTimeout(async () => {
-                          const id = await Niva.api.window.current();
-                          await Niva.api.window.sendMessage(`ime-focused:${id}`, 0).catch(() => {});
+                          const id = await Niva.window.current();
+                          await Niva.window.sendMessage(`ime-focused:${id}`, 0).catch(() => {});
                         }, 120);
                       }
                       if (payload && payload.from === 0 && payload.message.startsWith(\"ping:\")) {
-                        Niva.api.window.sendMessage(payload.message.replace(/^ping:/, \"pong:\"), payload.from).catch(() => {});
+                        Niva.window.sendMessage(payload.message.replace(/^ping:/, \"pong:\"), payload.from).catch(() => {});
                       }
                       if (payload && payload.from === 0 && payload.message === \"cursor-query\") {
-                        Niva.api.window.sendMessage(`cursor-style:${getComputedStyle(document.querySelector(\"div\")).cursor}`, 0).catch(() => {});
+                        Niva.window.sendMessage(`cursor-style:${getComputedStyle(document.querySelector(\"div\")).cursor}`, 0).catch(() => {});
                       }
                     });
                     window.addEventListener(\"load\", () => {
                       setTimeout(async () => {
-                        const id = await Niva.api.window.current();
-                        await Niva.api.window.sendMessage(`ready:${id}`, 0);
+                        const id = await Niva.window.current();
+                        await Niva.window.sendMessage(`ready:${id}`, 0);
                       }, 150);
                     }, { once: true });
                   })();
@@ -518,6 +523,8 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
                     {
                         "name": app_name,
                         "uuid": app_uuid,
+                        "injectCommonJs": True,
+                        "injectEsm": True,
                         "window": {
                             "entry": "window-supervised.html",
                             "title": "Niva supervised window smoke",
@@ -538,7 +545,7 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
                 child_env = os.environ.copy()
                 child_env["TMPDIR"] = str(root)
                 process = subprocess.Popen(
-                    [str(binary), "--stdio", f"--debug-config={config}", f"--debug-resource={resources}"],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO,
                     env=child_env,
                     stdin=subprocess.PIPE,
@@ -550,15 +557,15 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
 
             harness = Harness(process)
             ready = harness.next_frame(timeout=30)
-            if ready != {"t": "ready", "v": 1}:
-                raise SmokeError(f"unexpected first stdio frame: {ready!r}")
+            if ready.get("event") != "ready" or ready.get("name") != "window-supervised":
+                raise SmokeError(f"unexpected fixture ready event: {ready!r}")
 
             suite_ready = False
             suite_done: dict | None = None
             deadline = time.monotonic() + 240
             while time.monotonic() < deadline:
                 frame = harness.next_frame(timeout=max(0.1, deadline - time.monotonic()))
-                if frame.get("t") != "msg":
+                if frame.get("event") != "message":
                     continue
                 name = frame.get("name")
                 data = frame.get("data") or {}
@@ -654,10 +661,22 @@ def run(binary: Path, cases: list[dict[str, str]]) -> int:
                     f"unexpected={sorted(invoked.keys() - expected_invocations)}"
                 )
 
-            harness.send("window-supervised-command", {"kind": "exit"})
+            harness.send("window-supervised-command", {"kind": "exit-with-child"})
+            exit_child = None
+            exit_deadline = time.monotonic() + 15
+            while time.monotonic() < exit_deadline:
+                frame = harness.next_frame(max(0.1, exit_deadline - time.monotonic()))
+                if frame.get("event") == "message" and frame.get("name") == "window-exit-child-ready":
+                    exit_child = frame.get("data", {}).get("id")
+                    break
+                if frame.get("event") == "message" and frame.get("name") == "window-supervised-error":
+                    raise SmokeError(f"exit-with-child case failed: {frame.get('data')}")
+            if not isinstance(exit_child, int) or exit_child <= 0:
+                raise SmokeError("process.exit fixture did not confirm a live child window before exit")
             status = process.wait(timeout=20)
             if status != 0:
-                raise SmokeError(f"isolated Niva process exited with status {status}")
+                raise SmokeError(f"isolated Niva process with child window exited with status {status}")
+            print(f"PASS process.exit: main exited cleanly with owned child window {exit_child} still open", flush=True)
     except Exception as error:
         failure = failure or f"{type(error).__name__}: {error}"
     finally:

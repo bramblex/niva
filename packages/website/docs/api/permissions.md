@@ -28,14 +28,14 @@ origin 必须是精确的 `http` 或 `https` 来源，包括协议、主机和�
 
 远端页面没有本地 WebSocket 凭据。macOS IPC 从 WebKit 消息的发送 frame URL 取来源；Windows IPC 从 WebView2 frame 消息取来源，并在回包前检查导航状态。Rust 根据来源 origin、窗口自己的 permissions 和完整 API 名称进行检查，不信任消息体中的 `wid` 或 origin。
 
-- 单次 IPC 请求和响应上限均为 256 KiB；等待回复超时为 60 秒。
-- IPC 只支持注册为 unary JSON 的原生 API。`Niva.stream`、二进制帧和流式 handler 不可用。
+- 单次IPC请求JSON最多256KiB、响应最多8MiB；高层操作还有body/输出与超时限制，在途IPC采用失联租约。
+- IPC只支持明确白名单内的一次性JSON操作；仅注册为Unary并不足以放行。`Niva.bridge.stream`、Native同步、二进制帧和持久handler不可用。
 - `window.open` 与 `webview.baseFileSystemUrl` 即使在 grant 中列出也会被拒绝。
-- API 错误会使 `Niva.call()` 返回的 Promise reject；权限拒绝使用 bridge 错误码 `-4`。
+- API 错误会使 `Niva.bridge.call()` 返回的 Promise reject；权限拒绝使用 bridge 错误码 `-4`。
 
 ```ts
 try {
-  const title = await Niva.call("window.title", []);
+  const title = await Niva.bridge.call("window.title", []);
   console.log(title);
 } catch (error) {
   // 未配置 origin 或 method 时会在这里拒绝。

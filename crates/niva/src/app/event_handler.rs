@@ -1,5 +1,8 @@
 use anyhow::{Result, anyhow};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use serde_json::json;
 use tao::{
@@ -8,17 +11,21 @@ use tao::{
     window::WindowId,
 };
 
-use crate::{lock, log_if_err, try_or_log_err};
+use crate::{lock, log_if_err};
 
 use super::{NivaApp, NivaEvent, utils::split_id, window_manager::WindowManager};
 
 pub struct EventHandler {
     app: Arc<NivaApp>,
+    shutting_down: AtomicBool,
 }
 
 impl EventHandler {
     pub fn new(app: Arc<NivaApp>) -> Self {
-        Self { app }
+        Self {
+            app,
+            shutting_down: AtomicBool::new(false),
+        }
     }
 
     /// Install global handlers for menu / tray-icon / hotkey events.
@@ -118,8 +125,14 @@ impl EventHandler {
         target: &EventLoopWindowTarget<NivaEvent>,
         control_flow: &mut ControlFlow,
     ) {
-        try_or_log_err!({
-            *control_flow = ControlFlow::Wait;
+        if self.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
+        let loop_destroyed = matches!(&event, Event::LoopDestroyed);
+        let result = (|| -> Result<()> {
+            if !matches!(*control_flow, ControlFlow::ExitWithCode(_)) {
+                *control_flow = ControlFlow::Wait;
+            }
             match event {
                 Event::WindowEvent {
                     event, window_id, ..
@@ -130,7 +143,16 @@ impl EventHandler {
                 _ => (),
             }
             Ok(())
-        });
+        })();
+        log_if_err!(result);
+        // process.exit and main-window closure both end the application.
+        // Do not rely on a later Destroyed event for each remaining child:
+        // Tao may terminate the process before those events are dispatched.
+        if (loop_destroyed || matches!(*control_flow, ControlFlow::ExitWithCode(_)))
+            && !self.shutting_down.swap(true, Ordering::AcqRel)
+        {
+            log_if_err!(WindowManager::close_all_and_cleanup(&self.app));
+        }
     }
 
     fn handle_window_event(
@@ -140,8 +162,19 @@ impl EventHandler {
         control_flow: &mut ControlFlow,
     ) -> Result<()> {
         if let WindowEvent::Destroyed = event {
-            let closed = self.app.window()?.close_window_inner(window_id)?;
-            WindowManager::cleanup_window(&self.app, &closed)?;
+            // CloseRequested/API close may already have removed and cleaned
+            // this window before Tao emits Destroyed. Treat that as the same
+            // completed close, not another cleanup failure.
+            let window = match self.app.window()?.get_window_inner(window_id) {
+                Ok(window) => window,
+                Err(_) => return Ok(()),
+            };
+            let cleanup =
+                WindowManager::close_window_and_cleanup(&self.app, window.id, Some(window.clone()));
+            if window.id == 0 {
+                *control_flow = ControlFlow::Exit;
+            }
+            return cleanup;
         }
 
         let window = self.app.window()?.get_window_inner(window_id)?;
@@ -185,11 +218,15 @@ impl EventHandler {
                 if is_block_closed_requested {
                     window.send_ipc_event("window.closeRequested", json!(null));
                 } else {
-                    let closed = self.app.window()?.close_window_inner(window_id)?;
-                    WindowManager::cleanup_window(&self.app, &closed)?;
+                    let cleanup = WindowManager::close_window_and_cleanup(
+                        &self.app,
+                        window.id,
+                        Some(window.clone()),
+                    );
                     if window.id == 0 {
                         *control_flow = ControlFlow::Exit;
                     }
+                    cleanup?;
                 }
             }
             _ => (),

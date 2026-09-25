@@ -19,14 +19,14 @@ jobs:
           node-version: 22.14.0
           cache: npm
       - run: npm ci
-      - run: npm run build:vendor --workspace=packages/node-compat
-      - run: npm run test:upstream:harness --workspace=packages/node-compat
-      - run: npm run test:upstream --workspace=packages/node-compat -- --suite js --report upstream-results.json
+      - run: npm run build --workspace=packages/runtime
+      - run: npm run test:upstream:harness --workspace=packages/runtime
+      - run: npm run test:upstream --workspace=packages/runtime -- --suite js --report upstream-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: node-upstream-${{ matrix.os }}
-          path: packages/node-compat/upstream-results.json
+          path: packages/runtime/upstream-results.json
           if-no-files-found: warn
 
   check:
@@ -46,13 +46,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run build --workspace=packages/runtime
+      - run: npm run typecheck --workspace=packages/types
+      - run: npm run typecheck:consumer --workspace=packages/types
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets
       - run: cargo test --workspace
-      - run: npm test --workspace=packages/node-compat
+      - run: npm test --workspace=packages/runtime
       - run: node --test packages/devtools/scripts/api-contract.test.mjs
-      - run: node --test packages/devtools/scripts/bridge-api-overrides.test.mjs
       - run: node --test packages/devtools/scripts/macos-window-cases.test.mjs
       - run: node --test packages/devtools/scripts/macos-public-cases.test.mjs
       - run: node --test packages/devtools/scripts/macos-bridge-cases.test.mjs
@@ -61,21 +63,37 @@ jobs:
         run: python3 -B -m unittest examples/macos-api-smoke/test_runner.py
       - if: runner.os == 'macOS'
         run: python3 -B -m unittest discover -s examples/node-compat-macos-smoke -p 'test_runner.py'
-      - run: node --test packages/devtools/scripts/bridge-stream.test.mjs
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva
+      - if: runner.os == 'macOS'
+        name: Real WebView bootstrap, stdio, process cleanup and TypeScript CLI
+        run: |
+          python3 examples/runtime-bootstrap-smoke/run.py --binary target/release/niva --output /tmp/niva-bootstrap-evidence
+          python3 examples/stdio-host/verify.py --binary target/release/niva --output /tmp/niva-stdio-evidence
+          python3 examples/stdio-host/verify_exit.py --binary target/release/niva --output /tmp/niva-exit-evidence
+          python3 examples/typescript-cli-smoke/run.py --binary target/release/niva --output /tmp/niva-tsc-evidence
+      - if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-webview-smoke-macos
+          path: |
+            /tmp/niva-bootstrap-evidence
+            /tmp/niva-stdio-evidence
+            /tmp/niva-exit-evidence
+            /tmp/niva-tsc-evidence
+          if-no-files-found: warn
       - if: runner.os == 'macOS'
         uses: actions/setup-node@v4
         with:
           node-version: 22.14.0
       - if: runner.os == 'macOS'
         name: Official contracts through real Native bridge
-        run: NIVA_UPSTREAM_BINARY="$GITHUB_WORKSPACE/target/release/niva" npm run test:upstream --workspace=packages/node-compat -- --suite native --report upstream-native-results.json
+        run: NIVA_UPSTREAM_BINARY="$GITHUB_WORKSPACE/target/release/niva" npm run test:upstream --workspace=packages/runtime -- --suite native --report upstream-native-results.json
       - if: always() && runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: node-upstream-native-macos
-          path: packages/node-compat/upstream-native-results.json
+          path: packages/runtime/upstream-native-results.json
           if-no-files-found: warn
       - if: runner.os == 'Windows'
         shell: pwsh

@@ -3,8 +3,10 @@
   <head><meta charset="utf-8"><title>Niva top-level bridge smoke</title></head>
   <body>
     <h1>Niva top-level bridge smoke</h1>
+    <script src="fixture-protocol.js"></script>
     <script>
       (() => {
+        const fs = require("node:fs/promises");
         const coverage = [];
         const assert = (condition, message) => { if (!condition) throw new Error(message); };
         const record = (method, assertion) => coverage.push({ method, assertion });
@@ -18,108 +20,61 @@
         }
 
         async function run(tempRoot) {
-          const module = { marker: `bridge-module-${Date.now()}` };
-          Niva.registerModule("niva-mac-smoke", module);
-          record("Niva.registerModule", "registers a unique local module");
-          assert(Niva.require("niva-mac-smoke") === module, "require changed module identity");
-          record("Niva.require", "returns the registered module by identity");
-          assert(await Niva.import("niva-mac-smoke") === module, "import changed module identity");
-          record("Niva.import", "asynchronously imports the same registered module");
-
-          let requireFactoryCalls = 0;
-          const requireFactoryValue = { marker: "lazy-require-factory" };
-          Niva.registerModuleFactory("niva-mac-smoke-factory-require", () => {
-            requireFactoryCalls += 1;
-            return requireFactoryValue;
-          });
-          assert(requireFactoryCalls === 0, "factory ran during registration");
-          assert(Niva.require("niva-mac-smoke-factory-require") === requireFactoryValue, "require lost factory module identity");
-          assert(requireFactoryCalls === 1, "require did not initialize the factory exactly once");
-          assert(Niva.require("niva-mac-smoke-factory-require") === requireFactoryValue, "require did not return the memoized factory module");
-          assert(await Niva.import("niva-mac-smoke-factory-require") === requireFactoryValue, "import did not reuse the require-initialized factory module");
-          assert(requireFactoryCalls === 1, "require/import invoked the memoized factory again");
-
-          let importFactoryCalls = 0;
-          const importFactoryValue = { marker: "lazy-import-factory" };
-          Niva.registerModuleFactory("niva-mac-smoke-factory-import", () => {
-            importFactoryCalls += 1;
-            return importFactoryValue;
-          });
-          assert(importFactoryCalls === 0, "import factory ran during registration");
-          assert(await Niva.import("niva-mac-smoke-factory-import") === importFactoryValue, "import lost factory module identity");
-          assert(importFactoryCalls === 1, "import did not initialize the factory exactly once");
-          assert(Niva.require("niva-mac-smoke-factory-import") === importFactoryValue, "require did not reuse the import-initialized factory module");
-          assert(await Niva.import("niva-mac-smoke-factory-import") === importFactoryValue, "repeat import changed factory module identity");
-          assert(importFactoryCalls === 1, "import/require invoked the memoized factory again");
-
-          let retryFactoryCalls = 0;
-          const retryFactoryValue = { marker: "retry-factory" };
-          Niva.registerModuleFactory("niva-mac-smoke-factory-retry", () => {
-            retryFactoryCalls += 1;
-            if (retryFactoryCalls === 1) throw new Error("expected first factory failure");
-            return retryFactoryValue;
-          });
-          let factoryFailure = false;
-          try { Niva.require("niva-mac-smoke-factory-retry"); } catch (error) { factoryFailure = error.message === "expected first factory failure"; }
-          assert(factoryFailure, "require did not propagate the factory initialization error");
-          assert(await Niva.import("niva-mac-smoke-factory-retry") === retryFactoryValue, "import did not retry a failed factory");
-          assert(retryFactoryCalls === 2, "failed factory was not retried exactly once");
-          record("Niva.registerModuleFactory", "initializes lazily, memoizes across require/import, and retries initialization failures");
-
-          const id = await Niva.api.window.current();
+          const id = await Niva.window.current();
           let hits = 0;
           const listener = (_name, data) => { if (data?.message?.startsWith("bridge-event-")) hits += 1; };
           Niva.addEventListener("window.message", listener);
-          await Niva.api.window.sendMessage("bridge-event-1", id);
+          await Niva.window.sendMessage("bridge-event-1", id);
           await until(() => hits, 1, "registered native event listener");
           record("Niva.addEventListener", "receives a real native window.message event");
           Niva.removeEventListener("window.message", listener);
-          await Niva.api.window.sendMessage("bridge-event-2", id);
+          await Niva.window.sendMessage("bridge-event-2", id);
           await sleep(150);
           assert(hits === 1, "removed listener still received a native event");
           record("Niva.removeEventListener", "stops the native event callback");
           Niva.addEventListener("window.message", listener);
           Niva.removeAllEventListeners("window.message");
-          await Niva.api.window.sendMessage("bridge-event-3", id);
+          await Niva.window.sendMessage("bridge-event-3", id);
           await sleep(150);
           assert(hits === 1, "removeAll left a native event callback");
           record("Niva.removeAllEventListeners", "clears the event's remaining listeners");
 
-          assert(await Niva.call("os.sep", []) === "/", "direct native call returned the wrong separator");
-          record("Niva.call", "dispatches a direct native call and resolves its result");
-          assert(Niva.callSync("os.sep", []) === "/", "sync native call returned the wrong separator");
+          assert(Number.isFinite(await Niva.bridge.call("os.freemem", [])), "direct native call returned invalid memory data");
+          record("Niva.bridge.call", "dispatches a direct native call and resolves its result");
+          assert(Number.isFinite(Niva.bridge.callSync("os.freemem", [])), "sync native call returned invalid memory data");
           let deniedSyncUi = false;
-          try { Niva.callSync("window.current", []); } catch (_) { deniedSyncUi = true; }
+          try { Niva.bridge.callSync("window.current", []); } catch (_) { deniedSyncUi = true; }
           assert(deniedSyncUi, "sync bridge must reject UI methods");
-          record("Niva.callSync", "returns synchronous OS values and rejects UI handlers");
+          record("Niva.bridge.callSync", "returns synchronous OS values and rejects UI handlers");
 
           const blobs = [];
-          const readStream = Niva.stream("resource.readStream", ["probe.txt"], {
+          const readStream = Niva.bridge.stream("resource.readStream", ["probe.txt"], {
             onBlob: (blob) => blobs.push(blob),
           });
           await readStream.promise;
           const text = (await Promise.all(blobs.map(blob => blob.text()))).join("");
           assert(text === "niva-top-level-probe\n", `native stream returned ${JSON.stringify(text)}`);
-          record("Niva.stream", "receives and decodes a native resource stream");
+          record("Niva.bridge.stream", "receives and decodes a native resource stream");
 
           const file = `${tempRoot}/top-level-stream.txt`;
           try {
-            const writeStream = Niva.stream("fs.writeStream", [file], {});
-            assert(Niva.streamSend(writeStream.id, new TextEncoder().encode("stream-send-ok"), true), "streamSend rejected the owned call");
+            const writeStream = Niva.bridge.stream("fs.writeStream", [file], {});
+            assert(Niva.bridge.streamSend(writeStream.id, new TextEncoder().encode("stream-send-ok"), true), "streamSend rejected the owned call");
             await writeStream.promise;
-            assert(await Niva.api.fs.read(file) === "stream-send-ok", "native streamed write did not preserve bytes");
-          } finally { await Niva.api.fs.remove(file).catch(() => {}); }
-          record("Niva.streamSend", "sends END-terminated bytes into a native stream and reads them back");
-          await Niva.api.host.send("bridge-top-level-result", { coverage });
+            assert(await fs.readFile(file, "utf8") === "stream-send-ok", "native streamed write did not preserve bytes");
+          } finally { await fs.rm(file, { force: true }).catch(() => {}); }
+          record("Niva.bridge.streamSend", "sends END-terminated bytes into a native stream and reads them back");
+          await NivaFixture.send("bridge-top-level-result", { coverage });
         }
 
-        Niva.addEventListener("host:message", (_name, message) => {
-          if (message?.name !== "bridge-top-level-command") return;
-          run(message.data.tempRoot).catch(error =>
-            Niva.api.host.send("bridge-top-level-error", { message: error?.message || String(error), coverage }).catch(() => {}));
+        NivaFixture.onCommand("bridge-top-level-command", (data) => {
+          run(data.tempRoot).catch(error =>
+            NivaFixture.send("bridge-top-level-error", { message: error?.message || String(error), coverage }).catch(() => {}));
         });
-        window.addEventListener("load", () => setTimeout(() =>
-          Niva.api.host.send("bridge-top-level-ready", { url: location.href }), 100));
+        window.addEventListener("load", () => setTimeout(async () => {
+          await NivaFixture.ready("bridge-top-level", { url: location.href });
+          await NivaFixture.send("bridge-top-level-ready", { url: location.href });
+        }, 100));
       })();
     </script>
   </body>

@@ -1,7 +1,7 @@
 
 # 全局快捷键 shortcut
 
-## Niva.api.shortcut.register
+## Niva.shortcut.register
 ```ts
 /**
  * 注册一个新的窗口快捷键。
@@ -12,7 +12,7 @@
 export function register(accelerator_str: string, window_id?: number): Promise<number>;
 ```
 
-## Niva.api.shortcut.unregister
+## Niva.shortcut.unregister
 ```ts
 /**
  * 注销指定的窗口快捷键。
@@ -23,7 +23,7 @@ export function register(accelerator_str: string, window_id?: number): Promise<n
 export function unregister(id: number, window_id?: number): Promise<void>;
 ```
 
-## Niva.api.shortcut.unregisterAll
+## Niva.shortcut.unregisterAll
 ```ts
 /**
  * 注销指定窗口的所有快捷键。
@@ -33,7 +33,7 @@ export function unregister(id: number, window_id?: number): Promise<void>;
 export function unregisterAll(window_id?: number): Promise<void>;
 ```
 
-## Niva.api.shortcut.list
+## Niva.shortcut.list
 ```ts
 /**
  * 获取指定窗口的所有快捷键列表。

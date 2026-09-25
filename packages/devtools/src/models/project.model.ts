@@ -1,6 +1,10 @@
 import { StateModel } from "@bramblex/state-model";
+import { spawn } from "node:child_process";
+import { fs, fileExists, process } from "../common/node";
+import { runPackager, hostBuildTarget, requireTargetSuccess, type PackagerTargetResult } from "../build-scripts/packager";
 import { AppModel } from "./app.model";
-import { dirname, fileSystemUrl, pathJoin } from "../common/utils";
+import { fileSystemUrl, pathJoin } from "../common/utils";
+import { openExternal } from "../common/niva";
 import {
   AppResult,
   Err,
@@ -9,12 +13,6 @@ import {
   fromThrowableAsync,
 } from "../common/result";
 import { ErrorCode } from "../common/error";
-import { buildMacOsApp } from "../build-scripts/build-macos";
-import { buildWindowsApp } from "../build-scripts/build-windows";
-import { signMacOsApp } from "../build-scripts/sign-macos";
-import { signWindowsApp } from "../build-scripts/sign-windows";
-
-const { fs, process, os } = Niva.api;
 
 interface ProjectEditorModelState {
   content: string;
@@ -81,7 +79,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     const { path, configPath } = this.state;
 
     const loadResult = await fromThrowableAsync(async () => {
-      const configContent = await fs.read(configPath);
+      const configContent = await fs.readFile(configPath, "utf8");
       const config = JSON.parse(configContent);
       config.__rawContent__ = configContent;
       return config;
@@ -120,7 +118,15 @@ export class ProjectModel extends StateModel<ProjectModelState> {
   }
 
   async dispose(): Promise<AppResult> {
-    return this.resolveUnsavedChanges();
+    const hadEdits = this.state.editor.state.isEdit;
+    const result = await this.resolveUnsavedChanges();
+    if (result.isErr() || !hadEdits) return result;
+
+    const wasSaved = !this.state.editor.state.isEdit;
+    const reloadResult = await this.loadConfig();
+    if (reloadResult.isErr()) return reloadResult;
+    if (wasSaved) await this.app.state.history.record(this);
+    return Ok(void 0);
   }
 
   async refresh() {
@@ -202,7 +208,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     }
 
     const saveResult = await fromThrowableAsync(async () =>
-      fs.write(this.state.configPath, content)
+      fs.writeFile(this.state.configPath, content, "utf8")
     );
     if (saveResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_FAILED, {
@@ -214,105 +220,18 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return Ok(void 0);
   }
 
-  async build(target?: string): Promise<AppResult> {
+  async build(outputDirectory = process.cwd()): Promise<AppResult<PackagerTargetResult>> {
     const prepareResult = await this.prepareForAction();
     if (prepareResult.isErr()) {
-      return prepareResult;
+      return Err(prepareResult.error.code, prepareResult.error.extra);
     }
-
-    const { modal, locale } = this.app.state;
-    let phase: "build" | "sign" | "open-output" = "build";
-    let platform: "macos" | "windows";
-    let appPath: string;
-
-    try {
-      const { os: osType } = await os.info();
-      const [progress, close] = modal.progress(locale.t("BUILDING_APP"));
-      try {
-        const buildParams = {
-          project: this,
-          progress,
-          file: null as string | null,
-        };
-
-        if (osType.toLowerCase().replace(/\s/g, "") === "macos") {
-          platform = "macos";
-          buildParams.file =
-            target || (await Niva.api.dialog.saveFile(["app"]));
-          if (!buildParams.file) {
-            return Ok(void 0);
-          }
-          appPath = await buildMacOsApp(buildParams);
-        } else if (osType.toLowerCase() === "windows") {
-          platform = "windows";
-          buildParams.file =
-            target || (await Niva.api.dialog.saveFile(["exe"]));
-          if (!buildParams.file) {
-            return Ok(void 0);
-          }
-          appPath = await buildWindowsApp(buildParams);
-        } else {
-          throw new Error(`${locale.t("UNSUPPORTED_OS")}"${osType}"`);
-        }
-
-        await progress.run();
-      } finally {
-        close();
-      }
-
-      phase = "sign";
-      await this.signIfConfigured(platform, appPath);
-
-      // A caller-supplied target is the non-interactive CLI path. It must be
-      // able to await a definitive build result without a success prompt.
-      if (!target) {
-        phase = "open-output";
-        const shouldOpen = await modal.confirm(
-          locale.t("BUILD_SUCCESS"),
-          locale.t("BUILD_SUCCESS_MESSAGE")
-        );
-        if (shouldOpen) {
-          await process.open(dirname(appPath));
-        }
-      }
-
-      return Ok(void 0);
-    } catch (error) {
-      return Err(ErrorCode.UNKNOWN, {
-        phase,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /**
-   * One-stop signing after a successful build. The `sign` section is
-   * optional; secrets never live in niva.json (keychain profile on macOS,
-   * env vars for passwords — see sign-*.ts).
-   */
-  private async signIfConfigured(
-    platform: "macos" | "windows",
-    appPath: string
-  ): Promise<void> {
-    const { modal, locale } = this.app.state;
-    const sign = this.state.config.sign;
-    if (platform === "macos" && sign?.macos) {
-      const [progress, close] = modal.progress(locale.t("SIGNING_APP"));
-      try {
-        await signMacOsApp({ project: this, progress, appPath });
-        await progress.run();
-      } finally {
-        close();
-      }
-    } else if (platform === "windows" && sign?.windows) {
-      const [progress, close] = modal.progress(locale.t("SIGNING_APP"));
-      try {
-        await signWindowsApp({ project: this, progress, exePath: appPath });
-        await progress.run();
-      } finally {
-        close();
-      }
-    }
+    return fromThrowableAsync(async () => {
+      const kitDirectory = window.localStorage.getItem("niva-devtools-packager-kit");
+      if (!kitDirectory) throw new Error("Select a packaging kit before running a CLI build.");
+      const target = hostBuildTarget();
+      const execution = await runPackager(this, kitDirectory, outputDirectory, [target]);
+      return requireTargetSuccess(execution, target);
+    });
   }
 
   async debug(): Promise<AppResult> {
@@ -325,27 +244,46 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     const resource = pathJoin(path, config?.debug?.resource);
     const entry = config?.debug?.entry || "";
 
-    if (!(await fs.exists(resource))) {
+    if (!(await fileExists(resource))) {
       return Err(ErrorCode.DEBUG_RESOURCE_NOT_FOUND, { resource });
     }
 
     return fromThrowableAsync(async () => {
-      const exe = await process.currentExe();
-      await process.exec(
-        exe,
+      const child = spawn(
+        process.execPath,
         [
-          `--debug-config=${configPath}`,
-          `--debug-resource=${resource}`,
+          `--config=${configPath}`,
+          `--resource=${resource}`,
           "--debug-devtools=true",
           ...(entry ? [`--debug-entry=${entry}`] : []),
         ],
-        { detached: true }
+        { detached: true },
       );
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        child.once("spawn", () => {
+          if (settled) return;
+          settled = true;
+          child.unref();
+          resolve();
+        });
+        child.once("error", (error: Error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        });
+        child.once("close", (code: number | null, signal: string | null) => {
+          if (settled) return;
+          settled = true;
+          if (code === 0 || (code === null && signal === null)) resolve();
+          else reject(new Error(`Niva debug process exited (${signal || code}).`));
+        });
+      });
     });
   }
 
   open(): Promise<AppResult> {
-    return fromThrowableAsync(() => process.open(this.state.path));
+    return fromThrowableAsync(() => openExternal(this.state.path));
   }
 
   private static validateConfig(rawConfig: any): AppResult<any> {

@@ -2,7 +2,6 @@ use super::WindowManager;
 use super::options::NivaWindowOptions;
 use super::options::WindowMenuOptions;
 use super::options::WindowRootMenu;
-use crate::app::assets::INITIALIZE_SCRIPT;
 use crate::app::custom_protocol::{self, CustomProtocolDispatcher};
 use crate::app::http_server::app_server;
 use crate::app::menu::options::{MenuItemOption, MenuOptions};
@@ -244,33 +243,23 @@ impl NivaBuilder {
         let server_port = app_server(app)?;
         let server_origin = format!("http://127.0.0.1:{server_port}");
 
-        // A packaged app must never honor a debug.entry embedded in niva.json.
-        // Only an explicit debug launch may load a cross-port development page.
-        let explicit_debug = !app.launch_info.arguments.build_mode
-            && (app.launch_info.arguments.debug_config.is_some()
-                || app.launch_info.arguments.debug_entry.is_some());
-        let debug_entry = explicit_debug
-            .then(|| {
-                app.launch_info.arguments.debug_entry.clone().or_else(|| {
-                    app.launch_info
-                        .options
-                        .debug
-                        .as_ref()
-                        .and_then(|debug| debug.entry.clone())
-                })
-            })
-            .flatten();
+        // `--config` selects project data; it does not grant permission to
+        // load a debug entry. That permission requires `--debug-entry`, or
+        // Devtools' explicit `--debug-devtools` marker for `debug.entry`.
+        let debug_entry = app
+            .launch_info
+            .arguments
+            .explicit_debug_entry(&app.launch_info.options);
+        let explicit_debug = debug_entry.is_some();
 
         let configured_entry = options.entry.as_deref().unwrap_or_default();
         let absolute_entry = url::Url::parse(configured_entry).ok();
         let entry_is_niva_app = absolute_entry.as_ref().is_some_and(is_niva_app_url);
         let entry_is_external = absolute_entry.is_some() && !entry_is_niva_app;
-        // Packaged resources use the fixed custom origin. A filesystem-backed
-        // debug resource and explicit development launch keep the loopback
-        // route; absolute remote entries continue to load as remote pages.
-        let use_custom_protocol = app.launch_info.arguments.debug_resource.is_none()
-            && !explicit_debug
-            && !entry_is_external;
+        // Both packaged and explicitly selected directory resources use the
+        // fixed local app origin. Only an authorized debug entry uses the
+        // loopback HTTP route; absolute remote app entries remain remote.
+        let use_custom_protocol = !explicit_debug && !entry_is_external;
 
         let entry_url = if use_custom_protocol {
             custom_protocol_entry(configured_entry)?
@@ -303,58 +292,42 @@ impl NivaBuilder {
         } else {
             initial_origin.filter(|origin| origin == &server_origin || debug_loopback)
         };
-        if let Some(trusted_origin) = &trusted_ws_origin {
-            let trusted_bootstrap = format!(
-                "if(window.top===window && location.origin==={:?} && !location.pathname.startsWith('/__niva_fs/')){{\
-                window.__niva_ws_url={:?};window.__niva_window_id={id};\
-                window.__niva_token={:?};window.__niva_node_bootstrap={};}}",
-                trusted_origin,
-                format!("ws://127.0.0.1:{server_port}/__niva_ws"),
-                window_token,
-                serde_json::to_string(&crate::app::node_bootstrap::metadata(id == 0))?
-                    .replace('<', "\\u003c"),
-            );
-            builder = builder.with_initialization_script_for_main_only(trusted_bootstrap, true);
-        }
-        let init_script = if use_custom_protocol {
-            format!(
-                "window.__niva_server_origin={:?};window.__niva_compat_origin=location.origin;{INITIALIZE_SCRIPT}",
-                server_origin,
-            )
-        } else {
-            format!(
-                "window.__niva_server_origin={:?};{INITIALIZE_SCRIPT}",
-                server_origin,
-            )
-        };
+        let node_compat = NodeCompat::new(app.launch_info.options.inject_esm);
+        let runtime_nonce = NodeCompat::csp_nonce()?;
+        let runtime_config = serde_json::to_string(&json!({
+            "injectCommonJs": app.launch_info.options.inject_common_js,
+            "injectEsm": app.launch_info.options.inject_esm,
+        }))?
+        .replace('<', "\\u003c");
+        let bootstrap_script = NodeCompat::bootstrap_script()?;
+        let node_bootstrap = serde_json::to_string(&crate::app::node_bootstrap::metadata(id == 0))?
+            .replace('<', "\\u003c");
+        let trusted_bootstrap = trusted_ws_origin
+            .as_ref()
+            .map(|trusted_origin| {
+                format!(
+                    "if(window.top===window && location.origin==={trusted_origin:?} && !location.pathname.startsWith('/__niva_fs/')){{\
+                    window.__niva_ws_url={:?};window.__niva_window_id={id};\
+                    window.__niva_token={window_token:?};window.__niva_node_bootstrap={node_bootstrap};\
+                    window.__niva_runtime_config.nonce={runtime_nonce:?};}}",
+                    format!("ws://127.0.0.1:{server_port}/__niva_ws"),
+                )
+            })
+            .unwrap_or_default();
+        let init_script = format!(
+            "window.__niva_server_origin={server_origin:?};window.__niva_runtime_config={runtime_config};{trusted_bootstrap}{bootstrap_script}"
+        );
         builder = builder.with_initialization_script_for_main_only(init_script, false);
-        // The Vite/debug entry is served by another loopback server, so its
-        // HTML does not pass through our resource rewriter. Load the embedded
-        // adapter in that already-authorized development origin as well.
-        if !use_custom_protocol
-            && let Some(origin) = trusted_ws_origin
-                .as_ref()
-                .filter(|origin| *origin != &server_origin)
-            && let Some(compat) = NodeCompat::from_option(&app.launch_info.options.node_compat)?
-            && let Some(classic) = NodeCompat::embedded_asset("__niva_compat/node-compat.js")
-        {
-            let script = String::from_utf8(compat.classic_script(&classic)?)?;
-            builder = builder.with_initialization_script_for_main_only(
-                format!("if(location.origin==={origin:?} && window.__niva_ws_url){{{script}}}"),
-                false,
-            );
-        }
 
         if use_custom_protocol {
             let dispatcher: CustomProtocolDispatcher = app._custom_protocol.clone();
             let resources: Arc<dyn ResourceManager> = app.resource();
-            let node_compat = NodeCompat::from_option(&app.launch_info.options.node_compat)?;
             builder = builder.with_asynchronous_custom_protocol(
                 custom_protocol::SCHEME.to_string(),
                 move |_webview_id, request, responder| {
                     dispatcher.dispatch(
                         resources.clone(),
-                        node_compat.clone(),
+                        Some(node_compat.clone()),
                         server_port,
                         request,
                         responder,
@@ -371,10 +344,19 @@ impl NivaBuilder {
                 let body = request.into_body();
                 let app = ipc_app.clone();
                 smol::spawn(async move {
-                    let response = match app.api().ipc_call(id, &source_url, &body).await {
+                    let source = crate::app::api_manager::IpcFrameSource {
+                        source_url: source_url.clone(),
+                        frame_id: 0,
+                        generation: 0,
+                        is_main_frame: true,
+                    };
+                    let response = match app.api().ipc_message(id, source, &body).await {
                         Ok(response) => response,
                         Err(err) => {
-                            eprintln!("[niva] rejected IPC request: {err}");
+                            crate::niva_log!(
+                                crate::app::logging::Level::Warn,
+                                "rejected IPC request: {err}"
+                            );
                             crate::app::api_manager::ApiManager::ipc_error_response(
                                 &body,
                                 &err.to_string(),
@@ -401,7 +383,10 @@ impl NivaBuilder {
                     })
                     .await
                     {
-                        eprintln!("[niva] unable to send IPC response: {err}");
+                        crate::niva_log!(
+                            crate::app::logging::Level::Error,
+                            "unable to send IPC response: {err}"
+                        );
                     }
                 })
                 .detach();
@@ -425,14 +410,34 @@ impl NivaBuilder {
                     Ok(())
                 },
             )) {
-                eprintln!("[niva] unable to enqueue webview title update: {err}");
+                crate::niva_log!(
+                    crate::app::logging::Level::Error,
+                    "unable to enqueue webview title update: {err}"
+                );
             }
         });
+
+        #[cfg(target_os = "windows")]
+        {
+            let navigation_app = app.clone();
+            builder = builder.with_navigation_handler(move |_| {
+                // WebView2's controller NavigationStarting event is the
+                // top-level document. Individual frames are cancelled from
+                // their native FrameNavigationStarting callbacks.
+                navigation_app.api().cancel_ipc_window_for_navigation(id);
+                true
+            });
+        }
 
         let load_app = app.clone();
         let trusted_load_origin = trusted_ws_origin.clone();
         let custom_origin = use_custom_protocol;
         builder = builder.with_on_page_load_handler(move |event, url| {
+            if matches!(event, wry::PageLoadEvent::Started) {
+                // On WebKit this Wry page-load event is for the main document;
+                // subframe cleanup uses the IPC session lease below.
+                load_app.api().cancel_ipc_window_for_navigation(id);
+            }
             let page_origin = page_origin(&url, custom_origin);
             if matches!(event, wry::PageLoadEvent::Finished)
                 && trusted_load_origin
@@ -710,7 +715,10 @@ fn queue_webview_request_event(
                 Ok(())
             }))
     {
-        eprintln!("[niva] unable to enqueue webview request event: {err}");
+        crate::niva_log!(
+            crate::app::logging::Level::Error,
+            "unable to enqueue webview request event: {err}"
+        );
     }
 }
 

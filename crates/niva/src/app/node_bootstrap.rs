@@ -2,7 +2,7 @@
 //! OS observations deliberately remain native queries.
 
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::PathBuf, sync::OnceLock};
+use std::{collections::BTreeMap, io::IsTerminal, path::PathBuf, sync::OnceLock};
 
 use crate::app::os_native as native;
 
@@ -44,6 +44,7 @@ fn snapshot() -> Value {
         .collect();
 
     let mut os = json!({
+        "info": crate::app::api::os::startup_info(),
         "platform": platform,
         "arch": arch,
         "homedir": home,
@@ -73,8 +74,16 @@ fn snapshot() -> Value {
             "env": env,
             "execPath": std::env::current_exe().ok(),
             "pid": std::process::id(),
-            "version": format!("v{}", env!("CARGO_PKG_VERSION")),
-            "versions": { "niva": env!("CARGO_PKG_VERSION") },
+            "stdioIsTTY": {
+                "stdin": std::io::stdin().is_terminal(),
+                "stdout": std::io::stdout().is_terminal(),
+                "stderr": std::io::stderr().is_terminal(),
+            },
+            // Node libraries use these fields for API-version branches. They
+            // describe our declared compatibility target, not an embedded V8
+            // or Node engine. The actual product version remains separate.
+            "version": "v22.14.0",
+            "versions": { "niva": env!("CARGO_PKG_VERSION"), "node": "22.14.0", "nodeCompat": "22.14.0" },
         },
     })
 }
@@ -113,7 +122,16 @@ mod tests {
     fn non_main_metadata_has_no_process_information() {
         assert!(metadata(false).get("process").is_none());
         assert!(metadata(true)["process"]["pid"].is_number());
-        assert!(metadata(true)["process"]["versions"].get("node").is_none());
+        assert!(metadata(true)["process"]["stdioIsTTY"].is_object());
+        for key in ["stdin", "stdout", "stderr"] {
+            assert!(metadata(true)["process"]["stdioIsTTY"][key].is_boolean());
+        }
+        assert_eq!(metadata(true)["process"]["version"], "v22.14.0");
+        assert_eq!(metadata(true)["process"]["versions"]["node"], "22.14.0");
+        assert_eq!(
+            metadata(true)["process"]["versions"]["niva"],
+            env!("CARGO_PKG_VERSION")
+        );
         assert!(metadata(true)["os"].get("cwd").is_none());
         for key in [
             "arch", "platform", "homedir", "tmpdir", "hostname", "release", "totalmem", "type",

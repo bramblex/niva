@@ -1,9 +1,11 @@
 # macOS native API smoke
 
-This fixture launches a temporary Niva app through `--debug-config`,
-`--debug-resource`, and `--stdio`. It reports exact public API methods and
-checks their return values or native state transitions. It does not alter the
-repository's production modules or use a packaged release app.
+This fixture launches a temporary Niva app with `--config` and `--resource`.
+It reports checks through a fixture-owned JSON-line protocol built on the
+main page's `process.stdin` and `process.stdout`; Niva itself has no host/stdio
+control API. Native calls use direct `Niva` namespaces or
+`Niva.bridge.call*`; filesystem, process and child-process cases use Node
+runtime modules. It does not alter production modules or use a packaged app.
 
 Run it in an awake, unlocked desktop session. With both displays asleep,
 Tao's macOS active-display list can be empty even though `NSScreen` and
@@ -25,18 +27,23 @@ python3 -B examples/macos-api-smoke/run_all.py target/debug/niva
 ```
 
 The aggregate runner saves one log per suite under a reported `/tmp` directory
-and checks the exact 167 `Niva.api` methods and nine top-level bridge methods.
+and checks the 164 Native case IDs actually present in `COVERAGE.md` against
+current direct-Niva/Node entry points. The separate bridge suite checks its
+own 7 current event/bridge methods. The removed custom module registry APIs are not retained; CommonJS and browser ESM identity are checked in `runtime-bootstrap-smoke` and `node-compat-macos-smoke`. The old report's 167/167 aggregate is preserved as historical
+material but cannot be reconciled to the tracked 164-row catalog, so the
+migrated runner does not repeat or combine those counts.
 Its summary separates
 behavior assertions from API calls whose native effect was not independently
 observed. The full run temporarily changes the clipboard, pointer, Dock,
 application visibility, and foreground app, then restores their prior state.
 
-The harness creates a per-run app UUID, temporary resource tree, child-window
+The fixture runner creates a per-run app UUID, temporary resource tree, child-window
 fixture, tray icon, and dialog directory. It removes the app's unique
 Application Support and cache directories after the child exits. The default
 run exercises monitor lookup; window geometry/title/visibility/focus and
-child-window state; WebView URL/evaluation/history; tray lifecycle; `host.send`;
-and `process.exit`. The runner prints one row per exact method it checked.
+child-window state; WebView URL/evaluation/history; tray lifecycle; a fixture
+process-stream exchange; and `process.exit`. The runner prints
+one row per exact case it checked.
 
 Optional cases:
 
@@ -62,7 +69,7 @@ python3 examples/macos-api-smoke/run.py --headless-safe target/debug/niva
 This launches three independent Niva processes, each with a fresh app profile
 and temporary tree: `process-os` (12 methods), `resource` (4 methods), and `fs`
 (14 methods). Each group checks its own exact method registry and runs
-`host.send` plus `process.exit`. The mode does not call monitors or claim any
+the fixture process-stream nonce exchange plus `process.exit`. The mode does not call monitors or claim any
 of the default 39-case native suite. Clipboard, shortcut, and dialog options
 cannot be combined with it.
 

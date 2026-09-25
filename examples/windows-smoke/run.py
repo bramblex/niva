@@ -45,10 +45,14 @@ def check_native_owner(pid):
 def read_frame(process, frames):
     for line in process.stdout:
         try:
-            frames.put(json.loads(line))
+            frame = json.loads(line)
+            if not isinstance(frame, dict) or frame.get("protocol") != "niva-fixture" or frame.get("version") != 1:
+                frames.put({"event": "bad-json", "frame": frame, "line": repr(line)})
+            else:
+                frames.put(frame)
         except json.JSONDecodeError as error:
-            frames.put({"t": "bad-json", "error": str(error), "line": repr(line)})
-    frames.put({"t": "eof"})
+            frames.put({"event": "bad-json", "error": str(error), "line": repr(line)})
+    frames.put({"event": "eof"})
 
 
 def request(url, origin=None):
@@ -65,7 +69,7 @@ def main():
     binary = Path(sys.argv[1]).resolve()
     frames = queue.Queue()
     with open(Path.cwd() / "dist/windows-smoke-stderr.log", "wb") as errors:
-        process = subprocess.Popen([str(binary), "--stdio"], stdin=subprocess.PIPE,
+        process = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=errors)
         threading.Thread(target=read_frame, args=(process, frames), daemon=True).start()
         try:
@@ -73,10 +77,11 @@ def main():
             while True:
                 frame = frames.get(timeout=20)
                 messages.append(frame)
-                if frame.get("name") in ("smoke", "smoke-error") or frame.get("t") == "eof":
+                if frame.get("event") == "message" and frame.get("name") in ("smoke", "smoke-error") or frame.get("event") == "eof":
                     break
-            assert messages[0] == {"t": "ready", "v": 1}, "missing stdio ready frame"
+            assert messages[0].get("event") == "ready" and messages[0].get("name") == "windows-smoke", "missing fixture ready event"
             result = messages[-1]
+            assert result.get("event") == "message", result
             if result.get("name") == "smoke-error":
                 raise RuntimeError(result.get("data", {}).get("message", "page smoke failed"))
             assert result.get("name") == "smoke", result.get("name")
@@ -88,7 +93,7 @@ def main():
             assert data["fsStatus"] == 200 and data["fsText"] == "resource-ok", public_data
             assert data["iframe"] == {"kind": "iframe", "id": 0, "origin": "http://niva.app"}, public_data
             assert data["crossIframe"]["origin"] == "null" and data["crossIframe"]["outcome"] != "allowed", public_data
-            assert data["nodeCompat"] == {
+            assert data["runtimeModules"] == {
                 "path": "a\\b", "fsText": "resource-ok", "assert": "function",
                 "fileUrlRoundTrip": True, "namespacedPath": True,
             }, public_data
@@ -117,15 +122,19 @@ def main():
                 pending = {"menu-clicked", "shortcut-fired"}
                 while pending:
                     event = frames.get(timeout=90)
+                    if event.get("event") != "message":
+                        if event.get("event") == "eof":
+                            raise RuntimeError("Niva exited before UI events")
+                        continue
                     if event.get("name") == "menu-clicked":
                         assert event["data"]["id"] == 7, event
                         pending.discard("menu-clicked")
                     elif event.get("name") == "shortcut-fired":
                         assert event["data"]["id"] == data["shortcutId"], event
                         pending.discard("shortcut-fired")
-                    elif event.get("t") == "eof":
-                        raise RuntimeError("Niva exited before UI events")
                 print("UI: native menu click and global shortcut emitted expected IDs", flush=True)
+            process.stdin.write((json.dumps({"protocol": "niva-fixture", "version": 1, "event": "command", "name": "fixture-exit", "data": 0}) + "\n").encode("utf-8"))
+            process.stdin.flush()
             process.stdin.close()
             assert process.wait(timeout=10) == 0
         finally:

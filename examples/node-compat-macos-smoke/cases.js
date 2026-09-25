@@ -4,7 +4,7 @@
 
   var modules = [
     "path", "os", "fs", "child_process", "events", "util", "querystring",
-    "buffer", "url", "crypto", "zlib", "http", "https", "assert", "stream",
+    "buffer", "url", "crypto", "zlib", "http", "https", "assert", "stream", "tty",
   ];
   var checks = [];
 
@@ -43,37 +43,30 @@
     return thrown;
   }
 
-  function makeSink(EventEmitter) {
-    var emitter = new EventEmitter();
+  function makeSink(stream) {
     var chunks = [];
-    return {
-      chunks: chunks,
-      on: function (name, listener) { emitter.on(name, listener); return this; },
-      once: function (name, listener) { emitter.once(name, listener); return this; },
-      off: function (name, listener) { emitter.off(name, listener); return this; },
-      removeListener: function (name, listener) { emitter.removeListener(name, listener); return this; },
-      write: function (chunk) { chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8")); return true; },
-      end: function () { emitter.emit("finish"); },
-      destroy: function (error) { if (error) emitter.emit("error", error); },
-    };
+    var sink = new stream.Writable({write: function (chunk, encoding, callback) {
+      chunks.push(chunk.toString("utf8")); callback();
+    }});
+    sink.chunks = chunks;
+    return sink;
   }
 
   add("classic registration and aliases", [
-    "Niva.require", "Niva.import", "global.require", "path", "node:path", "fs", "node:fs",
+    "CommonJS.require", "browser.import", "global.require", "path", "node:path", "fs", "node:fs",
     "alias:fs/promises", "alias:node:fs/promises", "alias:assert/strict", "alias:node:assert/strict",
     "alias:stream/promises", "alias:node:stream/promises", "importmap:fs",
   ], async function () {
-    await root.NivaNodeCompatReady;
     assert(root.__nodeCompatImportMapReady === true, "the native import map must resolve the bare fs specifier");
-    equal(root.require("path"), root.Niva.require("path"), "global require alias");
-    equal(root.Niva.require("node:path"), root.Niva.require("path"), "node:path alias");
-    equal(root.Niva.require("node:fs"), root.Niva.require("fs"), "node:fs alias");
-    equal(root.Niva.require("node:fs/promises"), root.Niva.require("fs/promises"), "fs/promises alias");
-    equal(root.Niva.require("node:assert/strict"), root.Niva.require("assert/strict"), "assert/strict alias");
-    equal(root.Niva.require("node:stream/promises"), root.Niva.require("stream/promises"), "stream/promises alias");
-    var importedPath = await root.Niva.import("path");
-    equal(importedPath.join("a", "b"), "a/b", "Niva.import uses the selected ESM adapter");
-    assert(typeof (await root.Niva.import("fs/promises")).readFile === "function", "dynamic fs/promises adapter");
+    equal(root.require("path"), root.Niva.path, "global require shares Niva identity");
+    equal(root.require("node:path"), root.require("path"), "node:path alias");
+    equal(root.require("node:fs"), root.require("fs"), "node:fs alias");
+    equal(root.require("node:fs/promises"), root.require("fs/promises"), "fs/promises alias");
+    equal(root.require("node:assert/strict"), root.require("assert/strict"), "assert/strict alias");
+    equal(root.require("node:stream/promises"), root.require("stream/promises"), "stream/promises alias");
+    var importedPath = await import("path");
+    equal(importedPath.join("a", "b"), "a/b", "browser import uses the selected ESM adapter");
+    assert(typeof (await import("fs/promises")).readFile === "function", "dynamic fs/promises adapter");
   });
 
   add("path", [
@@ -105,7 +98,7 @@
   });
 
   add("os", [
-    "os.platform", "os.arch", "os.homedir", "os.tmpdir", "os.EOL", "os.sep", "os.delimiter",
+    "os.platform", "os.arch", "os.homedir", "os.tmpdir", "os.EOL",
   ], async function (env) {
     equal(await env.os.platform(), "darwin", "os.platform");
     assert(["arm64", "x64"].includes(await env.os.arch()), "os.arch should identify the running Mac architecture");
@@ -113,15 +106,25 @@
     env.tempRoot = await env.os.tmpdir();
     assert(env.tempRoot.startsWith("/"), "os.tmpdir should be an absolute path");
     equal(env.os.EOL, "\n", "os.EOL");
-    equal(env.os.sep, "/", "os.sep");
-    equal(env.os.delimiter, ":", "os.delimiter");
+  });
+
+  add("tty and pipe metadata", ["tty.isatty", "process.stdin.isTTY", "process.stdout.isTTY", "process.stderr.isTTY"], async function () {
+    const tty = require('tty');
+    equal(tty, Niva.tty, 'tty builtin shares Niva identity');
+    for (const fd of [0, 1, 2, -1, 99999]) equal(tty.isatty(fd), false, 'fixture pipe/file descriptor is not a TTY');
+    for (const stream of [process.stdin, process.stdout, process.stderr]) assert(stream.isTTY !== true, 'redirected stdio must not claim TTY');
   });
 
   add("fs and fs/promises", [
     "fs.readFile", "fs.writeFile", "fs.appendFile", "fs.mkdir", "fs.readdir", "fs.stat",
     "fs.access", "fs.rename", "fs.rm", "fs.cp", "fs.copyFile", "fs/promises",
   ], async function (env) {
-    var fs = env.fs;
+    // Exercise the callback API through Node's promisify contract; fs itself
+    // must not grow the old non-Node promise-returning overloads.
+    var fs = Object.assign({}, env.fs);
+    ["readFile", "writeFile", "appendFile", "mkdir", "readdir", "stat", "access", "rename", "rm", "cp", "copyFile"].forEach(function (name) {
+      fs[name] = env.util.promisify(env.fs[name]);
+    });
     var fsp = env.fsp;
     var path = env.path;
     equal(fsp, fs.promises, "fs/promises default export");
@@ -238,14 +241,17 @@
     }), 6, "util.callbackify");
     equal(util.isDeepStrictEqual({ a: [1] }, { a: [1] }), true, "util.isDeepStrictEqual");
     var warningCount = 0;
-    var previousWarn = root.console.warn;
-    root.console.warn = function () { warningCount += 1; };
+    var onWarning = function (warning) {
+      if (warning.name === "DeprecationWarning" && warning.message === "deprecated integration function") warningCount += 1;
+    };
+    root.process.on("warning", onWarning);
     try {
       var deprecated = util.deprecate(function (value) { return value; }, "deprecated integration function");
       equal(deprecated(1), 1, "util.deprecate wrapped return value");
       equal(deprecated(2), 2, "util.deprecate repeated return value");
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
     } finally {
-      root.console.warn = previousWarn;
+      root.process.off("warning", onWarning);
     }
     equal(warningCount, 1, "util.deprecate warns once");
   });
@@ -265,7 +271,7 @@
     equal(qs.decode("a~b:1", "~", ":").b, "1", "querystring.decode custom separators");
     equal(qs.encode({ a: "b c" }, "~", ":"), "a:b%20c", "querystring.encode custom separators");
     equal(Object.keys(qs.parse("a=1&b=2", "&", "=", { maxKeys: 1 })).length, 1, "querystring maxKeys");
-    equal(qs.parse("a+b=%41", "&", "=", { decodeURIComponent: function (value) { return "decoded:" + value; } })["decoded:a b"], "decoded:%41", "querystring custom decoder");
+    equal(qs.parse("a+b=%41", "&", "=", { decodeURIComponent: function (value) { return "decoded:" + value; } })["decoded:a%20b"], "decoded:%41", "querystring custom decoder");
     equal(qs.stringify({ "a b": "x/y" }, "&", "=", { encodeURIComponent: function (value) { return "[" + value + "]"; } }), "[a b]=[x/y]", "querystring custom encoder");
   });
 
@@ -362,79 +368,61 @@
   });
 
   add("zlib", ["zlib.gzip", "zlib.gunzip"], async function (env) {
-    var compressed = await env.zlib.gzip("niva-node-compat-gzip");
+    var compressed = await env.util.promisify(env.zlib.gzip)("niva-node-compat-gzip");
     assert(env.Buffer.isBuffer(compressed) && compressed.length > 0, "zlib.gzip returns compressed Buffer");
-    equal((await env.zlib.gunzip(compressed)).toString("utf8"), "niva-node-compat-gzip", "zlib.gunzip round trip");
+    equal((await env.util.promisify(env.zlib.gunzip)(compressed)).toString("utf8"), "niva-node-compat-gzip", "zlib.gunzip round trip");
   });
 
   add("http", [
-    "http.request", "http.get", "http.post", "ClientRequest.response", "ClientRequest.result",
-    "ClientRequest.completion", "ClientRequest.on(response)",
+    "http.request", "http.get", "ClientRequest.on(response)",
     "ClientRequest.setHeader", "ClientRequest.getHeader", "ClientRequest.getHeaders", "ClientRequest.hasHeader",
     "ClientRequest.removeHeader", "ClientRequest.write", "ClientRequest.end", "IncomingMessage.statusCode",
-    "IncomingMessage.headers", "IncomingMessage.setEncoding", "IncomingMessage.text", "IncomingMessage.json", "IncomingMessage.arrayBuffer",
-    "IncomingMessage.buffer", "IncomingMessage.data", "IncomingMessage.end", "IncomingMessage.pipe",
+    "IncomingMessage.headers", "IncomingMessage.setEncoding", "IncomingMessage.data", "IncomingMessage.end", "IncomingMessage.pipe",
   ], async function (env) {
-    var stage = "GET";
-    try {
-    var baseUrl = await root.Niva.api.webview.baseUrl();
-    var parsed = new root.URL(baseUrl);
-    assert(parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost", "debug base URL should be loopback");
-    var requestUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+    var requestUrl = root.process.env.NIVA_SMOKE_HTTP_URL;
+    assert(requestUrl && requestUrl.startsWith("http://127.0.0.1:"), "isolated HTTP fixture URL");
     var http = env.http;
-    var dataChunks = [];
-    var ended = false;
-    var getRequest = http.get(requestUrl);
-    getRequest.on("response", function (message) {
-      equal(message.statusCode, 200, "http.get status");
-      equal(message.setEncoding("utf8"), message, "IncomingMessage.setEncoding");
-      message.on("data", function (chunk) { dataChunks.push(chunk); });
-      message.once("end", function () { ended = true; });
-    });
-    var getResponse = await getRequest.result;
-    equal(await getRequest.response, getResponse, "ClientRequest.response");
-    equal(getRequest.completion, getRequest.result, "ClientRequest.completion alias");
-    equal(getResponse.statusCode, 200, "http.get result response");
-    assert((await getResponse.text()).includes("NodeCompat macOS integration smoke"), "http.get text response");
-    equal(ended, true, "IncomingMessage end event");
-    assert(dataChunks.length > 0, "IncomingMessage data event");
-    var json = await getResponse.json().catch(function () { return null; });
-    equal(json, null, "html response is not JSON");
-    var bytes = await getResponse.arrayBuffer();
-    assert(bytes.byteLength > 0, "IncomingMessage.arrayBuffer");
-    assert((await getResponse.buffer()).length > 0, "IncomingMessage.buffer");
-
-    var request = http.request({
-      hostname: parsed.hostname,
-      port: Number(parsed.port),
-      path: "/",
-      method: "POST",
-      headers: { "x-niva-smoke": "first" },
-    });
-    stage = "POST request";
+    function collect(request) {
+      return new Promise(function (resolve, reject) {
+        request.once("error", reject);
+        request.once("response", function (message) {
+          var chunks = [];
+          equal(message.setEncoding("utf8"), message, "IncomingMessage.setEncoding");
+          message.on("data", function (chunk) { chunks.push(chunk); });
+          message.once("error", reject);
+          message.once("end", function () { resolve({message: message, text: chunks.join("")}); });
+        });
+      });
+    }
+    var getResponse = await collect(http.get(requestUrl));
+    equal(getResponse.message.statusCode, 200, "http.get status");
+    assert(getResponse.message.headers["content-length"], "IncomingMessage.headers");
+    equal(getResponse.text, "NodeCompat macOS integration smoke", "IncomingMessage data/end");
+    var request = http.request(requestUrl, {method: "POST", headers: {"x-niva-smoke": "first", "content-length": "8"}});
     equal(request.method, "POST", "ClientRequest method");
     request.setHeader("x-niva-smoke", "second");
     equal(request.getHeader("X-Niva-Smoke"), "second", "ClientRequest.getHeader");
     assert(request.hasHeader("x-niva-smoke"), "ClientRequest.hasHeader");
-    assert(request.getHeaders()["x-niva-smoke"] === "second", "ClientRequest.getHeaders");
+    equal(request.getHeaders()["x-niva-smoke"], "second", "ClientRequest.getHeaders");
     request.removeHeader("x-niva-smoke");
     equal(request.hasHeader("x-niva-smoke"), false, "ClientRequest.removeHeader");
+    var finished = new Promise(function (resolve, reject) {
+      request.once("error", reject);
+      request.once("response", function (message) {
+        equal(message.statusCode, 201, "POST status");
+        var chunks = [];
+        var sink = new env.stream.Writable({write: function (chunk, encoding, callback) { chunks.push(chunk); callback(); }});
+        sink.once("error", reject);
+        sink.once("finish", function () { resolve(env.Buffer.concat(chunks).toString()); });
+        message.pipe(sink);
+      });
+    });
     request.write("buffered");
-    var requestResult = await request.end().result;
-    equal(requestResult.statusCode, 405, "http.request status");
-    equal(await requestResult.text(), "GET only", "http.request.write body is accepted by native bridge");
-    var sink = makeSink(env.EventEmitter);
-    await env.stream.pipeline(requestResult, sink);
-    equal(sink.chunks.join(""), "GET only", "IncomingMessage.pipe through stream.pipeline");
-
-    var post = http.post(requestUrl, "disposable-post-body");
-    stage = "POST convenience";
-    var postResult = await post.result;
-    equal(postResult.statusCode, 405, "http.post sees the local static server's GET-only status");
-    } catch (error) { throw new Error(`${stage}: ${error?.message || error}`); }
+    request.end();
+    equal(await finished, "POST accepted", "IncomingMessage.pipe and POST bytes");
   });
 
-  add("https wrapper validation", ["https.request", "https.get", "https.post"], async function (env) {
+  add("https wrapper validation", ["https.request", "https.get"], async function (env) {
     function rejectsWrongProtocol(operation) {
       return Promise.resolve().then(operation).then(function () {
         throw new Error("expected https wrapper to reject an http URL");
@@ -444,19 +432,18 @@
     }
     await rejectsWrongProtocol(function () { return env.https.request("http://example.invalid/"); });
     await rejectsWrongProtocol(function () { return env.https.get("http://example.invalid/"); });
-    await rejectsWrongProtocol(function () { return env.https.post("http://example.invalid/", "body"); });
   });
 
   add("stream", [
     "stream.pipeline", "stream/promises.pipeline", "stream.pipeline.callback",
   ], async function (env) {
     var source = env.childProcess.spawn("/usr/bin/printf", ["pipeline-ok"], { encoding: "utf8" });
-    var destination = makeSink(env.EventEmitter);
-    equal(await env.stream.promises.pipeline(source.stdout, destination), destination, "stream/promises.pipeline destination");
+    var destination = makeSink(env.stream);
+    equal(await env.stream.promises.pipeline(source.stdout, destination), undefined, "stream/promises.pipeline resolves undefined");
     await source.completion;
     equal(destination.chunks.join(""), "pipeline-ok", "stream/promises.pipeline data");
     var second = env.childProcess.spawn("/usr/bin/printf", ["callback-ok"], { encoding: "utf8" });
-    var secondDestination = makeSink(env.EventEmitter);
+    var secondDestination = makeSink(env.stream);
     var callbackResult = await new Promise(function (resolve, reject) {
       var returned = env.stream.pipeline(second.stdout, secondDestination, function (error) {
         if (error) reject(error); else resolve(returned);
@@ -496,27 +483,26 @@
   var catalog = checks.map(function (item) { return { id: item.id, methods: item.methods.slice() }; });
 
   async function run() {
-    await root.NivaNodeCompatReady;
     var env = {
       nonce: String(Date.now()) + "-" + Math.random().toString(16).slice(2),
-      path: root.Niva.require("path"),
-      os: root.Niva.require("os"),
-      fs: root.Niva.require("fs"),
-      fsp: root.Niva.require("fs/promises"),
-      childProcess: root.Niva.require("child_process"),
-      events: root.Niva.require("events"),
-      util: root.Niva.require("util"),
-      querystring: root.Niva.require("querystring"),
-      Buffer: root.Niva.require("buffer").Buffer,
-      url: root.Niva.require("url"),
-      crypto: root.Niva.require("crypto"),
-      zlib: root.Niva.require("zlib"),
-      http: root.Niva.require("http"),
-      https: root.Niva.require("https"),
-      assert: root.Niva.require("assert"),
-      assertStrict: root.Niva.require("assert/strict"),
-      stream: root.Niva.require("stream"),
-      EventEmitter: root.Niva.require("events").EventEmitter,
+      path: root.require("path"),
+      os: root.require("os"),
+      fs: root.require("fs"),
+      fsp: root.require("fs/promises"),
+      childProcess: root.require("child_process"),
+      events: root.require("events"),
+      util: root.require("util"),
+      querystring: root.require("querystring"),
+      Buffer: root.require("buffer").Buffer,
+      url: root.require("url"),
+      crypto: root.require("crypto"),
+      zlib: root.require("zlib"),
+      http: root.require("http"),
+      https: root.require("https"),
+      assert: root.require("assert"),
+      assertStrict: root.require("assert/strict"),
+      stream: root.require("stream"),
+      EventEmitter: root.require("events").EventEmitter,
       tempRoot: null,
     };
     var passed = [];
@@ -538,11 +524,11 @@
 
   root.addEventListener("load", function () {
     var status = root.document.getElementById("status");
-    run().then(function (report) {
+    root.NivaFixture.ready("node-compat-macos").then(function () { return run(); }).then(function (report) {
       status.textContent = "PASS — " + report.passedMethods.length + " NodeCompat methods and aliases";
-      return root.Niva.api.host.send("nodecompat-macos-result", report);
+      return NivaFixture.send("nodecompat-macos-result", report);
     }).then(function () {
-      root.setTimeout(function () { root.Niva.api.process.exit().catch(function () {}); }, 250);
+      root.setTimeout(function () { root.NivaFixture.exit(0); }, 250);
     }).catch(function (error) {
       status.textContent = "FAIL — " + String(error.nodeCompatCase || "startup");
       var failure = {
@@ -550,8 +536,8 @@
         message: String(error && error.message || error).slice(0, 1200),
         passedMethods: error.nodeCompatPassedMethods || [],
       };
-      root.Niva.api.host.send("nodecompat-macos-failure", failure).catch(function () {}).then(function () {
-        root.setTimeout(function () { root.Niva.api.process.exit().catch(function () {}); }, 250);
+      NivaFixture.send("nodecompat-macos-failure", failure).catch(function () {}).then(function () {
+        root.setTimeout(function () { root.NivaFixture.exit(1); }, 250);
       });
     });
   }, { once: true });

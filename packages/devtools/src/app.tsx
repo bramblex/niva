@@ -27,6 +27,9 @@ import { ProjectPage } from "./pages/project";
 import { parseArgs, tryOrAlert } from "./common/utils";
 import { pathJoin } from "./common/utils";
 import { getCurrentDir, createPromise } from "./common/utils";
+import { process, path } from "./common/node";
+import { fileExists } from "./common/node";
+import { niva, openExternal } from "./common/niva";
 import {
   applyThemePreference,
   readThemePreference,
@@ -35,6 +38,46 @@ import {
 } from "./common/theme";
 
 export const initEndPromise = createPromise();
+
+async function writeCliResult(stream: "stdout" | "stderr", result: unknown) {
+  const output = (process as any)[stream];
+  if (!output || typeof output.write !== "function") {
+    throw new Error(`process.${stream} is unavailable`);
+  }
+  const line = `${JSON.stringify(result)}\n`;
+  await new Promise<void>((resolve, reject) => {
+    output.write(line, (error?: Error | null) => error ? reject(error) : resolve());
+  });
+}
+
+async function runBuildCli(app: AppModel, args: Record<string, string>) {
+  try {
+    await app.init({ interactive: false });
+    const projectPath = path.resolve(process.cwd(), args.project || ".");
+    if (!(await fileExists(path.join(projectPath, "niva.json")))) {
+      throw new Error(`No niva.json found in ${projectPath}`);
+    }
+    const openResult = await app.open(projectPath);
+    if (openResult.isErr()) throw new Error(openResult.error.toLocaleMessage(app));
+    const project = app.state.project;
+    if (!project) throw new Error("The project could not be opened.");
+
+    const outputDirectory = args.build
+      ? path.resolve(process.cwd(), args.build)
+      : process.cwd();
+    const result = await project.build(outputDirectory);
+    if (result.isErr()) throw new Error(result.error.toLocaleMessage(app));
+    await writeCliResult("stdout", { ...result.value, status: "complete" });
+    process.exit(0);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await writeCliResult("stderr", { status: "failed", error: message });
+    } finally {
+      process.exit(1);
+    }
+  }
+}
 
 /** 窗口控制操作区 */
 export function WindowControl(props: { os: string }) {
@@ -137,7 +180,7 @@ export function WindowControl(props: { os: string }) {
           </button>
           <button
             aria-label="Minimize"
-            onClick={() => Niva.api.window.setMinimized(true)}
+            onClick={() => niva.window.setMinimized(true)}
           >
             {minimizeIcon}
           </button>
@@ -145,7 +188,7 @@ export function WindowControl(props: { os: string }) {
             aria-label="Fullscreen"
             onClick={() => {
               setMaximized(!isMaximized);
-              Niva.api.window.setMaximized(!isMaximized);
+              niva.window.setMaximized(!isMaximized);
             }}
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}
@@ -155,7 +198,7 @@ export function WindowControl(props: { os: string }) {
         <>
           <button
             aria-label="Minimize"
-            onClick={() => Niva.api.window.setMinimized(true)}
+            onClick={() => niva.window.setMinimized(true)}
           >
             {minimizeIcon}
           </button>
@@ -163,7 +206,7 @@ export function WindowControl(props: { os: string }) {
             aria-label="Fullscreen"
             onClick={() => {
               setMaximized(!isMaximized);
-              Niva.api.window.setMaximized(!isMaximized);
+              niva.window.setMaximized(!isMaximized);
             }}
           >
             {isMaximized ? restoreMaximizeIcon : maximizeIcon}
@@ -197,7 +240,7 @@ export function Titlebar(props: { os: string }) {
           }
           target = target.parentElement!;
         }
-        Niva.api.window.dragWindow();
+        niva.window.dragWindow();
       }}
     >
       <WindowControl os={os}></WindowControl>
@@ -225,8 +268,8 @@ function WindowFrame(props: PropsWithChildren<{}>) {
   useEffect(() => {
     const handler = (_: string, focused: boolean) => setActive(focused);
     Niva.addEventListener("window.focused", handler);
-    Niva.api.os.info().then(setSystemInfo);
-    Niva.api.process.version().then(setVersion);
+    setSystemInfo(niva.os.info);
+    setVersion(process.version);
 
     return () => {
       Niva.removeEventListener("window.focused", handler);
@@ -243,7 +286,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
     };
 
     applyThemePreference(themePreference);
-    void Niva.api.window.setTheme(themePreference).catch((error) => {
+    void niva.window.setTheme(themePreference).catch((error) => {
       console.warn("Could not set native Devtools theme", error);
     });
     media.addEventListener("change", handleSystemTheme);
@@ -293,7 +336,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           type="button"
           className="status-bar-field"
           onClick={() => {
-            Niva.api.process.open(
+            openExternal(
               "https://bramblex.github.io/niva/en/docs/intro"
             );
           }}
@@ -306,7 +349,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           type="button"
           className="status-bar-field"
           onClick={() => {
-            Niva.api.process.open("https://github.com/bramblex/niva");
+            openExternal("https://github.com/bramblex/niva");
           }}
         >
           <GithubOne className="icon-sm" />
@@ -335,7 +378,7 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           <button
             type="button"
             className="status-bar-field status-bar-update"
-            onClick={() => Niva.api.process.open("https://bramblex.github.io/niva/")}
+            onClick={() => openExternal("https://bramblex.github.io/niva/")}
           >
             {locale.t("UPDATE_AVAILABLE", { version: app.state.availableVersion })}
           </button>
@@ -347,13 +390,13 @@ function WindowFrame(props: PropsWithChildren<{}>) {
           aria-label={locale.t("COPY_SYSTEM_INFO")}
           className="status-bar-field flex-end"
           onClick={() => {
-            Niva.api.clipboard.write(
+            niva.clipboard.write(
               `${systemInfo.os} ${systemInfo.arch} ${systemInfo.version} | ${version}`
             );
           }}
           onDoubleClick={() => {
-            Niva.api.webview.openDevtools();
-            Niva.api.window.setResizable(true);
+            niva.webview.openDevtools();
+            niva.window.setResizable(true);
           }}
         >
           {
@@ -379,7 +422,13 @@ export function App() {
   useEffect(() => {
     if (!(window as any).app) {
       (async () => {
-        const args = parseArgs(await Niva.api.process.args());
+        const args = parseArgs(process.argv);
+        const buildRequested = Object.prototype.hasOwnProperty.call(args, "build");
+
+        if (buildRequested) {
+          await runBuildCli(app, args);
+          return;
+        }
 
         await app.init();
 
@@ -392,19 +441,6 @@ export function App() {
           let recently = history.recently();
           if (recently) {
             await tryOrAlert(app, app.open(recently));
-          }
-        }
-
-        if (args.build && app.state.project) {
-          const { project } = app.state;
-          const result = await project.build(pathJoin(getCurrentDir(), args.build));
-          if (result.isErr()) {
-            await app.state.modal.alert(
-              app.state.locale.t("BUILD_FAILED"),
-              result.error.toLocaleMessage(app)
-            );
-          } else {
-            Niva.api.window.close();
           }
         }
 

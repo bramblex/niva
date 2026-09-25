@@ -7,7 +7,7 @@ on:
       - "Cargo.*"
       - "crates/**"
       - "scripts/*packager*"
-      - "packages/node-compat/**"
+      - "packages/runtime/**"
       - ".github/workflows/packager.yml"
   push:
     branches: [main]
@@ -48,6 +48,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci
+      - run: npm run build --workspace=packages/runtime
       - run: cargo build --locked --release --target ${{ matrix.target }} -p niva -p niva-packager
       - run: cargo test --locked -p niva-packager
       - name: Collect binaries
@@ -93,6 +95,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci
+      - run: npm run build --workspace=packages/runtime
       - name: Assemble offline kit
         shell: bash
         run: |

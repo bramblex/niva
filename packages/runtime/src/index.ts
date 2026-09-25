@@ -1,0 +1,40 @@
+const Niva = globalThis.Niva;
+
+export const bridge = Niva.bridge;
+export const path = Niva.path;
+export const os = Niva.os;
+export const fs = Niva.fs;
+export const child_process = Niva.child_process;
+export const events = Niva.events;
+export const util = Niva.util;
+export const querystring = Niva.querystring;
+export const buffer = Niva.buffer;
+export const url = Niva.url;
+export const crypto = Niva.crypto;
+export const zlib = Niva.zlib;
+export const http = Niva.http;
+export const https = Niva.https;
+export const assert = Niva.assert;
+export const stream = Niva.stream;
+export const process = Niva.process;
+export const net = Niva.net;
+export const tls = Niva.tls;
+export const dgram = Niva.dgram;
+export const dns = Niva.dns;
+export const timers = Niva.timers;
+export const tty = Niva.tty;
+export const string_decoder = Niva.string_decoder;
+
+export const window = Niva.window;
+export const resource = Niva.resource;
+export const dialog = Niva.dialog;
+export const clipboard = Niva.clipboard;
+export const webview = Niva.webview;
+export const monitor = Niva.monitor;
+export const shortcut = Niva.shortcut;
+export const tray = Niva.tray;
+export const extra = Niva.extra;
+export const windowExtra = Niva.windowExtra;
+export const module = Niva.module;
+
+export default Niva;

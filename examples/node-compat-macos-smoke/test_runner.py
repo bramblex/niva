@@ -65,7 +65,7 @@ class NodeCompatMacSmokeStaticTests(unittest.TestCase):
     def test_documented_subpaths_and_native_bridge_cases_are_present(self):
         methods = {method for case in self.catalog["cases"] for method in case["methods"]}
         for required in {
-            "Niva.require", "Niva.import", "fs/promises", "alias:assert/strict", "stream/promises.pipeline",
+            "CommonJS.require", "browser.import", "fs/promises", "alias:assert/strict", "stream/promises.pipeline",
             "fs.writeFile", "child_process.spawn", "http.request", "https.get",
             "stream.pipeline", "crypto.createHash", "zlib.gunzip", "importmap:fs",
         }:
@@ -94,14 +94,14 @@ class NodeCompatMacSmokeStaticTests(unittest.TestCase):
         with self.assertRaisesRegex(run.SmokeError, "duplicate NodeCompat API"):
             run.validate_report(report)
 
-    def test_frame_reader_consumes_stdio_ndjson(self):
+    def test_frame_reader_consumes_fixture_process_stream_ndjson(self):
         child = subprocess.Popen(
-            [sys.executable, "-c", "import json; print(json.dumps({'t':'ready','v':1}))"],
+            [sys.executable, "-c", "import json; print(json.dumps({'protocol':'niva-fixture','version':1,'event':'ready','name':'test'}))"],
             stdout=subprocess.PIPE,
         )
         reader = run.FrameReader(child)
         try:
-            self.assertEqual(reader.next(2), {"t": "ready", "v": 1})
+            self.assertEqual(reader.next(2), {"protocol": "niva-fixture", "version": 1, "event": "ready", "name": "test"})
             self.assertEqual(child.wait(timeout=2), 0)
         finally:
             reader.close()

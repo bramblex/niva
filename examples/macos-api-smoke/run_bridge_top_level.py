@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check all eleven documented top-level Niva bridge methods in a real WebView."""
+"""Check the seven current Niva event and bridge methods in a real WebView."""
 
 from __future__ import annotations
 
@@ -19,9 +19,8 @@ from run import Harness, REPO, SmokeError, safe_app_dirs, tail
 
 HERE = Path(__file__).resolve().parent
 EXPECTED = {
-    "Niva.registerModule", "Niva.registerModuleFactory", "Niva.require", "Niva.import",
     "Niva.addEventListener", "Niva.removeEventListener", "Niva.removeAllEventListeners",
-    "Niva.call", "Niva.callSync", "Niva.stream", "Niva.streamSend",
+    "Niva.bridge.call", "Niva.bridge.callSync", "Niva.bridge.stream", "Niva.bridge.streamSend",
 }
 
 
@@ -29,9 +28,9 @@ def message(harness: Harness, name: str, timeout: float = 30) -> dict:
     deadline = time.monotonic() + timeout
     while True:
         frame = harness.next_frame(max(0.1, deadline - time.monotonic()))
-        if frame.get("t") == "msg" and frame.get("name") == "bridge-top-level-error":
+        if frame.get("event") == "message" and frame.get("name") == "bridge-top-level-error":
             raise SmokeError(f"page failed: {frame.get('data')}")
-        if frame.get("t") == "msg" and frame.get("name") == name:
+        if frame.get("event") == "message" and frame.get("name") == name:
             data = frame.get("data")
             if not isinstance(data, dict):
                 raise SmokeError(f"{name} had no object payload")
@@ -53,10 +52,12 @@ def run(binary: Path) -> int:
             resources = root / "resources"
             resources.mkdir()
             shutil.copy2(HERE / "bridge-top-level.html", resources / "bridge-top-level.html")
+            shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
             (resources / "probe.txt").write_text("niva-top-level-probe\n", encoding="utf-8")
             config = root / "niva.json"
             config.write_text(json.dumps({
                 "name": app_name, "uuid": app_uuid,
+                "injectCommonJs": True, "injectEsm": True,
                 "window": {"entry": "bridge-top-level.html", "title": "Niva top-level bridge smoke",
                            "size": {"width": 500, "height": 300}, "visible": True},
             }) + "\n", encoding="utf-8")
@@ -67,13 +68,14 @@ def run(binary: Path) -> int:
             environment["TMPDIR"] = str(root)
             with stderr_path.open("wb") as stderr_file:
                 process = subprocess.Popen(
-                    [str(binary), "--stdio", f"--debug-config={config}", f"--debug-resource={resources}"],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=stderr_file, text=True, bufsize=1,
                 )
             harness = Harness(process)
-            if harness.next_frame(30) != {"t": "ready", "v": 1}:
-                raise SmokeError("Niva stdio bridge did not report ready")
+            ready = harness.next_frame(30)
+            if ready.get("event") != "ready" or ready.get("name") != "bridge-top-level":
+                raise SmokeError(f"unexpected fixture ready event: {ready!r}")
             message(harness, "bridge-top-level-ready")
             harness.send("bridge-top-level-command", {"tempRoot": str(root)})
             result = message(harness, "bridge-top-level-result", 60)
@@ -87,9 +89,10 @@ def run(binary: Path) -> int:
             if evidence.keys() != EXPECTED:
                 raise SmokeError(f"top-level bridge coverage mismatch: missing={sorted(EXPECTED - evidence.keys())}, extra={sorted(evidence.keys() - EXPECTED)}")
             if process.stdin and not process.stdin.closed:
+                harness.send("fixture-exit", 0)
                 process.stdin.close()
             if process.wait(timeout=15) != 0:
-                raise SmokeError("Niva did not exit cleanly after stdio EOF")
+                raise SmokeError("Niva did not exit cleanly after the fixture exit command")
     except Exception as error:
         failure = f"{type(error).__name__}: {error}"
     finally:
@@ -112,7 +115,7 @@ def run(binary: Path) -> int:
         if stderr_tail:
             print("Niva stderr tail:\n" + stderr_tail, file=sys.stderr)
         return 1
-    print("macOS top-level bridge smoke: PASS (11 exact methods)")
+    print(f"macOS top-level bridge smoke: PASS ({len(EXPECTED)} exact methods)")
     for method, assertion in sorted(evidence.items()):
         print(f"  {method}: {assertion}")
     return 0

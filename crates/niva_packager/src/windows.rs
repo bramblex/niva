@@ -12,12 +12,14 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use editpe::{
     DataDirectoryType, Image, ResourceData, ResourceDirectory, ResourceEntry, ResourceEntryName,
     ResourceTable,
 };
 use serde_json::Value;
+
+use super::resources::Package;
 
 const LANG_EN_US: u16 = 1033;
 const RT_ICON: u32 = 3;
@@ -37,8 +39,7 @@ pub fn assemble(
     runtime: &Path,
     output: &Path,
     config: &Value,
-    indexes: &[u8],
-    data: &[u8],
+    package: &Package,
     icon: Option<&Path>,
 ) -> Result<()> {
     ensure_distinct_paths(runtime, output)?;
@@ -47,20 +48,45 @@ pub fn assemble(
         .with_context(|| format!("parse runtime PE {}", runtime.display()))?;
     let mut resources = image.resource_directory().cloned().unwrap_or_default();
 
-    set_resource(
-        &mut resources,
+    remove_resource_name(
+        resources.root_mut(),
+        RT_RCDATA,
+        ResourceEntryName::from_string("RESOURCE_MODE"),
+    )?;
+    remove_resource_name(
+        resources.root_mut(),
         RT_RCDATA,
         ResourceEntryName::from_string("RESOURCE_INDEXES"),
-        LANG_EN_US,
-        indexes,
     )?;
-    set_resource(
-        &mut resources,
+    remove_resource_name(
+        resources.root_mut(),
         RT_RCDATA,
         ResourceEntryName::from_string("RESOURCE_DATA"),
-        LANG_EN_US,
-        data,
     )?;
+    if package.external_root.is_some() {
+        set_resource(
+            &mut resources,
+            RT_RCDATA,
+            ResourceEntryName::from_string("RESOURCE_MODE"),
+            LANG_EN_US,
+            b"external",
+        )?;
+    } else {
+        set_resource(
+            &mut resources,
+            RT_RCDATA,
+            ResourceEntryName::from_string("RESOURCE_INDEXES"),
+            LANG_EN_US,
+            &package.indexes,
+        )?;
+        set_resource(
+            &mut resources,
+            RT_RCDATA,
+            ResourceEntryName::from_string("RESOURCE_DATA"),
+            LANG_EN_US,
+            &package.data,
+        )?;
+    }
 
     if let Some(icon_path) = icon {
         let png = fs::read(icon_path)
@@ -100,7 +126,7 @@ pub fn assemble(
     // Parse the final bytes once more before touching the requested output.
     // This catches resource-section/layout errors in the editor on every host.
     let verify = Image::parse(bytes.clone()).context("validate assembled PE")?;
-    verify_required_resources(verify.resource_directory(), indexes, data, &version_info)?;
+    verify_required_resources(verify.resource_directory(), package, &version_info)?;
 
     write_output(output, &bytes)
 }
@@ -325,6 +351,31 @@ fn remove_resource(
     Ok(())
 }
 
+fn remove_resource_name(
+    root: &mut ResourceTable,
+    type_id: u32,
+    name: ResourceEntryName,
+) -> Result<()> {
+    let type_name = ResourceEntryName::ID(type_id);
+    let Some(type_entry) = root.get_mut(&type_name) else {
+        return Ok(());
+    };
+    let Some(type_table) = type_entry.as_table_mut() else {
+        bail!("PE resource type {type_id} is not a table");
+    };
+    if let Some(name_entry) = type_table.get(&name) {
+        ensure!(
+            name_entry.as_table().is_some(),
+            "PE resource name is not a language table"
+        );
+        type_table.remove(name);
+    }
+    if type_table.entries().is_empty() {
+        root.remove(type_name);
+    }
+    Ok(())
+}
+
 fn version_info_rc(config: &Value) -> Result<String> {
     let version = config.get("version").and_then(Value::as_str).unwrap_or("");
     let components = version_components(version)?;
@@ -455,22 +506,65 @@ fn get_resource<'a>(
 
 fn verify_required_resources(
     resources: Option<&ResourceDirectory>,
-    indexes: &[u8],
-    data: &[u8],
+    package: &Package,
     version_info: &[u8],
 ) -> Result<()> {
     let resources = resources.ok_or_else(|| anyhow!("assembled PE has no resource directory"))?;
-    for (name, expected) in [("RESOURCE_INDEXES", indexes), ("RESOURCE_DATA", data)] {
-        let actual = get_resource(
+    if package.external_root.is_some() {
+        let marker = get_resource(
             resources,
             RT_RCDATA,
-            &ResourceEntryName::from_string(name),
+            &ResourceEntryName::from_string("RESOURCE_MODE"),
             LANG_EN_US,
         )?
-        .ok_or_else(|| anyhow!("assembled PE is missing RCDATA {name}"))?;
-        if actual != expected {
-            bail!("assembled PE RCDATA {name} failed read-back verification");
+        .ok_or_else(|| anyhow!("assembled PE is missing RCDATA RESOURCE_MODE"))?;
+        ensure!(
+            marker == b"external",
+            "assembled PE RESOURCE_MODE is invalid"
+        );
+        ensure!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_INDEXES"),
+                LANG_EN_US
+            )?
+            .is_none()
+                && get_resource(
+                    resources,
+                    RT_RCDATA,
+                    &ResourceEntryName::from_string("RESOURCE_DATA"),
+                    LANG_EN_US
+                )?
+                .is_none(),
+            "external PE still contains embedded application resources"
+        );
+    } else {
+        for (name, expected) in [
+            ("RESOURCE_INDEXES", package.indexes.as_slice()),
+            ("RESOURCE_DATA", package.data.as_slice()),
+        ] {
+            let actual = get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string(name),
+                LANG_EN_US,
+            )?
+            .ok_or_else(|| anyhow!("assembled PE is missing RCDATA {name}"))?;
+            if actual != expected {
+                bail!("assembled PE RCDATA {name} failed read-back verification");
+            }
         }
+        ensure!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_MODE"),
+                LANG_EN_US
+            )?
+            .is_none(),
+            "embedded PE unexpectedly contains RESOURCE_MODE"
+        );
     }
     let actual = get_resource(resources, RT_VERSION, &ResourceEntryName::ID(1), LANG_EN_US)?
         .ok_or_else(|| anyhow!("assembled PE is missing RT_VERSION 1"))?;
@@ -736,31 +830,25 @@ mod tests {
                 "copyright": "Copyright Test"
             }
         });
+        let first_package = Package {
+            indexes: b"indexes bytes".to_vec(),
+            data: b"compressed data".to_vec(),
+            external_root: None,
+        };
 
-        assemble(
-            &runtime,
-            &first,
-            &config,
-            b"indexes bytes",
-            b"compressed data",
-            Some(&icon),
-        )
-        .unwrap();
+        assemble(&runtime, &first, &config, &first_package, Some(&icon)).unwrap();
         assert_resources(&first, b"indexes bytes", b"compressed data");
         assert_existing_manifest(&first);
         assert_icon_resources(&first);
         assert_version_resources(&first);
         assert_signature_removed_and_checksum_valid(&first);
 
-        assemble(
-            &first,
-            &second,
-            &config,
-            b"updated indexes",
-            b"updated data",
-            Some(&icon),
-        )
-        .unwrap();
+        let second_package = Package {
+            indexes: b"updated indexes".to_vec(),
+            data: b"updated data".to_vec(),
+            external_root: None,
+        };
+        assemble(&first, &second, &config, &second_package, Some(&icon)).unwrap();
         assert_resources(&second, b"updated indexes", b"updated data");
         assert_existing_manifest(&second);
         assert_icon_resources(&second);
@@ -776,8 +864,96 @@ mod tests {
         fs::create_dir_all(&base).unwrap();
         let runtime = base.join("runtime.exe");
         fs::write(&runtime, minimal_pe64()).unwrap();
-        let error = assemble(&runtime, &runtime, &json!({}), b"i", b"d", None).unwrap_err();
+        let package = Package {
+            indexes: b"i".to_vec(),
+            data: b"d".to_vec(),
+            external_root: None,
+        };
+        let error = assemble(&runtime, &runtime, &json!({}), &package, None).unwrap_err();
         assert!(error.to_string().contains("paths must differ"));
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn external_layout_marks_pe_and_removes_embedded_application_resources() {
+        let base = test_dir("external-layout");
+        fs::create_dir_all(&base).unwrap();
+        let runtime = base.join("runtime.exe");
+        let external = base.join("external.exe");
+        let embedded = base.join("embedded.exe");
+        fs::write(&runtime, pe_with_existing_manifest_and_certificate()).unwrap();
+        let external_package = Package {
+            indexes: Vec::new(),
+            data: Vec::new(),
+            external_root: Some(base.join("resource-snapshot")),
+        };
+        assemble(
+            &runtime,
+            &external,
+            &json!({"name":"External"}),
+            &external_package,
+            None,
+        )
+        .unwrap();
+        let image = Image::parse_file(&external).unwrap();
+        let resources = image.resource_directory().unwrap();
+        assert_eq!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_MODE"),
+                LANG_EN_US,
+            )
+            .unwrap(),
+            Some(&b"external"[..])
+        );
+        assert!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_INDEXES"),
+                LANG_EN_US
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_DATA"),
+                LANG_EN_US
+            )
+            .unwrap()
+            .is_none()
+        );
+
+        let embedded_package = Package {
+            indexes: b"indexes".to_vec(),
+            data: b"data".to_vec(),
+            external_root: None,
+        };
+        assemble(
+            &external,
+            &embedded,
+            &json!({"name":"Embedded"}),
+            &embedded_package,
+            None,
+        )
+        .unwrap();
+        let image = Image::parse_file(&embedded).unwrap();
+        let resources = image.resource_directory().unwrap();
+        assert!(
+            get_resource(
+                resources,
+                RT_RCDATA,
+                &ResourceEntryName::from_string("RESOURCE_MODE"),
+                LANG_EN_US
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_resources(&embedded, b"indexes", b"data");
         let _ = fs::remove_dir_all(base);
     }
 

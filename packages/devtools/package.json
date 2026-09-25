@@ -14,11 +14,12 @@
     "pako": "^3.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "types": "file:../types"
+    "@niva/types": "file:../types"
   },
   "scripts": {
     "start": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "node --test ./scripts/*.test.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

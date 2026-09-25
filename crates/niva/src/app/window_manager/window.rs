@@ -209,8 +209,12 @@ impl NivaWindow {
         payload: P,
     ) -> bool {
         let payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
-        let seq = self.next_event_seq.fetch_add(1, Ordering::Relaxed);
+        let seq = self.next_event_seq();
         let envelope = ServerMsg::event(None, seq, event.into(), payload);
         self.send_ws_envelope(&envelope.encode())
+    }
+
+    pub(crate) fn next_event_seq(&self) -> u64 {
+        self.next_event_seq.fetch_add(1, Ordering::Relaxed)
     }
 }

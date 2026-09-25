@@ -105,6 +105,24 @@ impl WindowManager {
         self.windows.values().collect()
     }
 
+    /// Final application shutdown must visit every owner even when one native
+    /// cleanup fails. Snapshot Arcs before taking any other manager lock.
+    pub fn close_all_and_cleanup(app: &Arc<NivaApp>) -> Result<()> {
+        let windows: Vec<_> = app.window()?.list_windows().into_iter().cloned().collect();
+        let mut failures = Vec::new();
+        for window in windows {
+            if let Err(error) = Self::close_window_and_cleanup(app, window.id, Some(window.clone()))
+            {
+                failures.push(format!("window {}: {error:#}", window.id));
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!(failures.join("; ")))
+        }
+    }
+
     pub fn close_window_inner(&mut self, window_id: WindowId) -> Result<Arc<NivaWindow>> {
         let id = self
             .id_map
@@ -118,10 +136,105 @@ impl WindowManager {
     /// manager guard, so locks are always acquired leaf-first and released
     /// before the next one — no nesting, no inversion.
     pub fn cleanup_window(app: &Arc<NivaApp>, window: &Arc<NivaWindow>) -> Result<()> {
-        app.shortcut()?.unregister_all(window.id)?;
-        app.tray()?.destroy_all(window.id)?;
-        // Cancel in-flight stateful API calls bound to the closed window.
-        app.api().cancel_window(window.id);
-        Ok(())
+        run_cleanup_steps(
+            window.id,
+            || {
+                let mut shortcuts = app.shortcut()?;
+                shortcuts.unregister_all(window.id)
+            },
+            || {
+                let mut tray = app.tray()?;
+                tray.destroy_all(window.id)
+            },
+            || app.api().cancel_window(window.id),
+        )
+    }
+
+    /// Remove and clean a window even if one of its cleanup steps fails.
+    /// `fallback` lets a close event finish cleanup from the Arc it already
+    /// resolved, even when removal from the manager maps reports an error.
+    pub fn close_window_and_cleanup(
+        app: &Arc<NivaApp>,
+        id: u8,
+        fallback: Option<Arc<NivaWindow>>,
+    ) -> Result<()> {
+        let target = match fallback.filter(|window| window.id == id) {
+            Some(window) => Ok(window),
+            None => app.window().and_then(|manager| manager.get_window(id)),
+        };
+        let removal = app
+            .window()
+            .and_then(|mut manager| manager.close_window(id).map(|_| ()));
+
+        let mut failures = Vec::new();
+        if let Err(error) = removal {
+            failures.push(format!("remove window: {error:#}"));
+        }
+        match target {
+            Ok(window) => {
+                if let Err(error) = Self::cleanup_window(app, &window) {
+                    failures.push(format!("release window resources: {error:#}"));
+                }
+            }
+            Err(error) => failures.push(format!("resolve window for cleanup: {error:#}")),
+        }
+        finish_window_cleanup(id, failures)
+    }
+}
+
+fn run_cleanup_steps(
+    window_id: u8,
+    unregister_shortcuts: impl FnOnce() -> Result<()>,
+    destroy_trays: impl FnOnce() -> Result<()>,
+    cancel_api_calls: impl FnOnce(),
+) -> Result<()> {
+    let mut failures = Vec::new();
+    if let Err(error) = unregister_shortcuts() {
+        failures.push(format!("shortcuts: {error:#}"));
+    }
+    if let Err(error) = destroy_trays() {
+        failures.push(format!("tray: {error:#}"));
+    }
+    cancel_api_calls();
+    finish_window_cleanup(window_id, failures)
+}
+
+fn finish_window_cleanup(window_id: u8, failures: Vec<String>) -> Result<()> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "window {window_id} cleanup failed: {}",
+        failures.join("; ")
+    ))
+}
+
+#[cfg(test)]
+mod cleanup_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn cleanup_runs_every_owner_step_and_keeps_all_errors() {
+        let completed = Mutex::new(Vec::new());
+        let result = run_cleanup_steps(
+            7,
+            || {
+                completed.lock().unwrap().push("shortcuts");
+                Err(anyhow!("unregister failed"))
+            },
+            || {
+                completed.lock().unwrap().push("tray");
+                Err(anyhow!("destroy failed"))
+            },
+            || completed.lock().unwrap().push("api calls"),
+        );
+        let errors = result.unwrap_err().to_string();
+        assert!(errors.contains("shortcuts: unregister failed"));
+        assert!(errors.contains("tray: destroy failed"));
+        assert_eq!(
+            *completed.lock().unwrap(),
+            ["shortcuts", "tray", "api calls"]
+        );
     }
 }

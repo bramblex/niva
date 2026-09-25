@@ -8,6 +8,11 @@ use apple_codesign::{
 use icns::{IconFamily, IconType, Image as IcnsImage, PixelFormat};
 use plist::{Dictionary, Value as PlistValue};
 
+use super::{
+    resources::{Package, copy_external_resources},
+    signing,
+};
+
 /// Assemble and ad-hoc sign a macOS app bundle on any supported host.
 ///
 /// The final app is written to `output`; signing runs into a separate sibling
@@ -16,10 +21,11 @@ pub fn assemble(
     runtime: &Path,
     output: &Path,
     config: &serde_json::Value,
-    indexes: &[u8],
-    data: &[u8],
+    resources: &Package,
     icon: Option<&Path>,
-) -> Result<()> {
+    project_root: &Path,
+    signing_staging: &Path,
+) -> Result<&'static str> {
     let runtime_metadata = fs::metadata(runtime)
         .with_context(|| format!("read macOS runtime {}", runtime.display()))?;
     ensure!(
@@ -76,8 +82,16 @@ pub fn assemble(
     })?;
     set_executable_permissions(&executable)?;
 
-    fs::write(resources_dir.join("RESOURCE_INDEXES"), indexes).context("write RESOURCE_INDEXES")?;
-    fs::write(resources_dir.join("RESOURCE_DATA"), data).context("write RESOURCE_DATA")?;
+    if resources.external_root.is_some() {
+        fs::write(resources_dir.join("RESOURCE_MODE"), b"external")
+            .context("write RESOURCE_MODE")?;
+        copy_external_resources(resources, &resources_dir.join("app"))?;
+    } else {
+        fs::write(resources_dir.join("RESOURCE_INDEXES"), &resources.indexes)
+            .context("write RESOURCE_INDEXES")?;
+        fs::write(resources_dir.join("RESOURCE_DATA"), &resources.data)
+            .context("write RESOURCE_DATA")?;
+    }
 
     if let Some(icon_path) = icon {
         write_icns(icon_path, &resources_dir.join("icon.icns"))?;
@@ -90,6 +104,36 @@ pub fn assemble(
         uuid,
         icon.is_some(),
     )?;
+
+    if let Some(signature) = signing::sign_macos(config, project_root, output, signing_staging)? {
+        ensure!(
+            output.join("Contents/Info.plist").is_file(),
+            "signed app has no Info.plist"
+        );
+        if resources.external_root.is_some() {
+            ensure!(
+                fs::read(output.join("Contents/Resources/RESOURCE_MODE"))?.as_slice()
+                    == b"external",
+                "identity signing changed Contents/Resources/RESOURCE_MODE"
+            );
+            ensure!(
+                output.join("Contents/Resources/app/niva.json").is_file(),
+                "identity signing removed external application resources"
+            );
+        } else {
+            ensure!(
+                fs::read(output.join("Contents/Resources/RESOURCE_INDEXES"))?.as_slice()
+                    == resources.indexes,
+                "identity signing changed Contents/Resources/RESOURCE_INDEXES"
+            );
+            ensure!(
+                fs::read(output.join("Contents/Resources/RESOURCE_DATA"))?.as_slice()
+                    == resources.data,
+                "identity signing changed Contents/Resources/RESOURCE_DATA"
+            );
+        }
+        return Ok(signature);
+    }
 
     let mut signer = BundleSigner::new_from_path(output)
         .with_context(|| format!("open app bundle for signing: {}", output.display()))?;
@@ -119,18 +163,32 @@ pub fn assemble(
         "signer did not write bundle resources seal"
     );
 
-    let signed_indexes = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_INDEXES"))
-        .context("read signed RESOURCE_INDEXES")?;
-    ensure!(
-        signed_indexes.as_slice() == indexes,
-        "signing changed Contents/Resources/RESOURCE_INDEXES"
-    );
-    let signed_data = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_DATA"))
-        .context("read signed RESOURCE_DATA")?;
-    ensure!(
-        signed_data.as_slice() == data,
-        "signing changed Contents/Resources/RESOURCE_DATA"
-    );
+    if resources.external_root.is_some() {
+        ensure!(
+            fs::read(signed_bundle.join("Contents/Resources/RESOURCE_MODE"))?.as_slice()
+                == b"external",
+            "signing changed Contents/Resources/RESOURCE_MODE"
+        );
+        ensure!(
+            signed_bundle
+                .join("Contents/Resources/app/niva.json")
+                .is_file(),
+            "signing removed external application resources"
+        );
+    } else {
+        let signed_indexes = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_INDEXES"))
+            .context("read signed RESOURCE_INDEXES")?;
+        ensure!(
+            signed_indexes.as_slice() == resources.indexes,
+            "signing changed Contents/Resources/RESOURCE_INDEXES"
+        );
+        let signed_data = fs::read(signed_bundle.join("Contents/Resources/RESOURCE_DATA"))
+            .context("read signed RESOURCE_DATA")?;
+        ensure!(
+            signed_data.as_slice() == resources.data,
+            "signing changed Contents/Resources/RESOURCE_DATA"
+        );
+    }
 
     let signed_executable = signed_bundle.join("Contents/MacOS").join(name);
     verify_signed_executable(&signed_executable)?;
@@ -140,7 +198,7 @@ pub fn assemble(
     fs::rename(&signed_bundle, output)
         .with_context(|| format!("install signed app bundle at {}", output.display()))?;
 
-    Ok(())
+    Ok("ad-hoc")
 }
 
 fn verify_signed_executable(path: &Path) -> Result<()> {

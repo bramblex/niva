@@ -14,6 +14,8 @@ tray-icon = "0.25.1"
 global-hotkey = "0.8.0"
 arboard = "3.6.1"
 native-tls = "0.2.18"
+ureq = { version = "=3.4.2", default-features = false, features = ["native-tls-no-default"] }
+oxc_resolver = { version = "=11.24.3", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 mime_guess = "2.0.5"
@@ -40,6 +42,7 @@ notify = { version = "8.2.0", default-features = false, features = ["macos_kqueu
 subtle = "2.6.1"
 
 [build-dependencies]
+sha2 = "0.10.9"
 flate2 = "1.1.10"
 serde_json = "1.0.151"
 
@@ -54,5 +57,5 @@ block2 = "0.6.2"
 x-win = "5.8.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_IO", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_IO", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Memory", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
 webview2-com = "0.39.1"

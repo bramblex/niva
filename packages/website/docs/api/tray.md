@@ -1,6 +1,6 @@
 # 托盘图标 tray
 
-## Niva.api.tray.create
+## Niva.tray.create
 
 - 其中 `NivaTrayOptions` 详见 [托盘选项](/docs/options/tray)。
 
@@ -17,7 +17,7 @@ export function create(
 ): Promise<number>;
 ```
 
-## Niva.api.tray.destroy
+## Niva.tray.destroy
 
 ```ts
 /**
@@ -29,7 +29,7 @@ export function create(
 export function destroy(id: number, window_id?: number): Promise<void>;
 ```
 
-## Niva.api.tray.destroyAll
+## Niva.tray.destroyAll
 
 ```ts
 /**
@@ -40,7 +40,7 @@ export function destroy(id: number, window_id?: number): Promise<void>;
 export function destroyAll(window_id?: number): Promise<void>;
 ```
 
-## Niva.api.tray.list
+## Niva.tray.list
 
 ```ts
 /**
@@ -51,7 +51,7 @@ export function destroyAll(window_id?: number): Promise<void>;
 export function list(window_id?: number): Promise<number[]>;
 ```
 
-## Niva.api.tray.update
+## Niva.tray.update
 
 - 其中 `NivaTrayUpdateOptions` 详见 [托盘选项](/docs/options/tray)。
 

@@ -16,25 +16,27 @@ use serde_json::Value;
 /// chunk reassembly framing and progress tracking, not loss recovery
 /// (TCP already guarantees delivery).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "t", rename_all = "camelCase")]
+#[serde(tag = "t", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ClientMsg {
-    /// Open a window binding: `{t:"hello", wid, v}`.
-    Hello { wid: u8, v: u8 },
-    /// Unary or stateful call: `{t:"call", id, method, args}`.
+    /// Bind a WebSocket connection to one page-realm session.
+    Hello { wid: u8, v: u8, session_id: String },
+    /// Unary or stateful call: `{t:"call", id, method, args, sessionId}`.
     Call {
         id: u64,
         method: String,
         args: Value,
+        session_id: String,
     },
-    /// Abort a stateful call: `{t:"cancel", id}`.
-    Cancel { id: u64 },
+    /// Abort a stateful call belonging to this page-realm session.
+    Cancel { id: u64, session_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "camelCase")]
 pub enum ServerMsg {
     /// Terminal response: `{t:"result", id, code, message, data}`.
-    /// code 0 = ok; -1 = handler error; -2 = timeout.
+    /// code 0 = ok; -1 = handler error; -2 = timeout; -3 = overloaded call
+    /// or a rejected inbound stream after its bounded queue filled/closed.
     Result {
         id: u64,
         code: i32,
@@ -42,7 +44,8 @@ pub enum ServerMsg {
         data: Value,
     },
     /// Stream push: `{t:"event", id?, seq, name, data}`. `id` ties the push
-    /// to a stateful call; absent means a global broadcast.
+    /// to a stateful call; absent means a connection-level event (which the
+    /// sender may broadcast to the window or direct to one connection).
     Event {
         #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<u64>,
@@ -69,6 +72,21 @@ impl ServerMsg {
             name,
             data,
         }
+    }
+
+    /// A connection-level protocol error. It deliberately has no call id: a
+    /// repeated active id must not be mistaken for the original call's result.
+    pub fn protocol_error(seq: u64, request_id: u64, code: &str, message: &str) -> Self {
+        Self::event(
+            None,
+            seq,
+            "bridge.protocolError".to_string(),
+            serde_json::json!({
+                "requestId": request_id,
+                "code": code,
+                "message": message,
+            }),
+        )
     }
 
     pub fn encode(&self) -> String {
@@ -173,13 +191,15 @@ mod tests {
         let hello = ClientMsg::Hello {
             wid: 3,
             v: WIRE_VERSION,
+            session_id: "0123456789abcdef0123456789abcdef".into(),
         };
         let text = serde_json::to_string(&hello).unwrap();
         let back: ClientMsg = serde_json::from_str(&text).unwrap();
         match back {
-            ClientMsg::Hello { wid, v } => {
+            ClientMsg::Hello { wid, v, session_id } => {
                 assert_eq!(wid, 3);
                 assert_eq!(v, WIRE_VERSION);
+                assert_eq!(session_id, "0123456789abcdef0123456789abcdef");
             }
             _ => panic!("wrong variant"),
         }
@@ -191,6 +211,7 @@ mod tests {
             id: 300,
             method: "fs.read".into(),
             args: serde_json::json!(["/tmp/x"]),
+            session_id: "0123456789abcdef0123456789abcdef".into(),
         };
         let text = serde_json::to_string(&call).unwrap();
         let back: ClientMsg = serde_json::from_str(&text).unwrap();
@@ -207,6 +228,7 @@ mod tests {
             id: u64::MAX,
             method: "x".into(),
             args: Value::Null,
+            session_id: "0123456789abcdef0123456789abcdef".into(),
         };
         let text = serde_json::to_string(&big).unwrap();
         let back: ClientMsg = serde_json::from_str(&text).unwrap();
@@ -214,6 +236,23 @@ mod tests {
             ClientMsg::Call { id, .. } => assert_eq!(id, u64::MAX),
             _ => panic!("wrong variant"),
         }
+    }
+
+    #[test]
+    fn duplicate_request_protocol_error_has_no_call_id() {
+        let encoded = ServerMsg::protocol_error(
+            8,
+            42,
+            "ERR_DUPLICATE_ACTIVE_REQUEST_ID",
+            "request id is already active on this connection",
+        )
+        .encode();
+        let value: Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(value["t"], "event");
+        assert!(value.get("id").is_none());
+        assert_eq!(value["name"], "bridge.protocolError");
+        assert_eq!(value["data"]["requestId"], 42);
+        assert_eq!(value["data"]["code"], "ERR_DUPLICATE_ACTIVE_REQUEST_ID");
     }
 
     #[test]

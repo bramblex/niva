@@ -10,8 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 
 test("macOS fixture defines a distinct case for every window and windowExtra method", () => {
   const source = ts.createSourceFile(
-    "Niva_zh.d.ts",
-    readFileSync(path.join(root, "packages/types/Niva_zh.d.ts"), "utf8"),
+    "contracts.d.ts",
+    readFileSync(path.join(root, "packages/types/dist/contracts.d.ts"), "utf8"),
     ts.ScriptTarget.Latest,
     true,
   );

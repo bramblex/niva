@@ -63,19 +63,9 @@ type ChunkSink = Arc<dyn Fn(&[u8], bool) + Send + Sync>;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_stream_api_with("socket.tcpConnect", Some(None), tcp_connect);
-    api_manager.register_stream_api_with(
-        "socket.tcpConnectGuarded",
-        Some(None),
-        tcp_connect_guarded,
-    );
     api_manager.register_stream_api_with("socket.tcpListen", Some(None), tcp_listen);
     api_manager.register_stream_api_with("socket.tcpAttach", Some(None), tcp_attach);
     api_manager.register_stream_api_with("socket.tlsConnect", Some(None), tls_connect);
-    api_manager.register_stream_api_with(
-        "socket.tlsConnectGuarded",
-        Some(None),
-        tls_connect_guarded,
-    );
     api_manager.register_stream_api_with("socket.tlsListen", Some(None), tls_listen);
     api_manager.register_stream_api_with("socket.tlsAttach", Some(None), tls_attach);
     api_manager.register_stream_api_with("socket.udpBind", Some(None), udp_bind);
@@ -127,7 +117,6 @@ struct ActiveHandle {
     owner: Owner,
     kind: SocketKind,
     parent_listener: Option<String>,
-    local_addr: Option<SocketAddr>,
     read_control: Option<async_channel::Sender<SocketCommand>>,
     write_control: Option<async_channel::Sender<SocketCommand>>,
     udp: Option<Arc<smol::net::UdpSocket>>,
@@ -219,7 +208,6 @@ fn register_active(
     owner: Owner,
     kind: SocketKind,
     parent_listener: Option<String>,
-    local_addr: Option<SocketAddr>,
     read_control: Option<async_channel::Sender<SocketCommand>>,
     write_control: Option<async_channel::Sender<SocketCommand>>,
     udp: Option<Arc<smol::net::UdpSocket>>,
@@ -244,7 +232,6 @@ fn register_active(
             owner,
             kind,
             parent_listener,
-            local_addr,
             read_control,
             write_control,
             udp,
@@ -254,6 +241,28 @@ fn register_active(
         },
     );
     Ok((id, closed_rx))
+}
+
+/// A dispatcher may drop the entire handler future when its owner disconnects.
+/// Cleanup must therefore live in Drop, not only after an awaited pump loop.
+struct ActiveRegistration {
+    id: String,
+    owner: Owner,
+}
+
+impl ActiveRegistration {
+    fn new(id: &str, owner: Owner) -> Self {
+        Self {
+            id: id.to_owned(),
+            owner,
+        }
+    }
+}
+
+impl Drop for ActiveRegistration {
+    fn drop(&mut self) {
+        remove_active(&self.id, self.owner);
+    }
 }
 
 fn active_handle(id: &str, owner: Owner) -> Result<ActiveHandle> {
@@ -300,15 +309,9 @@ fn remove_active(id: &str, owner: Owner) {
                 }
             }
         }
-        state.pending.retain(|_, pending| pending.listener_id != id);
-    }
-}
-
-fn remove_pending_for_listener(listener_id: &str) {
-    if let Ok(mut state) = registry().lock() {
         state
             .pending
-            .retain(|_, pending| pending.listener_id != listener_id);
+            .retain(|_, pending| pending.listener_id != id || pending.owner != owner);
     }
 }
 
@@ -377,35 +380,9 @@ fn take_pending(id: &str, owner: Owner) -> Result<PendingHandle> {
     Ok(state.pending.remove(id).expect("checked pending handle"))
 }
 
-fn same_owner_loopback_listener(owner: Owner, address: SocketAddr, kind: SocketKind) -> bool {
-    if !address.ip().is_loopback() {
-        return false;
-    }
-    let Ok(state) = registry().lock() else {
-        return false;
-    };
-    state.active.values().any(|entry| {
-        entry.owner == owner
-            && entry.kind == kind
-            && entry.local_addr.is_some_and(|local| {
-                local.port() == address.port()
-                    && (local.ip() == address.ip() || local.ip().is_unspecified())
-            })
-    })
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ConnectArgs {
-    host: String,
-    port: u16,
-    timeout_ms: Option<u64>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GuardedConnectArgs {
-    scheme: String,
     host: String,
     port: u16,
     timeout_ms: Option<u64>,
@@ -491,83 +468,12 @@ async fn tcp_connect(ctx: CallContext, request: ApiRequest) -> Result<()> {
     .await
 }
 
-async fn tcp_connect_guarded(ctx: CallContext, request: ApiRequest) -> Result<()> {
-    let args = request.args().get::<(GuardedConnectArgs,)>()?.0;
-    let owner = Owner::from(&ctx);
-    if !matches!(args.scheme.as_str(), "http" | "https") {
-        bail!("guarded socket connect only accepts http/https schemes");
-    }
-    validate_host(&args.host)?;
-    let addresses = resolve_host(&args.host, args.port).await?;
-    let port = ctx.app.server_info()?;
-    if addresses.iter().any(|addr| {
-        !guarded_address_allowed(
-            &args.scheme,
-            &args.host,
-            args.port,
-            *addr,
-            port,
-            owner,
-            SocketKind::TcpListener,
-        )
-    }) {
-        bail!("guarded socket connect rejected a non-public destination");
-    }
-    let stream = connect_addresses(&ctx, &addresses, args.timeout_ms).await?;
-    let (local, peer) = socket_addrs(&stream)?;
-    let shutdown = tcp_write_shutdown(&stream)?;
-    bridge_socket(
-        ctx,
-        owner,
-        SocketKind::Tcp,
-        stream,
-        local,
-        peer,
-        shutdown,
-        None,
-    )
-    .await
-}
-
 async fn tls_connect(ctx: CallContext, request: ApiRequest) -> Result<()> {
     let args = request.args().get::<(TlsConnectArgs,)>()?.0;
-    connect_tls(ctx, args, None).await
-}
-
-async fn tls_connect_guarded(ctx: CallContext, request: ApiRequest) -> Result<()> {
-    let args = request.args().get::<(TlsConnectArgs,)>()?.0;
-    connect_tls(ctx, args, Some("https")).await
-}
-
-async fn connect_tls(
-    ctx: CallContext,
-    args: TlsConnectArgs,
-    guarded_scheme: Option<&str>,
-) -> Result<()> {
     let owner = Owner::from(&ctx);
     validate_host(&args.host)?;
     let tls_host = normalize_host(&args.host)?;
     let addresses = resolve_host(&args.host, args.port).await?;
-    let addresses = if let Some(scheme) = guarded_scheme {
-        let niva_port = ctx.app.server_info()?;
-        if addresses.iter().any(|addr| {
-            !guarded_address_allowed(
-                scheme,
-                &args.host,
-                args.port,
-                *addr,
-                niva_port,
-                owner,
-                SocketKind::TlsListener,
-            )
-        }) {
-            bail!("guarded TLS connect rejected a non-public destination");
-        }
-        addresses
-    } else {
-        addresses
-    };
-
     let mut last_error = None;
     for address in addresses {
         match connect_one(&ctx, address, args.timeout_ms).await {
@@ -651,16 +557,9 @@ async fn listen_tcp(
     } else {
         SocketKind::TcpListener
     };
-    let (listener_id, listener_closed) = register_active(
-        owner,
-        kind,
-        None,
-        Some(local_addr),
-        Some(read_control_tx),
-        None,
-        None,
-        None,
-    )?;
+    let (listener_id, listener_closed) =
+        register_active(owner, kind, None, Some(read_control_tx), None, None, None)?;
+    let registration = ActiveRegistration::new(&listener_id, owner);
     ctx.push("listening", json!({"socketId": listener_id, "address": local_addr.ip().to_string(), "port": local_addr.port()}));
     let result = accept_loop(
         ctx.clone(),
@@ -673,8 +572,7 @@ async fn listen_tcp(
         read_control_rx,
     )
     .await;
-    remove_active(&listener_id, owner);
-    remove_pending_for_listener(&listener_id);
+    drop(registration);
     match result {
         Ok(()) => {
             ctx.push("close", json!({"socketId":listener_id}));
@@ -826,12 +724,12 @@ async fn udp_bind(ctx: CallContext, request: ApiRequest) -> Result<()> {
         owner,
         SocketKind::Udp,
         None,
-        Some(local_addr),
         Some(control_tx),
         None,
         Some(socket.clone()),
         Some(read_credit.clone()),
     )?;
+    let registration = ActiveRegistration::new(&socket_id, owner);
     ctx.push("listening", json!({"socketId":socket_id,"address":local_addr.ip().to_string(),"port":local_addr.port()}));
     let mut buf = vec![0u8; MAX_UDP_DATAGRAM];
     let mut paused = false;
@@ -867,7 +765,7 @@ async fn udp_bind(ctx: CallContext, request: ApiRequest) -> Result<()> {
             Race3::First(Ok(_)) => {}
         }
     };
-    remove_active(&socket_id, owner);
+    drop(registration);
     ctx.push("close", json!({"socketId":socket_id}));
     match result {
         Ok(()) => {
@@ -1016,12 +914,12 @@ where
         owner,
         kind,
         parent_listener,
-        Some(local),
         Some(read_control_tx),
         Some(write_control_tx),
         None,
         Some(read_credit.clone()),
     )?;
+    let registration = ActiveRegistration::new(&socket_id, owner);
     let event_name = if kind == SocketKind::Tls {
         "secureConnect"
     } else {
@@ -1061,7 +959,7 @@ where
         write_events,
     );
     let outcome = join_socket_pumps_for_kind(kind, read_loop, write_loop).await;
-    remove_active(&socket_id, owner);
+    drop(registration);
     ctx.push(
         "close",
         json!({"socketId":socket_id,"hadError":outcome.is_err()}),
@@ -1713,93 +1611,6 @@ async fn connect_one(
     connect_addresses(ctx, &[address], timeout_ms).await
 }
 
-fn guarded_address_allowed(
-    scheme: &str,
-    host: &str,
-    port: u16,
-    address: SocketAddr,
-    niva_port: u16,
-    owner: Owner,
-    local_listener_kind: SocketKind,
-) -> bool {
-    let niva_local = scheme == "http"
-        && host == "127.0.0.1"
-        && port == niva_port
-        && address == SocketAddr::from(([127, 0, 0, 1], niva_port));
-    niva_local
-        || same_owner_loopback_listener(owner, address, local_listener_kind)
-        || is_public_destination(address)
-}
-
-fn is_public_destination(address: SocketAddr) -> bool {
-    match address {
-        SocketAddr::V4(v4) => !is_special_v4(*v4.ip()),
-        SocketAddr::V6(v6) => v6.scope_id() == 0 && is_public_v6(*v6.ip()),
-    }
-}
-
-fn is_special_v4(address: Ipv4Addr) -> bool {
-    const BLOCKED: &[(Ipv4Addr, u8)] = &[
-        (Ipv4Addr::new(0, 0, 0, 0), 8),
-        (Ipv4Addr::new(10, 0, 0, 0), 8),
-        (Ipv4Addr::new(100, 64, 0, 0), 10),
-        (Ipv4Addr::new(127, 0, 0, 0), 8),
-        (Ipv4Addr::new(169, 254, 0, 0), 16),
-        (Ipv4Addr::new(172, 16, 0, 0), 12),
-        (Ipv4Addr::new(192, 0, 0, 0), 24),
-        (Ipv4Addr::new(192, 0, 2, 0), 24),
-        (Ipv4Addr::new(192, 88, 99, 0), 24),
-        (Ipv4Addr::new(192, 168, 0, 0), 16),
-        (Ipv4Addr::new(198, 18, 0, 0), 15),
-        (Ipv4Addr::new(198, 51, 100, 0), 24),
-        (Ipv4Addr::new(203, 0, 113, 0), 24),
-        (Ipv4Addr::new(224, 0, 0, 0), 4),
-        (Ipv4Addr::new(240, 0, 0, 0), 4),
-    ];
-    BLOCKED
-        .iter()
-        .any(|(net, prefix)| v4_in_prefix(address, *net, *prefix))
-        || address.is_broadcast()
-}
-
-fn is_public_v6(address: Ipv6Addr) -> bool {
-    const GLOBAL: (Ipv6Addr, u8) = (Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3);
-    const NAT64: (Ipv6Addr, u8) = (Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0), 96);
-    const BLOCKED: &[(Ipv6Addr, u8)] = &[
-        (Ipv6Addr::LOCALHOST, 128),
-        (Ipv6Addr::UNSPECIFIED, 128),
-        (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0xffff, 0), 96),
-        (Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 0), 64),
-        (Ipv6Addr::new(0x0100, 0, 0, 1, 0, 0, 0, 0), 64),
-        (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),
-        (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32),
-        (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),
-        (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20),
-        (Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 0), 16),
-        (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),
-        (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0), 10),
-        (Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0), 8),
-        (Ipv6Addr::new(0x0064, 0xff9b, 0x0001, 0, 0, 0, 0, 0), 48),
-    ];
-    if v6_in_prefix(address, NAT64.0, NAT64.1) {
-        let b = address.octets();
-        return !is_special_v4(Ipv4Addr::new(b[12], b[13], b[14], b[15]));
-    }
-    v6_in_prefix(address, GLOBAL.0, GLOBAL.1)
-        && !BLOCKED
-            .iter()
-            .any(|(net, prefix)| v6_in_prefix(address, *net, *prefix))
-}
-
-fn v4_in_prefix(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
-    prefix != 0 && prefix <= 32 && (u32::from(address) ^ u32::from(network)) >> (32 - prefix) == 0
-}
-fn v6_in_prefix(address: Ipv6Addr, network: Ipv6Addr, prefix: u8) -> bool {
-    prefix != 0
-        && prefix <= 128
-        && (u128::from(address) ^ u128::from(network)) >> (128 - prefix) == 0
-}
-
 fn tls_identity(input: TlsIdentityInput) -> Result<Identity> {
     match input {
         TlsIdentityInput::Pem { key, cert } => {
@@ -2281,23 +2092,6 @@ mod tests {
     }
 
     #[test]
-    fn guarded_addresses_reject_private_and_allow_public() {
-        assert!(is_public_destination(SocketAddr::from(([8, 8, 8, 8], 443))));
-        assert!(!is_public_destination(SocketAddr::from((
-            [127, 0, 0, 1],
-            443
-        ))));
-        assert!(!is_public_destination(SocketAddr::from((
-            [169, 254, 169, 254],
-            443
-        ))));
-        assert!(!is_public_destination(SocketAddr::new(
-            "fd00::1".parse().unwrap(),
-            443
-        )));
-    }
-
-    #[test]
     fn read_credit_caps_window_and_charges_empty_udp_datagrams() {
         let (credit, wake) = ReadCredit::new();
         assert_eq!(credit.available.load(Ordering::Acquire), READ_CREDIT_WINDOW);
@@ -2317,47 +2111,6 @@ mod tests {
     }
 
     #[test]
-    fn guarded_loopback_listener_exception_is_same_owner_only() {
-        let owner = Owner {
-            window_id: 0,
-            connection_id: 1,
-        };
-        let foreign = Owner {
-            window_id: 0,
-            connection_id: 2,
-        };
-        let (read_tx, _) = async_channel::bounded(1);
-        let addr = SocketAddr::from(([127, 0, 0, 1], 34567));
-        let (id, _closed) = register_active(
-            owner,
-            SocketKind::TcpListener,
-            None,
-            Some(addr),
-            Some(read_tx),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(same_owner_loopback_listener(
-            owner,
-            addr,
-            SocketKind::TcpListener
-        ));
-        assert!(!same_owner_loopback_listener(
-            foreign,
-            addr,
-            SocketKind::TcpListener
-        ));
-        remove_active(&id, owner);
-        assert!(!same_owner_loopback_listener(
-            owner,
-            addr,
-            SocketKind::TcpListener
-        ));
-    }
-
-    #[test]
     fn closing_listener_revokes_attached_handles_and_wakes_both_pumps() {
         let owner = Owner {
             window_id: 1,
@@ -2368,7 +2121,6 @@ mod tests {
             owner,
             SocketKind::TcpListener,
             None,
-            Some(SocketAddr::from(([127, 0, 0, 1], 34568))),
             Some(listener_control),
             None,
             None,
@@ -2383,7 +2135,6 @@ mod tests {
             owner,
             SocketKind::Tcp,
             Some(listener_id.clone()),
-            Some(SocketAddr::from(([127, 0, 0, 1], 34568))),
             Some(read_tx),
             Some(write_tx),
             None,
@@ -2400,100 +2151,45 @@ mod tests {
     }
 
     #[test]
-    fn guarded_loopback_exceptions_are_exact_and_owner_scoped() {
-        let owner = Owner {
-            window_id: 2,
-            connection_id: 20,
-        };
-        let foreign = Owner {
-            window_id: 2,
-            connection_id: 21,
-        };
-        let niva_port = 29123;
-        assert!(guarded_address_allowed(
-            "http",
-            "127.0.0.1",
-            niva_port,
-            SocketAddr::from(([127, 0, 0, 1], niva_port)),
-            niva_port,
-            owner,
-            SocketKind::TcpListener,
-        ));
-        assert!(!guarded_address_allowed(
-            "https",
-            "127.0.0.1",
-            niva_port,
-            SocketAddr::from(([127, 0, 0, 1], niva_port)),
-            niva_port,
-            owner,
-            SocketKind::TcpListener,
-        ));
-
-        let addr = SocketAddr::from(([127, 0, 0, 1], 34569));
-        let (read_tx, _) = async_channel::bounded(1);
-        let (id, _) = register_active(
-            owner,
-            SocketKind::TcpListener,
-            None,
-            Some(addr),
-            Some(read_tx),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(guarded_address_allowed(
-            "http",
-            "127.0.0.1",
-            addr.port(),
-            addr,
-            niva_port,
-            owner,
-            SocketKind::TcpListener,
-        ));
-        assert!(!guarded_address_allowed(
-            "http",
-            "127.0.0.1",
-            addr.port(),
-            addr,
-            niva_port,
-            foreign,
-            SocketKind::TcpListener,
-        ));
-        remove_active(&id, owner);
-
-        let tls_addr = SocketAddr::from(([127, 0, 0, 1], 34570));
-        let (read_tx, _) = async_channel::bounded(1);
-        let (tls_id, _) = register_active(
-            owner,
-            SocketKind::TlsListener,
-            None,
-            Some(tls_addr),
-            Some(read_tx),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(guarded_address_allowed(
-            "https",
-            "127.0.0.1",
-            tls_addr.port(),
-            tls_addr,
-            niva_port,
-            owner,
-            SocketKind::TlsListener,
-        ));
-        assert!(!guarded_address_allowed(
-            "https",
-            "127.0.0.1",
-            tls_addr.port(),
-            tls_addr,
-            niva_port,
-            foreign,
-            SocketKind::TlsListener,
-        ));
-        remove_active(&tls_id, owner);
+    fn dropping_handler_future_releases_udp_registry_and_port() {
+        smol::block_on(async {
+            let owner = Owner {
+                window_id: 239,
+                connection_id: 991_001,
+            };
+            let sibling = Owner {
+                window_id: 239,
+                connection_id: 991_002,
+            };
+            let (sibling_id, _) =
+                register_active(sibling, SocketKind::Tcp, None, None, None, None, None).unwrap();
+            let sibling_guard = ActiveRegistration::new(&sibling_id, sibling);
+            let socket = Arc::new(smol::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
+            let address = socket.local_addr().unwrap();
+            let (id, closed) =
+                register_active(owner, SocketKind::Udp, None, None, None, Some(socket), None)
+                    .unwrap();
+            let (started_tx, started_rx) = async_channel::bounded(1);
+            let captured_id = id.clone();
+            smol::future::or(
+                async move {
+                    let _registration = ActiveRegistration::new(&captured_id, owner);
+                    started_tx.send(()).await.unwrap();
+                    std::future::pending::<()>().await;
+                },
+                async {
+                    started_rx.recv().await.unwrap();
+                },
+            )
+            .await;
+            assert!(closed.is_closed());
+            assert!(active_handle(&id, owner).is_err());
+            assert!(active_handle(&sibling_id, sibling).is_ok());
+            let rebound =
+                std::net::UdpSocket::bind(address).expect("cancelled UDP port remains occupied");
+            drop(rebound);
+            drop(sibling_guard);
+        });
     }
 
     #[test]

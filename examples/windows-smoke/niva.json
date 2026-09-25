@@ -1,7 +1,8 @@
 {
   "name": "windows-smoke",
   "uuid": "5bb7d071-600d-492b-8a50-d7740cb841c5",
-  "nodeCompat": { "modules": ["path", "fs", "assert", "stream", "url"], "importmap": true },
+  "injectCommonJs": true,
+  "injectEsm": true,
   "window": {
     "entry": "index.html",
     "title": "Niva Windows smoke",

@@ -17,16 +17,14 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-foreach ($name in @('niva.json', 'niva-csp.json', 'index.html', 'iframe.html', 'cross.html', 'child.html', 'csp.html', 'csp.js', 'probe.txt')) {
+foreach ($name in @('niva.json', 'niva-csp.json', 'index.html', 'iframe.html', 'cross.html', 'child.html', 'csp.html', 'csp.js', 'fixture-protocol.js', 'probe.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage $name) -Force
 }
-Copy-Item -LiteralPath (Join-Path $repo 'packages\devtools\build\__niva_compat') -Destination $stage -Recurse -Force
 
 New-Item -ItemType Directory -Path $cspStage -Force | Out-Null
-foreach ($name in @('csp.html', 'csp.js', 'probe.txt')) {
+foreach ($name in @('csp.html', 'csp.js', 'fixture-protocol.js', 'probe.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $cspStage $name) -Force
 }
-Copy-Item -LiteralPath (Join-Path $repo 'packages\devtools\build\__niva_compat') -Destination $cspStage -Recurse -Force
 
 & (Join-Path $repo 'target\release\win_packager.exe') `
     --exe (Join-Path $repo 'target\release\niva.exe') `
@@ -38,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 New-Item -ItemType Directory -Path $streamStage -Force | Out-Null
-foreach ($name in @('stream.html', 'stream.js')) {
+foreach ($name in @('stream.html', 'stream.js', 'fixture-protocol.js')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $streamStage $name) -Force
 }
 [System.IO.File]::WriteAllText((Join-Path $streamStage 'large.txt'), ('R' * 150000), [System.Text.UTF8Encoding]::new($false))
@@ -64,7 +62,7 @@ if ($Interactive) { $runArgs += '--ui' }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 New-Item -ItemType Directory -Path $apiStage -Force | Out-Null
-foreach ($name in @('api-safe.html', 'api-safe.js', 'api-child.html', 'probe.txt')) {
+foreach ($name in @('api-safe.html', 'api-safe.js', 'api-child.html', 'fixture-protocol.js', 'probe.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $apiStage $name) -Force
 }
 Copy-Item -LiteralPath (Join-Path $repo 'packages\devtools\public\icon.png') -Destination (Join-Path $apiStage 'icon.png') -Force

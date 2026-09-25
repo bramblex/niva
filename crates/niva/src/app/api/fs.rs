@@ -3,16 +3,23 @@ use glob::Pattern;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use std::{path::Path, time::UNIX_EPOCH};
+use std::{
+    fs::{self, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    path::Path,
+    time::UNIX_EPOCH,
+};
 
 use crate::app::NivaApp;
-use crate::app::api_manager::{ApiManager, ApiRequest, CallContext};
+use crate::app::api_manager::{
+    ApiCallOwner, ApiManager, ApiRequest, CallContext, CancellationContext, IpcCallContext,
+};
 use crate::app::window_manager::window::NivaWindow;
 use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_blocking_api("fs.stat", stat);
-    api_manager.register_blocking_api("fs.node", node_operation);
+    api_manager.register_cancellable_api("fs.node", node_operation);
     api_manager.register_stream_api_with("fs.openHandle", Some(None), node_open_handle);
     api_manager.register_stream_api("fs.handle", node_handle_operation);
     api_manager.register_stream_api_with("fs.watch", Some(None), node_watch);
@@ -26,6 +33,265 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_blocking_api("fs.createDirAll", create_dir_all);
     api_manager.register_blocking_api("fs.readDir", read_dir);
     api_manager.register_blocking_api("fs.readDirAll", read_dir_all);
+    api_manager.register_ipc_api("fs.readText", ipc_read_text);
+    api_manager.register_ipc_api("fs.writeText", ipc_write_text);
+    api_manager.register_ipc_api("fs.appendText", ipc_append_text);
+    api_manager.register_ipc_api("fs.node", ipc_node_operation);
+}
+
+const MAX_IPC_TEXT_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_IPC_TEXT_INPUT_BYTES: usize = 256 * 1024;
+const MAX_IPC_READ_DIR_ENTRIES: usize = 512;
+
+const IPC_NODE_OPERATIONS: &[&str] = &[
+    "stat", "lstat", "readdir", "access", "realpath", "mkdir", "rename", "copyFile", "rm",
+    "unlink", "cp",
+];
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IpcTextFileOptions {
+    flag: Option<String>,
+    mode: Option<u32>,
+}
+
+async fn ipc_read_text(ctx: IpcCallContext, request: ApiRequest) -> Result<String> {
+    let (path, encoding, options): (String, Option<String>, Option<IpcTextFileOptions>) =
+        request.args().optional(3)?;
+    validate_ipc_text_encoding(encoding.as_deref())?;
+    if let Some(options) = options {
+        anyhow::ensure!(
+            options
+                .flag
+                .as_deref()
+                .is_none_or(|flag| matches!(flag, "r" | "rs")),
+            "ENOTSUP: IPC text reads support only the read flag"
+        );
+    }
+    crate::blocking!({
+        anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: IPC request cancelled");
+        read_ipc_text_file(Path::new(&path))
+    })
+    .await
+}
+
+async fn ipc_write_text(ctx: IpcCallContext, request: ApiRequest) -> Result<()> {
+    ipc_write_text_inner(ctx, request, false).await
+}
+
+async fn ipc_append_text(ctx: IpcCallContext, request: ApiRequest) -> Result<()> {
+    ipc_write_text_inner(ctx, request, true).await
+}
+
+async fn ipc_write_text_inner(
+    ctx: IpcCallContext,
+    request: ApiRequest,
+    append: bool,
+) -> Result<()> {
+    let (path, text, encoding, options): (
+        String,
+        String,
+        Option<String>,
+        Option<IpcTextFileOptions>,
+    ) = request.args().optional(4)?;
+    validate_ipc_text_encoding(encoding.as_deref())?;
+    anyhow::ensure!(
+        text.len() <= MAX_IPC_TEXT_INPUT_BYTES,
+        "EFBIG: IPC text input exceeds 256 KiB"
+    );
+    let options = options.unwrap_or_default();
+    let flag = options
+        .flag
+        .as_deref()
+        .unwrap_or(if append { "a" } else { "w" });
+    anyhow::ensure!(
+        if append {
+            matches!(flag, "a" | "ax")
+        } else {
+            matches!(flag, "w" | "wx")
+        },
+        "ENOTSUP: unsupported IPC text file flag"
+    );
+    let exclusive = flag.ends_with('x');
+    let mode = options.mode.unwrap_or(0o666);
+    anyhow::ensure!(mode <= 0o777, "EINVAL: invalid file mode");
+    crate::blocking!({
+        anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: IPC request cancelled");
+        write_ipc_text_file(Path::new(&path), text.as_bytes(), append, exclusive, mode)
+    })
+    .await
+}
+
+fn validate_ipc_text_encoding(encoding: Option<&str>) -> Result<()> {
+    anyhow::ensure!(
+        encoding.is_none_or(|encoding| matches!(
+            encoding.to_ascii_lowercase().as_str(),
+            "utf8" | "utf-8"
+        )),
+        "ERR_ENCODING_NOT_SUPPORTED: IPC text APIs support UTF-8 only"
+    );
+    Ok(())
+}
+
+fn read_ipc_text_file(path: &Path) -> Result<String> {
+    let bytes = read_ipc_regular_file(path, MAX_IPC_TEXT_FILE_BYTES)?;
+    String::from_utf8(bytes)
+        .map_err(|_| anyhow::anyhow!("ERR_INVALID_ENCODING: file does not contain valid UTF-8"))
+}
+
+fn read_ipc_regular_file(path: &Path, limit: u64) -> Result<Vec<u8>> {
+    ensure_not_windows_device_path(path)?;
+    let before = fs::metadata(path)?;
+    anyhow::ensure!(before.is_file(), "EINVAL: IPC file must be a regular file");
+    anyhow::ensure!(
+        before.len() <= limit,
+        "EFBIG: IPC file exceeds the 1 MiB limit"
+    );
+    let mut options = OpenOptions::new();
+    options.read(true);
+    set_nonblocking_open(&mut options);
+    let mut file = options.open(path)?;
+    let opened_before = file.metadata()?;
+    anyhow::ensure!(
+        opened_before.is_file() && opened_before.len() <= limit,
+        "EINVAL: IPC file changed to a non-regular or oversized file"
+    );
+    let mut bytes = Vec::with_capacity(opened_before.len() as usize);
+    Read::take(&mut file, limit.saturating_add(1)).read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= limit,
+        "EFBIG: IPC file exceeds the limit"
+    );
+    ensure_same_open_file_size(&opened_before, &file.metadata()?)?;
+    Ok(bytes)
+}
+
+fn write_ipc_text_file(
+    path: &Path,
+    bytes: &[u8],
+    append: bool,
+    exclusive: bool,
+    mode: u32,
+) -> Result<()> {
+    ensure_not_windows_device_path(path)?;
+    if path.exists() {
+        let before = fs::metadata(path)?;
+        anyhow::ensure!(before.is_file(), "EINVAL: IPC file must be a regular file");
+    }
+    let mut options = OpenOptions::new();
+    options.write(true).append(append);
+    if append {
+        options.create(!exclusive);
+        if exclusive {
+            options.create_new(true);
+        }
+    } else if exclusive {
+        options.create_new(true);
+    } else {
+        options.create(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    set_nonblocking_open(&mut options);
+    let mut file = options.open(path)?;
+    let opened = file.metadata()?;
+    anyhow::ensure!(
+        opened.is_file(),
+        "EINVAL: IPC file changed to a non-regular file"
+    );
+    if append {
+        anyhow::ensure!(
+            opened.len().saturating_add(bytes.len() as u64) <= MAX_IPC_TEXT_FILE_BYTES,
+            "EFBIG: IPC text file would exceed the 1 MiB limit"
+        );
+    } else {
+        anyhow::ensure!(
+            bytes.len() as u64 <= MAX_IPC_TEXT_FILE_BYTES,
+            "EFBIG: IPC text file exceeds the 1 MiB limit"
+        );
+    }
+    if !append {
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+    }
+    file.write_all(bytes)?;
+    file.flush()?;
+    Ok(())
+}
+
+fn ensure_same_open_file_size(before: &std::fs::Metadata, after: &std::fs::Metadata) -> Result<()> {
+    anyhow::ensure!(
+        before.len() == after.len() && before.modified().ok() == after.modified().ok(),
+        "EAGAIN: IPC file changed while reading"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_nonblocking_open(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.custom_flags(libc::O_NONBLOCK);
+}
+
+#[cfg(not(unix))]
+fn set_nonblocking_open(_options: &mut OpenOptions) {}
+
+#[cfg(windows)]
+fn ensure_not_windows_device_path(path: &Path) -> Result<()> {
+    let path = path.to_string_lossy().to_ascii_lowercase();
+    anyhow::ensure!(
+        !path.starts_with("\\\\.\\")
+            && !path.starts_with("\\\\?\\globalroot\\")
+            && !path.starts_with("\\\\?\\pipe\\"),
+        "EINVAL: IPC text APIs do not open device paths"
+    );
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn ensure_not_windows_device_path(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+async fn ipc_node_operation(ctx: IpcCallContext, request: ApiRequest) -> Result<Value> {
+    let (operation, arguments): (String, Value) = request.args().get()?;
+    anyhow::ensure!(
+        IPC_NODE_OPERATIONS.contains(&operation.as_str()),
+        "ENOTSUP: filesystem operation is unavailable over IPC"
+    );
+    if operation == "readdir" {
+        let path = arguments["path"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("path must be a string"))?
+            .to_owned();
+        return crate::blocking!({
+            anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: IPC request cancelled");
+            read_ipc_directory(Path::new(&path))
+        })
+        .await;
+    }
+    crate::blocking!({
+        anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: IPC request cancelled");
+        node_fs_operation(&operation, &arguments)
+    })
+    .await
+}
+
+fn read_ipc_directory(path: &Path) -> Result<Value> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        if entries.len() == MAX_IPC_READ_DIR_ENTRIES {
+            anyhow::bail!("EFBIG: IPC directory exceeds 512 entries");
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let metadata = fs::symlink_metadata(entry.path())?;
+        entries.push(json!({"name":name,"stats":node_stat(&metadata)}));
+    }
+    Ok(json!(entries))
 }
 
 fn stat(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, request: ApiRequest) -> Result<Value> {
@@ -324,13 +590,289 @@ fn write_file_chunks(
 
 // Buffered JSON operations serve both WS unary calls and synchronous XHR.
 // Streams remain binary WS calls. Byte results use base64 to avoid UTF-8 loss.
-fn node_operation(
+async fn node_operation(
+    context: CancellationContext,
     _app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
     request: ApiRequest,
 ) -> Result<Value> {
     let (operation, arguments): (String, Value) = request.args().get()?;
-    node_fs_operation(&operation, &arguments)
+    if SYNC_FD_OPERATIONS.contains(&operation.as_str()) {
+        let owner = sync_fd_owner(&context)?;
+        let cancellation = context.clone();
+        return crate::blocking!({
+            sync_fd_operation(&owner, &operation, &arguments, move || {
+                cancellation.is_cancelled()
+            })
+        })
+        .await;
+    }
+    let cancellation = context.clone();
+    crate::blocking!({
+        anyhow::ensure!(
+            !cancellation.is_cancelled(),
+            "ECANCELED: file operation cancelled"
+        );
+        node_fs_operation(&operation, &arguments)
+    })
+    .await
+}
+
+const MAX_SYNC_FDS_PER_SESSION: usize = 256;
+const MAX_SYNC_FDS_GLOBAL: usize = 4096;
+const MAX_SYNC_FD_IO_BYTES: usize = 8 * 1024 * 1024;
+const SYNC_FD_OPERATIONS: &[&str] = &["open", "read", "write", "fstat", "close"];
+type SyncFdOwner = (u8, String);
+type SyncFdFiles = std::collections::HashMap<i32, Arc<std::sync::Mutex<std::fs::File>>>;
+#[derive(Default)]
+struct SyncFdSession {
+    files: SyncFdFiles,
+    reserved: std::collections::HashSet<i32>,
+}
+type SyncFdSessions = std::collections::HashMap<SyncFdOwner, SyncFdSession>;
+
+fn sync_fd_sessions() -> &'static std::sync::Mutex<SyncFdSessions> {
+    static SESSIONS: std::sync::OnceLock<std::sync::Mutex<SyncFdSessions>> =
+        std::sync::OnceLock::new();
+    SESSIONS.get_or_init(|| std::sync::Mutex::new(SyncFdSessions::new()))
+}
+
+fn sync_fd_owner(context: &CancellationContext) -> Result<SyncFdOwner> {
+    match &context.owner {
+        ApiCallOwner::Synchronous { session_id } => Ok((context.window_id, session_id.clone())),
+        _ => anyhow::bail!("ENOTSUP: synchronous file descriptors require trusted sync XHR"),
+    }
+}
+
+pub(crate) fn cancel_sync_fd_session(window_id: u8, session_id: &str) {
+    if let Ok(mut sessions) = sync_fd_sessions().lock() {
+        sessions.remove(&(window_id, session_id.to_owned()));
+    }
+}
+
+pub(crate) fn cancel_sync_fd_window(window_id: u8) {
+    if let Ok(mut sessions) = sync_fd_sessions().lock() {
+        sessions.retain(|(owner_window, _), _| *owner_window != window_id);
+    }
+}
+
+struct SyncFdReservation {
+    owner: SyncFdOwner,
+    fd: i32,
+    committed: bool,
+}
+
+impl SyncFdReservation {
+    fn reserve(owner: &SyncFdOwner) -> Result<Self> {
+        let mut sessions = sync_fd_sessions()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("synchronous file descriptor registry poisoned"))?;
+        let total_open = sessions
+            .values()
+            .map(|session| session.files.len() + session.reserved.len())
+            .sum::<usize>();
+        anyhow::ensure!(
+            total_open < MAX_SYNC_FDS_GLOBAL,
+            "EMFILE: too many synchronous file descriptors across all sessions"
+        );
+        let session = sessions.entry(owner.clone()).or_default();
+        anyhow::ensure!(
+            session.files.len() + session.reserved.len() < MAX_SYNC_FDS_PER_SESSION,
+            "EMFILE: too many synchronous file descriptors"
+        );
+        let fd = (3..=i32::MAX)
+            .find(|fd| !session.files.contains_key(fd) && !session.reserved.contains(fd))
+            .ok_or_else(|| anyhow::anyhow!("EMFILE: logical file descriptor space exhausted"))?;
+        session.reserved.insert(fd);
+        Ok(Self {
+            owner: owner.clone(),
+            fd,
+            committed: false,
+        })
+    }
+
+    fn commit(mut self, file: std::fs::File, is_cancelled: impl Fn() -> bool) -> Result<Value> {
+        anyhow::ensure!(
+            !is_cancelled(),
+            "ECANCELED: file descriptor open was cancelled"
+        );
+        let mut sessions = sync_fd_sessions()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("synchronous file descriptor registry poisoned"))?;
+        anyhow::ensure!(
+            !is_cancelled(),
+            "ECANCELED: file descriptor open was cancelled"
+        );
+        let session = sessions.get_mut(&self.owner).ok_or_else(|| {
+            anyhow::anyhow!("ECANCELED: file descriptor owner session was closed")
+        })?;
+        anyhow::ensure!(
+            session.reserved.remove(&self.fd),
+            "ECANCELED: file descriptor reservation was cancelled"
+        );
+        session
+            .files
+            .insert(self.fd, Arc::new(std::sync::Mutex::new(file)));
+        self.committed = true;
+        Ok(json!(self.fd))
+    }
+}
+
+impl Drop for SyncFdReservation {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        if let Ok(mut sessions) = sync_fd_sessions().lock() {
+            if let Some(session) = sessions.get_mut(&self.owner) {
+                session.reserved.remove(&self.fd);
+                if session.files.is_empty() && session.reserved.is_empty() {
+                    sessions.remove(&self.owner);
+                }
+            }
+        }
+    }
+}
+
+fn sync_fd_operation(
+    owner: &SyncFdOwner,
+    operation: &str,
+    args: &Value,
+    is_cancelled: impl Fn() -> bool,
+) -> Result<Value> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    match operation {
+        "open" => {
+            anyhow::ensure!(
+                !is_cancelled(),
+                "ECANCELED: file descriptor open was cancelled"
+            );
+            let path = args["path"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("path must be a string"))?;
+            let flag = args["flag"].as_str().unwrap_or("r");
+            let mode = args["mode"].as_u64().unwrap_or(0o666) as u32;
+            // Reserve both the quota and a logical descriptor before opening
+            // the path so an EMFILE failure cannot truncate a "w" target.
+            let reservation = SyncFdReservation::reserve(owner)?;
+            anyhow::ensure!(
+                !is_cancelled(),
+                "ECANCELED: file descriptor open was cancelled"
+            );
+            let file = node_open_sync_fd(Path::new(path), flag, mode)?;
+            reservation.commit(file, is_cancelled)
+        }
+        "close" => {
+            let fd = sync_fd_argument(args)?;
+            let mut sessions = sync_fd_sessions()
+                .lock()
+                .map_err(|_| anyhow::anyhow!("synchronous file descriptor registry poisoned"))?;
+            let session = sessions.get_mut(owner).ok_or_else(|| {
+                anyhow::anyhow!("EBADF: file descriptor is not owned by this session")
+            })?;
+            session
+                .files
+                .remove(&fd)
+                .ok_or_else(|| anyhow::anyhow!("EBADF: invalid file descriptor"))?;
+            if session.files.is_empty() && session.reserved.is_empty() {
+                sessions.remove(owner);
+            }
+            Ok(Value::Null)
+        }
+        "read" | "write" | "fstat" => {
+            let fd = sync_fd_argument(args)?;
+            let handle = {
+                let sessions = sync_fd_sessions().lock().map_err(|_| {
+                    anyhow::anyhow!("synchronous file descriptor registry poisoned")
+                })?;
+                sessions
+                    .get(owner)
+                    .and_then(|session| session.files.get(&fd))
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("EBADF: invalid file descriptor"))?
+            };
+            anyhow::ensure!(
+                !is_cancelled(),
+                "ECANCELED: file descriptor operation was cancelled"
+            );
+            let mut file = handle
+                .lock()
+                .map_err(|_| anyhow::anyhow!("synchronous file descriptor is busy"))?;
+            match operation {
+                "fstat" => Ok(node_stat(&file.metadata()?)),
+                "write" => {
+                    let bytes = STANDARD.decode(
+                        args["data"]
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("missing base64 data"))?,
+                    )?;
+                    anyhow::ensure!(
+                        bytes.len() <= MAX_SYNC_FD_IO_BYTES,
+                        "EFBIG: synchronous write exceeds the 8 MiB limit"
+                    );
+                    let restore = explicit_file_position(args)?
+                        .map(|position| -> Result<u64> {
+                            let current = file.stream_position()?;
+                            file.seek(SeekFrom::Start(position))?;
+                            Ok(current)
+                        })
+                        .transpose()?;
+                    let written = file.write(&bytes)?;
+                    if let Some(position) = restore {
+                        file.seek(SeekFrom::Start(position))?;
+                    }
+                    Ok(json!({"bytesWritten":written}))
+                }
+                "read" => {
+                    let length = args["length"].as_u64().unwrap_or(0);
+                    anyhow::ensure!(
+                        length <= MAX_SYNC_FD_IO_BYTES as u64,
+                        "EFBIG: synchronous read exceeds the 8 MiB limit"
+                    );
+                    let restore = explicit_file_position(args)?
+                        .map(|position| -> Result<u64> {
+                            let current = file.stream_position()?;
+                            file.seek(SeekFrom::Start(position))?;
+                            Ok(current)
+                        })
+                        .transpose()?;
+                    let mut bytes = vec![0; length as usize];
+                    let read = file.read(&mut bytes)?;
+                    bytes.truncate(read);
+                    if let Some(position) = restore {
+                        file.seek(SeekFrom::Start(position))?;
+                    }
+                    Ok(json!({"bytesRead":read,"data":STANDARD.encode(bytes)}))
+                }
+                _ => unreachable!("operation was checked above"),
+            }
+        }
+        _ => anyhow::bail!("ENOTSUP: synchronous file descriptor operation is unavailable"),
+    }
+}
+
+fn sync_fd_argument(args: &Value) -> Result<i32> {
+    let fd = args["fd"]
+        .as_i64()
+        .ok_or_else(|| anyhow::anyhow!("fd must be a non-negative integer"))?;
+    anyhow::ensure!(
+        (3..=i32::MAX as i64).contains(&fd),
+        "EBADF: invalid file descriptor"
+    );
+    Ok(fd as i32)
+}
+
+fn explicit_file_position(args: &Value) -> Result<Option<u64>> {
+    match args.get("position") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(position)) => position
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("EINVAL: file position must be a non-negative integer")),
+        Some(_) => anyhow::bail!("EINVAL: invalid file position"),
+    }
 }
 
 fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
@@ -409,6 +951,29 @@ fn node_fs_operation(operation: &str, args: &Value) -> Result<Value> {
             output.seek(std::io::SeekFrom::Start(0))?;
             std::io::copy(&mut input, &mut output)?;
             output.set_permissions(input_metadata.permissions())?;
+            Ok(Value::Null)
+        }
+        "cp" => {
+            let destination = node_destination(args)?;
+            let metadata = std::fs::symlink_metadata(path)?;
+            let force = args["force"].as_bool().unwrap_or(true);
+            let error_on_exist = args["errorOnExist"].as_bool().unwrap_or(false);
+            let options = crate::app::fs_ops::CopyOptions {
+                overwrite: force && !error_on_exist,
+                skip_exist: !force,
+                copy_inside: true,
+                content_only: true,
+                ..Default::default()
+            };
+            if metadata.is_dir() {
+                anyhow::ensure!(
+                    args["recursive"].as_bool().unwrap_or(false),
+                    "ERR_FS_EISDIR: recursive copy required"
+                );
+                crate::app::fs_ops::copy_dir(path, destination, &options)?;
+            } else {
+                crate::app::fs_ops::copy_file(path, destination, &options)?;
+            }
             Ok(Value::Null)
         }
         "mkdir" => {
@@ -497,6 +1062,25 @@ fn node_destination(args: &Value) -> Result<&Path> {
 }
 
 fn node_open(path: &Path, flag: &str, mode: u32) -> Result<std::fs::File> {
+    node_open_with_options(path, flag, mode, false)
+}
+
+fn node_open_sync_fd(path: &Path, flag: &str, mode: u32) -> Result<std::fs::File> {
+    ensure_not_windows_device_path(path)?;
+    let file = node_open_with_options(path, flag, mode, true)?;
+    anyhow::ensure!(
+        file.metadata()?.is_file(),
+        "EINVAL: sync file descriptors require regular files"
+    );
+    Ok(file)
+}
+
+fn node_open_with_options(
+    path: &Path,
+    flag: &str,
+    mode: u32,
+    nonblocking: bool,
+) -> Result<std::fs::File> {
     let mut options = std::fs::OpenOptions::new();
     match flag {
         "r" | "rs" => {
@@ -527,9 +1111,12 @@ fn node_open(path: &Path, flag: &str, mode: u32) -> Result<std::fs::File> {
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(mode);
+        if nonblocking {
+            options.custom_flags(libc::O_NONBLOCK);
+        }
     }
     #[cfg(not(unix))]
-    let _ = mode;
+    let _ = (mode, nonblocking);
     Ok(options.open(path)?)
 }
 
@@ -874,6 +1461,382 @@ mod tests {
             data: data.to_vec(),
             end,
         }
+    }
+
+    #[test]
+    fn ipc_text_files_enforce_utf8_and_total_append_size() {
+        let temp = TestDir::new();
+        let path = temp.path().join("text.txt");
+        write_ipc_text_file(&path, "中文".as_bytes(), false, false, 0o600).unwrap();
+        write_ipc_text_file(&path, "追加".as_bytes(), true, false, 0o600).unwrap();
+        assert_eq!(read_ipc_text_file(&path).unwrap(), "中文追加");
+
+        std::fs::write(&path, vec![b'x'; MAX_IPC_TEXT_FILE_BYTES as usize]).unwrap();
+        let error = write_ipc_text_file(&path, b"y", true, false, 0o600).unwrap_err();
+        assert!(error.to_string().contains("EFBIG"));
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            MAX_IPC_TEXT_FILE_BYTES
+        );
+
+        std::fs::write(&path, [0xff]).unwrap();
+        assert!(
+            read_ipc_text_file(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("ERR_INVALID_ENCODING")
+        );
+    }
+
+    #[test]
+    fn ipc_fs_operation_manifest_covers_the_intended_metadata_surface_only() {
+        for operation in [
+            "stat", "lstat", "readdir", "access", "realpath", "mkdir", "rename", "copyFile", "rm",
+            "unlink", "cp",
+        ] {
+            assert!(IPC_NODE_OPERATIONS.contains(&operation), "{operation}");
+        }
+        for operation in [
+            "readFile",
+            "writeFile",
+            "appendFile",
+            "open",
+            "read",
+            "write",
+            "fstat",
+            "close",
+            "watch",
+        ] {
+            assert!(!IPC_NODE_OPERATIONS.contains(&operation), "{operation}");
+        }
+    }
+
+    #[test]
+    fn synchronous_logical_file_descriptors_are_session_owned_and_preserve_offsets() {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-fd.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (250, format!("fd-owner-{}-{suffix}", std::process::id()));
+        let other_session = (
+            250,
+            format!("fd-other-session-{}-{suffix}", std::process::id()),
+        );
+        let other_window = (251, owner.1.clone());
+        let fd = sync_fd_operation(
+            &owner,
+            "open",
+            &json!({"path":path,"flag":"w+","mode":384}),
+            || false,
+        )
+        .unwrap()
+        .as_i64()
+        .unwrap() as i32;
+
+        assert_eq!(
+            sync_fd_operation(
+                &owner,
+                "write",
+                &json!({"fd":fd,"data":STANDARD.encode(b"hello"),"position":null}),
+                || false,
+            )
+            .unwrap()["bytesWritten"],
+            5
+        );
+        assert_eq!(
+            sync_fd_operation(
+                &owner,
+                "write",
+                &json!({"fd":fd,"data":STANDARD.encode(b"X"),"position":1}),
+                || false,
+            )
+            .unwrap()["bytesWritten"],
+            1
+        );
+        let read = sync_fd_operation(
+            &owner,
+            "read",
+            &json!({"fd":fd,"length":5,"position":0}),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(
+            STANDARD.decode(read["data"].as_str().unwrap()).unwrap(),
+            b"hXllo"
+        );
+        let stats = sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).unwrap();
+        assert_eq!(stats["isFile"], true);
+        assert_eq!(stats["size"], 5);
+        assert!(sync_fd_operation(&other_session, "fstat", &json!({"fd":fd}), || false).is_err());
+        assert!(sync_fd_operation(&other_window, "fstat", &json!({"fd":fd}), || false).is_err());
+
+        sync_fd_operation(&owner, "close", &json!({"fd":fd}), || false).unwrap();
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+        let reused = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"r"}), || false)
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert_eq!(reused, fd as i64);
+        cancel_sync_fd_session(owner.0, &owner.1);
+        assert!(!sync_fd_sessions().lock().unwrap().contains_key(&owner));
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":reused}), || false).is_err());
+    }
+
+    #[test]
+    fn synchronous_file_descriptor_session_cleanup_is_window_scoped() {
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-fd-window.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (248, format!("fd-window-owner-{suffix}"));
+        let sibling_window = (247, owner.1.clone());
+        let fd = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"w"}), || false)
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        let sibling_fd = sync_fd_operation(
+            &sibling_window,
+            "open",
+            &json!({"path":path,"flag":"r"}),
+            || false,
+        )
+        .unwrap()
+        .as_i64()
+        .unwrap();
+        cancel_sync_fd_window(owner.0);
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+        assert!(
+            sync_fd_operation(&sibling_window, "fstat", &json!({"fd":sibling_fd}), || {
+                false
+            })
+            .is_ok()
+        );
+        cancel_sync_fd_window(sibling_window.0);
+    }
+
+    #[test]
+    fn cancelled_sync_open_does_not_leave_a_registered_descriptor() {
+        let temp = TestDir::new();
+        let path = temp.path().join("cancelled-open.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (246, format!("fd-cancelled-open-{suffix}"));
+        let checks = std::cell::Cell::new(0);
+        let result = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"w"}), || {
+            let current = checks.get() + 1;
+            checks.set(current);
+            current >= 3
+        });
+        assert!(result.unwrap_err().to_string().contains("ECANCELED"));
+        assert!(!sync_fd_sessions().lock().unwrap().contains_key(&owner));
+    }
+
+    #[test]
+    fn synchronous_file_descriptors_are_scoped_to_window_and_session() {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-fd.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (250, format!("fd-owner-{}-{suffix}", std::process::id()));
+        let sibling = (250, format!("fd-sibling-{}-{suffix}", std::process::id()));
+        let fd = sync_fd_operation(
+            &owner,
+            "open",
+            &json!({"path":path,"flag":"w+","mode":384}),
+            || false,
+        )
+        .unwrap()
+        .as_i64()
+        .unwrap() as i32;
+
+        assert_eq!(
+            sync_fd_operation(
+                &owner,
+                "write",
+                &json!({"fd":fd,"data":STANDARD.encode(b"hello"),"position":null}),
+                || false,
+            )
+            .unwrap()["bytesWritten"],
+            5
+        );
+        let stats = sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).unwrap();
+        assert_eq!(stats["isFile"], true);
+        assert_eq!(stats["size"], 5);
+        let read = sync_fd_operation(
+            &owner,
+            "read",
+            &json!({"fd":fd,"length":5,"position":0}),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(
+            STANDARD.decode(read["data"].as_str().unwrap()).unwrap(),
+            b"hello"
+        );
+
+        let wrong_owner =
+            sync_fd_operation(&sibling, "fstat", &json!({"fd":fd}), || false).unwrap_err();
+        assert!(wrong_owner.to_string().contains("EBADF"));
+        sync_fd_operation(&owner, "close", &json!({"fd":fd}), || false).unwrap();
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+    }
+
+    #[test]
+    fn synchronous_session_cleanup_closes_all_owned_file_descriptors() {
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-fd-cleanup.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (249, format!("fd-cleanup-{}-{suffix}", std::process::id()));
+        let fd = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"w"}), || false)
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        cancel_sync_fd_session(owner.0, &owner.1);
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+    }
+
+    #[test]
+    fn ipc_fs_directory_workflow_creates_renames_copies_lists_and_removes() {
+        let temp = TestDir::new();
+        let root = temp.path().join("workflow");
+        let nested = root.join("nested");
+        node_fs_operation("mkdir", &json!({"path":nested,"recursive":true})).unwrap();
+        let original = nested.join("original.txt");
+        write_ipc_text_file(&original, b"workflow", false, false, 0o600).unwrap();
+        let renamed = nested.join("renamed.txt");
+        node_fs_operation("rename", &json!({"path":original,"destination":renamed})).unwrap();
+        let copied = nested.join("copied.txt");
+        node_fs_operation(
+            "copyFile",
+            &json!({"path":renamed,"destination":copied,"flags":0}),
+        )
+        .unwrap();
+        let entries = read_ipc_directory(&nested).unwrap();
+        let names = entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["name"].as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert!(names.contains("renamed.txt"));
+        assert!(names.contains("copied.txt"));
+        assert!(!names.contains("original.txt"));
+
+        let copy = root.join("copy");
+        node_fs_operation(
+            "cp",
+            &json!({"path":nested,"destination":copy,"recursive":true}),
+        )
+        .unwrap();
+        assert_eq!(
+            read_ipc_text_file(&copy.join("renamed.txt")).unwrap(),
+            "workflow"
+        );
+        node_fs_operation("rm", &json!({"path":root,"recursive":true})).unwrap();
+        assert!(!root.exists());
+    }
+
+    #[test]
+    fn synchronous_logical_file_descriptors_preserve_position_and_scope() {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-descriptor.txt");
+        let owner = (250, "sync-fd-owner-a".to_owned());
+        let other_session = (250, "sync-fd-owner-b".to_owned());
+        let other_window = (251, owner.1.clone());
+        let fd = sync_fd_operation(
+            &owner,
+            "open",
+            &json!({"path":path,"flag":"w+","mode":384}),
+            || false,
+        )
+        .unwrap()
+        .as_i64()
+        .unwrap() as i32;
+
+        assert_eq!(
+            sync_fd_operation(
+                &owner,
+                "write",
+                &json!({"fd":fd,"data":STANDARD.encode(b"hello"),"position":null}),
+                || false,
+            )
+            .unwrap()["bytesWritten"],
+            5
+        );
+        assert_eq!(
+            sync_fd_operation(
+                &owner,
+                "write",
+                &json!({"fd":fd,"data":STANDARD.encode(b"X"),"position":1}),
+                || false,
+            )
+            .unwrap()["bytesWritten"],
+            1
+        );
+        let read = sync_fd_operation(
+            &owner,
+            "read",
+            &json!({"fd":fd,"length":5,"position":0}),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(
+            STANDARD.decode(read["data"].as_str().unwrap()).unwrap(),
+            b"hXllo"
+        );
+        let stats = sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).unwrap();
+        assert_eq!(stats["isFile"], true);
+        assert_eq!(stats["size"], 5);
+        assert!(sync_fd_operation(&other_session, "fstat", &json!({"fd":fd}), || false).is_err());
+        assert!(sync_fd_operation(&other_window, "fstat", &json!({"fd":fd}), || false).is_err());
+
+        sync_fd_operation(&owner, "close", &json!({"fd":fd}), || false).unwrap();
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+        let reused = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"r"}), || false)
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert_eq!(reused, fd as i64);
+        cancel_sync_fd_session(owner.0, &owner.1);
+        assert!(!sync_fd_sessions().lock().unwrap().contains_key(&owner));
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":reused}), || false).is_err());
+    }
+
+    #[test]
+    fn synchronous_file_descriptor_registry_is_bounded_and_window_scoped() {
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-descriptor-limit.txt");
+        let suffix = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+        let owner = (244, format!("sync-fd-window-cleanup-{suffix}"));
+        let other = (243, owner.1.clone());
+        let fd = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"w"}), || false)
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert!(sync_fd_sessions().lock().unwrap().contains_key(&owner));
+        cancel_sync_fd_window(owner.0);
+        assert!(!sync_fd_sessions().lock().unwrap().contains_key(&owner));
+        assert!(!sync_fd_sessions().lock().unwrap().contains_key(&other));
+        assert!(sync_fd_operation(&owner, "fstat", &json!({"fd":fd}), || false).is_err());
+    }
+
+    #[test]
+    fn synchronous_descriptor_quota_failure_does_not_truncate_target() {
+        let temp = TestDir::new();
+        let path = temp.path().join("sync-descriptor-quota.txt");
+        std::fs::write(&path, b"preserve this content").unwrap();
+        let owner = (245, format!("sync-fd-quota-{}", std::process::id()));
+        for _ in 0..MAX_SYNC_FDS_PER_SESSION {
+            sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"r"}), || false).unwrap();
+        }
+
+        let error = sync_fd_operation(&owner, "open", &json!({"path":path,"flag":"w"}), || false)
+            .unwrap_err();
+        assert!(error.to_string().contains("EMFILE"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"preserve this content");
+        cancel_sync_fd_session(owner.0, &owner.1);
     }
 
     #[test]

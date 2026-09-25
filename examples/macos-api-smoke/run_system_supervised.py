@@ -44,9 +44,9 @@ def next_message(harness: Harness, name: str, timeout: float = 30) -> dict:
     deadline = time.monotonic() + timeout
     while True:
         frame = harness.next_frame(max(0.1, deadline - time.monotonic()))
-        if frame.get("t") == "msg" and frame.get("name") == "system-error":
+        if frame.get("event") == "message" and frame.get("name") == "system-error":
             raise SmokeError(f"page reported {frame.get('data')}")
-        if frame.get("t") == "msg" and frame.get("name") == name:
+        if frame.get("event") == "message" and frame.get("name") == name:
             data = frame.get("data")
             if not isinstance(data, dict):
                 raise SmokeError(f"{name} had no object payload")
@@ -169,10 +169,12 @@ def run(binary: Path, activation: bool, hide_others: bool, window_extra: bool, d
             resources = root / "resources"
             resources.mkdir()
             shutil.copy2(HERE / "system-supervised.html", resources / "system-supervised.html")
+            shutil.copy2(HERE / "fixture-protocol.js", resources / "fixture-protocol.js")
             (root / "finder-target").mkdir()
             config = root / "niva.json"
             config.write_text(json.dumps({
                 "name": app_name, "uuid": app_uuid,
+                "injectCommonJs": True, "injectEsm": True,
                 "window": {"entry": "system-supervised.html", "title": "Niva system supervised smoke",
                            "size": {"width": 520, "height": 360}, "visible": True},
                 "api": {"timeoutMs": 180000},
@@ -184,13 +186,14 @@ def run(binary: Path, activation: bool, hide_others: bool, window_extra: bool, d
             environment["TMPDIR"] = str(root)
             with stderr_path.open("wb") as stderr_file:
                 process = subprocess.Popen(
-                    [str(binary), "--stdio", f"--debug-config={config}", f"--debug-resource={resources}"],
+                    [str(binary), f"--config={config}", f"--resource={resources}"],
                     cwd=REPO, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                     stderr=stderr_file, text=True, bufsize=1,
                 )
             harness = Harness(process)
-            if harness.next_frame(30) != {"t": "ready", "v": 1}:
-                raise SmokeError("Niva stdio bridge did not report ready")
+            ready_event = harness.next_frame(30)
+            if ready_event.get("event") != "ready" or ready_event.get("name") != "system-supervised":
+                raise SmokeError(f"unexpected fixture ready event: {ready_event!r}")
             next_message(harness, "system-ready")
             print(f"APP READY: pid={process.pid}", flush=True)
 
@@ -317,7 +320,7 @@ def run(binary: Path, activation: bool, hide_others: bool, window_extra: bool, d
             command(harness, "open", path=str(root / "finder-target"))
             phase(harness, "opened")
             wait_for(lambda: finder_front_target().rstrip("/") == str(root / "finder-target"), "Finder target")
-            evidence["process.open"] = "Finder opened the exact disposable directory"
+            evidence["Niva.bridge.callProcessOpen"] = "Finder opened the exact disposable directory"
             apple('tell application "Finder" to close front window')
             ack(harness, "opened")
 
@@ -325,10 +328,11 @@ def run(binary: Path, activation: bool, hide_others: bool, window_extra: bool, d
             phase(harness, "load-html-started")
             wait_for(lambda: apple('tell application "System Events" to tell process "niva" to get name of window 1') == "Niva inline HTML verified", "inline HTML title")
             evidence["webview.loadHtml"] = "loaded inline HTML and macOS window title changed to its unique marker"
+            harness.send("fixture-exit", 0)
             if process.stdin and not process.stdin.closed:
                 process.stdin.close()
             if process.wait(timeout=15) != 0:
-                raise SmokeError("Niva did not exit cleanly after stdio EOF")
+                raise SmokeError("Niva did not exit cleanly after fixture exit")
     except Exception as error:
         failure = f"{type(error).__name__}: {error}"
     finally:

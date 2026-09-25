@@ -1,6 +1,8 @@
 {
   "name": "windows-api-smoke",
   "uuid": "473e27f1-817f-4426-b0a5-49154002dcc4",
+  "injectCommonJs": true,
+  "injectEsm": true,
   "window": {
     "entry": "api-safe.html",
     "title": "Niva Windows API smoke",

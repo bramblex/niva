@@ -46,7 +46,10 @@ pub fn install(webview: &WebView, app: Arc<NivaApp>, window_id: u8) -> Result<()
         };
         let frame = unsafe { args.Frame()? };
         if let Err(error) = attach_frame(&frame, weak_app.clone(), window_id) {
-            eprintln!("[niva] unable to attach iframe IPC handler: {error}");
+            crate::niva_log!(
+                crate::app::logging::Level::Warn,
+                "[niva] unable to attach iframe IPC handler: {error}"
+            );
         }
         Ok(())
     }));
@@ -62,8 +65,13 @@ fn attach_frame(frame: &ICoreWebView2Frame, app: Weak<NivaApp>, window_id: u8) -
     let navigation_generation = Arc::new(AtomicU64::new(0));
 
     let navigation_counter = navigation_generation.clone();
+    let navigation_app = app.clone();
     let navigation_handler = FrameNavigationStartingEventHandler::create(Box::new(move |_, _| {
-        navigation_counter.fetch_add(1, Ordering::AcqRel);
+        let previous_generation = navigation_counter.fetch_add(1, Ordering::AcqRel);
+        if let Some(app) = navigation_app.upgrade() {
+            app.api()
+                .cancel_ipc_frame(window_id, frame_key, previous_generation);
+        }
         Ok(())
     }));
     let mut navigation_token = 0;
@@ -91,10 +99,26 @@ fn attach_frame(frame: &ICoreWebView2Frame, app: Weak<NivaApp>, window_id: u8) -
         };
 
         smol::spawn(async move {
-            let response = match app.api().ipc_call(window_id, &source_url, &body).await {
+            let response = match app
+                .api()
+                .ipc_message(
+                    window_id,
+                    super::api_manager::IpcFrameSource {
+                        source_url: source_url.clone(),
+                        frame_id: frame_key,
+                        generation,
+                        is_main_frame: false,
+                    },
+                    &body,
+                )
+                .await
+            {
                 Ok(response) => response,
                 Err(error) => {
-                    eprintln!("[niva] rejected iframe IPC request: {error}");
+                    crate::niva_log!(
+                        crate::app::logging::Level::Warn,
+                        "[niva] rejected iframe IPC request: {error}"
+                    );
                     crate::app::api_manager::ApiManager::ipc_error_response(
                         &body,
                         &error.to_string(),
@@ -125,7 +149,10 @@ fn attach_frame(frame: &ICoreWebView2Frame, app: Weak<NivaApp>, window_id: u8) -
             })
             .await
             {
-                eprintln!("[niva] unable to reply to iframe IPC request: {error}");
+                crate::niva_log!(
+                    crate::app::logging::Level::Warn,
+                    "[niva] unable to reply to iframe IPC request: {error}"
+                );
             }
         })
         .detach();
@@ -135,12 +162,27 @@ fn attach_frame(frame: &ICoreWebView2Frame, app: Weak<NivaApp>, window_id: u8) -
     let mut message_token = 0;
     unsafe { frame2.add_WebMessageReceived(&message_handler, &mut message_token)? };
 
+    let destroyed_app = app.clone();
     let destroyed_handler = FrameDestroyedEventHandler::create(Box::new(move |_, _| {
+        let generation = FRAMES.with(|frames| {
+            frames
+                .try_borrow()
+                .ok()
+                .and_then(|frames| {
+                    frames
+                        .get(&frame_key)
+                        .map(|state| state.navigation_generation.load(Ordering::Acquire))
+                })
+                .unwrap_or(0)
+        });
         FRAMES.with(|frames| {
             if let Ok(mut frames) = frames.try_borrow_mut() {
                 frames.remove(&frame_key);
             }
         });
+        if let Some(app) = destroyed_app.upgrade() {
+            app.api().cancel_ipc_frame(window_id, frame_key, generation);
+        }
         Ok(())
     }));
     let mut destroyed_token = 0;
@@ -170,13 +212,19 @@ fn attach_frame(frame: &ICoreWebView2Frame, app: Weak<NivaApp>, window_id: u8) -
             };
             let child = unsafe { args.Frame()? };
             if let Err(error) = attach_frame(&child, child_app.clone(), window_id) {
-                eprintln!("[niva] unable to attach nested iframe IPC handler: {error}");
+                crate::niva_log!(
+                    crate::app::logging::Level::Warn,
+                    "[niva] unable to attach nested iframe IPC handler: {error}"
+                );
             }
             Ok(())
         }));
         let mut child_token = 0;
         if let Err(error) = unsafe { frame7.add_FrameCreated(&child_handler, &mut child_token) } {
-            eprintln!("[niva] unable to observe nested iframes: {error}");
+            crate::niva_log!(
+                crate::app::logging::Level::Warn,
+                "[niva] unable to observe nested iframes: {error}"
+            );
         }
     }
 

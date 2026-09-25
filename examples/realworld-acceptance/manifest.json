@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/cypress-io/cypress-realworld-app.git",
+  "commit": "79aa5b126fdd951aab2263c8201b52aeb5f2a43c",
+  "dependencyLock": "yarn.lock",
+  "applicationEntry": "backend/app.ts",
+  "moduleFormat": "commonjs",
+  "authentication": "local",
+  "baselineNode": "24.10.0",
+  "scope": ["login", "session", "users", "contacts", "bankAccounts", "transactions", "notifications", "database persistence", "bridge disconnect cleanup"],
+  "outOfScope": ["real payment processing", "external OAuth providers", "executing Cypress itself inside Niva"],
+  "rules": [
+    "Transpile original TypeScript without bundling backend dependencies or modifying business logic.",
+    "Execute the backend using Niva CommonJS loading and Native APIs, never host Node fallback.",
+    "Keep reference Node/test-driver processes separate from the Niva backend.",
+    "Do not reseed between persistence assertions.",
+    "Report every failing or unsupported required workflow without deleting it from the denominator."
+  ]
+}

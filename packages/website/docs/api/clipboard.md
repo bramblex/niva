@@ -1,6 +1,6 @@
 # 剪切板 clipboard
 
-## Niva.api.clipboard.read
+## Niva.clipboard.read
 ```ts
 /**
  * 从系统剪贴板中读取当前所复制的文本内容。
@@ -10,7 +10,7 @@
 export function read(): Promise<string | null>;
 ```
 
-## Niva.api.clipboard.write
+## Niva.clipboard.write
 
 ```ts
 /**

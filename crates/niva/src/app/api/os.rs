@@ -13,8 +13,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub fn register_apis(api_manager: &mut ApiManager) {
-    api_manager.register_api("os.info", info);
-    api_manager.register_blocking_api("os.timingSafeEqual", timing_safe_equal);
     api_manager.register_blocking_api("os.cpus", cpus);
     api_manager.register_blocking_api("os.freemem", freemem);
     api_manager.register_blocking_api("os.networkInterfaces", network_interfaces);
@@ -25,20 +23,6 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("os.sep", sep);
     api_manager.register_api("os.eol", eol);
     api_manager.register_api("os.locale", locale);
-}
-
-fn timing_safe_equal(
-    _app: Arc<NivaApp>,
-    _window: Arc<NivaWindow>,
-    request: ApiRequest,
-) -> Result<bool> {
-    use base64::Engine;
-    use subtle::ConstantTimeEq;
-    let (a, b): (String, String) = request.args().get()?;
-    let a = base64::engine::general_purpose::STANDARD.decode(a)?;
-    let b = base64::engine::general_purpose::STANDARD.decode(b)?;
-    anyhow::ensure!(a.len() == b.len(), "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH");
-    Ok(bool::from(a.ct_eq(&b)))
 }
 
 fn cpus(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
@@ -86,13 +70,13 @@ fn dns_servers(
     native::dns_servers()
 }
 
-async fn info(_app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest) -> Result<Value> {
+pub(crate) fn startup_info() -> Value {
     let info = os_info::get();
-    Ok(info_value(
+    info_value(
         info.os_type().to_string(),
         std::env::consts::ARCH.to_string(),
         info.version().to_string(),
-    ))
+    )
 }
 
 fn info_value(os: String, arch: String, version: String) -> Value {
@@ -104,15 +88,17 @@ async fn dirs(app: Arc<NivaApp>, _window: Arc<NivaWindow>, _request: ApiRequest)
     Ok(dirs_value(
         &app.launch_info.temp_dir,
         &app.launch_info.data_dir,
+        &app.launch_info.cache_dir,
         user_dirs.as_ref(),
     ))
 }
 
-fn dirs_value(temp: &Path, data: &Path, user_dirs: Option<&UserDirs>) -> Value {
+fn dirs_value(temp: &Path, data: &Path, cache: &Path, user_dirs: Option<&UserDirs>) -> Value {
     match user_dirs {
         Some(user_dirs) => json!({
             "temp": temp,
             "data": data,
+            "cache": cache,
             "home": user_dirs.home_dir(),
             "audio": user_dirs.audio_dir(),
             "desktop": user_dirs.desktop_dir(),
@@ -124,7 +110,7 @@ fn dirs_value(temp: &Path, data: &Path, user_dirs: Option<&UserDirs>) -> Value {
             "template": user_dirs.template_dir(),
             "video": user_dirs.video_dir(),
         }),
-        None => json!({ "temp": temp, "data": data }),
+        None => json!({ "temp": temp, "data": data, "cache": cache }),
     }
 }
 
@@ -180,14 +166,19 @@ mod tests {
     fn dirs_always_include_app_paths_and_add_user_directories_when_available() {
         let temp = Path::new("/app/temp");
         let data = Path::new("/app/data");
+        let cache = Path::new("/app/cache");
 
-        let minimal = dirs_value(temp, data, None);
-        assert_eq!(minimal, json!({ "temp": temp, "data": data }));
+        let minimal = dirs_value(temp, data, cache, None);
+        assert_eq!(
+            minimal,
+            json!({ "temp": temp, "data": data, "cache": cache })
+        );
 
         if let Some(user_dirs) = UserDirs::new() {
-            let dirs = dirs_value(temp, data, Some(&user_dirs));
+            let dirs = dirs_value(temp, data, cache, Some(&user_dirs));
             assert_eq!(dirs["temp"], json!(temp));
             assert_eq!(dirs["data"], json!(data));
+            assert_eq!(dirs["cache"], json!(cache));
             assert_eq!(dirs["home"], json!(user_dirs.home_dir()));
             for key in [
                 "audio", "desktop", "document", "download", "font", "picture", "public",

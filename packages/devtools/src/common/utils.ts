@@ -1,20 +1,19 @@
 import { trimEnd, trimStart } from "lodash";
+import https from "node:https";
+import { os, path, process } from "./node";
+import { niva } from "./niva";
 import { AppModel } from "../models/app.model";
 import { AppResult } from "./result";
 import { ErrorCode } from "./error";
 
 let baseFileSystemUrl: string | null = null;
-let sep: string | null = null;
-let dirs: { temp: string; home: string; data: string } | null = null;
-let currentDir: string | null = null;
+let dirs: { data: string; temp?: string; home?: string } | null = null;
 
 const readPromise = Promise.all([
-  Niva.api.webview
+  niva.webview
     .baseFileSystemUrl()
     .then((s: string) => (baseFileSystemUrl = s)),
-  Niva.api.os.sep().then((s: string) => (sep = s)),
-  Niva.api.os.dirs().then((_dirs: any) => (dirs = _dirs)),
-  Niva.api.process.currentDir().then((dir: string) => (currentDir = dir)),
+  niva.os.dirs().then((_dirs) => (dirs = _dirs)),
 ]);
 
 export function envReady(callback: () => any) {
@@ -74,31 +73,32 @@ export function fileSystemUrl(path: string) {
 }
 
 export function pathJoin(...paths: string[]) {
-  return paths.filter((s) => s).join(sep!);
+  return path.join(...paths.filter((s) => s));
 }
 
-export function pathSplit(path: string): string[] {
-  return path.split(sep!);
+export function pathSplit(value: string): string[] {
+  return value.split(path.sep);
 }
 
-export function dirname(path: string) {
-  return path.split(sep!).slice(0, -1).join(sep!);
+export function dirname(filePath: string) {
+  return path.dirname(filePath);
 }
 
 export function tempDirWith(...paths: string[]) {
-  return pathJoin(dirs!.temp, ...paths);
+  return path.join(os.tmpdir(), ...paths);
 }
 
 export function dataDirWith(...paths: string[]) {
-  return pathJoin(dirs!.data, ...paths);
+  if (!dirs) throw new Error("Niva application data directory is not ready");
+  return path.join(dirs.data, ...paths);
 }
 
 export function getHome() {
-  return dirs!.home;
+  return os.homedir();
 }
 
 export function getCurrentDir() {
-  return currentDir!;
+  return process.cwd();
 }
 
 export type XPromise<T> = Promise<T> & {
@@ -119,22 +119,24 @@ export function parseArgs(args: string[]) {
   const result: Record<string, string> = {};
   for (const arg of args.slice(1)) {
     if (arg.startsWith("--")) {
-      const [key, value] = arg.slice(2).split("=");
-      result[key] = value || "";
+      const option = arg.slice(2);
+      const separator = option.indexOf("=");
+      const key = separator < 0 ? option : option.slice(0, separator);
+      const value = separator < 0 ? "" : option.slice(separator + 1);
+      result[key] = value;
     }
   }
   return result;
 }
 
-export function isAbsolutePath(path: string) {
-  return /^(\/|[A-Z]:\\)/.test(path);
+export function isAbsolutePath(value: string) {
+  return path.isAbsolute(value);
 }
 
-export async function resolvePath(path: string) {
-  const { process } = Niva.api;
-  return isAbsolutePath(path)
-    ? path
-    : pathJoin(await process.currentDir(), path);
+export async function resolvePath(value: string) {
+  return isAbsolutePath(value)
+    ? value
+    : path.resolve(process.cwd(), value);
 }
 
 export function importAll<T>(resolve: any) {
@@ -159,7 +161,7 @@ export function parseVersion(versionString: string): number[] {
 export async function checkVersion(): Promise<string | null> {
   try {
     const body = await new Promise<string>((resolve, reject) => {
-      const request = Niva.require("https").get(
+      const request = https.get(
         "https://api.github.com/repos/bramblex/niva/releases/latest",
         { headers: { "User-Agent": "Niva", Accept: "application/vnd.github+json" } },
         (response: any) => {
@@ -176,7 +178,7 @@ export async function checkVersion(): Promise<string | null> {
     const remoteVersion = JSON.parse(body)?.tag_name;
     if (typeof remoteVersion !== "string") return null;
 
-    const localVersion = await Niva.api.process.version();
+    const localVersion = process.version;
     const remote = parseVersion(remoteVersion);
     const local = parseVersion(localVersion);
     for (let i = 0; i < remote.length; i++) {
@@ -187,21 +189,4 @@ export async function checkVersion(): Promise<string | null> {
     // Updates are optional; a network failure should not interrupt startup.
   }
   return null;
-}
-
-export async function runCmd(
-  cmd: string,
-  args: string[],
-  options?: { env?: Record<string, string>; currentDir?: string }
-) {
-  const { process } = Niva.api;
-  const res = await process.exec(
-    cmd,
-    args,
-    options
-  ) as { status: number, stdout: string, stderr: string }
-  if (res.status !== 0) {
-    throw new Error(`[Cmd Error] ${JSON.stringify(res)}`);
-  }
-  return res.stdout
 }

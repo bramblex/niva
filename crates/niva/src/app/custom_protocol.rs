@@ -7,10 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 use wry::{
     RequestAsyncResponder,
-    http::{Method, Request, Response, StatusCode, Uri, header::CONTENT_TYPE},
+    http::{
+        Method, Request, Response, StatusCode, Uri,
+        header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE},
+    },
 };
 
 use super::{node_compat::NodeCompat, resource_manager::ResourceManager};
@@ -24,6 +27,8 @@ pub(crate) const WINDOWS_ORIGIN: &str = "http://niva.app";
 const WORKER_COUNT: usize = 4;
 const QUEUE_CAPACITY: usize = 32;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+/// Wry currently accepts a complete `Vec<u8>` response. Bound each response
+/// allocation and let clients request large media in valid byte ranges.
 const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Return the exact origin emitted by the platform WebView for Niva's custom
@@ -99,7 +104,10 @@ impl CustomProtocolDispatcher {
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Unable to schedule protocol response",
                     ));
-                    eprintln!("[niva] unable to start protocol timeout: {err}");
+                    crate::niva_log!(
+                        crate::app::logging::Level::Error,
+                        "unable to start protocol timeout: {err}"
+                    );
                 }
             }
             Err(TrySendError::Full(job)) => job.respond(error_response(
@@ -217,8 +225,38 @@ fn response_for_request(
     node_compat: Option<&NodeCompat>,
     server_port: u16,
 ) -> Response<Vec<u8>> {
-    if request.method() != Method::GET {
-        return error_response(StatusCode::METHOD_NOT_ALLOWED, "GET only");
+    let is_head = request.method() == Method::HEAD;
+    let mut response = response_for_request_impl(request, resources, node_compat, server_port);
+    if is_head {
+        let length = response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(response.body().len() as u64);
+        response
+            .headers_mut()
+            .insert(CONTENT_LENGTH, length.to_string().parse().unwrap());
+        response.body_mut().clear();
+    }
+    response
+}
+
+fn response_for_request_impl(
+    request: &Request<Vec<u8>>,
+    resources: &dyn ResourceManager,
+    node_compat: Option<&NodeCompat>,
+    server_port: u16,
+) -> Response<Vec<u8>> {
+    let is_head = request.method() == Method::HEAD;
+    if request.method() != Method::GET && !is_head {
+        return Response::builder()
+            .status(StatusCode::METHOD_NOT_ALLOWED)
+            .header("allow", "GET, HEAD")
+            .body(Vec::new())
+            .unwrap_or_else(|_| {
+                error_response(StatusCode::METHOD_NOT_ALLOWED, "GET or HEAD only")
+            });
     }
     if !is_app_uri(request.uri()) {
         return error_response(StatusCode::NOT_FOUND, "Not found");
@@ -232,9 +270,9 @@ fn response_for_request(
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid resource path"),
     };
     if path.starts_with("__niva_") {
-        let is_allowed_compat_asset = path.starts_with("__niva_compat/")
+        let is_allowed_runtime_asset = path.starts_with(RUNTIME_ASSET_PREFIX)
             && node_compat.is_some_and(|compat| compat.allows_asset(&path));
-        if !is_allowed_compat_asset {
+        if !is_allowed_runtime_asset {
             return error_response(StatusCode::NOT_FOUND, "Not found");
         }
     }
@@ -243,65 +281,285 @@ fn response_for_request(
         .first()
         .map(|mime| mime.to_string())
         .unwrap_or_else(|| "application/octet-stream".to_string());
-    let mut body = if path.starts_with("__niva_compat/") {
+    let is_runtime_asset = path.starts_with(RUNTIME_ASSET_PREFIX);
+    if is_runtime_asset {
         let Some(body) = NodeCompat::embedded_asset(&path) else {
             return error_response(StatusCode::NOT_FOUND, "Not found");
         };
-        if path == "__niva_compat/node-compat.js" {
-            match node_compat.unwrap().classic_script(&body) {
+        let mut body = body;
+        if mime == "text/html" && !has_range(request) && is_document_navigation(request) {
+            body = match prepare_document(body, node_compat, server_port) {
                 Ok(body) => body,
-                Err(_) => {
-                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Invalid adapter");
-                }
-            }
-        } else {
-            body
+                Err(response) => return response,
+            };
         }
-    } else {
-        match resources.load_capped(&path, MAX_RESPONSE_BYTES) {
-            Ok(Some(body)) => body,
-            Ok(None) => return error_response(StatusCode::PAYLOAD_TOO_LARGE, "Resource too large"),
-            Err(_) => return error_response(StatusCode::NOT_FOUND, "Not found"),
-        }
-    };
+        return response_for_memory_body(request, &mime, &body);
+    }
 
-    if mime == "text/html" && is_document_navigation(request) {
-        if let Some(compat) = node_compat {
-            body = match compat.rewrite_html(&body) {
-                Ok(body) => body,
+    let total_len = match resources.resource_size(&path) {
+        Ok(Some(length)) => length,
+        Ok(None) | Err(_) => return error_response(StatusCode::NOT_FOUND, "Not found"),
+    };
+    let range = match requested_range(request, total_len) {
+        Ok(range) => range,
+        Err(_) => return range_not_satisfiable(total_len),
+    };
+    if let Some((start, end)) = range {
+        let length = usize::try_from(end - start + 1).unwrap_or(usize::MAX);
+        let body = if is_head {
+            Vec::new()
+        } else {
+            let read = match resources.read_range(&path, start, length) {
+                Ok(read) => read,
                 Err(_) => {
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "Unable to prepare local page",
+                        "Unable to read resource range",
                     );
                 }
             };
-        }
-        match String::from_utf8(body) {
-            Ok(mut html) => {
-                if patch_document_csp(&mut html, server_port).is_err() {
-                    return error_response(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Unable to prepare local page security policy",
-                    );
-                }
-                body = html.into_bytes();
-            }
-            Err(_) if node_compat.is_some() => {
+            if read.total_len != total_len || read.bytes.len() != length {
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "NodeCompat requires UTF-8 HTML",
+                    "Resource changed during read",
                 );
             }
-            Err(error) => body = error.into_bytes(),
-        }
+            read.bytes
+        };
+        return ranged_response(
+            StatusCode::PARTIAL_CONTENT,
+            &mime,
+            body,
+            start,
+            end,
+            total_len,
+            length,
+        );
     }
 
+    let needs_document_body = mime == "text/html" && is_document_navigation(request);
+    if total_len > MAX_RESPONSE_BYTES as u64 && (!is_head || needs_document_body) {
+        return Response::builder()
+            .status(StatusCode::PAYLOAD_TOO_LARGE)
+            .header(CONTENT_RANGE, format!("bytes */{total_len}"))
+            .header(ACCEPT_RANGES, "bytes")
+            .body(b"Resource exceeds the bounded WebView response; request a byte range.".to_vec())
+            .unwrap_or_else(|_| {
+                error_response(StatusCode::PAYLOAD_TOO_LARGE, "Resource too large")
+            });
+    }
+
+    let mut body = if is_head && !(mime == "text/html" && is_document_navigation(request)) {
+        Vec::new()
+    } else {
+        let read = match resources.read_range(&path, 0, total_len as usize) {
+            Ok(read) => read,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Unable to read resource",
+                );
+            }
+        };
+        if read.total_len != total_len || read.bytes.len() != total_len as usize {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Resource changed during read",
+            );
+        }
+        read.bytes
+    };
+    if mime == "text/html" && is_document_navigation(request) {
+        body = match prepare_document(body, node_compat, server_port) {
+            Ok(body) => body,
+            Err(response) => return response,
+        };
+    }
+    let response_len = if is_head && body.is_empty() && total_len != 0 {
+        total_len
+    } else {
+        body.len() as u64
+    };
+    full_response(request.method(), &mime, body, response_len)
+}
+
+fn has_range(request: &Request<Vec<u8>>) -> bool {
+    request.headers().contains_key(RANGE)
+}
+
+/// Return a single bounded inclusive range. A valid request larger than the
+/// Wry response cap is served as a smaller 206 range, with exact headers so a
+/// media client can request the next segment. Multiple ranges are unsupported.
+fn requested_range(
+    request: &Request<Vec<u8>>,
+    total_len: u64,
+) -> anyhow::Result<Option<(u64, u64)>> {
+    let Some(value) = request.headers().get(RANGE) else {
+        return Ok(None);
+    };
+    let value = value.to_str()?;
+    let spec = value
+        .strip_prefix("bytes=")
+        .context("unsupported range unit")?;
+    ensure!(!spec.contains(',') && total_len > 0, "unsatisfiable range");
+    let (start, requested_end) = if let Some(suffix) = spec.strip_prefix('-') {
+        let suffix = suffix.parse::<u64>()?;
+        ensure!(suffix > 0, "empty suffix range");
+        (total_len.saturating_sub(suffix), total_len - 1)
+    } else {
+        let (start, end) = spec.split_once('-').context("invalid byte range")?;
+        let start = start.parse::<u64>()?;
+        let end = if end.is_empty() {
+            total_len - 1
+        } else {
+            end.parse::<u64>()?.min(total_len - 1)
+        };
+        (start, end)
+    };
+    ensure!(
+        start < total_len && requested_end >= start,
+        "unsatisfiable range"
+    );
+    let cap_end = start.saturating_add(MAX_RESPONSE_BYTES as u64 - 1);
+    Ok(Some((start, requested_end.min(cap_end))))
+}
+
+fn range_not_satisfiable(total_len: u64) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+        .header(CONTENT_RANGE, format!("bytes */{total_len}"))
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, "0")
+        .body(Vec::new())
+        .unwrap_or_else(|_| {
+            error_response(StatusCode::RANGE_NOT_SATISFIABLE, "Range not satisfiable")
+        })
+}
+
+fn response_for_memory_body(
+    request: &Request<Vec<u8>>,
+    mime: &str,
+    body: &[u8],
+) -> Response<Vec<u8>> {
     if body.len() > MAX_RESPONSE_BYTES {
         return error_response(StatusCode::PAYLOAD_TOO_LARGE, "Resource too large");
     }
+    let total_len = body.len() as u64;
+    let range = match requested_range(request, total_len) {
+        Ok(range) => range,
+        Err(_) => return range_not_satisfiable(total_len),
+    };
+    if let Some((start, end)) = range {
+        let start = start as usize;
+        let end = end as usize + 1;
+        let response_body = if request.method() == Method::HEAD {
+            Vec::new()
+        } else {
+            body[start..end].to_vec()
+        };
+        return ranged_response(
+            StatusCode::PARTIAL_CONTENT,
+            mime,
+            response_body,
+            start as u64,
+            end as u64 - 1,
+            total_len,
+            end - start,
+        );
+    }
+    let response_body = if request.method() == Method::HEAD {
+        Vec::new()
+    } else {
+        body.to_vec()
+    };
+    full_response(request.method(), mime, response_body, total_len)
+}
 
-    response(StatusCode::OK, &mime, body)
+fn full_response(
+    method: &Method,
+    mime: &str,
+    body: Vec<u8>,
+    content_len: u64,
+) -> Response<Vec<u8>> {
+    let body = if *method == Method::HEAD {
+        Vec::new()
+    } else {
+        body
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, mime)
+        .header(CONTENT_LENGTH, content_len.to_string())
+        .header(ACCEPT_RANGES, "bytes")
+        .header("x-content-type-options", "nosniff")
+        .body(body)
+        .unwrap_or_else(|_| {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+        })
+}
+
+fn ranged_response(
+    status: StatusCode,
+    mime: &str,
+    body: Vec<u8>,
+    start: u64,
+    end: u64,
+    total_len: u64,
+    content_len: usize,
+) -> Response<Vec<u8>> {
+    Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, mime)
+        .header(CONTENT_LENGTH, content_len.to_string())
+        .header(CONTENT_RANGE, format!("bytes {start}-{end}/{total_len}"))
+        .header(ACCEPT_RANGES, "bytes")
+        .header("x-content-type-options", "nosniff")
+        .body(body)
+        .unwrap_or_else(|_| {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+        })
+}
+
+fn prepare_document(
+    body: Vec<u8>,
+    node_compat: Option<&NodeCompat>,
+    server_port: u16,
+) -> std::result::Result<Vec<u8>, Response<Vec<u8>>> {
+    let mut body = if let Some(compat) = node_compat {
+        compat.rewrite_html(&body).map_err(|_| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Unable to prepare local page",
+            )
+        })?
+    } else {
+        body
+    };
+    match String::from_utf8(body) {
+        Ok(mut html) => {
+            if patch_document_csp(&mut html, server_port).is_err() {
+                return Err(error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Unable to prepare local page security policy",
+                ));
+            }
+            body = html.into_bytes();
+        }
+        Err(_) if node_compat.is_some() => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "NodeCompat requires UTF-8 HTML",
+            ));
+        }
+        Err(error) => body = error.into_bytes(),
+    }
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Err(error_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Resource too large",
+        ));
+    }
+    Ok(body)
 }
 
 fn is_app_uri(uri: &Uri) -> bool {
@@ -372,21 +630,23 @@ fn error_response(status: StatusCode, message: &str) -> Response<Vec<u8>> {
     )
 }
 
-const NODE_COMPAT_MARKER: &str = "<!-- niva-node-compat -->";
-const NODE_COMPAT_IMPORTMAP_OPEN: &str = "<script type=\"importmap\">";
-const NODE_COMPAT_CLASSIC_TAG: &str = "<script src=\"/__niva_compat/node-compat.js\"></script>";
+const NODE_COMPAT_MARKER: &str = "<!-- niva-runtime-importmap -->";
+const RUNTIME_ASSET_PREFIX: &str = "__niva_runtime/";
 
 /// Add the active loopback sources to existing CSP meta policies. When
-/// NodeCompat injected an import map, give only its scripts a fresh nonce and
+/// Runtime injected an import map, give only that tag the runtime nonce and
 /// place them after the policy so the nonce is actually enforced.
 pub(crate) fn patch_document_csp(html: &mut String, server_port: u16) -> Result<()> {
     let node_compat_block = node_compat_block_range(html)?;
-    if !csp_meta_ranges(html).is_empty() && node_compat_block.is_some() {
-        move_node_compat_block_after_csp(html)?;
-        let nonce = create_csp_nonce()?;
-        if add_node_compat_nonce(html, &nonce)? {
-            patch_csp_script_nonce(html, &nonce);
+    if !csp_meta_ranges(html).is_empty() {
+        let nonce = NodeCompat::csp_nonce()?;
+        if node_compat_block.is_some() {
+            move_node_compat_block_after_csp(html)?;
+            add_node_compat_nonce(html, nonce)?;
         }
+        // User CommonJS factories need the same nonce even when ESM injection
+        // is disabled. This never enables unsafe-eval or arbitrary inline JS.
+        patch_csp_script_nonce(html, nonce);
     }
 
     patch_csp_connect_source(html, &format!("ws://127.0.0.1:{server_port}"));
@@ -398,39 +658,27 @@ pub(crate) fn patch_document_csp(html: &mut String, server_port: u16) -> Result<
     Ok(())
 }
 
-fn create_csp_nonce() -> Result<String> {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes)
-        .map_err(|error| anyhow::anyhow!("Unable to generate CSP nonce: {error}"))?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
 fn node_compat_block_range(html: &str) -> Result<Option<(usize, usize)>> {
     let Some(start) = html.find(NODE_COMPAT_MARKER) else {
         return Ok(None);
     };
-    let mut cursor = start + NODE_COMPAT_MARKER.len();
-    if html[cursor..].starts_with(NODE_COMPAT_IMPORTMAP_OPEN) {
-        cursor += NODE_COMPAT_IMPORTMAP_OPEN.len();
-        cursor += html[cursor..]
-            .find("</script>")
-            .ok_or_else(|| anyhow::anyhow!("NodeCompat import map is unterminated"))?
-            + "</script>".len();
-    } else if let Some(open_tag_end) = html[cursor..].find('>') {
-        let next_tag = &html[cursor..cursor + open_tag_end + 1];
-        let lower = next_tag.to_ascii_lowercase();
-        if lower.starts_with("<script") && lower.contains("importmap") {
-            return Err(anyhow::anyhow!("NodeCompat import map tag is malformed"));
-        }
+    let tag_start = start + NODE_COMPAT_MARKER.len();
+    let tag_end = html[tag_start..]
+        .find('>')
+        .map(|end| tag_start + end + 1)
+        .ok_or_else(|| anyhow::anyhow!("Runtime importmap tag is unterminated"))?;
+    let tag = &html[tag_start..tag_end];
+    let is_map = tag.starts_with("<script")
+        && tag_attribute_range(tag, "type")
+            .is_some_and(|(a, b)| tag[a..b].eq_ignore_ascii_case("importmap"));
+    if !is_map {
+        return Err(anyhow::anyhow!("Runtime marker must precede its importmap"));
     }
-    if !html[cursor..].starts_with(NODE_COMPAT_CLASSIC_TAG) {
-        return Err(anyhow::anyhow!(
-            "NodeCompat marker is missing its expected classic script"
-        ));
-    }
-    cursor += NODE_COMPAT_CLASSIC_TAG.len();
-    let end = cursor;
-    Ok(Some((start, end)))
+    let close_end = html[tag_end..]
+        .find("</script>")
+        .map(|end| tag_end + end + "</script>".len())
+        .ok_or_else(|| anyhow::anyhow!("Runtime importmap is unterminated"))?;
+    Ok(Some((start, close_end)))
 }
 
 fn move_node_compat_block_after_csp(html: &mut String) -> Result<()> {
@@ -496,32 +744,21 @@ fn has_executable_script_between(html: &str, start: usize, end: usize) -> bool {
     false
 }
 
-fn add_node_compat_nonce(html: &mut String, nonce: &str) -> Result<bool> {
-    let Some((block_start, block_end)) = node_compat_block_range(html)? else {
-        return Ok(false);
+fn add_node_compat_nonce(html: &mut String, nonce: &str) -> Result<()> {
+    let Some((start, _)) = node_compat_block_range(html)? else {
+        return Ok(());
     };
-    let importmap = format!("<script type=\"importmap\" nonce=\"{nonce}\">");
-    let classic =
-        format!("<script src=\"/__niva_compat/node-compat.js\" nonce=\"{nonce}\"></script>");
-    let mut block = html[block_start..block_end].to_string();
-    let lower_block = block.to_ascii_lowercase();
-    let has_importmap_tag = lower_block.contains("<script type=\"importmap\"")
-        || lower_block.contains("<script type='importmap'")
-        || lower_block.contains("<script type=importmap");
-    if has_importmap_tag && !block.contains(NODE_COMPAT_IMPORTMAP_OPEN) {
-        return Err(anyhow::anyhow!("NodeCompat import map tag is malformed"));
+    let tag_start = start + NODE_COMPAT_MARKER.len();
+    let tag_end = html[tag_start..]
+        .find('>')
+        .map(|end| tag_start + end)
+        .ok_or_else(|| anyhow::anyhow!("Runtime importmap tag is unterminated"))?;
+    if let Some((a, b)) = tag_attribute_range(&html[tag_start..=tag_end], "nonce") {
+        html.replace_range(tag_start + a..tag_start + b, nonce);
+    } else {
+        html.insert_str(tag_end, &format!(" nonce=\"{nonce}\""));
     }
-    if block.contains(NODE_COMPAT_IMPORTMAP_OPEN) {
-        block = block.replace(NODE_COMPAT_IMPORTMAP_OPEN, &importmap);
-    }
-    if !block.contains(NODE_COMPAT_CLASSIC_TAG) {
-        return Err(anyhow::anyhow!(
-            "NodeCompat classic script tag is malformed"
-        ));
-    }
-    block = block.replace(NODE_COMPAT_CLASSIC_TAG, &classic);
-    html.replace_range(block_start..block_end, &block);
-    Ok(true)
+    Ok(())
 }
 
 fn patch_csp_script_nonce(html: &mut String, nonce: &str) {
@@ -841,12 +1078,12 @@ fn add_csp_source(policy: &str, target_directive: &str, source: &str) -> String 
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::Path};
+    use crate::app::resource_manager::ResourceRead;
+    use std::{collections::HashMap, path::Path, sync::Mutex};
 
     use tao::window::Icon;
 
     use super::*;
-    use crate::app::options::{NodeCompatConfig, NodeCompatOption};
 
     #[derive(Debug)]
     struct TestResources(HashMap<String, Vec<u8>>);
@@ -876,17 +1113,64 @@ mod tests {
         TestResources(HashMap::from([
             ("index.html".into(), b"<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self'\"></head></html>".to_vec()),
             ("asset.js".into(), b"console.log('ok')".to_vec()),
-            ("__niva_compat/node-compat.js".into(), b"window.__adapter_loaded=true;".to_vec()),
-            ("__niva_compat/src/path.js".into(), b"export default {};".to_vec()),
+            ("__niva_runtime/dist/bootstrap.js".into(), b"window.__adapter_loaded=true;".to_vec()),
+            ("__niva_runtime/dist/esm/path.mjs".into(), b"export default {};".to_vec()),
         ]))
     }
 
     fn get_request(uri: &str, headers: &[(&str, &str)]) -> Request<Vec<u8>> {
-        let mut builder = Request::builder().method("GET").uri(uri);
+        request(Method::GET, uri, headers)
+    }
+
+    fn head_request(uri: &str, headers: &[(&str, &str)]) -> Request<Vec<u8>> {
+        request(Method::HEAD, uri, headers)
+    }
+
+    fn request(method: Method, uri: &str, headers: &[(&str, &str)]) -> Request<Vec<u8>> {
+        let mut builder = Request::builder().method(method).uri(uri);
         for (name, value) in headers {
             builder = builder.header(*name, *value);
         }
         builder.body(Vec::new()).unwrap()
+    }
+
+    #[derive(Debug)]
+    struct SyntheticLargeResource {
+        size: u64,
+        reads: Mutex<Vec<(u64, usize)>>,
+    }
+
+    impl ResourceManager for SyntheticLargeResource {
+        fn exists(&self, path: &str) -> bool {
+            path == "large.bin"
+        }
+
+        fn load(&self, _path: &str) -> Result<Vec<u8>> {
+            Err(anyhow::anyhow!("full read is forbidden in this fixture"))
+        }
+
+        fn resource_size(&self, path: &str) -> Result<Option<u64>> {
+            Ok(self.exists(path).then_some(self.size))
+        }
+
+        fn read_range(&self, path: &str, offset: u64, length: usize) -> Result<ResourceRead> {
+            if path != "large.bin" || offset > self.size {
+                return Err(anyhow::anyhow!("bad synthetic range"));
+            }
+            self.reads.lock().unwrap().push((offset, length));
+            Ok(ResourceRead {
+                total_len: self.size,
+                bytes: vec![b'x'; length],
+            })
+        }
+
+        fn extract(&self, _from: &str, _to: &Path) -> Result<()> {
+            unreachable!()
+        }
+
+        fn load_icon(&self, _path: &str) -> Result<Icon> {
+            unreachable!()
+        }
     }
 
     #[test]
@@ -928,7 +1212,7 @@ mod tests {
             "__niva_fs/secret/file.txt",
             "__niva_ws",
             "__niva_other/asset.js",
-            "__niva_compat",
+            "__niva_runtime",
         ] {
             let response = response_for_request(
                 &get_request(&format!("niva://app/{internal_path}"), &[]),
@@ -946,6 +1230,89 @@ mod tests {
             43123,
         );
         assert_eq!(bad_host.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn serves_head_and_single_byte_ranges_with_exact_headers() {
+        let resources = resources();
+        let partial = response_for_request(
+            &get_request("niva://app/asset.js", &[("range", "bytes=0-3")]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(partial.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(partial.headers()[CONTENT_RANGE], "bytes 0-3/17");
+        assert_eq!(partial.body(), b"cons");
+
+        let head = response_for_request(
+            &head_request("niva://app/asset.js", &[]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(head.status(), StatusCode::OK);
+        assert_eq!(head.headers()[CONTENT_LENGTH], "17");
+        assert!(head.body().is_empty());
+
+        let invalid = response_for_request(
+            &get_request("niva://app/asset.js", &[("range", "bytes=17-")]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(invalid.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(invalid.headers()[CONTENT_RANGE], "bytes */17");
+    }
+
+    #[test]
+    fn large_resources_require_range_and_range_responses_stay_bounded() {
+        let resources = SyntheticLargeResource {
+            size: MAX_RESPONSE_BYTES as u64 + 4096,
+            reads: Mutex::new(Vec::new()),
+        };
+        let full = response_for_request(
+            &get_request("niva://app/large.bin", &[]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(full.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(resources.reads.lock().unwrap().is_empty());
+
+        let metadata = response_for_request(
+            &head_request("niva://app/large.bin", &[]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(metadata.status(), StatusCode::OK);
+        assert_eq!(metadata.headers()[CONTENT_LENGTH], "33558528");
+        assert!(metadata.body().is_empty());
+        assert!(resources.reads.lock().unwrap().is_empty());
+
+        let head = response_for_request(
+            &head_request("niva://app/large.bin", &[("range", "bytes=0-999999999")]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(head.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(head.headers()[CONTENT_RANGE], "bytes 0-33554431/33558528");
+        assert_eq!(head.headers()[CONTENT_LENGTH], "33554432");
+        assert!(head.body().is_empty());
+        assert!(resources.reads.lock().unwrap().is_empty());
+
+        let small = response_for_request(
+            &get_request("niva://app/large.bin", &[("range", "bytes=4-7")]),
+            &resources,
+            None,
+            43123,
+        );
+        assert_eq!(small.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(small.headers()[CONTENT_RANGE], "bytes 4-7/33558528");
+        assert_eq!(small.body(), b"xxxx");
+        assert_eq!(&*resources.reads.lock().unwrap(), &[(4, 4)]);
     }
 
     #[test]
@@ -968,13 +1335,8 @@ mod tests {
     }
 
     #[test]
-    fn node_compat_html_and_selected_assets_are_served_from_protocol_origin() {
-        let compat = NodeCompat::from_option(&Some(NodeCompatOption::Config(NodeCompatConfig {
-            modules: Some(vec!["path".into()]),
-            importmap: Some(true),
-        })))
-        .unwrap()
-        .unwrap();
+    fn runtime_importmaps_and_facades_are_served_but_bootstrap_is_private() {
+        let compat = NodeCompat::new(true);
         let resources = resources();
         let page = response_for_request(
             &get_request("niva://app/", &[("accept", "text/html")]),
@@ -984,24 +1346,25 @@ mod tests {
         );
         assert_eq!(page.status(), StatusCode::OK);
         let html = String::from_utf8(page.into_body()).unwrap();
-        assert!(html.contains("/__niva_compat/node-compat.js"));
-        assert!(html.contains("/__niva_compat/src/path.js"));
+        assert!(!html.contains("bootstrap.js"));
+        assert!(html.contains("/__niva_runtime/esm/path.mjs"));
 
-        let classic = response_for_request(
-            &get_request("niva://app/__niva_compat/node-compat.js", &[]),
-            &resources,
-            Some(&compat),
-            43123,
-        );
-        assert_eq!(classic.status(), StatusCode::OK);
-        assert!(
-            String::from_utf8(classic.into_body())
-                .unwrap()
-                .contains("window.__niva_node_compat_modules=[\"path\"]")
-        );
+        for path in [
+            "bootstrap.js",
+            "__bootstrap__/bootstrap.js",
+            "dist/bootstrap.js",
+        ] {
+            let response = response_for_request(
+                &get_request(&format!("niva://app/__niva_runtime/{path}"), &[]),
+                &resources,
+                Some(&compat),
+                43123,
+            );
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
 
         let selected = response_for_request(
-            &get_request("niva://app/__niva_compat/src/path.js", &[]),
+            &get_request("niva://app/__niva_runtime/esm/path.mjs", &[]),
             &resources,
             Some(&compat),
             43123,
@@ -1009,23 +1372,18 @@ mod tests {
         assert_eq!(selected.status(), StatusCode::OK);
         assert!(!selected.body().is_empty());
 
-        let unselected = response_for_request(
-            &get_request("niva://app/__niva_compat/src/fs.js", &[]),
+        let disabled = response_for_request(
+            &get_request("niva://app/__niva_runtime/esm/fs.mjs", &[]),
             &resources,
-            Some(&compat),
+            Some(&NodeCompat::new(false)),
             43123,
         );
-        assert_eq!(unselected.status(), StatusCode::NOT_FOUND);
+        assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
     fn csp_template_adds_bridge_and_filesystem_origins_and_nonces_only_niva_scripts() {
-        let compat = NodeCompat::from_option(&Some(NodeCompatOption::Config(NodeCompatConfig {
-            modules: Some(vec!["path".into()]),
-            importmap: Some(true),
-        })))
-        .unwrap()
-        .unwrap();
+        let compat = NodeCompat::new(true);
         let mut html = String::from(
             "<!doctype html><html><head><meta charset=\"UTF-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'\"><script type=\"module\" src=\"./index.js\"></script></head><body></body></html>",
         );
@@ -1065,18 +1423,26 @@ mod tests {
         assert_eq!(nonce.len(), 32);
         assert!(policy.contains(&format!("'nonce-{nonce}'")));
 
-        let classic_start = html
-            .find("<script src=\"/__niva_compat/node-compat.js\"")
-            .unwrap();
-        let classic_end = html[classic_start..].find('>').unwrap() + classic_start + 1;
-        let classic_tag = &html[classic_start..classic_end];
-        let (classic_nonce_start, classic_nonce_end) =
-            tag_attribute_range(classic_tag, "nonce").unwrap();
-        assert_eq!(&classic_tag[classic_nonce_start..classic_nonce_end], nonce);
-
+        assert_eq!(nonce, NodeCompat::csp_nonce().unwrap());
+        assert!(!html.contains("bootstrap.js"));
         assert!(html.find("Content-Security-Policy").unwrap() < map_start);
-        assert!(map_start < classic_start);
-        assert!(classic_start < html.find("src=\"./index.js\"").unwrap());
+        assert!(map_start < html.find("src=\"./index.js\"").unwrap());
+        let once = html.clone();
+        patch_document_csp(&mut html, 43123).unwrap();
+        assert_eq!(html, once);
+    }
+
+    #[test]
+    fn commonjs_factory_nonce_is_allowed_without_esm_injection() {
+        let mut html = String::from(
+            "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self'\"><script src=\"app.js\"></script></head></html>",
+        );
+        patch_document_csp(&mut html, 43123).unwrap();
+        assert!(html.contains(&format!("'nonce-{}'", NodeCompat::csp_nonce().unwrap())));
+        assert!(!html.contains("unsafe-eval"));
+        assert!(!html.contains("unsafe-inline"));
+        assert!(!html.contains("type=\"importmap\""));
+        assert!(html.contains("<script src=\"app.js\"></script>"));
     }
 
     #[test]
@@ -1101,8 +1467,9 @@ mod tests {
     fn csp_patch_fails_closed_for_malformed_node_compat_blocks() {
         let csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self'\">";
         for injected in [
-            "<!-- niva-node-compat --><script type=\"importmap\">{}</script>",
-            "<!-- niva-node-compat --><script type='importmap'>{}</script><script src=\"/__niva_compat/node-compat.js\"></script>",
+            "<!-- niva-runtime-importmap -->",
+            "<!-- niva-runtime-importmap --><script type=\"importmap\">{}",
+            "<!-- niva-runtime-importmap --><script src=\"/other.js\"></script>",
         ] {
             let mut html = format!("<html><head>{csp}{injected}</head></html>");
             assert!(patch_document_csp(&mut html, 43123).is_err(), "{injected}");
@@ -1112,7 +1479,7 @@ mod tests {
     #[test]
     fn csp_nonce_does_not_change_author_importmaps_outside_node_compat_block() {
         let mut html = String::from(
-            "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self'\"><script type=\"importmap\">{\"imports\":{\"author\":\"./author.js\"}}</script><!-- niva-node-compat --><script type=\"importmap\">{\"imports\":{\"path\":\"/__niva_compat/src/path.js\"}}</script><script src=\"/__niva_compat/node-compat.js\"></script></head></html>",
+            "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'self'\"><script type=\"importmap\">{\"imports\":{\"author\":\"./author.js\"}}</script><!-- niva-runtime-importmap --><script type=\"importmap\">{\"imports\":{\"path\":\"/__niva_runtime/esm/path.mjs\"}}</script></head></html>",
         );
 
         patch_document_csp(&mut html, 43123).unwrap();
