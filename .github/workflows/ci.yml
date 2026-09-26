@@ -66,6 +66,8 @@ jobs:
       - run: npm run build --workspace=packages/devtools
       - run: cargo build --release -p niva
       - if: runner.os == 'macOS'
+        run: strip -N target/release/niva
+      - if: runner.os == 'macOS'
         name: Real WebView bootstrap, stdio, process cleanup and TypeScript CLI
         run: |
           python3 examples/runtime-bootstrap-smoke/run.py --binary target/release/niva --output /tmp/niva-bootstrap-evidence
@@ -106,7 +108,7 @@ jobs:
         run: |
           bytes=$(stat -f%z target/release/niva)
           echo "macOS release binary: $bytes bytes"
-          test "$bytes" -lt 3300000
+          test "$bytes" -lt 3000000
 
   website:
     runs-on: ubuntu-latest

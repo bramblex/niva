@@ -51,6 +51,9 @@ jobs:
       - run: npm ci
       - run: npm run build --workspace=packages/runtime
       - run: cargo build --locked --release --target ${{ matrix.target }} -p niva -p niva-packager
+      - if: runner.os == 'macOS'
+        name: Remove Mach-O symbol table from runtime artifact
+        run: strip -N target/${{ matrix.target }}/release/niva
       - run: cargo test --locked -p niva-packager
       - name: Collect binaries
         shell: python
