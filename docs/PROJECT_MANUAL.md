@@ -1,6 +1,6 @@
 # Niva 项目手册
 
-> 本文按 2026-09-23 的源码整理，依赖版本和实现细节以对应清单与源码为准。文中区分源码状态与平台验收：macOS 的手工记录不能替代 Windows 真机验证。
+> 本文按 2026-09-26 的源码与已知验收记录整理，依赖版本和实现细节以对应清单与源码为准。文中区分源码状态与平台验收：macOS 的手工记录不能替代 Windows 真机验证。
 
 ## 1. 项目概览
 
@@ -13,7 +13,7 @@ Niva 是以 Rust 和系统 WebView 构建桌面应用的框架。Rust 管理窗�
 | 桌面窗口与 WebView | Rust 2024、tao、wry | `crates/niva/Cargo.toml`、`crates/niva/src/app/window_manager/` |
 | 原生菜单、托盘、快捷键 | muda、tray-icon、global-hotkey | `crates/niva/src/app/{menu,tray_manager,shortcut_manager}/` |
 | API 调度与网络 | smol、async-channel、tungstenite、ureq 3 | `crates/niva/src/app/api_manager/`、`http_server/` |
-| 窗口通信 | 每窗 WebSocket 与平台 IPC 混合桥接 | `window_manager/builder.rs`、`ipc_macos.rs`、`ipc_windows_frames.rs`、`initialize_script.js` |
+| 窗口通信 | 稳定异步 IPC/`evaluate_script` 桥，加可选 WebSocket 性能优化桥 | `window_manager/builder.rs`、`ipc_macos.rs`、`ipc_windows_frames.rs`、`initialize_script.js` |
 | 可选 Node 兼容层 | 独立 `packages/node-compat` 包，按项目配置打包 | `packages/node-compat/`、`crates/niva/src/app/node_compat.rs` |
 | 图形化开发工具 | React、Vite、TypeScript | `packages/devtools/` |
 | 类型声明 | `packages/types/Niva_zh.d.ts` | `packages/types/` |
@@ -50,17 +50,19 @@ niva/
 
 ## 3. 窗口、页面与通信
 
-### 3.1 每 realm 的桥接选择
+### 3.1 异步主桥与可选 WebSocket 优化
 
-JS/Rust 高层API共用同一套调用与流处理逻辑，传输由每个JS realm的bridge session决定，不按启动方式直接分配。realm首次发起async call/stream时最多等待500ms建立并认证WebSocket；成功后锁定WS，否则锁定IPC。锁定IPC后即使WS晚到也不升级。WS断开时Native清理该session所有pending calls和资源，当前调用失败，realm后续调用锁定IPC；在途或已执行调用不跨传输重放。
+对外只有两类API：普通异步API与Node兼容同步API。JS/Rust高层API共用同一套调用与流处理逻辑，调用方不选择桥接传输。普通异步API固定以平台IPC调用Rust，Native→JS通知由 `evaluate_script` 投递。大文件/网络数据、二进制数据和流式 `child_process` stdio 等重载路径，在操作创建时优先使用已建立的WebSocket优化桥；否则由稳定IPC Channel承载。资源后续的控制请求沿用创建时的bridge；WS断开时资源明确失败，不迁移、不重放。IPC二进制帧在传输边界Base64编码，payload最多16 KiB。
 
-- 受信任本地页面可以使用本地WS或IPC Channel；窗口管理器为窗口生成独立凭据，Rust仍验证来源、窗口、session、frame和权限。IPC Channel的控制、发送与ACK使用平台IPC，Native到JS帧/事件经 `evaluate_script` 投递。二进制完整18-byte wire frame在IPC边界使用Base64，payload最多16 KiB；队列有界并使用序号、ACK/背压与取消。此机制不代表零拷贝或性能更快。
+同步XHR只供Node兼容所需的同步方法使用，每个方法首次调用时发出一次warning。进程cwd等状态变更应提供异步操作，不应转成同步XHR。
+
+- 受信任本地页面可通过稳定IPC Channel工作，也可由高流量操作使用WS优化桥；窗口管理器为窗口生成独立凭据，Rust仍验证来源、窗口、session、frame和权限。IPC Channel的控制、发送与ACK使用平台IPC，Native到JS帧/事件经 `evaluate_script` 投递。二进制完整18-byte wire frame在IPC边界使用Base64，payload最多16 KiB；队列有界并使用序号、ACK/背压与取消。此机制不代表零拷贝或性能更快。
 - **打包本地页**由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，同一应用跨重启和窗口使用相同origin，不同应用使用不同origin。Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`仅作为配置入口别名。WebSocket 与 `__niva_fs` 仍经动态 `127.0.0.1:<port>` 服务；打包模式普通 HTTP 静态路由关闭。
 - macOS 通过 WKWebView 消息处理器传递 IPC；Windows 通过 WebView2 WebMessage 与 frame 处理器传递 IPC。跨源页面/iframe只能使用精确origin grant允许的unary JSON IPC，不开放Channel、流或二进制。XHR仅用于同步`callSync`；`__niva_fs`是独立文件资源接口。
 - 显式 debug 启动可加载跨端口开发入口并授予该窗口桥接；带 `--debug-resource` 的开发启动继续通过 loopback HTTP 加载静态资源。普通打包启动忽略配置中的 debug entry。每个原生 API 调用仍需在 Rust 侧做窗口、来源与授权校验。
-- WebSocket 断开、事件转发和页面来源边界应以 `docs/bridge.md`、`docs/security.md` 及对应平台代码为准。完整双bridge、二进制流、500ms选择和断线清理行为仍需macOS、Windows真实WebView端到端验收。
+- 当前runtime与Native路由已接线；IPC Channel/WS资源owner隔离、取消和权限边界见 `docs/bridge.md`、`docs/security.md` 及对应平台代码。macOS真实WebView已覆盖IPC unary、IPC Channel二进制stdio和WS stream基础路径；完整资源跨连接生命周期与Windows真机仍需单独验收。平台未实测的部分不视为已通过。
 
-当前验收记录：macOS 常规 WebView 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-23 另以临时 app 实测固定协议 origin `niva://app`、主页面/同源 iframe 的 WS 原生调用、静态 JS 资源，以及普通 loopback 静态请求 404。通过 `webview.baseFileSystemUrl()` 在该页 `fetch` 文件成功；有效 token 配非匹配 Origin 时服务端不返回 ACAO，无效 token 返回 403。另用只选 `path/fs/assert/stream` 的临时包验证静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 资源 404。未测 NodeCompat 全模块语义、WS 二进制流、存储迁移或性能。Windows 已有限实测 WebView2 打包页、同源 iframe、文件 URL 和部分 NodeCompat；详见 `docs/windows-validation-2026-09-23.md`。远端 IPC 与完整行为矩阵仍待验收。上述既有WS/IPC手工记录不代表当前per-realm双bridge选择、IPC Channel二进制流、背压及断线清理已通过真实WebView端到端验收。
+当前验收记录：既有 macOS 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-26 macOS arm64 release `target/release/niva` 为 **2,994,936 bytes**，SHA256 `9108b915d0b4164ba0cc05dafea483791b1fc37ed7e5bfb49f4b47fa139ef9c9`，低于3,000,000目标5,064 bytes。该SHA真实WebView smoke：基础 bridge 7/7通过；WS受限稳定IPC下可信本地23项、远端精确grant 21项检查通过，均覆盖HTTP/HTTPS；可信本地还覆盖IPC Channel二进制child stdio和异步`process.chdir`。两组各跳过2项隐藏窗口lease心跳场景。仍未覆盖完整资源跨连接生命周期或Windows真机。既有origin及文件URL证据见 `docs/windows-validation-2026-09-23.md`；这些记录不代表NodeCompat全模块语义、WS性能或v1.0门禁已验收。
 
 ### 3.2 API 调度与协议
 

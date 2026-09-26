@@ -105,6 +105,16 @@
       assert(JSON.stringify(stdout) === JSON.stringify(Array.from(input)), 'binary stdout was corrupted');
       assert(JSON.stringify(stderr) === JSON.stringify([255, 0, 10]), 'binary stderr was corrupted');
     });
+    await check('process.chdir uses async IPC rather than synchronous XHR', async () => {
+      const before = await Niva.bridge.call('process.currentDir', []);
+      const change = Niva.process.chdir(config.cwdDirectory);
+      assert(change && typeof change.then === 'function', 'process.chdir did not return a Promise');
+      await change;
+      const after = await Niva.bridge.call('process.currentDir', []);
+      assert(after === config.cwdDirectory, 'Native current directory did not change');
+      await Niva.process.chdir(before);
+      assert(await Niva.bridge.call('process.currentDir', []) === before, 'Native current directory did not restore');
+    });
   }
   await check('exec output limit rejects rather than truncating', () => rejects(() =>
     Niva.child_process.execFileText(config.python, ['-c', 'print("x"*4096)'], {maxOutputBytes: 128})));
@@ -151,8 +161,8 @@
   if (leaseOnly) {
     await check('trusted page completes async call while CSP blocks WS', async () => {
       assert(Niva.bridge.isTrustedLocal(), 'trusted debug origin did not receive local capability');
-      const result = await Niva.child_process.execFileText(config.python, ['-c', 'print("ipc-fallback")']);
-      assert(result.status === 0 && result.stdout.trim() === 'ipc-fallback', 'IPC fallback call failed');
+      const result = await Niva.child_process.execFileText(config.python, ['-c', 'print("ipc-bridge")']);
+      assert(result.status === 0 && result.stdout.trim() === 'ipc-bridge', 'IPC bridge call failed');
     });
   }
   if (skipLease) {

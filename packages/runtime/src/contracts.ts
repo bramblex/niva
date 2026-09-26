@@ -2,10 +2,11 @@ export {};
 
 export type NivaCallResult = unknown;
 export interface NivaBridge {
+    /** Stable asynchronous RPC route. Ordinary calls are sent over platform IPC. */
     call(methodName: string, args?: unknown[]): Promise<NivaCallResult>;
-    /** Synchronous XHR is available only on trusted local pages. */
+    /** Node-compatibility-only synchronous route; emits a warning and blocks the WebView. */
     callSync(methodName: string, args?: unknown[]): NivaCallResult;
-    /** Opens a Native stream using the selected transport hidden by the bridge. */
+    /** Opens a Native stream; the bridge prefers WS when available and otherwise uses IPC. */
     stream(methodName: string, args?: unknown[], handlers?: {
         onEvent?: (name: string, data: unknown) => void;
         onChunk?: (chunk: Uint8Array, isStderr: boolean) => void;
@@ -239,7 +240,8 @@ export type NivaStream = typeof import("node:stream").Stream & Pick<typeof impor
     isErrored(stream: NodeJS.ReadableStream | NodeJS.WritableStream): boolean;
     isReadable(stream: NodeJS.ReadableStream): boolean;
 };
-export type NivaProcess = Partial<Omit<Pick<NodeJS.Process, "arch" | "argv" | "argv0" | "env" | "execPath" | "pid" | "platform" | "cwd" | "chdir" | "nextTick" | "stdin" | "stdout" | "stderr" | "exit" | "on">, "stdin" | "stdout" | "stderr">> & {
+export type NivaProcess = Partial<Omit<Pick<NodeJS.Process, "arch" | "argv" | "argv0" | "env" | "execPath" | "pid" | "platform" | "cwd" | "chdir" | "nextTick" | "stdin" | "stdout" | "stderr" | "exit" | "on">, "stdin" | "stdout" | "stderr" | "chdir">> & {
+    chdir?: (directory: string) => Promise<void>;
     readonly stdin?: (NodeJS.ReadStream & { fd: 0; isTTY: boolean }) | null;
     readonly stdout?: (NodeJS.WriteStream & { fd: 1; isTTY: boolean }) | null;
     readonly stderr?: (NodeJS.WriteStream & { fd: 2; isTTY: boolean }) | null;

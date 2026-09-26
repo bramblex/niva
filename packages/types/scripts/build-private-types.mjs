@@ -510,6 +510,7 @@ fs.writeFileSync(nodeFacade, [
   "declare global {",
   "    var Niva: NivaObj;",
   "    interface Window { Niva: NivaObj; }",
+  "    namespace NodeJS { interface Process { chdir(directory: string): Promise<void>; } }",
   "    type NivaOptions = NivaOptionsContract;",
   "}",
   'export type * from "./contracts-node";',
@@ -520,7 +521,7 @@ const commonjsFacade = path.join(outDir, "Niva_commonjs.d.ts");
 fs.writeFileSync(commonjsFacade, [
   '/// <reference path="./Niva_zh.d.ts" />',
   "declare global {",
-  "    var process: NivaInternal.NodeJS.Process;",
+  '    var process: Omit<NivaInternal.NodeJS.Process, "chdir"> & { chdir(directory: string): Promise<void> };',
   "    var require: NivaInternal.NodeJS.Require;",
   "    var module: NivaInternal.NodeJS.Module;",
   '    var exports: NivaInternal.NodeJS.Module["exports"];',

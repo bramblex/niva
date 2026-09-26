@@ -45,4 +45,4 @@ const read = Niva.bridge.stream("resource.readStream", ["assets/data.bin"], {
 await read.promise;
 ```
 
-`resource.exists` 只检查打包索引中的文件；目录本身不会单独写入索引。`Niva.resource.read` 是初始化脚本建立在 `readStream` 上的 Promise wrapper，会收集整个响应；可信本地页面可通过该realm锁定的WS或IPC Channel使用。IPC二进制帧使用Base64传输。远端页面仅可调用精确origin grant允许的unary API，不能调用 `resource.readStream` 或该wrapper。双bridge流式资源读取仍待目标平台真实WebView验收。另见[流式调用](./stream)。
+`resource.exists` 只检查打包索引中的文件；目录本身不会单独写入索引。`Niva.resource.read` 是初始化脚本建立在 `readStream` 上的 Promise wrapper，会收集整个响应；可信本地页面的这类大数据流在stream创建时优先走已建立的WebSocket优化桥，否则走稳定IPC Channel。IPC二进制帧在传输边界使用Base64。远端页面仅可调用精确origin grant允许的unary API，不能调用 `resource.readStream` 或该wrapper。macOS基础bridge和IPC通路已做真实WebView smoke；资源跨连接生命周期和Windows验收仍待完成。另见[流式调用](./stream)。

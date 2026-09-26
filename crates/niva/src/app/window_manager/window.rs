@@ -2,7 +2,6 @@ use crate::lock_force;
 
 use anyhow::Result;
 use std::{
-    collections::HashMap,
     ops::Deref,
     sync::{
         Arc, Mutex,
@@ -53,8 +52,6 @@ pub struct NivaWindow {
     /// dropping it removes the native menu.
     menu_handle: Mutex<Option<muda::Menu>>,
 
-    /// Live API WebSocket sender for this window's webview, if connected.
-    ws_txs: Mutex<HashMap<u64, std::sync::mpsc::Sender<WsOut>>>,
     next_ws_id: AtomicU64,
     next_event_seq: AtomicU64,
 
@@ -122,7 +119,6 @@ impl NivaWindow {
             trusted_ws_origin,
             permissions,
             menu_handle: Mutex::new(menu),
-            ws_txs: Mutex::new(HashMap::new()),
             next_ws_id: AtomicU64::new(1),
             next_event_seq: AtomicU64::new(1),
 
@@ -183,26 +179,13 @@ impl NivaWindow {
         lock_force!(self.state).is_menu_visible
     }
 
-    /// Each frame owns a separate socket and call-id namespace.
-    pub fn register_ws_sender(&self, tx: std::sync::mpsc::Sender<WsOut>) -> u64 {
-        let connection_id = self.next_ws_id.fetch_add(1, Ordering::Relaxed);
-        lock_force!(self.ws_txs).insert(connection_id, tx);
-        connection_id
+    /// Allocate a unique ID for a WebSocket connection scoped to this window.
+    /// The HTTP server pump retains the sender itself.
+    pub fn next_ws_connection_id(&self) -> u64 {
+        self.next_ws_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn remove_ws_sender(&self, connection_id: u64) {
-        lock_force!(self.ws_txs).remove(&connection_id);
-    }
-
-    /// Window events are broadcast to all connected frames. Call results are
-    /// sent directly to the connection that issued the call by ApiManager.
-    pub fn send_ws_envelope(self: &Arc<Self>, envelope: &str) -> bool {
-        let mut connections = lock_force!(self.ws_txs);
-        connections.retain(|_, tx| tx.send(WsOut::Text(envelope.to_string())).is_ok());
-        !connections.is_empty()
-    }
-
-    /// Push a window event to all connected same-origin frames.
+    /// Push a small window event over the stable IPC/evaluate_script bridge.
     pub fn send_ipc_event<E: Into<String>, P: Serialize>(
         self: &Arc<Self>,
         event: E,
@@ -212,7 +195,7 @@ impl NivaWindow {
         let seq = self.next_event_seq();
         let envelope = ServerMsg::event(None, seq, event.into(), payload);
         let encoded = envelope.encode();
-        self.send_ws_envelope(&encoded) || self.send_ipc_envelope(&encoded)
+        self.send_ipc_envelope(&encoded)
     }
 
     /// Push one Channel frame through the Native IPC bridge. Binary frames are
@@ -248,9 +231,9 @@ impl NivaWindow {
         ))
     }
 
-    /// Deliver the same event envelope through the local Native IPC bridge
-    /// when no WebSocket connection is available. Evaluation is queued onto
-    /// the event loop so callers may safely invoke this from the main thread.
+    /// Deliver an event envelope through the stable local Native IPC bridge.
+    /// Evaluation is queued onto the event loop so callers may safely invoke
+    /// this from the main thread.
     fn send_ipc_envelope(self: &Arc<Self>, envelope: &str) -> bool {
         let Ok(encoded) = serialize_script_json(envelope) else {
             return false;

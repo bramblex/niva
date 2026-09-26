@@ -46,15 +46,18 @@
     var cwd = initialCwd();
     var cwdOverride = false;
 
-    function currentCwd() {
+    function currentCwd(apiName?) {
       if (cwdOverride) return cwd;
       var processModule = root.process;
       if (processModule && typeof processModule.cwd === "function" &&
           (processModule === runtime.process || processModule.versions && processModule.versions.niva)) {
+        if (processModule.__nivaAvailable === true && runtime.callSyncAs && root.Niva) {
+          return runtime.callSyncAs(root.Niva, apiName || "path.getCwd", "process.currentDir", []);
+        }
         return processModule.cwd();
       }
-      if (runtime.callSync && root.Niva && root.Niva.bridge && typeof root.Niva.bridge.callSync === "function") {
-        return runtime.callSync(root.Niva, "process.currentDir", []);
+      if (runtime.callSyncAs && root.Niva && root.Niva.bridge && typeof root.Niva.bridge.callSync === "function") {
+        return runtime.callSyncAs(root.Niva, apiName || "path.getCwd", "process.currentDir", []);
       }
       if (processModule && typeof processModule.cwd === "function") return processModule.cwd();
       return cwd;
@@ -249,12 +252,12 @@
         return absoluteWin ? device + "\\" + tail : device + tail;
       }
 
-      function resolve(..._paths: any[]) {
-        var baseCwd = currentCwd();
+      function resolveFor(apiName, paths) {
+        var baseCwd = currentCwd(apiName);
         if (!windows) {
           var posixTail = "";
           var posixAbsolute = false;
-          var posixArgs = Array.prototype.slice.call(arguments);
+          var posixArgs = paths;
           for (var posixIndex = posixArgs.length - 1; posixIndex >= -1 && !posixAbsolute; posixIndex -= 1) {
             var posixPath = posixIndex >= 0 ? posixArgs[posixIndex] : baseCwd;
             assertPath(posixPath, posixIndex >= 0 ? "paths[" + posixIndex + "]" : "path");
@@ -269,7 +272,7 @@
         var resolvedDevice = "";
         var resolvedTail = "";
         var resolvedAbsolute = false;
-        var args = Array.prototype.slice.call(arguments);
+        var args = paths;
         for (var i = args.length - 1; i >= -1; i -= 1) {
           var path;
           if (i >= 0) {
@@ -301,6 +304,10 @@
         if (resolvedAbsolute) return resolvedDevice + "\\" + normalizedTail;
         var resolved = resolvedDevice + normalizedTail;
         return resolved || ".";
+      }
+
+      function resolve(...paths: any[]) {
+        return resolveFor("path.resolve", paths);
       }
 
       function isAbsolute(path) {
@@ -511,8 +518,8 @@
         assertPath(from, "from");
         assertPath(to, "to");
         if (from === to) return "";
-        var fromResolved = resolve(from);
-        var toResolved = resolve(to);
+        var fromResolved = resolveFor("path.relative", [from]);
+        var toResolved = resolveFor("path.relative", [to]);
         if (fromResolved === toResolved) return "";
         var fromRoot: any = windows ? winRoot(fromResolved) : { device: "", rootEnd: fromResolved.charCodeAt(0) === 47 ? 1 : 0 };
         var toRoot: any = windows ? winRoot(toResolved) : { device: "", rootEnd: toResolved.charCodeAt(0) === 47 ? 1 : 0 };
@@ -544,15 +551,19 @@
         return output.join(sep);
       }
 
-      function toNamespacedPath(path) {
+      function toNamespacedPathAs(apiName, path) {
         if (!windows) return path;
         if (typeof path !== "string") return path;
-        var resolved = resolve(path);
+        var resolved = resolveFor(apiName, [path]);
         var rootInfo = winRoot(resolved);
         if (!rootInfo.device) return resolved;
         if (rootInfo.device.indexOf("\\\\?\\") === 0 || rootInfo.device.indexOf("\\\\.\\") === 0) return resolved;
         if (rootInfo.device.indexOf("\\\\") === 0) return "\\\\?\\UNC\\" + resolved.slice(2);
         return "\\\\?\\" + resolved;
+      }
+
+      function toNamespacedPath(path) {
+        return toNamespacedPathAs("path.toNamespacedPath", path);
       }
 
       function matchesGlob(path, pattern) {
@@ -722,7 +733,7 @@
         matchesGlob: matchesGlob,
         sep: sep,
         delimiter: delimiter,
-        _makeLong: function (path) { return windows ? toNamespacedPath(path) : path; },
+        _makeLong: function (path) { return windows ? toNamespacedPathAs("path._makeLong", path) : path; },
       };
       return api;
     }

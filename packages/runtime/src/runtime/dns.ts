@@ -91,14 +91,25 @@
       return server.port === 53 ? server.address : server.address + ":" + server.port;
     }
 
-    function hostServerList(override) {
+    function hostServerList(override, apiName) {
       if (override !== null) return override.slice();
       if (typeof runtime.callSync !== "function" || !niva && !root.Niva) {
         throw runtime.bridgeError("System DNS server list is unavailable outside a Niva page", "ENOTSUP");
       }
-      var nativeServers = runtime.callSync(niva, "os.dnsServers", []);
+      var nativeServers = runtime.callSyncAs(niva, apiName || "dns.getServers", "os.dnsServers", []);
       if (!Array.isArray(nativeServers)) throw runtime.bridgeError("Native DNS server list is invalid", "EAI_FAIL");
       return nativeServers.map(parseServer);
+    }
+
+    function resolutionServerList(override) {
+      if (override !== null) return Promise.resolve(override.slice());
+      if (typeof runtime.call !== "function" || !niva && !root.Niva) {
+        return Promise.reject(runtime.bridgeError("System DNS server list is unavailable outside a Niva page", "ENOTSUP"));
+      }
+      return runtime.call(niva, "os.dnsServers", []).then(function (nativeServers) {
+        if (!Array.isArray(nativeServers)) throw runtime.bridgeError("Native DNS server list is invalid", "EAI_FAIL");
+        return nativeServers.map(parseServer);
+      }, function (error) { throw runtime.nativeError(error); });
     }
 
     function validatePacket(response: any, query, server, source?) {
@@ -217,17 +228,15 @@
       return { type: "query", id: id, flags: dnsPacket.RECURSION_DESIRED, questions: [{ type: type, name: hostname }] };
     }
 
-    function resolvePacket(resolver, hostname, type, seen?): Promise<any> {
+    function resolvePacket(resolver, hostname, type, seen?, resolvedServers?): Promise<any> {
       validateHostname(hostname);
       var name = canonicalHostname(hostname);
       seen = seen || new Set();
       if (seen.has(name.toLowerCase())) return Promise.reject(makeError("EBADRESP", "query" + type, hostname, "DNS CNAME loop"));
       seen.add(name.toLowerCase());
       var query = createPacket(name, type);
+      var serverList = resolvedServers === undefined ? resolutionServerList(resolver._serverOverride) : Promise.resolve(resolvedServers);
       var servers;
-      try { servers = resolver.getServers().map(parseServer); }
-      catch (error) { return Promise.reject(error); }
-      if (!servers.length) return Promise.reject(makeError("ENODATA", "query" + type, hostname, "No DNS servers configured"));
       var lastError;
 
       function tryServer(serverIndex, attempt) {
@@ -245,18 +254,19 @@
             return tryServer(serverIndex + 1, 0);
           }
           var records;
-          try { records = extractRecords(response, hostname, type); }
-          catch (error) {
-            if (error.cname) return resolvePacket(resolver, error.cname, type, seen);
-            throw error;
-          }
+          records = extractRecords(response, hostname, type);
+          if (records && records.cname) return resolvePacket(resolver, records.cname, type, seen, servers);
           return records;
         }, function (error) {
           lastError = error;
           return tryServer(serverIndex, attempt + 1);
         });
       }
-      return tryServer(0, 0);
+      return serverList.then(function (resolved) {
+        servers = resolved;
+        if (!servers.length) throw makeError("ENODATA", "query" + type, hostname, "No DNS servers configured");
+        return tryServer(0, 0);
+      });
     }
 
     function formatRecord(record) {
@@ -286,17 +296,17 @@
       if (!Number.isInteger(this.timeout) || this.timeout < 1) throw new RangeError("timeout must be a positive integer");
       if (!Number.isInteger(this.tries) || this.tries < 1) throw new RangeError("tries must be a positive integer");
       this._serverOverride = null;
+      this._apiPrefix = "dns.Resolver";
     }
     Resolver.prototype.setServers = function (servers) {
       if (!Array.isArray(servers)) throw new TypeError("servers must be an array");
       this._serverOverride = servers.length ? servers.map(parseServer) : null;
     };
     Resolver.prototype.getServers = function () {
-      return hostServerList(this._serverOverride).map(serverToString);
+      return hostServerList(this._serverOverride, this._apiPrefix + ".getServers").map(serverToString);
     };
     Resolver.prototype._resolve = function (hostname, type, callback, options) {
       validateHostname(hostname);
-      var self = this;
       resolvePacket(this, hostname, type).then(function (records) {
         if (type === "SOA") callback(null, formatRecord(records[0]));
         else if (type === "A" || type === "AAAA") callback(null, records.map(function (record) {
@@ -336,6 +346,7 @@
     });
 
     var defaultResolver: any = Reflect.construct(Resolver as any, []);
+    defaultResolver._apiPrefix = "dns";
     var promises: any = {};
     ["lookup", "resolve", "resolve4", "resolve6", "resolveCname", "resolveMx", "resolveTxt", "resolveNs", "resolveSrv", "resolveSoa", "resolvePtr"].forEach(function (name) {
       promises[name] = function () {
@@ -400,7 +411,7 @@
       resolveSoa: function () { return defaultResolver.resolveSoa.apply(defaultResolver, arguments); },
       resolvePtr: function () { return defaultResolver.resolvePtr.apply(defaultResolver, arguments); },
       setServers: function (servers) { return defaultResolver.setServers(servers); },
-      getServers: function () { return defaultResolver.getServers(); },
+      getServers: function () { return hostServerList(defaultResolver._serverOverride, "dns.getServers").map(serverToString); },
       promises: promises,
     };
     return module;

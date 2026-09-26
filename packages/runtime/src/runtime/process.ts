@@ -31,12 +31,12 @@
     }
     process.cwd = function () {
       if (!metadata) return unavailable("cwd");
-      return runtime.callSync(target, "process.currentDir", []);
+      return runtime.callSyncAs(target, "process.cwd", "process.currentDir", []);
     };
     process.chdir = function (path: string) {
       if (typeof path !== "string") throw Object.assign(new TypeError('The "directory" argument must be of type string'), { code: "ERR_INVALID_ARG_TYPE" });
       if (!metadata) return unavailable("chdir");
-      return runtime.callSync(target, "process.setCurrentDir", [path]);
+      return runtime.call(target, "process.setCurrentDir", [path]).then(function () { return undefined; });
     };
     process.nextTick = function (callback: Function) {
       if (typeof callback !== "function") throw new TypeError("callback must be a function");
@@ -114,7 +114,7 @@
         if (inputOwner) inputOwner.release();
       };
       if (typeof runtime.registerResource === "function") {
-        inputOwner = runtime.registerResource(input, function () { return inputCall && inputCall.cancel(); });
+        inputOwner = runtime.registerResource(input, function () { return inputCall && inputCall.cancel(); }, function () { return inputCall && inputCall.id; });
       }
     } else {
       process.stdin = null;

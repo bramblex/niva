@@ -140,7 +140,7 @@
                 return result;
             });
         }
-        function invoke(name, values, sync) {
+        function invoke(name, values, sync, syncApiName?) {
             var prepared = prepare(name, values);
             if (prepared.options.signal && prepared.options.signal.aborted) {
                 var error = runtime.bridgeError("The operation was aborted", "ABORT_ERR");
@@ -172,7 +172,7 @@
                         throw runtime.bridgeError("fs." + name + " requires a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
                 }
                 if (sync)
-                    return decode(name, runtime.callSync(niva, "fs.node", [name, prepared.args]), prepared.options, prepared.args.path);
+                    return decode(name, runtime.callSyncAs(niva, syncApiName || name + "Sync", "fs.node", [name, prepared.args]), prepared.options, prepared.args.path);
                 return runtime.call(niva, "fs.node", [name, prepared.args]).then(function (raw) { return decode(name, raw, prepared.options, prepared.args.path); }, function (error) { throw runtime.nativeError(error); });
             }
             if (sync)
@@ -181,7 +181,7 @@
         }
         var module: any = { constants: constants }, promises: any = { constants: constants };
         ["readFile", "writeFile", "appendFile", "mkdir", "readdir", "stat", "lstat", "realpath", "rename", "copyFile", "access", "rm", "unlink"].forEach(function (name) {
-            module[name + "Sync"] = function () { return invoke(name, Array.from(arguments), true); };
+            module[name + "Sync"] = function () { return invoke(name, Array.from(arguments), true, name + "Sync"); };
             promises[name] = function () { try {
                 return Promise.resolve(invoke(name, Array.from(arguments), false));
             }
@@ -196,10 +196,10 @@
             };
         });
         var syncFileDescriptors = new Map<number, any>();
-        function syncFdCall(operation, args) {
+        function syncFdCall(operation, args, syncApiName) {
             if (!isTrustedLocal())
                 throw runtime.bridgeError("Synchronous file descriptors require a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
-            return runtime.callSync(niva, "fs.node", [operation, args]);
+            return runtime.callSyncAs(niva, syncApiName, "fs.node", [operation, args]);
         }
         function syncFd(fd) {
             if (!Number.isInteger(fd) || fd < 0) throw runtime.bridgeError("Invalid file descriptor", "EBADF");
@@ -211,7 +211,7 @@
             var pathname = path(value);
             var flag = flags === undefined ? "r" : flags;
             if (typeof flag !== "string") throw runtime.bridgeError("Numeric open flags are not supported by this runtime", "ERR_NIVA_FS_FLAGS_UNSUPPORTED");
-            var fd = syncFdCall("open", { path: pathname, flag: flag, mode: mode === undefined ? 438 : mode });
+            var fd = syncFdCall("open", { path: pathname, flag: flag, mode: mode === undefined ? 438 : mode }, "openSync");
             if (!Number.isInteger(fd) || fd < 0) throw runtime.bridgeError("Invalid Native file descriptor response", "ERR_NIVA_IPC_RESPONSE");
             var entry: any = { fd: fd, closed: false, owner: undefined };
             entry.__nivaInvalidate = function () { entry.closed = true; syncFileDescriptors.delete(fd); };
@@ -221,14 +221,14 @@
         };
         module.closeSync = function (fd) {
             var entry = syncFd(fd);
-            syncFdCall("close", { fd: fd });
+            syncFdCall("close", { fd: fd }, "closeSync");
             entry.closed = true;
             syncFileDescriptors.delete(fd);
             if (entry.owner) entry.owner.release();
         };
         module.fstatSync = function (fd, opts) {
             syncFd(fd);
-            return stats(syncFdCall("fstat", { fd: fd }), opts);
+            return stats(syncFdCall("fstat", { fd: fd }, "fstatSync"), opts);
         };
         module.readSync = function (fd, buffer, offset, length, position) {
             syncFd(fd);
@@ -239,7 +239,7 @@
             if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length < 0 || offset + length > buffer.byteLength)
                 throw new RangeError("Invalid read range");
             if (position !== null && (!Number.isSafeInteger(position) || position < 0)) throw new RangeError("Invalid file position");
-            var result = syncFdCall("read", { fd: fd, length: length, position: position });
+            var result = syncFdCall("read", { fd: fd, length: length, position: position }, "readSync");
             if (!result || !Number.isInteger(result.bytesRead) || typeof result.data !== "string")
                 throw runtime.bridgeError("Invalid Native file read response", "ERR_NIVA_IPC_RESPONSE");
             new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(Buffer.from(result.data, "base64"), offset);
@@ -262,12 +262,12 @@
             }
             position = position === undefined ? null : position;
             if (position !== null && (!Number.isSafeInteger(position) || position < 0)) throw new RangeError("Invalid file position");
-            var result = syncFdCall("write", { fd: fd, data: data.toString("base64"), position: position });
+            var result = syncFdCall("write", { fd: fd, data: data.toString("base64"), position: position }, "writeSync");
             if (!result || !Number.isInteger(result.bytesWritten)) throw runtime.bridgeError("Invalid Native file write response", "ERR_NIVA_IPC_RESPONSE");
             return result.bytesWritten;
         };
         module.existsSync = function (value) { try {
-            module.accessSync(value);
+            invoke("access", [value], true, "existsSync");
             return true;
         }
         catch (error) {
@@ -350,9 +350,12 @@
             opts = {};
         } if (typeof callback !== "function")
             throw new TypeError("callback must be a function"); promises.cp(source, destination, opts).then(function () { callback(null); }, callback); };
-        function control(id, op, args?) {
+        function control(id, op, args?, routeOwner?) {
             try {
-                return runtime.stream(niva, "fs.handle", [id, op, args || {}]).promise.catch(function (error) { throw runtime.nativeError(error); });
+                var stream = routeOwner
+                    ? runtime.streamRelated(niva, routeOwner, "fs.handle", [id, op, args || {}])
+                    : runtime.stream(niva, "fs.handle", [id, op, args || {}]);
+                return stream.promise.catch(function (error) { throw runtime.nativeError(error); });
             }
             catch (error) {
                 return Promise.reject(runtime.nativeError(error));
@@ -369,14 +372,14 @@
                         opened = true;
                         var state = "open", closePromise, invalidationError, id = data.handle, owner;
                         function op(name, args?) { if (state !== "open")
-                            return Promise.reject(runtime.bridgeError("FileHandle is closed", "EBADF")); return control(id, name, args); }
+                            return Promise.reject(runtime.bridgeError("FileHandle is closed", "EBADF")); return control(id, name, args, call); }
                         var handle: any = { fd: id,
                             close: function () {
                                 if (state === "invalid") return Promise.reject(invalidationError);
                                 if (closePromise) return closePromise;
                                 if (state === "closed") return Promise.resolve();
                                 state = "closing";
-                                closePromise = control(id, "close").then(function () { state = "closed"; if (owner) owner.release(); }, function (error) { if (state === "closing") { state = "open"; closePromise = undefined; } throw error; });
+                                closePromise = control(id, "close", undefined, call).then(function () { state = "closed"; if (owner) owner.release(); }, function (error) { if (state === "closing") { state = "open"; closePromise = undefined; } throw error; });
                                 return closePromise;
                             },
                             stat: function (opts) { return op("stat").then(function (raw) { return stats(raw, opts); }); },
@@ -430,7 +433,7 @@
                         handle.appendFile = handle.writeFile;
                         handle.__nivaInvalidate = function (error) { state = "invalid"; invalidationError = error; if (owner) owner.release(); };
                         owner = typeof runtime.registerResource === "function"
-                            ? runtime.registerResource(handle, function () { return control(id, "close").catch(function () {}); })
+                            ? runtime.registerResource(handle, function () { return control(id, "close", undefined, call).catch(function () {}); }, call.id)
                             : null;
                         resolve(handle);
                     }
@@ -503,7 +506,7 @@
                 if (name === "change") target.emit("change", data.eventType, data.filename === null ? null : opts.encoding === "buffer" ? Buffer.from(data.filename) : data.filename);
             } });
             var streamId = call.id;
-            if (typeof runtime.registerResource === "function") owner = runtime.registerResource(watcher, function () { return runtime.cancelStream(streamId); });
+            if (typeof runtime.registerResource === "function") owner = runtime.registerResource(watcher, function () { return runtime.cancelStream(streamId); }, streamId);
             call.promise.catch(function (error) {
                 var target = watcherRef && watcherRef.deref();
                 if (!target || closed) return;

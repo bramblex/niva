@@ -11,8 +11,10 @@
     var EventEmitter = runtime.events && runtime.events.EventEmitter;
     if (!Buffer || !Duplex || !EventEmitter) throw new Error("Load vendor, Buffer, and events before net.");
 
-    function bridgeStream(method, args, handlers) {
-      return runtime.stream(niva, method, args, handlers || {});
+    function bridgeStream(method, args, handlers, routeOwner?) {
+      return routeOwner
+        ? runtime.streamRelated(niva, routeOwner, method, args, handlers || {})
+        : runtime.stream(niva, method, args, handlers || {});
     }
 
     function sendChunk(nivaTarget, id, value, end) {
@@ -21,9 +23,13 @@
       return runtime.streamSend(target, id, value, !!end);
     }
 
-    function control(nivaTarget, socketId, action, extra?) {
+    function control(nivaTarget, socketId, action, extra?, routeOwner?) {
       var target = runtime.resolveNiva(nivaTarget === undefined ? niva : nivaTarget);
-      return runtime.stream(target, "socket.control", [Object.assign({ socketId: socketId, action: action }, extra || {})], {}).promise;
+      var args = [Object.assign({ socketId: socketId, action: action }, extra || {})];
+      var stream = routeOwner
+        ? runtime.streamRelated(target, routeOwner, "socket.control", args, {})
+        : runtime.stream(target, "socket.control", args, {});
+      return stream.promise;
     }
 
     function validatePort(port, allowZero) {
@@ -55,7 +61,7 @@
 
     function closeSocketResource(state) {
       if (state.callId !== undefined) return runtime.cancelStream(state.callId);
-      if (state.socketId) return control(state.niva, state.socketId, "close").catch(function () {});
+      if (state.socketId) return control(state.niva, state.socketId, "close", undefined, state.routeCall).catch(function () {});
     }
 
     function weakServerHandlers(reference) {
@@ -64,7 +70,7 @@
 
     function closeServerResource(state) {
       if (state.listenerId !== undefined) return runtime.cancelStream(state.listenerId);
-      if (state.socketId) return control(state.niva, state.socketId, "close").catch(function () {});
+      if (state.socketId) return control(state.niva, state.socketId, "close", undefined, state.routeCall).catch(function () {});
     }
 
     class Socket extends Duplex {
@@ -91,10 +97,10 @@
         this.localAddress = undefined;
         this.localPort = undefined;
         this._niva = options.niva === undefined ? niva : options.niva;
-        this._resourceState = { callId: undefined, socketId: undefined, niva: this._niva };
+        this._resourceState = { callId: undefined, routeCall: undefined, socketId: undefined, niva: this._niva };
         var resourceState = this._resourceState;
         this._resourceOwner = typeof runtime.registerResource === "function"
-          ? runtime.registerResource(this, function () { return closeSocketResource(resourceState); })
+          ? runtime.registerResource(this, function () { return closeSocketResource(resourceState); }, function () { return resourceState.callId; })
           : null;
         this.__nivaInvalidate = function (error) {
           if (this._remoteClosed) return;
@@ -145,7 +151,7 @@
         return this._start(parsed.method || "socket.tcpConnect", parsed.args, parsed.event || this._connectEvent);
       }
 
-      _start(method, args, readyEvent) {
+      _start(method, args, readyEvent, routeOwner?) {
         if (this._bridgeCall) throw socketError("Socket is already connecting", "ERR_SOCKET_DGRAM_IS_CONNECTED");
         this.connecting = true;
         this.pending = true;
@@ -157,8 +163,9 @@
             onEvent: function (name, data) { if (!this._remoteClosed) this._onBridgeEvent(name, data); }.bind(this),
             onChunk: function (chunk, stderr) { if (!stderr && !this._remoteClosed) this._onBridgeChunk(chunk); }.bind(this),
           };
-          this._bridgeCall = bridgeStream(method, args, handlers);
+          this._bridgeCall = bridgeStream(method, args, handlers, routeOwner);
           this._resourceState.callId = this._bridgeCall.id;
+          this._resourceState.routeCall = this._bridgeCall;
         } catch (error) {
           this.connecting = false;
           this.pending = false;
@@ -182,12 +189,12 @@
         return this;
       }
 
-      _attach(socketId, secure, onReady?) {
+      _attach(socketId, secure, onReady?, routeOwner?) {
         this._secure = !!secure;
         this.encrypted = !!secure;
         this.authorized = secure ? true : undefined;
         this._onReady = onReady;
-        return this._start(secure ? "socket.tlsAttach" : "socket.tcpAttach", [{ socketId: socketId }], secure ? "secureConnect" : "connect");
+        return this._start(secure ? "socket.tlsAttach" : "socket.tcpAttach", [{ socketId: socketId }], secure ? "secureConnect" : "connect", routeOwner);
       }
 
       _onBridgeEvent(name, data) {
@@ -336,7 +343,7 @@
       _read() {
         if (this._manualPaused && this._socketId) {
           this._manualPaused = false;
-          control(this._niva, this._socketId, "resumeRead").catch(function () {});
+          control(this._niva, this._socketId, "resumeRead", undefined, this._bridgeCall).catch(function () {});
         }
       }
 
@@ -370,7 +377,7 @@
         if (ack <= 0) return;
         this._unackedReadBytes -= ack;
         var self = this;
-        control(this._niva, this._socketId, "readAck", { bytes: ack }).catch(function (error) { self.destroy(runtime.nativeError(error)); });
+        control(this._niva, this._socketId, "readAck", { bytes: ack }, this._bridgeCall).catch(function (error) { self.destroy(runtime.nativeError(error)); });
       }
 
       _write(chunk, encoding, callback) {
@@ -399,7 +406,7 @@
         Duplex.prototype.pause.call(this);
         if (!this._manualPaused) {
           this._manualPaused = true;
-          if (this._socketId) control(this._niva, this._socketId, "pauseRead").catch(function () {});
+          if (this._socketId) control(this._niva, this._socketId, "pauseRead", undefined, this._bridgeCall).catch(function () {});
         }
         return this;
       }
@@ -408,7 +415,7 @@
         Duplex.prototype.resume.call(this);
         if (this._manualPaused) {
           this._manualPaused = false;
-          if (this._socketId) control(this._niva, this._socketId, "resumeRead").catch(function () {});
+          if (this._socketId) control(this._niva, this._socketId, "resumeRead", undefined, this._bridgeCall).catch(function () {});
         }
         return this;
       }
@@ -489,10 +496,10 @@
         this._tlsIdentity = this._secure ? this._options.identity : undefined;
         this._listenerCall = undefined;
         this._socketId = undefined;
-        this._resourceState = { listenerId: undefined, socketId: undefined, niva: niva };
+        this._resourceState = { listenerId: undefined, routeCall: undefined, socketId: undefined, niva: niva };
         var resourceState = this._resourceState;
         this._resourceOwner = typeof runtime.registerResource === "function"
-          ? runtime.registerResource(this, function () { return closeServerResource(resourceState); })
+          ? runtime.registerResource(this, function () { return closeServerResource(resourceState); }, function () { return resourceState.listenerId; })
           : null;
         this.__nivaInvalidate = function (error) {
           if (this._closing && !this.listening) return;
@@ -523,6 +530,7 @@
         var handlers = weak ? weakServerHandlers(weak) : { onEvent: function (name, data) { this._onListenerEvent(name, data); }.bind(this) };
         this._listenerCall = bridgeStream(method, [parsed.nativeArgs], handlers);
         this._resourceState.listenerId = this._listenerCall.id;
+        this._resourceState.routeCall = this._listenerCall;
         if (weak) {
           this._listenerCall.promise.then(function () { var server = weak.deref(); if (server) { server.listening = false; server._maybeCloseEvent(); } }, function (error) {
             var server = weak.deref();
@@ -599,7 +607,7 @@
           self._sockets.delete(socket);
           self._maybeCloseEvent();
         });
-        socket._attach(socketId, this._secure);
+        socket._attach(socketId, this._secure, undefined, this._listenerCall);
       }
 
       address() { return this._address; }
@@ -615,7 +623,7 @@
           throw error;
         }
         this._closing = true;
-        if (this._socketId) control(niva, this._socketId, "pauseRead").catch(function () {});
+        if (this._socketId) control(niva, this._socketId, "pauseRead", undefined, this._listenerCall).catch(function () {});
         this._maybeCloseEvent();
         return this;
       }

@@ -37,12 +37,33 @@
             throw nativeError(error);
         }
     }
+    function callSyncAs(niva, apiName, method, args) {
+        var target = resolveNiva(niva);
+        var call = target.bridge && target.bridge[Symbol.for("niva.internal.bridge.callSyncApi")];
+        if (typeof call === "function") {
+            try {
+                return call.call(target.bridge, apiName, method, args || []);
+            }
+            catch (error) {
+                throw nativeError(error);
+            }
+        }
+        return callSync(target, method, args || []);
+    }
     function stream(niva, method, args, handlers) {
         var target = resolveNiva(niva);
         if (!target.bridge || typeof target.bridge.stream !== "function") {
             throw new Error("Niva.bridge.stream is unavailable for " + method + ". This API requires a local Niva page.");
         }
         return target.bridge.stream(method, args || [], handlers || {});
+    }
+    function streamRelated(niva, ownerCall, method, args, handlers) {
+        var target = resolveNiva(niva);
+        var call = target.bridge && target.bridge[Symbol.for("niva.internal.bridge.streamRelated")];
+        if (typeof call !== "function") {
+            throw bridgeError("Niva bridge cannot preserve the Native resource owner", "ERR_NIVA_STREAM_OWNER_CLOSED");
+        }
+        return call.call(target.bridge, ownerCall, method, args || [], handlers || {});
     }
     function streamSend(niva, id, data, end) {
         var target = resolveNiva(niva);
@@ -145,7 +166,9 @@
     runtime.api = api;
     runtime.call = call;
     runtime.callSync = callSync;
+    runtime.callSyncAs = callSyncAs;
     runtime.stream = stream;
+    runtime.streamRelated = streamRelated;
     runtime.streamSend = streamSend;
     runtime.bridgeError = bridgeError;
     runtime.nativeError = nativeError;

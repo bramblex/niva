@@ -110,12 +110,15 @@ def main():
     done = threading.Event()
     fixture = {'file': str(output / 'ipc-text.txt'), 'python': sys.executable,
                'directory': str(output / ('directory-' + uuid.uuid4().hex)),
+               'cwdDirectory': str(output / ('cwd-directory-' + uuid.uuid4().hex)),
                'httpsUrl': args.https_url,
                'progress': str(output / 'progress.json'),
                'started': str(output / 'lease-child-started.txt'),
                'orphan': str(output / 'lease-orphan.txt'),
                'command': 'echo niva-ipc' if os.name == 'nt' else 'printf niva-ipc',
                'trustedDebug': args.trusted_debug}
+    Path(fixture['directory']).mkdir()
+    Path(fixture['cwdDirectory']).mkdir()
     Path(fixture['started']).unlink(missing_ok=True)
     Path(fixture['orphan']).unlink(missing_ok=True)
     Path(fixture['progress']).unlink(missing_ok=True)
@@ -137,7 +140,7 @@ def main():
             path = self.path.split('?', 1)[0]
             if path == '/':
                 page_loads['entry'] += 1
-                self.respond(200, b'<!doctype html><meta charset="utf-8"><title>IPC fallback smoke</title><pre id="status">Running...</pre><script src="/cases.js"></script>', 'text/html')
+                self.respond(200, b'<!doctype html><meta charset="utf-8"><title>Stable IPC bridge smoke</title><pre id="status">Running...</pre><script src="/cases.js"></script>', 'text/html')
             elif path == '/cases.js':
                 page_loads['casesScript'] += 1
                 self.respond(200, (HERE / 'cases.js').read_bytes(), 'application/javascript')
@@ -199,7 +202,7 @@ def main():
         query.append('skipSessionLiveness=1')
     entry = origin + '/' + (('?' + '&'.join(query)) if query else '')
     config.write_text(json.dumps({
-        'name': 'Niva IPC fallback smoke', 'uuid': str(uuid.uuid4()),
+        'name': 'Niva stable IPC bridge smoke', 'uuid': str(uuid.uuid4()),
         'injectCommonJs': False, 'injectEsm': False,
         'window': {'entry': entry, 'visible': True,
                    'permissions': {} if args.trusted_debug else {origin: ['fs.readText', 'fs.writeText', 'fs.appendText', 'fs.node',

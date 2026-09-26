@@ -9,19 +9,23 @@
     var EventEmitter = runtime.events.EventEmitter;
 
     function dgramError(message, code?) { return runtime.bridgeError(message, code || "ERR_SOCKET_DGRAM_NOT_RUNNING"); }
-    function callStream(method, args, handlers) { return runtime.stream(niva, method, args, handlers || {}); }
+    function callStream(method, args, handlers, routeOwner?) {
+      return routeOwner
+        ? runtime.streamRelated(niva, routeOwner, method, args, handlers || {})
+        : runtime.stream(niva, method, args, handlers || {});
+    }
     function sendBytes(id, bytes) {
       var target = runtime.resolveNiva(niva);
       if (!target.bridge || typeof target.bridge.streamSend !== "function") throw runtime.bridgeError("Niva.bridge.streamSend is unavailable", "ERR_METHOD_NOT_IMPLEMENTED");
       if (!runtime.streamSend(target, id, bytes, true)) throw dgramError("UDP datagram could not be queued", "ERR_SOCKET_DGRAM_NOT_RUNNING");
     }
-    function control(socketId, action, extra?) {
-      return callStream("socket.control", [Object.assign({ socketId: socketId, action: action }, extra || {})], {}).promise;
+    function control(socketId, action, extra?, routeOwner?) {
+      return callStream("socket.control", [Object.assign({ socketId: socketId, action: action }, extra || {})], {}, routeOwner).promise;
     }
 
     function closeDatagramResource(state) {
       if (state.bindId !== undefined) return runtime.cancelStream(state.bindId);
-      if (state.socketId) return control(state.socketId, "close").catch(function () {});
+      if (state.socketId) return control(state.socketId, "close", undefined, state.routeCall).catch(function () {});
     }
 
     function weakDatagramHandlers(reference) {
@@ -51,7 +55,7 @@
             var message = Buffer.from(arrayBuffer);
             var remoteInfo = { address: info.address, port: info.port, family: String(info.address || "").indexOf(":") >= 0 ? "IPv6" : "IPv4", size: Number(info.size) || message.length };
             current.emit("message", message, remoteInfo);
-            if (current._socketId) control(current._socketId, "readAck", { bytes: Math.max(1, message.length) }).catch(function (error) {
+            if (current._socketId) control(current._socketId, "readAck", { bytes: Math.max(1, message.length) }, current._bindCall).catch(function (error) {
               if (!current._closing && current.listenerCount("error")) { try { current.emit("error", runtime.nativeError(error)); } catch (_) {} }
             });
           }, function (error) { var current = reference.deref(); if (current && current.listenerCount("error")) { try { current.emit("error", error); } catch (_) {} } });
@@ -76,10 +80,10 @@
         }
         this._socketId = undefined;
         this._bindCall = undefined;
-        this._resourceState = { bindId: undefined, socketId: undefined };
+        this._resourceState = { bindId: undefined, routeCall: undefined, socketId: undefined };
         var resourceState = this._resourceState;
         this._resourceOwner = typeof runtime.registerResource === "function"
-          ? runtime.registerResource(this, function () { return closeDatagramResource(resourceState); })
+          ? runtime.registerResource(this, function () { return closeDatagramResource(resourceState); }, function () { return resourceState.bindId; })
           : null;
         this.__nivaInvalidate = function (error) {
           if (this._closed) return;
@@ -149,7 +153,7 @@
               };
               self.emit("message", message, remoteInfo);
               if (self._socketId) {
-                control(self._socketId, "readAck", { bytes: Math.max(1, message.length) }).catch(function (error) {
+                control(self._socketId, "readAck", { bytes: Math.max(1, message.length) }, self._bindCall).catch(function (error) {
                   if (!self._closing) self.emit("error", runtime.nativeError(error));
                 });
               }
@@ -158,6 +162,7 @@
         };
         this._bindCall = callStream("socket.udpBind", [{ host: options.host, port: options.port }], handlers);
         this._resourceState.bindId = this._bindCall.id;
+        this._resourceState.routeCall = this._bindCall;
         if (weak) this._bindCall.promise.then(function () { var socket = weak.deref(); if (socket) socket._finishClose(); }, function (error) {
           var socket = weak.deref();
           if (!socket) return;
@@ -207,7 +212,7 @@
           }
           var call;
           try {
-            call = callStream("socket.udpSend", [{ socketId: self._socketId, address: destinationAddress, port: destinationPort }], {});
+            call = callStream("socket.udpSend", [{ socketId: self._socketId, address: destinationAddress, port: destinationPort }], {}, self._bindCall);
             sendBytes(call.id, bytes);
           } catch (error) {
             if (cb) cb(error); else self.emit("error", error);
@@ -239,7 +244,7 @@
         if (!this._socketId || this._closeSent || this._closed) return;
         this._closeSent = true;
         var self = this;
-        control(this._socketId, "close").catch(function (error) {
+        control(this._socketId, "close", undefined, this._bindCall).catch(function (error) {
           if (self._closed) return;
           self._closeSent = false;
           self._closing = false;

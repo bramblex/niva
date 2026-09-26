@@ -25,9 +25,9 @@
   add("process.chdir", "changes only the disposable child cwd then restores it", async ({ context, tempRoot }) => {
     const before = context.process.cwd();
     try {
-      context.process.chdir(tempRoot);
+      await context.process.chdir(tempRoot);
       expect(context.process.cwd() === tempRoot, "process.chdir did not change cwd");
-    } finally { context.process.chdir(before); }
+    } finally { await context.process.chdir(before); }
   });
   add("child_process.execFile", "runs a harmless fixed command and checks its stdout/status", async ({ context }) => {
     const result = await new Promise((resolve, reject) => context.childProcess.execFile("/usr/bin/printf", ["niva-exec-smoke"], (error, stdout, stderr) => {

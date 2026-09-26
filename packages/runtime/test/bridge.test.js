@@ -69,7 +69,7 @@ test("package ESM exports resolve and registration enforces the bridge version",
 
 
 test('fs uses native operations for callbacks, promises and synchronous binary data', async () => {
-  const files=new Map(),calls=[],streams=[];
+  const files=new Map(),calls=[],streams=[],relatedStreams=[];
   function dispatch(method,[op,args]){
     assert.equal(method,'fs.node');calls.push([op,args]);
     if(op==='writeFile'){files.set(args.path,args.data);return null;}
@@ -83,8 +83,8 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
   const handles=new Map();
   const niva={bridge:{isTrustedLocal:()=>true,call:(...args)=>Promise.resolve().then(()=>dispatch(...args)),callSync:dispatch,
     stream(method,args,handlers){
-      streams.push([method,args]);
       const id=++nextStreamId;
+      streams.push([method,args,id]);
       if(method==='fs.openHandle'){
         const [path,flag]=args;
         const exists=files.has(path);
@@ -124,6 +124,10 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
       throw new Error(`unexpected handle operation ${operation}`);
     },
   }};
+  Object.defineProperty(niva.bridge, Symbol.for('niva.internal.bridge.streamRelated'), { value(ownerCall,method,args,handlers) {
+    relatedStreams.push({ ownerCall, method });
+    return this.stream(method,args,handlers);
+  } });
   const fs=runtime.createFsModule(niva);
   fs.writeFileSync('/bytes',Uint8Array.of(0,255,65),{mode:0o600,flag:'wx'});
   assert.deepEqual([...fs.readFileSync('/bytes')],[0,255,65]);
@@ -141,6 +145,9 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
   assert.ok(streams.some(([method])=>method==='fs.openHandle'));
   assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='read'));
   assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='write'));
+  const openIds=new Set(streams.filter(([method])=>method==='fs.openHandle').map(([, ,id])=>id));
+  assert.ok(relatedStreams.some(({method})=>method==='fs.handle'));
+  assert.ok(relatedStreams.filter(({method})=>method==='fs.handle').every(({ownerCall})=>openIds.has(ownerCall.id)));
   assert.equal(calls[0][1].mode,0o600);assert.equal(calls[0][1].flag,'wx');
 });
 
@@ -208,11 +215,15 @@ test('OS static information avoids bridge calls and dynamic values query each ti
 });
 
 function processBridge(status=0){
-  const calls=[],sent=[];
+  const calls=[],sent=[],related=[];
   const bridge={stream(method,args,handlers){calls.push([method,args]);if(method==='process.signal')return {promise:Promise.resolve(true)};return {id:7,cancel(){},promise:Promise.resolve().then(()=>{
     handlers.onEvent('spawn',{pid:42});handlers.onChunk(Uint8Array.from([0xe4,0xbd]),false);handlers.onChunk(Uint8Array.from([0xa0]),false);handlers.onChunk(new TextEncoder().encode('warn'),true);return {status};
   })};},streamSend(id,bytes,end){sent.push([id,[...bytes],end]);return true;}};
-  return {calls,sent,bridge,bootstrap:{os:{platform:'linux'}}};
+  Object.defineProperty(bridge, Symbol.for('niva.internal.bridge.streamRelated'), { value(ownerCall,method,args,handlers) {
+    related.push({ ownerCall, method, args });
+    return this.stream(method,args,handlers);
+  } });
+  return {calls,sent,related,bridge,bootstrap:{os:{platform:'linux'}}};
 }
 test('child output uses real streams, decodes split UTF-8, and signals the owned call',async()=>{
   const bridge=processBridge(),cp=runtime.createChildProcessModule(bridge),child=cp.spawn('cat',[]);let text='';
@@ -220,7 +231,7 @@ test('child output uses real streams, decodes split UTF-8, and signals the owned
   const ended=new Promise(resolve=>child.stdout.once('end',resolve));
   child.on('spawn',()=>{assert.equal(child.pid,42);assert.equal(child.kill('SIGTERM'),true);});
   child.stdin.end('hello');await child.completion;await ended;
-  assert.equal(text,'你');assert.deepEqual(bridge.calls[1],['process.signal',[7,'SIGTERM']]);assert.deepEqual(bridge.sent[0],[7,[104,101,108,108,111],false]);
+  assert.equal(text,'你');assert.deepEqual(bridge.calls[1],['process.signal',[7,'SIGTERM']]);assert.equal(bridge.related[0].method,'process.signal');assert.equal(bridge.related[0].ownerCall.id,7);assert.deepEqual(bridge.sent[0],[7,[104,101,108,108,111],false]);
 });
 test('exec callbacks receive buffered stderr and nonzero exit errors',async()=>{
   const cp=runtime.createChildProcessModule(processBridge(7));

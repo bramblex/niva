@@ -843,10 +843,9 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
     };
 
     let (tx, rx) = mpsc::channel::<crate::app::window_manager::window::WsOut>();
-    let connection_id = window.register_ws_sender(tx.clone());
+    let connection_id = window.next_ws_connection_id();
     let api = state.app.api();
     if let Err(error) = register_ws_hello(&api, window.id, connection_id, &hello_text) {
-        window.remove_ws_sender(connection_id);
         api.cancel_connection(window.id, connection_id);
         return Err(error);
     }
@@ -883,7 +882,6 @@ fn ws_pump_inner(state: &Arc<ServerState>, stream: WsStream) -> Result<()> {
         }
     }
 
-    window.remove_ws_sender(connection_id);
     state.app.api().cancel_connection(window.id, connection_id);
     Ok(())
 }

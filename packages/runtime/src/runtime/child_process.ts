@@ -122,7 +122,7 @@
             child.stdio = [child.stdin, child.stdout, child.stderr];
             function sendSignal(signal) {
                 if (!call || call.id === undefined) return;
-                runtime.stream(niva, "process.signal", [call.id, String(signal)]).promise.catch(function (error) {
+                runtime.streamRelated(niva, call, "process.signal", [call.id, String(signal)]).promise.catch(function (error) {
                     var target = childRef ? childRef.deref() : childFallback;
                     if (target && !target._abortError) target.emit("error", runtime.nativeError(error));
                 });
@@ -180,7 +180,7 @@
                 }
             }
             if (call.id !== undefined && typeof runtime.registerResource === "function") {
-                owner = runtime.registerResource(child, function () { return call.cancel(); });
+                owner = runtime.registerResource(child, function () { return call.cancel(); }, call.id);
                 child.__nivaInvalidate = function (error) {
                     if (settled || resourceInvalidated) return;
                     resourceInvalidated = true;
@@ -281,7 +281,7 @@
             callback = options;
             options = {};
         } options = options || {}; var invocation = shellInvocation(command, options.shell); return execFile(invocation.command, invocation.args, Object.assign({}, options, { shell: false }), callback); }
-        function spawnSync(command, args, options) {
+        function spawnSyncWithApiName(command, args, options, apiName) {
             if (!Array.isArray(args)) {
                 options = args || {};
                 args = [];
@@ -294,7 +294,7 @@
                 payload.input = runtime.vendor.Buffer.from(options.input, options.encoding || "utf8").toString("base64");
             var result;
             try {
-                result = runtime.callSync(niva, "process.spawnSync", [invocation.command, invocation.args, payload]);
+                result = runtime.callSyncAs(niva, apiName, "process.spawnSync", [invocation.command, invocation.args, payload]);
             }
             catch (error) {
                 return { pid: 0, status: null, signal: null, output: null, stdout: null, stderr: null, error: runtime.nativeError(error) };
@@ -315,17 +315,23 @@
                 delete result.error;
             return result;
         }
-        function execFileSync(file, args, options) {
+        function spawnSync(command, args, options) {
+            return spawnSyncWithApiName(command, args, options, "spawnSync");
+        }
+        function execFileSyncWithApiName(file, args, options, apiName) {
             if (!Array.isArray(args)) {
                 options = args || {};
                 args = [];
             }
-            var result = spawnSync(file, args, options);
+            var result = spawnSyncWithApiName(file, args, options, apiName);
             if (result.error || result.status !== 0)
                 throw Object.assign(result.error || new Error("Command failed: " + file), result);
             return result.stdout;
         }
-        function execSync(command, options) { return execFileSync(command, [], Object.assign({}, options, { shell: options && options.shell || true })); }
+        function execFileSync(file, args, options) {
+            return execFileSyncWithApiName(file, args, options, "execFileSync");
+        }
+        function execSync(command, options) { return execFileSyncWithApiName(command, [], Object.assign({}, options, { shell: options && options.shell || true }), "execSync"); }
         return { spawn, exec, execFile, spawnSync, execFileSync, execSync, execText, execFileText };
     }
     runtime.createChildProcessModule = createChildProcessModule;

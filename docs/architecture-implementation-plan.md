@@ -8,6 +8,8 @@
 
 **已验证**：IPC远端授权24项；真实初始化5组；原版TypeScript CLI成功/失败2组；macOS两种打包布局各7项；stdio与退出子进程清理；runtime130/130；固定Node22.14官方JS48/48、Native10/10；Rust快照175+22+2+10项及fmt/check/clippy、Windows target check；types四种独立安装消费者、完整typecheck与Devtools build。各项对应具体快照，不能合并声称最新源码全量验收。
 
+> 2026-09-26 路由决定更新（覆盖下文早期“IPC fallback”提案）：对外分为异步API与Node兼容同步API。普通异步调用固定走平台IPC/`evaluate_script`；大吞吐文件/网络、二进制和流式stdio在每个新操作创建时优先使用已建立的WS优化bridge，否则由同语义IPC Channel承载，IPC binary frame在边界Base64编码。资源及其后续control/signal操作沿用创建时bridge；已提交操作断连时明确失败，不重放或迁移。同步XHR只服务需要同步返回的Node兼容API，按公开方法首调warning；`process.chdir`为异步API。最新macOS arm64完整release SHA `9108b915…` 为2,994,936 bytes；其真实WebView基础bridge 7/7、可信IPC 23项、远端grant IPC 21项通过，两个IPC场景各跳过2项隐藏窗口lease心跳。Windows真机和完整资源owner生命周期仍待验收。
+
 **最后构建**：暂停前已经启动的release构建正常完成，未再启动新构建。`target/release/niva`为macOS ARM64，3,106,128 bytes，SHA256 `6dba027b7a3198269be21957cdb933380764b6930e76bac24ad4b213e940cf57`；runtime完整构建fingerprint `fad96616b63d1de542452fe13dbb5a58c11833131f144e28db645727d54609ea`。该Native产物包含版本元数据调整，但尚未用它重跑RWA或全部Native验收。最近已经完成主要真实验证的冻结产物仍为`/tmp/niva-architecture-release-e269ac719067`。
 
 **必须继续的事项（未完成，不宣称全部落地）**：
@@ -31,7 +33,7 @@
 - 侧边已确认决定也纳入：crypto.timingSafeEqual为纯JS同步模拟，完整遍历、长度校验、调用警告，不宣称时序安全；移除专用Native RPC，保留Rust token鉴权用subtle。
 - Niva API默认存在；`injectCommonJs`、`injectEsm`独立、默认false。字段无旧nodeCompat兼容别名。API自身分模块，只有统一bootstrap写Node全局。
 - CommonJS内置接口直取Niva；JS/JSON文件通过同步XHR请求Native加载后在页面执行；不支持.node，不自建ESM引擎。ESM为.mjs facade+浏览器importmap，尊重用户覆盖。
-- IPC受原生授权约束，只做有界异步JSON：文件文本读写/元数据/目录操作、HTTP/HTTPS文本请求、有界exec/execFile文本结果。动态二进制/Native同步/持久流拒绝，纯JS和已授权静态数据不受传输限制。Node已有流式API保留其真实契约，另提供明确的一次性高层接口，不能用JSON对象冒充Node HTTP stream。
+- IPC受原生授权约束：普通异步调用使用有界JSON；可信本地页面还可通过有界IPC Channel执行流式/二进制操作，二进制frame在边界Base64编码。已建立的WS只优化大吞吐和流操作，不构成API类别；远端grant仍限unary JSON。同步XHR仅供Node同步兼容API，`process.chdir`改为异步。
 - EOF仅终止process.stdin，不自动结束桌面应用；Bridge断线按会话清资源，旧请求不重放。显式独立调试进程必须有明确所有权移交，不以模糊detached状态绕过清理。
 - `--resource`、`--config`为正式参数；debug入口明确区分。D07自定义协议调试代理仍是候选，优先确保已有直连调试+明确IPC降级可用，不把未经定案的代理方案宣称已实现。
 - 完整UUID标识数据目录；框架日志独立文件，不污染stdio；移除api.host/--stdio/内置NDJSON。
@@ -58,7 +60,7 @@
 
 - 外置资源标记：Windows RT_RCDATA `RESOURCE_MODE`为`external`，资源在exe旁`resources/`；macOS `Contents/Resources/RESOURCE_MODE`为`external`，资源在`Contents/Resources/app/`。嵌入布局保留当前索引+数据格式。由packager与ResourceManager生产/消费一致定义，协议根边界不变。
 - Node环境字段由S2 runtime包统一落地；当前原NodeCompat到新包迁移须同时更新Rust build.rs、运行资源索引、Devtools、tests/scripts、类型与CI。
-- 三种Bridge仍保留Rust鉴权；原生fallback不得按“JSON可以序列化”放行任意操作。旧活跃请求、句柄和延迟UI任务不能跨会话复活。
+- 平台IPC/`evaluate_script`稳定bridge、可选WS优化bridge和同步XHR的Rust鉴权边界各自保持明确；WS是否可用不改变来源授权。禁止跨bridge重放已提交的副作用；旧活跃请求、句柄和延迟UI任务不能跨会话复活。
 - 框架logger初始启动/失败也不得回退stdout/stderr；应用process标准流原样传输，独立日志有大小/轮转限制并隐藏秘密。
 
 ### 当前落地接口约定
@@ -67,7 +69,7 @@
 - 嵌入资源的用户CommonJS加载采用真实文件语义：首次需要时将嵌入资源树逐文件解包到本次进程独占临时目录，原子就绪后交给普通文件解析器；目录/绿色模式直接使用资源根，不复制。这样__dirname、相邻资源和readdir保持一致，不另外维护fs虚拟覆盖层。单文件+CJS会产生磁盘解包成本；业务持久数据使用UUID data目录。正常退出清理临时树，异常终止恢复策略须验证。
 - 同步loader RPC：`module.resolve(specifier,parentFilename)`返回filename；`module.load`返回`{filename,dirname,type:"commonjs"|"json",source}`。parentFilename为空表示应用资源根，模块内部则传真正的绝对文件路径；支持标准祖先node_modules解析，不能把HTTP资源沙箱误套到已授权的本机Node文件读取。单模块源码最多16MiB。JS维护缓存/循环；Rust仅解析并读取可信调用请求指定的模块。
 - IPC文本RPC：`fs.readText(path,encoding?,options?)`、`fs.writeText/appendText(path,text,encoding?,options?)`；首版明确UTF-8。`fs.node`仅允许Rust枚举的stat/lstat/readdir/access/realpath/mkdir/rename/copyFile/rm/unlink/cp JSON元数据/一次性操作。
-- `http.requestText(options)`返回`{statusCode,statusMessage,headers,body}`；`process.execText(command,options?)`与`execFileText(file,args?,options?)`返回`{stdout,stderr,status,signal?}`。这是单次文本接口，Node流式对象仍须WS。
+- `http.requestText(options)`返回`{statusCode,statusMessage,headers,body}`；`process.execText(command,options?)`与`execFileText(file,args?,options?)`返回`{stdout,stderr,status,signal?}`。这是单次文本接口；Node流式对象由WS优化bridge承载，WS未就绪时由IPC Channel承载同一流操作。
 - 当前边界：IPC请求JSON最多256KiB；HTTP文本body最多1MiB；IPC响应JSON上限8MiB覆盖文本JSON转义膨胀；exec stdout+stderr合计最多64KiB；高层网络/exec默认10秒、最多30秒，调用选项只可收紧。Native必须在读取阶段限制，不能完整缓冲后才检查。
 - 模块解析采用固定版本oxc_resolver；`requestText`与Node `http.request/get`均复用Rust ureq和Niva平台TLS connector，使用`native-tls-no-default`且Cargo锁定图不含WebPKI根证书bundle。Node流式客户端通过WS分块上传/下载和背压确认，由JS只适配Node对象；`createServer`仍由JS处理服务端HTTP协议。
 

@@ -15,7 +15,7 @@ const fixtureFiles = new Map([
   ["/app/throw.cjs", "throw new Error('source path fixture');"],
 ]);
 
-function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux" } = {}) {
+function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply } = {}) {
   const requests = [];
   const importMaps = [];
   const sockets = [];
@@ -72,6 +72,7 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
         const filename = resolve(args[0], args[1]);
         data = { filename, dirname: path.posix.dirname(filename), type: filename.endsWith(".json") ? "json" : "commonjs", source: fixtureFiles.get(filename) };
       } else if (method === "process.currentDir") data = "/app";
+      else if (syncReply) data = syncReply({ id, method, args });
       else throw new Error(`Unexpected sync method ${method}`);
       this.status = 200;
       this.responseText = JSON.stringify([id, 0, "", data]);
@@ -98,7 +99,7 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
   const setPageInterval = fakeTimers ? function () { const id = ++timerId; fakeTimerHandles.add(id); return id; } : setInterval;
   const clearPageInterval = fakeTimers ? function (id) { fakeTimerHandles.delete(id); } : clearInterval;
   context = vm.createContext({
-    console,
+    console: consoleImpl,
     ...(ErrorConstructor ? { Error: ErrorConstructor } : {}),
     document,
     location: { pathname: "/app/index.html", href: `${origin}/app/index.html`, origin },
@@ -282,32 +283,112 @@ test("cross-origin iframe receives no parent bridge credentials or process metad
   assert.equal(child.context.Niva.bridge.isTrustedLocal(), false);
 });
 
-test("an already-open WebSocket is selected for every async call and stream in the realm", async () => {
-  const { context, sockets, requests } = bootPage({ injectCommonJs: false, injectEsm: false, fakeTimers: true, ipcReply: () => ({ unreachable: true }) });
+test("ordinary async calls use IPC while an available WebSocket optimizes streams", async () => {
+  const warnings = [];
+  const { context, sockets, requests } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    consoleImpl: { warn: (message) => warnings.push(message), error() {} },
+    ipcReply(request) { return { t: "result", id: request.id, code: 0, data: { method: request.method } }; },
+  });
   const socket = sockets[0];
   socket.open();
-  const reply = context.Niva.bridge.call("window.getTitle", []);
-  await Promise.resolve();
   const helloFrame = socket.sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "hello");
   assert.equal(helloFrame.sessionId, context.Niva.bridge.sessionId);
-  const callFrame = socket.sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "call");
-  assert.ok(callFrame);
-  assert.equal(typeof callFrame.id, "number");
-  assert.equal(callFrame.sessionId, context.Niva.bridge.sessionId);
-  socket.receive(JSON.stringify({ t: "result", id: callFrame.id, code: 0, data: { ok: true } }));
-  assert.equal((await reply).ok, true);
+  const unaryResult = await context.Niva.bridge.call("window.getTitle", []);
+  assert.deepEqual(JSON.parse(JSON.stringify(unaryResult)), { method: "window.getTitle" });
+  assert.equal(requests[0].transport, "ipc");
+  assert.equal(requests[0].method, "window.getTitle");
+  assert.equal(socket.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t === "call").length, 0);
 
   const stream = context.Niva.bridge.stream("fs.readStream", []);
   const streamResult = stream.promise;
   await Promise.resolve();
   const streamCallFrame = socket.sent.map((text) => JSON.parse(text)).filter((frame) => frame.t === "call").at(-1);
+  assert.ok(streamCallFrame);
   assert.equal(streamCallFrame.method, "fs.readStream");
   socket.receive(JSON.stringify({ t: "result", id: stream.id, code: 0, data: "stream done" }));
   assert.equal(await streamResult, "stream done");
-  assert.equal(requests.length, 0, "the selected WebSocket call is not also sent over IPC");
+
+  assert.equal(context.Niva.bridge.callSync("process.currentDir", []), "/app");
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /synchronous XHR/);
+  assert.equal(context.Niva.bridge.callSync("process.currentDir", []), "/app");
+  assert.equal(warnings.length, 1, "the sync warning is emitted once per method per realm");
 });
 
-test("macOS IPC replies correlate by numeric rid after WebSocket setup fails", async () => {
+test("sync compatibility aliases warn once by their public Node method name", () => {
+  const warnings = [];
+  const { context } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    consoleImpl: { warn: (message) => warnings.push(message), error() {} },
+    syncReply({ method, args }) {
+      if (method === "fs.node") {
+        if (args[0] === "readFile") return "eA==";
+        return { size: 1, mtimeMs: 1 };
+      }
+      if (method === "process.spawnSync") return { stdout: "", stderr: "", status: 0, signal: null };
+      if (method === "process.currentDir") return "/app";
+      throw new Error(`Unexpected sync method ${method}`);
+    },
+  });
+  const fs = context.Niva.fs;
+  assert.equal(fs.readFileSync("/file", "utf8"), "x");
+  assert.equal(fs.readFileSync("/file", "utf8"), "x");
+  assert.equal(fs.statSync("/file").size, 1);
+  assert.equal(fs.statSync("/file").size, 1);
+
+  const childProcess = context.Niva.child_process;
+  assert.equal(childProcess.spawnSync("noop", []).status, 0);
+  assert.equal(childProcess.spawnSync("noop", []).status, 0);
+  assert.equal(childProcess.execSync("noop").length, 0);
+  assert.equal(childProcess.execSync("noop").length, 0);
+  assert.equal(childProcess.execFileSync("noop", []).length, 0);
+  assert.equal(childProcess.execFileSync("noop", []).length, 0);
+  assert.equal(context.Niva.process.cwd(), "/app");
+  assert.equal(context.Niva.process.cwd(), "/app");
+
+  const names = warnings.map((message) => /^Niva synchronous compatibility API '([^']+)'/.exec(message)?.[1]);
+  assert.deepEqual(names, ["readFileSync", "statSync", "spawnSync", "execSync", "execFileSync", "process.cwd"]);
+});
+
+test("CommonJS module resolve and load warnings each emit once with their RPC names", () => {
+  const warnings = [];
+  const { context } = bootPage({
+    injectCommonJs: true,
+    injectEsm: false,
+    consoleImpl: { warn: (message) => warnings.push(message), error() {} },
+  });
+  context.require("./cycle-a.cjs");
+  context.require("./cycle-b.cjs");
+  context.require.resolve("./cycle-a.cjs");
+  const names = warnings.map((message) => /^Niva synchronous compatibility API '([^']+)'/.exec(message)?.[1]);
+  assert.deepEqual(names, ["path.resolve", "module.resolve", "module.load"]);
+});
+
+test("callSyncAs and related streams delegate through the current bridge methods", () => {
+  const { context } = bootPage({ injectCommonJs: false, injectEsm: false });
+  const runtime = context[Symbol.for("niva.node-compat.runtime")];
+  const calls = [];
+  context.Niva.bridge.stream = (method, args, handlers) => {
+    calls.push(["stream", method, args, handlers]);
+    return { id: 77, promise: Promise.resolve(null), cancel() {} };
+  };
+  context.Niva.bridge.callSync = (method, args, apiName) => {
+    calls.push(["callSync", method, args, apiName]);
+    return apiName;
+  };
+
+  const related = runtime.streamRelated(context.Niva, { id: 76 }, "resource.control", ["id"]);
+  assert.equal(related.id, 77);
+  assert.equal(JSON.stringify(calls[0]), JSON.stringify(["stream", "resource.control", ["id"], {}]));
+  assert.equal(runtime.callSyncAs(context.Niva, "readFileSync", "fs.node", ["readFile"]), "readFileSync");
+  assert.equal(JSON.stringify(calls[1]), JSON.stringify(["callSync", "fs.node", ["readFile"], "readFileSync"]));
+});
+
+test("async IPC calls remain available when WebSocket setup fails", async () => {
   const { context, requests, sockets } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
@@ -324,49 +405,177 @@ test("macOS IPC replies correlate by numeric rid after WebSocket setup fails", a
   assert.equal(request.token, "fixture-secret");
   assert.equal(sockets.length, 0);
   assert.equal((await context.Niva.bridge.call("window.getSize", [])).method, "window.getSize");
-  assert.equal(requests.length, 2, "the realm stays on IPC after transport selection");
+  assert.equal(requests.length, 2, "ordinary async calls always stay on IPC");
 });
 
-test("IPC selection times out once and a late WebSocket cannot upgrade the realm", async () => {
+test("a stream started before WebSocket opens stays on IPC; later streams may use WS", async () => {
   const { context, requests, sockets } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
-    ipcReply(request) { return { t: "result", id: request.id, code: 0, message: "ok", data: request.method }; },
+    ipcReply(request) {
+      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
   });
-  assert.equal(context.Niva.bridge.callSync("process.currentDir", []), "/app", "sync XHR does not select an async transport");
-  const first = context.Niva.bridge.call("window.getTitle", []);
-  assert.equal(await first, "window.getTitle");
-  assert.equal(requests.filter((request) => request.transport === "ipc").length, 1);
+  const first = context.Niva.bridge.stream("fs.readStream", []);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.find((request) => request.t === "call").transport, "ipc");
   assert.equal(sockets.length, 1);
-  assert.equal(sockets[0].readyState, 3, "locking IPC closes the still-connecting WebSocket");
-
   sockets[0].open();
-  assert.equal(sockets[0].sent.length, 0, "a late open sends no hello and does not bind a Native WebSocket session");
-  assert.equal(await context.Niva.bridge.call("window.getSize", []), "window.getSize");
-  assert.equal(requests.filter((request) => request.transport === "ipc").length, 2, "all later calls in the realm remain on IPC");
+  context.__niva_native_frame({
+    sessionId: context.Niva.bridge.sessionId,
+    id: first.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: first.id, code: 0, message: "ok", data: "ipc stream done" }) },
+  });
+  assert.equal(await first.promise, "ipc stream done");
+
+  const second = context.Niva.bridge.stream("fs.readStream", []);
+  const secondResult = second.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  const wsCall = sockets[0].sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "call");
+  assert.equal(wsCall.method, "fs.readStream");
+  sockets[0].receive(JSON.stringify({ t: "result", id: second.id, code: 0, data: "ws stream done" }));
+  assert.equal(await secondResult, "ws stream done");
+  assert.equal(requests.filter((request) => request.t === "call").length, 1);
 });
 
-test("a selected WebSocket disconnect fails pending work, invalidates resources, then future calls use IPC", async () => {
+test("related resource calls keep their IPC owner after WebSocket connects", async () => {
   const { context, requests, sockets } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
-    ipcReply(request) { return { t: "result", id: request.id, code: 0, message: "ok", data: { method: request.method } }; },
+    ipcReply(request) {
+      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
+  });
+  const runtime = context[Symbol.for("niva.node-compat.runtime")];
+  const owner = context.Niva.bridge.stream("fs.openHandle", ["/tmp/owned"]);
+  owner.promise.catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.find((request) => request.t === "call").transport, "ipc");
+
+  sockets[0].open();
+  const control = runtime.streamRelated(context.Niva, owner, "fs.handle", ["handle-id", "read", { length: 1 }]);
+  control.promise.catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const calls = requests.filter((request) => request.t === "call");
+  assert.deepEqual(calls.map((request) => request.transport), ["ipc", "ipc"]);
+  assert.deepEqual(calls.map((request) => request.method), ["fs.openHandle", "fs.handle"]);
+  assert.equal(sockets[0].sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t === "call").length, 0);
+
+  owner.cancel();
+  control.cancel();
+});
+
+test("related calls fail on their pinned WebSocket after that connection closes", async () => {
+  const { context, requests, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
   });
   const socket = sockets[0];
   socket.open();
-  const unary = context.Niva.bridge.call("window.getTitle", []);
-  const stream = context.Niva.bridge.stream("fs.readStream", []);
-  const streamSettled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
+  const owner = context.Niva.bridge.stream("process.execStream", ["helper"]);
+  const ownerError = owner.promise.then(() => null, (error) => error);
+  const wsCall = socket.sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "call");
+  assert.equal(wsCall.method, "process.execStream");
+
+  socket.close();
+  assert.equal((await ownerError).code, "ECONNRESET");
+  const runtime = context[Symbol.for("niva.node-compat.runtime")];
+  const control = runtime.streamRelated(context.Niva, owner, "process.signal", [owner.id, "SIGTERM"]);
+  const controlError = await control.promise.then(() => null, (error) => error);
+  assert.equal(controlError.code, "ECONNRESET");
+  assert.equal(requests.filter((request) => request.t === "call").length, 0, "closed WS work must not migrate to IPC");
+});
+
+test("internal route helpers honor monkey-patched bridge methods without exposing route choice", () => {
+  const { context } = bootPage({ injectCommonJs: false, injectEsm: false });
+  const runtime = context[Symbol.for("niva.node-compat.runtime")];
+  const calls = [];
+  context.Niva.bridge.stream = (method, args, handlers) => {
+    calls.push(["stream", method, args, handlers]);
+    return { id: 77, promise: Promise.resolve(null), cancel() {} };
+  };
+  context.Niva.bridge.callSync = (method, args, apiName) => {
+    calls.push(["callSync", method, args, apiName]);
+    return apiName;
+  };
+
+  const related = runtime.streamRelated(context.Niva, { id: 76 }, "resource.control", ["id"]);
+  assert.equal(related.id, 77);
+  assert.equal(JSON.stringify(calls[0]), JSON.stringify(["stream", "resource.control", ["id"], {}]));
+  assert.equal(runtime.callSyncAs(context.Niva, "readFileSync", "fs.node", ["readFile"]), "readFileSync");
+  assert.equal(JSON.stringify(calls[1]), JSON.stringify(["callSync", "fs.node", ["readFile"], "readFileSync"]));
+});
+
+test("WebSocket disconnect fails WS streams but preserves concurrent IPC calls and resources", async () => {
+  let finishUnary;
+  const { context, requests, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "call" && request.method === "slow.ipc") {
+        return new Promise((resolve) => { finishUnary = () => resolve({ t: "result", id: request.id, code: 0, data: "ipc survived" }); });
+      }
+      if (request.t === "call" && request.method === "fs.readStream") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "call") return { t: "result", id: request.id, code: 0, data: { method: request.method } };
+      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
+  });
+  const socket = sockets[0];
+  const ipcStream = context.Niva.bridge.stream("fs.readStream", []);
+  const ipcStreamSettled = ipcStream.promise.then((value) => ({ value }), (error) => ({ error }));
+  await new Promise((resolve) => setImmediate(resolve));
+  socket.open();
+  const unary = context.Niva.bridge.call("slow.ipc", []);
+  const wsStream = context.Niva.bridge.stream("fs.readStream", []);
+  const wsStreamSettled = wsStream.promise.then((value) => ({ value }), (error) => ({ error }));
   const resource = { invalidated: false, __nivaInvalidate() { this.invalidated = true; } };
-  context.Niva.__runtime.registerResource(resource);
+  const ipcResource = { invalidated: false, __nivaInvalidate() { this.invalidated = true; } };
+  context.Niva.__runtime.registerResource(resource, undefined, wsStream.id);
+  context.Niva.__runtime.registerResource(ipcResource, undefined, ipcStream.id);
   await new Promise((resolve) => setImmediate(resolve));
   socket.close();
-  await assert.rejects(unary, { code: "ECONNRESET" });
-  assert.equal((await streamSettled).error.code, "ECONNRESET");
+  assert.equal((await wsStreamSettled).error.code, "ECONNRESET");
   assert.equal(resource.invalidated, true);
+  assert.equal(ipcResource.invalidated, false);
+  assert.equal(typeof finishUnary, "function");
+  finishUnary();
+  assert.equal(await unary, "ipc survived");
+  context.__niva_native_frame({
+    sessionId: context.Niva.bridge.sessionId,
+    id: ipcStream.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: ipcStream.id, code: 0, message: "ok", data: "ipc stream survived" }) },
+  });
+  assert.equal((await ipcStreamSettled).value, "ipc stream survived");
   assert.deepEqual(JSON.parse(JSON.stringify(await context.Niva.bridge.call("window.getTitle", []))), { method: "window.getTitle" });
-  assert.equal(requests.filter((request) => request.transport === "ipc").length, 1);
+  const fallbackStream = context.Niva.bridge.stream("fs.readStream", []);
+  const fallbackSettled = fallbackStream.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.filter((request) => request.transport === "ipc" && request.t === "call").length, 4);
+  context.__niva_native_frame({
+    sessionId: context.Niva.bridge.sessionId,
+    id: fallbackStream.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: fallbackStream.id, code: 0, message: "ok", data: "later IPC stream" }) },
+  });
+  assert.equal(await fallbackSettled, "later IPC stream");
   assert.equal(sockets.length, 1, "the failed WebSocket is not reconnected");
 });
 

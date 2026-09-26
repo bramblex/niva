@@ -1,6 +1,7 @@
 import type {} from "@niva/types/commonjs";
 
 const workingDirectory: string = process.cwd();
+const cwdChange: Promise<void> = process.chdir("/tmp");
 const filename: string = __filename;
 const directory: string = __dirname;
 const loadedFs = require("node:fs");
@@ -12,6 +13,7 @@ exports.workingDirectory = workingDirectory;
 global.setTimeout(() => undefined, 0);
 
 void filename;
+void cwdChange;
 void directory;
 void loadedFs;
 void bytes;

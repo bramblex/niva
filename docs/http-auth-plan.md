@@ -3,16 +3,8 @@
 > 状态：原 session-cookie 方案已被当前按窗口 scoped file-token 实现取代；打包普通
 > 静态资源现由应用UUID派生的Wry自定义协议（macOS/Linux `niva-<uuid>://app/`，Windows `http://niva-<uuid>.app/`）提供，不再经过普通 HTTP 静态路由。loopback
 > 服务继续承载 WS、同步 `__niva_sync`、`__niva_fs` 和显式调试模式下的静态/NodeCompat HTTP 路由。
-> 异步 API 使用统一 handler：每个 JS realm 首次 async call/stream 最多等待500ms建立并认证 WS，随后锁定
-> WS或IPC；锁定IPC后晚到的WS不升级。WS断开清理该session全部pending calls和资源，当前调用失败，realm
-> 后续调用锁定IPC；调用不跨transport重放。IPC channelSend/ACK
-> 走原生 IPC，Native→JS帧/事件经 `evaluate_script`。IPC二进制使用完整18-byte wire frame的Base64
-> 表示（payload最多16 KiB），并有序号、有界队列、ACK/背压、取消和session lease。XHR仅用于同步
-> `callSync`，`__niva_fs`是独立文件资源接口。远端页面仅有精确origin
-> grant下的unary IPC，不开放Channel/流/二进制。上述是代码契约描述；macOS与Windows真实WebView
-> 双bridge端到端验收仍须另行完成。不要将
-> 下文旧设计视为待实现要求或当前协议；源码见 `http_server`、`custom_protocol`、
-> `window_manager/builder.rs` 与 `docs/bridge.md`。
+> 当前异步API经稳定IPC/`evaluate_script`调用Rust；大吞吐文件/网络、二进制及流式stdio在操作创建时优先走已建立的可选WS，否则由同语义IPC Channel承载。资源后续控制请求沿用其创建时的bridge；WS断开时不迁移、不重放。IPC二进制完整18-byte wire frame在传输边界Base64编码（payload最多16 KiB），并要求序号、有界队列、ACK/背压、取消与session lease。同步XHR仅供Node同步兼容API，按公开方法首调用发出warning；`process.chdir`为异步接口。
+> 当前源码已接线。macOS arm64 release SHA `9108b915…` 的真实WebView smoke中，基础bridge 7/7、可信本地IPC 23项、远端grant IPC 21项通过；可信与远端套件各跳过2项因隐藏窗口计时暂停的lease场景。完整资源跨连接生命周期及Windows真机验收仍待完成。来源、窗口、session、frame、token及grant授权规则对两条异步桥均适用。XHR仅用于同步 `callSync`，`__niva_fs`是独立文件资源接口。远端页面仅有精确origin grant下的unary IPC，不开放Channel/流/二进制。不要将下文旧HTTP设计视为待实现要求或当前协议；HTTP资源现状源码见 `http_server`、`custom_protocol`、`window_manager/builder.rs` 与 `docs/bridge.md`。
 
 ## 1. 当前实现
 

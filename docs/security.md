@@ -1,11 +1,11 @@
-# Niva 安全评估（2026-09-26，以当前源码为准）
+# Niva 安全评估（2026-09-26）
 
 ## 0. 信任模型
 
 **能执行原生 bridge 调用的 JS 拥有该窗口被授予的能力。** `exec`、文件访问等 API
 本身影响很大，核心边界是哪些 frame 能获得 bridge 身份和哪些 API grant。
 
-本文描述源码实现，不代表所有平台已通过真机验收或 v1.0 发布门禁已关闭。
+本文的安全机制状态依据当前源码，不代表所有平台已通过真机验收或 v1.0 发布门禁已关闭。异步路由已按当前合约接线：普通异步API走稳定IPC/`evaluate_script`；大吞吐文件/网络、二进制与流式stdio在操作创建时可优先使用WS，否则由IPC Channel承载。已有资源固定沿用创建时的bridge，WS断开时明确失败、不迁移或重放。macOS上已通过基础WS bridge与WS受限IPC WebView smoke；完整资源生命周期及Windows真机仍待验收。同步XHR仅保留给Node同步兼容API，调用时应发出warning；`process.chdir`为异步接口。
 
 ## 1. 当前实现
 
@@ -16,9 +16,7 @@
   下时注入按窗口生成且仅存内存的本地 bridge token。同源页面导航仍满足 origin 条件。WS 握手
   校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID 绑定到该 token；
   IPC Channel 在 Rust 侧校验真实 source/frame、token、窗口、session、call 与 channel capability。
-  每个 JS realm 首次发起 async call/stream 时最多等待500ms建立并认证 WS，随后锁定 WS 或 IPC；锁定
-  IPC 后晚到的 WS 不升级。WS session断开会清理该session全部pending calls和资源，当前调用失败，realm
-  后续调用锁定IPC；调用不跨transport重放。IPC发送/ACK走
+  IPC发送/ACK走
   平台消息，Native到JS的Channel帧/事件由 `evaluate_script` 投递。二进制完整18-byte wire frame
   通过Base64跨IPC边界，payload不超过16 KiB，并受序号、有界队列、ACK/背压、取消及session lease
   约束；该路径不是零拷贝或性能优势的证明。

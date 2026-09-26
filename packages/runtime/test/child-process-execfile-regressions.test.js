@@ -27,6 +27,11 @@ function mockNiva(platform = process.platform) {
     },
     },
   };
+  Object.defineProperty(niva.bridge, Symbol.for("niva.internal.bridge.streamRelated"), { value(ownerCall, method, args, handlers) {
+    const call = this.stream(method, args, handlers);
+    call.routeOwner = ownerCall;
+    return call;
+  } });
   return niva;
 }
 

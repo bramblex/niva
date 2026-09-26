@@ -18,7 +18,7 @@
         };
         ["arch", "platform", "homedir", "tmpdir", "hostname", "release", "totalmem", "type", "version"].forEach(function (name) { module[name] = function () { var value = boot()[name]; if (value === undefined)
             throw runtime.bridgeError("OS information unavailable: " + name, "ENOTSUP"); return value; }; });
-        ["cpus", "freemem", "networkInterfaces", "uptime"].forEach(function (name) { module[name] = function () { return runtime.callSync(niva, "os." + name, []); }; });
+        ["cpus", "freemem", "networkInterfaces", "uptime"].forEach(function (name) { module[name] = function () { return runtime.callSyncAs(niva, "os." + name, "os." + name, []); }; });
         module.userInfo = function (opts) { var value = boot().userInfo; if (!value)
             throw runtime.bridgeError("User information unavailable", "ENOTSUP"); value = Object.assign({}, value); if (opts && opts.encoding === "buffer")
             ["username", "homedir", "shell"].forEach(function (name) { if (value[name] !== null)

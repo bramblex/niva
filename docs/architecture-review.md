@@ -2306,3 +2306,7 @@ R15只读一致性复核：luna_deep_worker（/root/architecture_inventory）核
 ### AR-025：本地custom protocol origin按应用UUID隔离
 
 2026-09-26。用户明确提出将应用UUID纳入Wry自定义协议名，使同一app重启后origin稳定，不同app拥有不同origin。macOS/Linux使用`niva-<32hex>://app`；按Wry 0.57规则，Windows/Android映射到`http://niva-<32hex>.app`。WebKit按origin隔离localStorage，因此不再依赖仅macOS 14+可用的`WKWebsiteDataStore`标识API。当前代码已把entry别名、静态资源处理、CSP、WebSocket、IPC来源归一化和`__niva_fs` CORS绑定到精确UUID origin；外部debug origin保持原策略。macOS 26.6.2固定bundle身份的`.app`三进程 smoke验证同UUID跨重启存储持久、异UUID隔离；裸debug进程未持久，不能代替产品`.app`证据。build脚本最低目标macOS 11.0，但该旧系统未真机验收；Windows缓存target check通过，无WebView2真机证据。不得删除或迁移现有默认store数据。此决定取代固定`niva://app`/`http://niva.app` origin以及此前等待macOS14以下策略的讨论。
+
+### 2026-09-26 异步桥路由决定覆盖早期D08/D12记录
+
+后续用户决定覆盖本文较早的“IPC fallback”逐项讨论和“Node流只能使用WS”结论。对外API只有两类：普通异步API与Node同步兼容API。普通异步API通过稳定平台IPC调用Rust，Native通知通过`evaluate_script`；大吞吐文件/网络、二进制和流式stdio等操作在创建时优先使用已建立的WS优化bridge，否则使用同语义IPC Channel，IPC二进制帧在边界Base64编码。文件句柄、socket、子进程等资源及其后续control/signal调用固定沿用创建时的bridge；WS断开后明确失败，不迁移或重放已提交操作。同步XHR只保留给确需同步返回的Node兼容API，并按公开方法首调发出warning；`process.chdir`有意提供异步Promise接口。新决定不改变远端origin grant仅开放授权unary IPC的边界。

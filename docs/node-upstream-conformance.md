@@ -4,6 +4,8 @@
 
 > 2026-09-24 决策：Niva 做 Node API 的严格子集。纳入承诺的调用契约必须通过对应的 Node 官方测试；只有相同名称、基本功能或自有 smoke 通过，不算 Node 兼容。
 
+> 2026-09-26 契约覆盖：`Niva.process.chdir()`按新桥接约定返回`Promise<void>`，有意不同于Node的同步`process.chdir()`。固定集合中的`test-process-chdir.js`和上述历史通过率不能用于宣称当前`chdir`符合Node同步语义；Niva以自身的异步IPC行为测试验收此API。该单项差异不缩减或重写原始上游manifest。
+
 ## 当前固定集合
 
 固定门禁现有 **58 个未修改的 Node v22.14.0 官方测试文件、22 个模块族**：48 个纯 JS 契约和 10 个 Native/网络契约。本次 darwin/arm64 按用户确认的适用范围运行：**58 pass / 0 fail / 0 unsupported，另记录 2 处环境检查点跳过**，门禁退出码 0。失败、unsupported、未运行和无结果都保留在固定 58 项分母中，不会通过删文件或重挑测试降分母。最终逐文件结果见[统一报告](node-compat-upstream-results.json)。

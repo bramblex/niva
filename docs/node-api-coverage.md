@@ -5,6 +5,8 @@
 > 2026-09-24 · 源码基线 `3787257` · 用于选择后续覆盖范围，尚未承诺全部实现。
 > 本页逐项计数保留为实施前基线；当前代码已进入实现阶段，新增入口与实测结果见[实施状态](node-compat-implementation.md)。这些盘点状态也不是[Node 官方契约门禁](node-upstream-conformance.md)的验收结果。
 
+> 2026-09-26 路由决策更新：本页旧表中的同步XHR/WS路线是历史估算，不能当作现行目标。普通异步API固定走稳定IPC/`evaluate_script`；大吞吐文件/网络、二进制和流式stdio在每个新操作建立时优先使用可选WS，否则由同语义IPC Channel承载。资源后续控制操作沿用创建时的bridge，WS断开不跨bridge迁移或重放。同步XHR仅保留给Node同步兼容API，按公开方法首调用发出warning。`process.chdir`为异步API。源码路由已接线；macOS smoke仅部分验证，Windows真机及完整资源生命周期仍待验收。本页历史基线计数与旧实现描述不构成新路由的实现或验收证据。
+
 浏览器第三方补充：[纯 JS 实现方案与 crypto 逐项映射](node-browser-js-options.md)。现成 Web 兼容库可覆盖的范围按低难度评估，原 Native 路线保留为备选；候选库不改变当前实现状态。
 
 打包决策：全部 179 项目标功能的 Native、NodeCompat JS 及内嵌开销合计满足 **3.3 MB（3,300,000 bytes）**门禁时，直接内置 NodeCompat。[全范围预算](node-api-size-estimates.md#6-全部目标-native--js-内嵌后的体积条件)中已量化部分约 2.52–3.18 MB（网络协议改为 JS 后的预算），尚非完整 release 实测；此前约 2.40 MB 只是局部库样本。
@@ -38,14 +40,14 @@
 | 对象/内容 | 目标方案 | 边界 |
 |---|---|---|
 | process 固定字段 | 启动时收集 env/argv/argv0/platform/arch/pid/execPath/version/versions，同步读 JS 快照 | **仅 main 窗口（id 0）的可信顶层页面注入/注册**；全局、require 与 ESM 入口一致范围。版本字段使用真实元数据，不伪造 Node/V8。 |
-| process.cwd | 每次同步 XHR 查询当前目录 | chdir 是实际 Native 操作；后续查询直接得到当前值，不维护 cwd 缓存。 |
+| process.cwd | Node兼容同步入口，通过同步XHR查询；首次调用时发出warning | `chdir`目标为异步IPC操作；后续cwd查询读取Native当前值。 |
 | process.env/argv | 按应用启动配置固定注入 | 本方案不增加动态覆盖层，不修改用户全局环境。 |
 | os 固定/会话基础信息 | EOL、平台、架构、目录、系统版本、hostname、totalmem、userInfo 启动注入 | 获准本地页面读取快照；跨域不自动获得这些宿主信息。新原生字段只需在启动收集时补齐。 |
 | os.uptime | 每次同步 XHR 查询系统当前值 | 不在 JS 中推算。 |
 | os.cpus / freemem / networkInterfaces | 每次同步 XHR 查询当前值 | 动态信息不做缓存、推算或定时刷新。 |
-| process 操作及事件 | chdir、exit、stdio、nextTick、on 保留各自调用/JS实现 | 同样仅在 main 对象中提供；注入数据不能替代操作能力。 |
+| process 操作及事件 | `chdir`目标为异步IPC；exit、stdio、nextTick、on保留各自调用/JS实现 | 同样仅在 main 对象中提供；流式stdio优先WS，不可用时走IPC Channel；注入数据不能替代操作能力。 |
 
-静态信息在启动时固定注入，动态信息每次用同步 XHR 查询。公共 Native 收集/序列化/定向注入只计一次；静态字段 getter 不做 XHR。path/url 需要当前 cwd 时使用内部 XHR 查询，不在子窗口注册真实 process 对象。依赖库内部的浏览器 process shim 保持模块私有，不夹带主窗口进程数据。
+静态信息在启动时固定注入，动态信息每次用同步 XHR 查询。公共 Native 收集/序列化/定向注入只计一次；静态字段 getter 不做 XHR。`process.cwd`等同步Node兼容入口首次调用时按方法发出一次warning；`process.chdir`不再使用同步XHR。path/url 需要当前 cwd 时使用内部XHR查询，不在子窗口注册真实 process 对象。依赖库内部的浏览器 process shim 保持模块私有，不夹带主窗口进程数据。
 
 上述是目标设计；当前源码未实现的 process 注入和 os 同步 getter 仍保留原实现状态。注入范围不等于改变同源页面可访问关系，也不声称现有 Niva.api.process.* 已加 main 守卫。
 
@@ -53,7 +55,7 @@
 
 ## 2. 评估模型：Native 能力、JS 封装、依赖增量
 
-频率沿用 [早期调研](node-api-frequency.md) 的模块方向；“高/中/场景”是定性工程档位，没有可复算的 npm/GitHub 使用频率样本。官方文档只用于核对 API 契约。本轮按用户确认的三通路及 Native/JS/依赖分层重评成本。
+频率沿用 [早期调研](node-api-frequency.md) 的模块方向；“高/中/场景”是定性工程档位，没有可复算的 npm/GitHub 使用频率样本。官方文档只用于核对 API 契约。本页覆盖估算是历史快照；新路由为普通异步IPC、可选WS重载优化和Node同步兼容XHR。
 
 ### JS 优先的实现原则
 
@@ -61,15 +63,15 @@
 
 Node HTTP/HTTPS 客户端及应用服务器统一在 JS 实现 HTTP/1.1，复用 Native net/tls 字节流；DNS resolve 复用 dgram/net。fetch 可供普通 Web 请求独立使用，不承担 Node socket 协议语义。真实文件、OS 信息、进程启动、TCP/UDP 等仍需要系统层。没有性能基准时，不预设摘要、压缩、流对象等要改成 Native。
 
-### 三条既定原生调用路径
+### 新路由目标（替代旧路线估算）
 
-| 路径 | 用途 | 本次估算前提 |
+| 路径 | 用途 | 边界 |
 |---|---|---|
-| 双向 WS | 本地异步请求、事件、二进制、双向流 | 基础设施复用；有现成 Native handler 时不重复计算协议建设成本。 |
-| 同步 XHR | 本地同步返回和 Sync API | 既定方案，同步接线统一为低；具体 Native 后端是否存在另评。 |
-| 跨域 IPC | 无法使用本地 WS/XHR 的外源页面降级 | 只做少量、简单、明确授权的 unary JSON API；不要求与本地全量接口对等。 |
+| 稳定异步 IPC/`evaluate_script` | 普通异步调用，以及WS未建立时的大数据/流操作 | 普通异步RPC固定走IPC；二进制帧在IPC边界Base64编码。 |
+| 可选WebSocket优化 | 大量文件/网络数据、二进制和流式child_process stdio | 只优化重载数据路径，不是第三种公开API；不可用时同一操作走IPC。 |
+| 同步XHR | 仍需同步返回的Node兼容接口 | 调用时按方法发出一次warning；cwd变更等状态操作改为异步。 |
 
-纯 JS/WebView 原语不是第四种原生传输，它们不需要过桥。跨域限制指 Niva 对本地服务的开放边界；不把 WS 失败当作绕过授权的 IPC 自动回退。
+纯JS/WebView原语不需要过桥。远端页面仍受精确origin grant约束；WS是否可用不改变授权，IPC是稳定桥而非权限回退路径。
 
 逐项表中的“本地/跨域”是**目标调用路径及边界**，不是当前实现已通过的证明：缺失的接口也需要规划路径。当前目标实现状态为 46/49/84；不能把“可用 IPC 实现”计作“已实现”。IPC 候选只代表建议可纳入的简单子集，实际 grant 仍需按窗口、精确 origin 与方法配置。
 
@@ -262,7 +264,7 @@ Node 参考：[官方 process 文档](https://nodejs.org/api/process.html)。
 | `process.stdout.write` | 高 | 缺失 | 部分具备 | 扩展Native / 高 | WS+宿主能力 → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：--stdio 模式有 NDJSON stdin/stdout 和 host.send；它是消息协议而非任意字节 Node stdio streams。 JS：将受限 host message 包装成可用流或新增 raw stdio channel，并保持现有 NDJSON framing。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[stdio.rs:18](../crates/niva/src/app/stdio.rs#L18)；[host.rs:12](../crates/niva/src/app/api/host.rs#L12) |
 | `process.version` | 高 | 缺失 | 部分具备 | JS封装 / 中 | 启动注入 → JS读取（main） → 不注入 process | 没有 Node process 入口；Niva 本身不是 Node 运行时，不能把 Niva 应用版本伪装成 Node/依赖库版本。 Native：收集真实 Niva/WebView 运行时元数据；不凭空生成 Node/V8 版本。 JS：启动时暴露真实版本字段并说明与 Node 运行时的差异。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:138](../crates/niva/src/app/api/process.rs#L138) |
 | `process.argv0` | 中 | 缺失 | 部分具备 | JS封装 / 低 | 启动注入 → JS读取（main） → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：应用启动时收集现有进程/运行时信息并定向序列化到 main；不为每次读取调用 XHR。 JS：以同步属性暴露启动快照；env/argv 的页面内修改与宿主原始参数分开。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:45](../crates/niva/src/app/api/process.rs#L45) |
-| `process.chdir` | 中 | 缺失 | 具备 | JS封装 / 中 | XHR → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：Native setCurrentDir 调用 std::env::set_current_dir。 JS：通过同步 XHR 执行目录变更；后续 cwd 查询直接读 Native 当前值。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:77](../crates/niva/src/app/api/process.rs#L77) |
+| `process.chdir` | 中 | 缺失 | 具备 | JS封装 / 中 | 旧基线路线：XHR → 新目标：异步IPC（不注入 process） | 本页历史基线记录了同步XHR目录变更；新目标改为异步接口调用Native setCurrentDir，不为chdir保留同步XHR入口。JS API/source迁移尚待完成；后续 cwd 查询应反映Native当前值。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:77](../crates/niva/src/app/api/process.rs#L77) |
 | `process.execPath` | 中 | 缺失 | 具备 | JS封装 / 低 | 启动注入 → JS读取（main） → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：应用启动时收集现有进程/运行时信息并定向序列化到 main；不为每次读取调用 XHR。 JS：以同步属性暴露启动快照；env/argv 的页面内修改与宿主原始参数分开。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:45](../crates/niva/src/app/api/process.rs#L45) |
 | `process.pid` | 中 | 缺失 | 具备 | JS封装 / 低 | 启动注入 → JS读取（main） → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：应用启动时收集现有进程/运行时信息并定向序列化到 main；不为每次读取调用 XHR。 JS：以同步属性暴露启动快照；env/argv 的页面内修改与宿主原始参数分开。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[process.rs:12](../crates/niva/src/app/api/process.rs#L12)；[process.rs:25](../crates/niva/src/app/api/process.rs#L25) |
 | `process.stdin` | 中 | 缺失 | 部分具备 | 扩展Native / 高 | WS+宿主能力 → 不注入 process | NodeCompat 没有注册 process 模块或安装 global process；Niva.api.process 的同名原生能力不能计作 Node 入口。 Native：--stdio 模式有 NDJSON stdin/stdout 和 host.send；它是消息协议而非任意字节 Node stdio streams。 JS：将受限 host message 包装成可用流或新增 raw stdio channel，并保持现有 NDJSON framing。 | [registration.js:6](../packages/node-compat/src/runtime/registration.js#L6)；[stdio.rs:18](../crates/niva/src/app/stdio.rs#L18)；[host.rs:12](../crates/niva/src/app/api/host.rs#L12) |

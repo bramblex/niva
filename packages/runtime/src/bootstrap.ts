@@ -26,9 +26,13 @@ import "./runtime/timers";
 import "./runtime/tty";
 import "./runtime/registration";
 
+type StreamRoute = { transport: "ipc" } | { transport: "ws"; socket: WebSocket };
+
 type Pending = {
   id: number;
-  transport: "selecting" | "ws" | "ipc";
+  transport: "ws" | "ipc";
+  route: StreamRoute;
+  allowRouteFallback: boolean;
   resolve?: (value: any) => void;
   reject?: (error: any) => void;
   timer?: ReturnType<typeof setTimeout>;
@@ -51,11 +55,7 @@ type Pending = {
   outboundRetryStarted?: number;
   outboundRetryAttempt?: number;
   outboundRetryTimer?: ReturnType<typeof setTimeout>;
-  selectingOutbound?: Array<{ data: Uint8Array; end: boolean; frames: number; reservedBytes: number }>;
-  selectingFrames?: number;
-  selectingBytes?: number;
 };
-type SessionTransport = "undecided" | "ws" | "ipc";
 type IpcRequest = {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
@@ -81,11 +81,6 @@ type IpcRequest = {
   let nextId = 0;
   let nextRid = 0;
   let socket: WebSocket | null = null;
-  let webSocketUnavailable = false;
-  let sessionTransport: SessionTransport = local ? "undecided" : "ipc";
-  let transportSelectionPromise: Promise<Exclude<SessionTransport, "undecided">> | null = null;
-  let transportSelectionResolve: ((transport: Exclude<SessionTransport, "undecided">) => void) | null = null;
-  let transportSelectionTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatPending = false;
   let lastHeartbeatAck = 0;
@@ -96,9 +91,17 @@ type IpcRequest = {
   const ipcActiveCalls = new Set<number>();
   let queuedIpcFrames = 0;
   let queuedIpcBytes = 0;
-  let queuedSelectingFrames = 0;
-  let queuedSelectingBytes = 0;
-  const resourceOwners = new Map<number, { ref?: WeakRef<any>; fallback?: any; unregisterToken: object; finalizeNative?: () => unknown }>();
+  const streamTransports = new Map<number, "ws" | "ipc">();
+  const streamRoutes = new WeakMap<object, StreamRoute>();
+  const syncWarnings = new Set<string>();
+  const resourceOwners = new Map<number, {
+    ref?: WeakRef<any>;
+    fallback?: any;
+    unregisterToken: object;
+    finalizeNative?: () => unknown;
+    streamId?: number | (() => number | undefined);
+    transport?: "ws" | "ipc";
+  }>();
   let nextResourceOwner = 0;
   const resourceFinalizer = typeof FinalizationRegistry === "function"
     ? new FinalizationRegistry<number>((id) => {
@@ -139,41 +142,6 @@ type IpcRequest = {
     return local;
   }
 
-  function settleSessionTransport(transport: Exclude<SessionTransport, "undecided">): Exclude<SessionTransport, "undecided"> {
-    if (sessionTransport !== "undecided") return sessionTransport;
-    sessionTransport = transport;
-    if (transportSelectionTimer) clearTimeout(transportSelectionTimer);
-    transportSelectionTimer = null;
-    if (transport === "ipc") {
-      webSocketUnavailable = true;
-      const lateSocket = socket;
-      socket = null;
-      socketOpen = false;
-      if (lateSocket) {
-        try { lateSocket.close(); } catch (_) { /* IPC mode stays selected. */ }
-      }
-    }
-    const resolve = transportSelectionResolve;
-    transportSelectionResolve = null;
-    if (resolve) resolve(transport);
-    return transport;
-  }
-
-  function selectSessionTransport(): Promise<Exclude<SessionTransport, "undecided">> {
-    if (sessionExpired) return Promise.reject(nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED"));
-    if (sessionTransport !== "undecided") return Promise.resolve(sessionTransport);
-    if (!local || typeof root.__niva_ws_url !== "string" || !root.__niva_ws_url || !root.WebSocket
-      || webSocketUnavailable || !socket) return Promise.resolve(settleSessionTransport("ipc"));
-    if (socketReady()) return Promise.resolve(settleSessionTransport("ws"));
-    if (!transportSelectionPromise) {
-      transportSelectionPromise = new Promise((resolve) => {
-        transportSelectionResolve = resolve;
-        transportSelectionTimer = setTimeout(() => settleSessionTransport("ipc"), 500);
-      });
-    }
-    return transportSelectionPromise;
-  }
-
   function nivaError(message: string, code = "NIVA_BRIDGE_ERROR", extra?: Record<string, any>): Error {
     const error: any = new Error(message);
     error.code = code;
@@ -190,6 +158,7 @@ type IpcRequest = {
     const entry = table[key];
     if (!entry) return false;
     delete table[key];
+    streamTransports.delete(Number(key));
     entry.active = false;
     if (entry.timer) clearTimeout(entry.timer);
     if (entry.outboundRetryTimer) clearTimeout(entry.outboundRetryTimer);
@@ -206,7 +175,6 @@ type IpcRequest = {
     if (sessionExpired) return;
     for (const entry of Object.values(pending)) sendNativeCancel(entry);
     sessionExpired = true;
-    if (sessionTransport === "undecided") settleSessionTransport("ipc");
     rejectAll(pending, error);
     for (const [rid, request] of ipcRequests) {
       clearTimeout(request.timer);
@@ -401,16 +369,21 @@ type IpcRequest = {
     }
   }
 
+  function socketIsReady(connection: WebSocket | null | undefined): connection is WebSocket {
+    return !!connection && socket === connection && socketOpen && connection.readyState === 1;
+  }
+
   function socketReady(): boolean {
-    return socketOpen && !!socket && socket.readyState === 1;
+    return socketIsReady(socket);
   }
 
   function sendSocketText(id: number, entry: Pending, text: string) {
-    if (!socketReady() || !socket) return finish(pending, id, false, nivaError("Niva WebSocket is not open", "ECONNRESET"));
+    const owner = entry.route.transport === "ws" ? entry.route.socket : null;
+    if (!socketIsReady(owner)) return finish(pending, id, false, nivaError("Niva WebSocket owner connection is closed", "ECONNRESET"));
     entry.timer = setTimeout(() => {
       finish(pending, id, false, nivaError("Niva WebSocket call timed out", "ETIMEDOUT"));
     }, 60000);
-    try { socket.send(text); }
+    try { owner.send(text); }
     catch (error) {
       finish(pending, id, false, error);
     }
@@ -420,17 +393,11 @@ type IpcRequest = {
     if (socket !== owner) return;
     socket = null;
     socketOpen = false;
-    webSocketUnavailable = true;
     const error = nivaError(message, "ECONNRESET");
-    if (sessionTransport === "undecided") {
-      settleSessionTransport("ipc");
-      return;
+    for (const id of Object.keys(pending)) {
+      if (pending[id].transport === "ws") finish(pending, id, false, error);
     }
-    if (sessionTransport === "ws") {
-      sessionTransport = "ipc";
-      rejectAll(pending, error);
-      invalidateResources(error);
-    }
+    invalidateResourcesForTransport("ws", error);
   }
 
   function connectSocket() {
@@ -441,24 +408,14 @@ type IpcRequest = {
       socket = connecting;
     } catch (_) {
       socket = null;
-      webSocketUnavailable = true;
-      if (sessionTransport === "undecided" && transportSelectionResolve) settleSessionTransport("ipc");
       return;
     }
     connecting.binaryType = "arraybuffer";
     connecting.addEventListener("open", () => {
       if (socket !== connecting || sessionExpired) return;
-      if (sessionTransport === "ipc") {
-        webSocketUnavailable = true;
-        socket = null;
-        socketOpen = false;
-        try { connecting.close(); } catch (_) { /* The selected IPC path remains active. */ }
-        return;
-      }
-      socketOpen = true;
       try { connecting.send(JSON.stringify({ t: "hello", wid: root.__niva_window_id || 0, v: 1, sessionId })); }
       catch (_) { loseSocket(connecting, "Niva WebSocket authentication failed"); }
-      if (socket === connecting && sessionTransport === "undecided" && transportSelectionResolve) settleSessionTransport("ws");
+      if (socket === connecting) socketOpen = true;
     });
     connecting.addEventListener("message", (event) => {
       if (socket !== connecting) return;
@@ -475,24 +432,15 @@ type IpcRequest = {
 
   function call(method: string, args: any[] = []): Promise<any> {
     if (sessionExpired) return Promise.reject(nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED"));
-    const id = newId();
-    return selectSessionTransport().then((transport) => {
-      if (sessionExpired) throw nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED");
-      if (transport === "ws") {
-        if (sessionTransport !== "ws" || !socketReady()) throw nivaError("Niva WebSocket session closed", "ECONNRESET");
-        return new Promise((resolve, reject) => {
-          const entry: Pending = { id, transport: "ws", active: true, resolve, reject };
-          pending[String(id)] = entry;
-          sendSocketText(id, entry, JSON.stringify({ t: "call", id, method, args, sessionId }));
-        });
-      }
-      return sendIpcCall(id, method, args);
-    });
+    return sendIpcCall(newId(), method, args);
   }
 
-  function streamCall(method: string, args: any[] = [], handlers: any = {}) {
+  function streamCall(method: string, args: any[] = [], handlers: any = {}, relatedRoute?: StreamRoute) {
     if (sessionExpired) throw nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED");
     if (!local) throw nivaError("This API requires a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
+    const route: StreamRoute = relatedRoute || (socketReady() && socket
+      ? { transport: "ws", socket }
+      : { transport: "ipc" });
     const id = newId();
     const key = String(id);
     let resolve!: (value: any) => void;
@@ -500,7 +448,9 @@ type IpcRequest = {
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
     const entry: Pending = {
       id,
-      transport: "selecting",
+      transport: route.transport,
+      route,
+      allowRouteFallback: relatedRoute === undefined,
       active: true,
       resolve,
       reject,
@@ -511,33 +461,51 @@ type IpcRequest = {
       seqOut: 0,
       outbound: [],
       outboundBytes: 0,
-      selectingOutbound: [],
-      selectingFrames: 0,
-      selectingBytes: 0,
     };
     pending[key] = entry;
-    selectSessionTransport().then((transport) => dispatchStreamCall(id, method, args, entry, transport)).catch((error) => {
-      if (entry.active) finish(pending, id, false, error);
-    });
-    return {
+    associateResourcesWithStream(id, entry.transport);
+    try { dispatchStreamCall(id, method, args, entry); }
+    catch (error) { finish(pending, id, false, error); }
+    // Resources created synchronously by the high-level stream adapter often
+    // register just after bridge.stream returns. Re-associate after that call
+    // has captured the returned stream id in its owner state.
+    Promise.resolve().then(() => associateResourcesWithStream(id, entry.transport));
+    const call = {
       id,
       promise,
       cancel() {
         return cancelStream(id, nivaError("Niva call was cancelled", "ABORT_ERR"));
       },
     };
+    streamRoutes.set(call, entry.route);
+    return call;
   }
 
-  function dispatchStreamCall(id: number, method: string, args: any[], entry: Pending, transport: Exclude<SessionTransport, "undecided">) {
+  function relatedStreamCall(this: any, source: object, method: string, args: any[] = [], handlers: any = {}) {
+    const route = streamRoutes.get(source);
+    if (!route) {
+      if (typeof this?.stream === "function") return this.stream(method, args, handlers);
+      throw nivaError("Niva stream has no active owner route", "ERR_NIVA_STREAM_OWNER_CLOSED");
+    }
+    return streamCall(method, args, handlers, route);
+  }
+
+  function dispatchStreamCall(id: number, method: string, args: any[], entry: Pending) {
     if (!entry.active || sessionExpired) return;
-    entry.transport = transport;
-    if (transport === "ws") {
-      if (sessionTransport !== "ws" || !socketReady()) {
-        finish(pending, id, false, nivaError("Niva WebSocket session closed", "ECONNRESET"));
+    entry.transport = entry.route.transport;
+    if (entry.route.transport === "ws") {
+      if (!socketIsReady(entry.route.socket)) {
+        if (entry.allowRouteFallback && entry.seqOut === 0) {
+          entry.route = { transport: "ipc" };
+          entry.transport = "ipc";
+          associateResourcesWithStream(id, "ipc");
+          dispatchStreamCall(id, method, args, entry);
+          return;
+        }
+        finish(pending, id, false, nivaError("Niva WebSocket owner connection is closed", "ECONNRESET"));
         return;
       }
       sendSocketText(id, entry, JSON.stringify({ t: "call", id, method, args, sessionId }));
-      flushSelectingOutbound(String(id), entry);
       return;
     }
     if (!canIpc) {
@@ -566,7 +534,6 @@ type IpcRequest = {
     }).catch((error) => {
       if (entry.active) failChannel(id, entry, error);
     });
-    flushSelectingOutbound(String(id), entry);
   }
 
   function cancelStream(idValue: number | string, error = nivaError("Niva stream resource was disposed", "ERR_NIVA_RESOURCE_CLOSED")) {
@@ -592,12 +559,15 @@ type IpcRequest = {
     } else {
       bytes = new TextEncoder().encode(String(data));
     }
-    if (entry.transport === "selecting") return queueSelectingSend(entry, bytes, end);
-    if (entry.transport === "ipc") return queueIpcSend(id, entry, bytes, end);
+    if (entry.route.transport === "ipc") return queueIpcSend(id, entry, bytes, end);
     entry.seqOut = (entry.seqOut || 0) + 1;
     const frame = encodeBinaryFrame(Number(id), entry.seqOut, bytes, end);
-    if (!socketReady() || !socket) return false;
-    try { socket.send(frame); return true; }
+    const owner = entry.route.transport === "ws" ? entry.route.socket : null;
+    if (!socketIsReady(owner)) {
+      failChannel(id, entry, nivaError("Niva WebSocket owner connection is closed", "ECONNRESET"));
+      return false;
+    }
+    try { owner.send(frame); return true; }
     catch (error) { failChannel(id, entry, error); return false; }
   }
 
@@ -626,54 +596,13 @@ type IpcRequest = {
     return frame.buffer;
   }
 
-  function queueSelectingSend(entry: Pending, bytes: Uint8Array, end: boolean): boolean {
-    const frames = Math.max(1, Math.ceil(bytes.byteLength / 16384));
-    const reservedBytes = bytes.byteLength + frames * 18;
-    const queue = entry.selectingOutbound || (entry.selectingOutbound = []);
-    if ((entry.selectingFrames || 0) + frames > 64 || (entry.selectingBytes || 0) + reservedBytes > 1024 * 1024
-      || queuedIpcFrames + queuedSelectingFrames + frames > 256
-      || queuedIpcBytes + queuedSelectingBytes + reservedBytes > 4 * 1024 * 1024) return false;
-    queue.push({ data: new Uint8Array(bytes), end, frames, reservedBytes });
-    entry.selectingFrames = (entry.selectingFrames || 0) + frames;
-    entry.selectingBytes = (entry.selectingBytes || 0) + reservedBytes;
-    queuedSelectingFrames += frames;
-    queuedSelectingBytes += reservedBytes;
-    return true;
-  }
-
-  function flushSelectingOutbound(id: string, entry: Pending) {
-    const queue = entry.selectingOutbound;
-    if (!queue || queue.length === 0 || entry.transport === "selecting") return;
-    while (queue.length > 0 && entry.active) {
-      const item = queue.shift()!;
-      entry.selectingFrames = Math.max(0, (entry.selectingFrames || 0) - item.frames);
-      entry.selectingBytes = Math.max(0, (entry.selectingBytes || 0) - item.reservedBytes);
-      queuedSelectingFrames = Math.max(0, queuedSelectingFrames - item.frames);
-      queuedSelectingBytes = Math.max(0, queuedSelectingBytes - item.reservedBytes);
-      if (entry.transport === "ipc") {
-        if (!queueIpcSend(id, entry, item.data, item.end)) {
-          failChannel(id, entry, nivaError("Niva stream send queue is full", "ENOBUFS"));
-          return;
-        }
-        continue;
-      }
-      if (!socketReady() || !socket) {
-        failChannel(id, entry, nivaError("Niva WebSocket session closed", "ECONNRESET"));
-        return;
-      }
-      entry.seqOut = (entry.seqOut || 0) + 1;
-      try { socket.send(encodeBinaryFrame(Number(id), entry.seqOut, item.data, item.end)); }
-      catch (error) { failChannel(id, entry, error); return; }
-    }
-  }
-
   function queueIpcSend(id: string, entry: Pending, bytes: Uint8Array, end: boolean): boolean {
     const chunks = Math.max(1, Math.ceil(bytes.byteLength / 16384));
     const framedBytes = bytes.byteLength + chunks * 18;
     const queue = entry.outbound || (entry.outbound = []);
     if (queue.length + chunks > 64 || (entry.outboundBytes || 0) + framedBytes > 1024 * 1024
-      || queuedIpcFrames + queuedSelectingFrames + chunks > 256
-      || queuedIpcBytes + queuedSelectingBytes + framedBytes > 4 * 1024 * 1024) return false;
+      || queuedIpcFrames + chunks > 256
+      || queuedIpcBytes + framedBytes > 4 * 1024 * 1024) return false;
 
     let offset = 0;
     let seq = entry.seqOut || 0;
@@ -706,14 +635,6 @@ type IpcRequest = {
     }
     entry.outboundBytes = 0;
     entry.outboundSending = false;
-    const selecting = entry.selectingOutbound;
-    if (selecting) {
-      queuedSelectingFrames = Math.max(0, queuedSelectingFrames - (entry.selectingFrames || 0));
-      queuedSelectingBytes = Math.max(0, queuedSelectingBytes - (entry.selectingBytes || 0));
-      selecting.length = 0;
-    }
-    entry.selectingFrames = 0;
-    entry.selectingBytes = 0;
   }
 
   function encodeBase64(bytes: Uint8Array): string {
@@ -968,9 +889,10 @@ type IpcRequest = {
   };
 
   function sendNativeCancel(entry: Pending) {
-    if (entry.transport === "ws") {
-      if (!socketReady() || !socket) return;
-      try { socket.send(JSON.stringify({ t: "cancel", id: entry.id, sessionId })); }
+    if (entry.route.transport === "ws") {
+      const owner = entry.route.socket;
+      if (!socketIsReady(owner)) return;
+      try { owner.send(JSON.stringify({ t: "cancel", id: entry.id, sessionId })); }
       catch (_) { /* the local promise still settles */ }
       return;
     }
@@ -991,9 +913,13 @@ type IpcRequest = {
     finish(pending, id, false, error);
   }
 
-  function callSync(method: string, args: any[] = []): any {
+  function callSync(method: string, args: any[] = [], warningApiName = method): any {
     if (sessionExpired) throw nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED");
     if (!local) throw nivaError("Synchronous Niva bridge calls require a trusted local page", "ERR_NIVA_SYNC_UNAVAILABLE");
+    if (!syncWarnings.has(warningApiName)) {
+      syncWarnings.add(warningApiName);
+      root.console?.warn?.("Niva synchronous compatibility API '" + warningApiName + "' blocks the WebView through synchronous XHR.");
+    }
     const xhr = new XMLHttpRequest();
     xhr.open("POST", root.__niva_server_origin + "/__niva_sync", false);
     xhr.setRequestHeader("Content-Type", "text/plain;charset=UTF-8");
@@ -1054,18 +980,29 @@ type IpcRequest = {
     });
   }
 
+  const bridgeApi: any = {
+    call,
+    callSync,
+    stream: streamCall,
+    streamSend,
+    isTrustedLocal,
+    sessionId,
+  };
+  Object.defineProperty(bridgeApi, Symbol.for("niva.internal.bridge.streamRelated"), {
+    value: relatedStreamCall,
+  });
+  Object.defineProperty(bridgeApi, Symbol.for("niva.internal.bridge.callSyncApi"), {
+    value(this: any, apiName: string, method: string, args: any[] = []) {
+      if (typeof this?.callSync === "function") return this.callSync(method, args, apiName);
+      return callSync(method, args, apiName);
+    },
+  });
+
   const Niva: any = {
     bridgeVersion: 1,
     __runtimeBootstrap: true,
     bootstrap: root.__niva_node_bootstrap || {},
-    bridge: {
-      call,
-      callSync,
-      stream: streamCall,
-      streamSend,
-      isTrustedLocal,
-      sessionId,
-    },
+    bridge: bridgeApi,
     __bridge: { isTrustedLocal },
     addEventListener,
     removeEventListener,
@@ -1149,11 +1086,48 @@ type IpcRequest = {
   // use their own bundler: this runtime has no cross-origin asset URL/CORS
   // contract and must not install a relative map that silently points elsewhere.
 
-  function registerResource<T extends object>(resource: T, finalizeNative?: () => unknown) {
+  function getResourceStreamId(streamId?: number | (() => number | undefined)): number | undefined {
+    try {
+      const value = typeof streamId === "function" ? streamId() : streamId;
+      return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : undefined;
+    } catch (_) { return undefined; }
+  }
+
+  function associateResourcesWithStream(streamId: number, transport: "ws" | "ipc") {
+    streamTransports.set(streamId, transport);
+    for (const record of resourceOwners.values()) {
+      if (getResourceStreamId(record.streamId) === streamId) record.transport = transport;
+    }
+  }
+
+  function invalidateResourcesForTransport(transport: "ws" | "ipc", error: Error) {
+    for (const [id, record] of Array.from(resourceOwners.entries())) {
+      if (record.transport !== transport) continue;
+      resourceOwners.delete(id);
+      resourceFinalizer?.unregister(record.unregisterToken);
+      const resource = record.ref?.deref() || record.fallback;
+      if (!resource) continue;
+      try { resource.__nivaInvalidate?.(error); } catch (_) { /* continue invalidating sibling resources */ }
+    }
+  }
+
+  function registerResource<T extends object>(
+    resource: T,
+    finalizeNative?: () => unknown,
+    streamId?: number | (() => number | undefined),
+  ) {
     const id = ++nextResourceOwner;
     const unregisterToken = {};
     const ref = typeof WeakRef === "function" ? new WeakRef(resource) : undefined;
-    resourceOwners.set(id, { ref, fallback: ref ? undefined : resource, unregisterToken, finalizeNative });
+    const associatedStreamId = getResourceStreamId(streamId);
+    resourceOwners.set(id, {
+      ref,
+      fallback: ref ? undefined : resource,
+      unregisterToken,
+      finalizeNative,
+      streamId,
+      transport: associatedStreamId === undefined ? undefined : streamTransports.get(associatedStreamId),
+    });
     if (ref) resourceFinalizer?.register(resource, id, unregisterToken);
     const owner = Object.freeze({
       id,
@@ -1274,7 +1248,7 @@ type IpcRequest = {
       if (Object.prototype.hasOwnProperty.call(available, specifier)) return available[specifier];
       if (specifier.startsWith("node:") && Object.prototype.hasOwnProperty.call(available, specifier.slice(5))) return available[specifier.slice(5)];
       const parent = parentFilename;
-      const resolvedFilename = niva.bridge.callSync("module.resolve", [specifier, parent]);
+      const resolvedFilename = runtime.callSyncAs(niva, "module.resolve", "module.resolve", [specifier, parent]);
       const resolvedBuiltin = typeof niva.__getModule === "function" ? niva.__getModule(resolvedFilename) : { found: false, value: undefined };
       if (resolvedBuiltin.found) return resolvedBuiltin.value;
       if (typeof resolvedFilename === "string" && resolvedFilename.startsWith("node:")) {
@@ -1284,7 +1258,7 @@ type IpcRequest = {
       if (resolvedFilename.endsWith(".node")) throw nivaError("Native Node addons are not supported: " + resolvedFilename, "ERR_DLOPEN_FAILED");
       if (resolvedFilename.endsWith(".mjs") || resolvedFilename.endsWith(".mts")) throw nivaError("require() of ES modules is not supported: " + resolvedFilename, "ERR_REQUIRE_ESM");
       if (cache[resolvedFilename]) return cache[resolvedFilename].exports;
-      const loaded = niva.bridge.callSync("module.load", [specifier, parent]);
+      const loaded = runtime.callSyncAs(niva, "module.load", "module.load", [specifier, parent]);
       const filename = loaded.filename || resolvedFilename;
       if (filename !== resolvedFilename) throw nivaError("Module resolver returned inconsistent filenames", "ERR_NIVA_MODULE_RESOLVE_MISMATCH");
       if (cache[filename]) return cache[filename].exports;
@@ -1332,7 +1306,7 @@ type IpcRequest = {
       const registered = typeof niva.__getModule === "function" ? niva.__getModule(specifier) : { found: false, value: undefined };
       if (registered.found) return specifier;
       if (Object.prototype.hasOwnProperty.call(available, specifier)) return specifier;
-      const resolved = niva.bridge.callSync("module.resolve", [specifier, parentFilename]);
+      const resolved = runtime.callSyncAs(niva, "module.resolve", "module.resolve", [specifier, parentFilename]);
       if (typeof resolved !== "string") throw nivaError("Native module resolver returned an invalid result", "ERR_NIVA_MODULE_RESOLVE_RESPONSE");
       const resolvedBuiltin = typeof niva.__getModule === "function" ? niva.__getModule(resolved) : { found: false, value: undefined };
       if (resolvedBuiltin.found) return resolved;

@@ -38,3 +38,20 @@ test("process factory does not expose the Native product version as process.vers
     process.stdin?.__nivaResourceOwner?.release();
   }
 });
+
+test("process.chdir updates the Native cwd through the async IPC API", async () => {
+  const calls = [];
+  const process = runtime.createProcessModule({
+    bootstrap: { process: { version: "v0.9.9", versions: { niva: "0.9.9" }, argv: [], env: {} } },
+    bridge: {
+      call(method, args) { calls.push([method, args]); return Promise.resolve(null); },
+      callSync() { throw new Error("process.chdir must not use synchronous XHR"); },
+    },
+  });
+
+  const change = process.chdir("/tmp");
+  assert.ok(change instanceof Promise);
+  assert.equal(await change, undefined);
+  assert.deepEqual(calls, [["process.setCurrentDir", ["/tmp"]]]);
+  process.stdin?.__nivaResourceOwner?.release();
+});

@@ -17,10 +17,12 @@ type ReadableFromWebMatchesNode = Expect<Equal<typeof Niva.stream.Readable.fromW
 
 const fileBuffer: Buffer = Niva.buffer.Buffer.from("niva");
 const currentDirectory: string = process.cwd();
+const cwdChange: Promise<void> = process.chdir("/tmp");
 const processEnv: NodeJS.ProcessEnv = process.env;
 
 void fileBuffer;
 void currentDirectory;
+void cwdChange;
 void processEnv;
 type _FsReadFileMatchesNode = FsReadFileMatchesNode;
 type _FsPromiseReadFileMatchesNode = FsPromiseReadFileMatchesNode;

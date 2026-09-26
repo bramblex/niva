@@ -605,7 +605,7 @@ const MAX_SYNC_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 /// Explicit public IPC surface. Add methods here only after checking their
 /// JSON/ownership behavior; this is intentionally not a namespace wildcard.
 const IPC_METHOD_ALLOWLIST: &[&str] = &[
-    // Bounded text/data fallback APIs.
+    // Bounded text and metadata APIs explicitly allowed over unary IPC.
     "fs.readText",
     "fs.writeText",
     "fs.appendText",
@@ -783,7 +783,9 @@ fn validate_session_id(session_id: &str) -> Result<()> {
 }
 
 fn session_owner_id(window_id: u8, session_id: &str) -> u64 {
-    // The high bit separates page-session owners from per-WebView socket ids.
+    // The high bit separates stable page-session owners from per-WebView
+    // WebSocket connection ids. IPC calls and IPC channels use this owner;
+    // WebSocket work is owned by its concrete connection id.
     const OWNER_BIT: u64 = 1 << 63;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     window_id.hash(&mut hasher);
@@ -2685,6 +2687,9 @@ impl ApiManager {
         for sender in senders {
             sender.close();
         }
+        for session_id in &affected_sessions {
+            self.cancel_sync_session(window_id, session_id);
+        }
         self.cancel_ipc_channel_sessions(|key| {
             key.window_id == window_id && key.frame_id == frame_id && key.generation == generation
         });
@@ -2697,19 +2702,19 @@ impl ApiManager {
                     .filter(|((owner, _), session)| {
                         *owner == window_id && affected_sessions.contains(*session)
                     })
-                    .map(|(key, session)| (*key, session.clone()))
+                    .map(|(key, _)| *key)
                     .collect::<Vec<_>>();
-                for (key, _) in &matches {
+                for key in &matches {
                     sessions.remove(key);
                 }
                 matches
                     .into_iter()
-                    .map(|(_, session)| session_owner_id(window_id, &session))
+                    .map(|(_, connection_id)| connection_id)
                     .collect::<HashSet<_>>()
             })
             .unwrap_or_default();
-        for owner_id in ws_owners {
-            self.cancel_owner_connection(window_id, owner_id);
+        for connection_id in ws_owners {
+            self.cancel_owner_connection(window_id, connection_id);
         }
     }
 
@@ -2717,10 +2722,11 @@ impl ApiManager {
     /// replacement document receives a new opaque session id.
     pub fn cancel_ipc_window_for_navigation(&self, window_id: u8) {
         crate::app::api::cancel_ipc_process_window(window_id);
-        let senders = match self.ipc_sessions.lock() {
-            Ok(mut sessions) => sessions.cancel_matching(|key| key.window_id == window_id, true),
-            Err(_) => return,
-        };
+        let senders = self
+            .ipc_sessions
+            .lock()
+            .map(|mut sessions| sessions.cancel_matching(|key| key.window_id == window_id, true))
+            .unwrap_or_default();
         for sender in senders {
             sender.close();
         }
@@ -2729,21 +2735,19 @@ impl ApiManager {
             .ws_sessions
             .lock()
             .map(|mut sessions| {
-                let session_ids = sessions
+                let connection_ids = sessions
                     .iter()
                     .filter(|((owner, _), _)| *owner == window_id)
-                    .map(|(_, session_id)| session_id.clone())
+                    .map(|((_, connection_id), _)| *connection_id)
                     .collect::<HashSet<_>>();
                 sessions.retain(|(owner, _), _| *owner != window_id);
-                session_ids
-                    .into_iter()
-                    .map(|session_id| session_owner_id(window_id, &session_id))
-                    .collect::<HashSet<_>>()
+                connection_ids
             })
             .unwrap_or_default();
-        for owner_id in ws_owners {
-            self.cancel_owner_connection(window_id, owner_id);
+        for connection_id in ws_owners {
+            self.cancel_owner_connection(window_id, connection_id);
         }
+        self.cancel_sync_window(window_id);
     }
 
     fn cancel_ipc_window(&self, window_id: u8) {
@@ -2759,22 +2763,19 @@ impl ApiManager {
     }
 
     fn cancel_sync_window(&self, window_id: u8) {
-        let senders = self
+        let session_ids = self
             .sync_active
             .lock()
-            .map(|mut active| {
-                let keys = active
+            .map(|active| {
+                active
                     .keys()
                     .filter(|key| key.0 == window_id)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                keys.into_iter()
-                    .filter_map(|key| active.remove(&key))
-                    .collect::<Vec<_>>()
+                    .map(|key| key.1.clone())
+                    .collect::<HashSet<_>>()
             })
             .unwrap_or_default();
-        for sender in senders {
-            sender.close();
+        for session_id in session_ids {
+            self.cancel_sync_session(window_id, &session_id);
         }
         crate::app::api::cancel_sync_file_window(window_id);
     }
@@ -3154,18 +3155,16 @@ impl ApiManager {
             .ok()
             .and_then(|sessions| sessions.get(&(window_id, connection_id)).cloned())
             .filter(|expected| expected == session_id)
-            .map(|session_id| session_owner_id(window_id, &session_id))
+            .map(|_| connection_id)
     }
 
     /// Entry for binary frames from the transport (non-blocking).
     pub fn on_binary(&self, window_id: u8, connection_id: u64, frame: &[u8]) {
-        let Some(owner_id) = self
-            .ws_sessions
-            .lock()
-            .ok()
-            .and_then(|sessions| sessions.get(&(window_id, connection_id)).cloned())
-            .map(|session_id| session_owner_id(window_id, &session_id))
-        else {
+        let Some(owner_id) = self.ws_sessions.lock().ok().and_then(|sessions| {
+            sessions
+                .contains_key(&(window_id, connection_id))
+                .then_some(connection_id)
+        }) else {
             return;
         };
         let (header, payload) = match decode_chunk(frame) {
@@ -3218,56 +3217,10 @@ impl ApiManager {
 
     /// Disconnecting one frame must not cancel calls from sibling frames.
     pub fn cancel_connection(&self, window_id: u8, connection_id: u64) {
-        let session_id = self
-            .ws_sessions
-            .lock()
-            .ok()
-            .and_then(|mut sessions| sessions.remove(&(window_id, connection_id)));
-        let Some(session_id) = session_id else {
-            crate::app::api::cancel_process_connection(window_id, connection_id);
-            return;
-        };
-        let owner_id = session_owner_id(window_id, &session_id);
-        self.cancel_owner_connection(window_id, owner_id);
-        self.cancel_sync_session(window_id, &session_id);
-
-        let ipc_keys = self
-            .ipc_sessions
-            .lock()
-            .map(|sessions| {
-                sessions
-                    .active
-                    .keys()
-                    .filter(|key| key.window_id == window_id && key.session_id == session_id)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for key in &ipc_keys {
-            crate::app::api::cancel_ipc_process_session(
-                key.window_id,
-                &key.source_origin,
-                &key.session_id,
-                key.frame_id,
-                key.generation,
-            );
+        if let Ok(mut sessions) = self.ws_sessions.lock() {
+            sessions.remove(&(window_id, connection_id));
         }
-        let senders = self
-            .ipc_sessions
-            .lock()
-            .map(|mut sessions| {
-                sessions.cancel_matching(
-                    |key| key.window_id == window_id && key.session_id == session_id,
-                    true,
-                )
-            })
-            .unwrap_or_default();
-        for sender in senders {
-            sender.close();
-        }
-        self.cancel_ipc_channel_sessions(|key| {
-            key.window_id == window_id && key.session_id == session_id
-        });
+        self.cancel_owner_connection(window_id, connection_id);
     }
 
     /// Abort all calls of a window (window close or page lifecycle cleanup).
@@ -4136,7 +4089,7 @@ mod ipc_tests {
     }
 
     #[test]
-    fn session_owner_is_stable_across_ipc_and_websocket_routes() {
+    fn ipc_session_owner_is_stable_per_window_and_session() {
         let session_id = "0123456789abcdef0123456789abcdef";
         let owner_id = session_owner_id(5, session_id);
         assert_ne!(owner_id, 0);
@@ -4421,13 +4374,216 @@ mod ipc_tests {
         let session = "0123456789abcdef0123456789abcdef";
         assert!(manager.bind_ws_session(9, 44, session));
         assert!(manager.ws_session_matches(9, 44, session));
-        assert_eq!(
+        assert_eq!(manager.ws_session_owner_id(9, 44, session), Some(44));
+        assert_ne!(
             manager.ws_session_owner_id(9, 44, session),
             Some(session_owner_id(9, session))
         );
         assert!(!manager.ws_session_matches(9, 44, "abcdef0123456789abcdef0123456789"));
         manager.cancel_connection(9, 44);
         assert!(!manager.ws_session_matches(9, 44, session));
+    }
+
+    #[test]
+    fn websocket_disconnect_cancels_only_connection_owned_work() {
+        let options: NivaOptions = serde_json::from_value(json!({
+            "name": "disconnect-scope-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let window_id = 247;
+        let connection_id = 44;
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let ipc_owner_id = session_owner_id(window_id, session_id);
+        assert!(manager.bind_ws_session(window_id, connection_id, session_id));
+        let websocket_owner_id = manager
+            .ws_session_owner_id(window_id, connection_id, session_id)
+            .unwrap();
+        assert_eq!(websocket_owner_id, connection_id);
+        assert_ne!(websocket_owner_id, ipc_owner_id);
+
+        let websocket_call_id = 11;
+        let (websocket_cancel_tx, websocket_cancel_rx) = async_channel::bounded(1);
+        let (websocket_inbound_tx, _) = async_channel::bounded(1);
+        let (websocket_out_tx, _) = mpsc::channel();
+        let websocket_lifecycle = Arc::new(CallLifecycle::new());
+        manager.active.lock().unwrap().insert(
+            (window_id, websocket_owner_id, websocket_call_id),
+            ActiveCall {
+                lifecycle: websocket_lifecycle.clone(),
+                outbound: CallOutput::WebSocket(websocket_out_tx),
+                cancel_tx: websocket_cancel_tx,
+                inbound_tx: websocket_inbound_tx,
+            },
+        );
+
+        let ipc_call_id = 12;
+        let (ipc_cancel_tx, ipc_cancel_rx) = async_channel::bounded(1);
+        let (ipc_inbound_tx, _) = async_channel::bounded(1);
+        let (ipc_out_tx, _) = mpsc::sync_channel(1);
+        let ipc_lifecycle = Arc::new(CallLifecycle::new());
+        manager.active.lock().unwrap().insert(
+            (window_id, ipc_owner_id, ipc_call_id),
+            ActiveCall {
+                lifecycle: ipc_lifecycle.clone(),
+                outbound: CallOutput::Channel(ipc_out_tx),
+                cancel_tx: ipc_cancel_tx.clone(),
+                inbound_tx: ipc_inbound_tx,
+            },
+        );
+
+        let ipc_key = IpcSessionKey {
+            window_id,
+            source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+            session_id: session_id.into(),
+            frame_id: 0,
+            generation: 0,
+            is_main_frame: true,
+        };
+        manager
+            .ipc_sessions
+            .lock()
+            .unwrap()
+            .reserve(
+                ipc_key.clone(),
+                ipc_call_id,
+                ipc_cancel_tx,
+                ipc_owner_id,
+                Instant::now(),
+            )
+            .unwrap();
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let channel_key = IpcChannelKey {
+            session: ipc_key,
+            call_id: ipc_call_id,
+        };
+        manager.ipc_channels.lock().unwrap().insert(
+            channel_key.clone(),
+            IpcChannelCall {
+                capability: "test-capability".into(),
+                connection_id: ipc_owner_id,
+                next_upload_seq: 1,
+                upload_ended: false,
+                awaiting_output_seq: None,
+                output_ack_tx: ack_tx,
+            },
+        );
+
+        let sync_call_id = 13;
+        let (sync_cancel_tx, sync_cancel_rx) = async_channel::bounded(1);
+        let sync_key = (window_id, session_id.to_owned(), sync_call_id);
+        manager
+            .sync_active
+            .lock()
+            .unwrap()
+            .insert(sync_key.clone(), sync_cancel_tx);
+
+        manager.cancel_connection(window_id, connection_id);
+
+        assert!(!manager.ws_session_matches(window_id, connection_id, session_id));
+        assert!(!manager.active.lock().unwrap().contains_key(&(
+            window_id,
+            websocket_owner_id,
+            websocket_call_id
+        )));
+        assert!(matches!(
+            *websocket_lifecycle.phase.lock().unwrap(),
+            CallPhase::Cancelled
+        ));
+        assert!(websocket_cancel_rx.is_closed());
+
+        assert!(manager.active.lock().unwrap().contains_key(&(
+            window_id,
+            ipc_owner_id,
+            ipc_call_id
+        )));
+        assert!(matches!(
+            *ipc_lifecycle.phase.lock().unwrap(),
+            CallPhase::Queued
+        ));
+        assert!(!ipc_cancel_rx.is_closed());
+        assert!(matches!(
+            ipc_cancel_rx.try_recv(),
+            Err(async_channel::TryRecvError::Empty)
+        ));
+        assert!(
+            manager
+                .ipc_sessions
+                .lock()
+                .unwrap()
+                .active_call(&channel_key.session, ipc_call_id)
+        );
+        assert!(
+            manager
+                .ipc_channels
+                .lock()
+                .unwrap()
+                .contains_key(&channel_key)
+        );
+        assert!(manager.sync_active.lock().unwrap().contains_key(&sync_key));
+        assert!(!sync_cancel_rx.is_closed());
+        assert!(matches!(
+            sync_cancel_rx.try_recv(),
+            Err(async_channel::TryRecvError::Empty)
+        ));
+
+        let navigation_connection_id = connection_id + 1;
+        assert!(manager.bind_ws_session(window_id, navigation_connection_id, session_id));
+        let (navigation_cancel_tx, navigation_cancel_rx) = async_channel::bounded(1);
+        let (navigation_inbound_tx, _) = async_channel::bounded(1);
+        let (navigation_out_tx, _) = mpsc::channel();
+        let navigation_lifecycle = Arc::new(CallLifecycle::new());
+        let navigation_call_id = 14;
+        manager.active.lock().unwrap().insert(
+            (window_id, navigation_connection_id, navigation_call_id),
+            ActiveCall {
+                lifecycle: navigation_lifecycle.clone(),
+                outbound: CallOutput::WebSocket(navigation_out_tx),
+                cancel_tx: navigation_cancel_tx,
+                inbound_tx: navigation_inbound_tx,
+            },
+        );
+
+        manager.cancel_ipc_window_for_navigation(window_id);
+
+        assert!(!manager.active.lock().unwrap().contains_key(&(
+            window_id,
+            ipc_owner_id,
+            ipc_call_id
+        )));
+        assert!(matches!(
+            *ipc_lifecycle.phase.lock().unwrap(),
+            CallPhase::Cancelled
+        ));
+        assert!(ipc_cancel_rx.is_closed());
+        assert!(
+            !manager
+                .ipc_sessions
+                .lock()
+                .unwrap()
+                .active_call(&channel_key.session, ipc_call_id)
+        );
+        assert!(
+            !manager
+                .ipc_channels
+                .lock()
+                .unwrap()
+                .contains_key(&channel_key)
+        );
+        assert!(!manager.sync_active.lock().unwrap().contains_key(&sync_key));
+        assert!(sync_cancel_rx.is_closed());
+        assert!(!manager.ws_session_matches(window_id, navigation_connection_id, session_id));
+        assert!(!manager.active.lock().unwrap().contains_key(&(
+            window_id,
+            navigation_connection_id,
+            navigation_call_id
+        )));
+        assert!(matches!(
+            *navigation_lifecycle.phase.lock().unwrap(),
+            CallPhase::Cancelled
+        ));
+        assert!(navigation_cancel_rx.is_closed());
     }
 
     #[test]

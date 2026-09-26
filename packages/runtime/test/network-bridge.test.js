@@ -62,6 +62,11 @@ function mockNiva() {
     },
     },
   };
+  Object.defineProperty(niva.bridge, Symbol.for("niva.internal.bridge.streamRelated"), { value(ownerCall, method, args, handlers) {
+    const call = this.stream(method, args, handlers);
+    call.routeOwner = ownerCall;
+    return call;
+  } });
   return niva;
 }
 
@@ -93,7 +98,9 @@ test("net.Socket streams writes, acks consumed reads, and half-closes with nativ
   connectCall.handlers.onChunk(Uint8Array.of(1, 2, 3), false);
   assert.deepEqual([...(await data)[0]], [1, 2, 3]);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(niva.calls.some((call) => call.method === "socket.control" && call.args[0].action === "readAck" && call.args[0].bytes === 3), JSON.stringify(niva.calls.map((call) => [call.method, call.args[0] && call.args[0].action, call.args[0] && call.args[0].bytes])));
+  const readAck = niva.calls.find((call) => call.method === "socket.control" && call.args[0].action === "readAck" && call.args[0].bytes === 3);
+  assert.ok(readAck, JSON.stringify(niva.calls.map((call) => [call.method, call.args[0] && call.args[0].action, call.args[0] && call.args[0].bytes])));
+  assert.strictEqual(readAck.routeOwner, connectCall, "socket control must keep the connection's owner route");
   assert.equal(socket.bytesRead, 3);
 
   const finished = onceEvent(socket, "finish");
@@ -193,6 +200,7 @@ test("net.Server attaches accepted handles on the same bridge connection and wai
   listenerCall.handlers.onEvent("connection", { socketId: "pending-1", address: "192.0.2.8", port: 53100 });
   const attachCall = niva.calls.find((call) => call.method === "socket.tcpAttach");
   assert.ok(attachCall);
+  assert.strictEqual(attachCall.routeOwner, listenerCall, "accepted sockets must inherit the listener's owner route");
   assert.deepEqual(attachCall.args, [{ socketId: "pending-1" }]);
   attachCall.handlers.onEvent("connect", Object.assign(metadata("active-1"), { remoteAddress: "192.0.2.8", remotePort: 53100 }));
   const [socket] = await accepted;
@@ -201,6 +209,8 @@ test("net.Server attaches accepted handles on the same bridge connection and wai
 
   const closed = onceEvent(server, "close");
   server.close();
+  const pauseCall = niva.calls.find((call) => call.method === "socket.control" && call.args[0].action === "pauseRead");
+  assert.strictEqual(pauseCall.routeOwner, listenerCall);
   attachCall.handlers.onEvent("close", { socketId: "active-1", hadError: false });
   attachCall.resolve({ closed: true });
   await closed;
@@ -297,11 +307,14 @@ test("dgram preserves datagram boundaries and sends one END-terminated payload",
   const [payload, peer] = await message;
   assert.deepEqual([...payload], [1, 2, 3]);
   assert.deepEqual(peer, { address: "192.0.2.2", port: 53, family: "IPv4", size: 3 });
-  assert.ok(niva.calls.some((call) => call.method === "socket.control" && call.args[0].action === "readAck" && call.args[0].bytes === 3));
+  const readAck = niva.calls.find((call) => call.method === "socket.control" && call.args[0].action === "readAck" && call.args[0].bytes === 3);
+  assert.ok(readAck);
+  assert.strictEqual(readAck.routeOwner, bindCall);
 
   const sent = new Promise((resolve, reject) => socket.send(Buffer.from("dns"), 53, "192.0.2.53", (error, bytes) => error ? reject(error) : resolve(bytes)));
   const sendCall = niva.calls.find((call) => call.method === "socket.udpSend");
   assert.deepEqual(sendCall.args, [{ socketId: "udp-1", address: "192.0.2.53", port: 53 }]);
+  assert.strictEqual(sendCall.routeOwner, bindCall, "each UDP datagram must use the bound socket's owner route");
   assert.equal(niva.sent[0].data.toString(), "dns");
   assert.equal(niva.sent[0].end, true);
   sendCall.resolve({ sent: 3 });
@@ -311,6 +324,7 @@ test("dgram preserves datagram boundaries and sends one END-terminated payload",
   socket.close();
   const closeCall = niva.calls.find((call) => call.method === "socket.control" && call.args[0].action === "close");
   assert.deepEqual(closeCall.args, [{ socketId: "udp-1", action: "close" }]);
+  assert.strictEqual(closeCall.routeOwner, bindCall);
   assert.equal(bindCall.cancelled, false, "dgram.close leaves the bind stream alive for Native close delivery");
   await closed;
 });
