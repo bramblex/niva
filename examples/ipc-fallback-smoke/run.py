@@ -92,6 +92,8 @@ def main():
     parser.add_argument('--https-url', default='https://example.com/')
     parser.add_argument('--trusted-debug', action='store_true', help='Exercise explicit debug-origin token authorization instead of remote grants')
     parser.add_argument('--lease-only', action='store_true', help='Run only the IPC lease and child-cleanup regression')
+    parser.add_argument('--skip-lease-check', action='store_true', help='Skip the independent lease-expiry case while validating bridge calls and streams')
+    parser.add_argument('--skip-session-liveness', action='store_true', help='Skip long-running heartbeat cases when the desktop WebView is background-suspended')
     parser.add_argument('--launch-services-bundle', help='Foreground-launch this macOS app bundle through LaunchServices')
     parser.add_argument('--startup-timeout', type=float, default=90.0)
     args = parser.parse_args()
@@ -112,7 +114,8 @@ def main():
                'progress': str(output / 'progress.json'),
                'started': str(output / 'lease-child-started.txt'),
                'orphan': str(output / 'lease-orphan.txt'),
-               'command': 'echo niva-ipc' if os.name == 'nt' else 'printf niva-ipc'}
+               'command': 'echo niva-ipc' if os.name == 'nt' else 'printf niva-ipc',
+               'trustedDebug': args.trusted_debug}
     Path(fixture['started']).unlink(missing_ok=True)
     Path(fixture['orphan']).unlink(missing_ok=True)
     Path(fixture['progress']).unlink(missing_ok=True)
@@ -187,7 +190,14 @@ def main():
     origin = f'http://127.0.0.1:{server.server_port}'
     fixture['origin'] = origin
     config = output / 'niva.json'
-    entry = origin + ('/?leaseOnly=1' if args.lease_only else '/')
+    query = []
+    if args.lease_only:
+        query.append('leaseOnly=1')
+    if args.skip_lease_check:
+        query.append('skipLease=1')
+    if args.skip_session_liveness:
+        query.append('skipSessionLiveness=1')
+    entry = origin + '/' + (('?' + '&'.join(query)) if query else '')
     config.write_text(json.dumps({
         'name': 'Niva IPC fallback smoke', 'uuid': str(uuid.uuid4()),
         'injectCommonJs': False, 'injectEsm': False,
@@ -292,6 +302,8 @@ def main():
     report.update(engine='real-webview-ipc', authorization='trusted-debug-token' if args.trusted_debug else 'explicit-remote-grants',
                   nativeBinarySha256=hashlib.sha256(binary.read_bytes()).hexdigest(), pageLoads=page_loads,
                   progressPosts=progress_posts, childStatusResults=child_status_results,
+                  leaseCheck='skipped' if args.skip_lease_check or args.skip_session_liveness else 'included',
+                  sessionLiveness='skipped' if args.skip_session_liveness else 'included',
                   launchServicesBundle=str(launch_services_bundle) if launch_services_bundle else None,
                   launchServicesPid=launch_services_pid)
     (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')

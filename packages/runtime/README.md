@@ -30,18 +30,39 @@ when called. `Niva.os.dirs()` returns application data, cache and temporary
 directories.
 
 Native transport is grouped under `Niva.bridge`: `call`, `callSync`, `stream`,
-`streamSend` and `isIpcOnly`. Synchronous XHR is available only to trusted local
-pages. Binary streams, Node HTTP request streams, socket APIs and file handles
-use the local WebSocket transport. Authorized remote IPC supports a restricted
-asynchronous subset: UTF-8 text file operations and metadata, `requestText`,
-`execText` and `execFileText`. Binary/default-Buffer file reads, synchronous
-operations, handles and streams do not silently fall back to IPC.
+`streamSend` and `isTrustedLocal`. Synchronous XHR is available only to trusted local
+pages. The bridge chooses one asynchronous transport for each JavaScript
+session when its first async call or stream starts. It tries WebSocket during
+startup, then waits up to 500 ms at that first call: an authenticated open
+WebSocket selects WebSocket for the session; otherwise IPC is selected. The
+choice stays fixed for the session. WebSocket streams carry the existing text
+and binary frames. IPC Channels carry control and pushed text/binary frames
+through Native IPC; JS-to-Native binary frames use bounded, acknowledged IPC
+messages with base64-encoded complete frames. HTTP is used only by synchronous
+XHR compatibility calls. If a selected WebSocket disconnects, active calls and
+resources are failed and cleaned up; later calls use IPC, without retrying old
+calls or reconnecting WebSocket. `callSync` does not participate in transport
+selection.
+
+Authorized remote IPC supports a restricted asynchronous unary subset: UTF-8
+text file operations and metadata, `requestText`, `execText` and
+`execFileText`. Remote pages cannot open streaming Channels.
+`isTrustedLocal()` and `runtimeConfig.trustedLocal` describe the page's Native
+permission context; transport choice stays inside the bridge and is not exposed
+to Node adapters. Binary/default-Buffer file reads and synchronous operations
+remain unavailable to remote pages.
+
+For trusted local pages, Node-style async `readFile`, `writeFile` and
+`appendFile` reuse the Native file-handle Channel. Large file contents therefore
+move in bounded binary chunks; IPC encodes each complete wire frame with
+Base64, while synchronous variants stay on the synchronous XHR API.
 
 `Niva.http.requestText()` and `Niva.https.requestText()` are bounded text
 helpers for IPC-capable pages. They do not replace the streaming Node-style
 `http.request()` and `https.request()` contracts. Likewise,
 `Niva.child_process.execText()` and `execFileText()` are bounded text helpers;
-streaming child processes require the local WebSocket transport.
+streaming child processes require a trusted local page and use either the
+selected WebSocket or IPC Channel transport.
 
 ## Optional Node globals
 

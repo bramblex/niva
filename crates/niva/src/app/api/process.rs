@@ -279,9 +279,9 @@ fn build_text_exec_shell_command(
 
 fn process_owner(context: &CancellationContext) -> ProcessCallOwner {
     match &context.owner {
-        ApiCallOwner::WebSocket { connection_id } => ProcessCallOwner::WebSocket {
+        ApiCallOwner::BridgeSession { owner_id } => ProcessCallOwner::BridgeSession {
             window_id: context.window_id,
-            connection_id: *connection_id,
+            owner_id: *owner_id,
             call_id: context.call_id,
         },
         ApiCallOwner::Synchronous { session_id } => ProcessCallOwner::Synchronous {
@@ -485,9 +485,9 @@ async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
     let raw_child = cmd.spawn()?;
     let pid = raw_child.id();
     let mut child = SpawnSyncChild::new(raw_child, pid, cfg!(unix))?;
-    let owner = ProcessCallOwner::WebSocket {
+    let owner = ProcessCallOwner::BridgeSession {
         window_id: ctx.window.id,
-        connection_id: ctx.connection_id,
+        owner_id: ctx.connection_id,
         call_id: ctx.id,
     };
     let _registration = register_child(owner, child.control.clone())?;
@@ -1157,9 +1157,9 @@ impl Drop for ChildJob {
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 enum ProcessCallOwner {
-    WebSocket {
+    BridgeSession {
         window_id: u8,
-        connection_id: u64,
+        owner_id: u64,
         call_id: u64,
     },
     Synchronous {
@@ -1267,23 +1267,23 @@ fn cancel_processes_matching(mut matches: impl FnMut(&ProcessCallOwner) -> bool)
     }
 }
 
-pub(crate) fn cancel_ws_child(window_id: u8, connection_id: u64, call_id: u64) {
+pub(crate) fn cancel_bridge_child(window_id: u8, owner_id: u64, call_id: u64) {
     cancel_processes_matching(|owner| {
-        matches!(owner, ProcessCallOwner::WebSocket { window_id: wid, connection_id: cid, call_id: id }
-            if *wid == window_id && *cid == connection_id && *id == call_id)
+        matches!(owner, ProcessCallOwner::BridgeSession { window_id: wid, owner_id: candidate, call_id: id }
+            if *wid == window_id && *candidate == owner_id && *id == call_id)
     });
 }
 
-pub(crate) fn cancel_ws_connection(window_id: u8, connection_id: u64) {
+pub(crate) fn cancel_bridge_session(window_id: u8, owner_id: u64) {
     cancel_processes_matching(|owner| {
-        matches!(owner, ProcessCallOwner::WebSocket { window_id: wid, connection_id: cid, .. }
-            if *wid == window_id && *cid == connection_id)
+        matches!(owner, ProcessCallOwner::BridgeSession { window_id: wid, owner_id: candidate, .. }
+            if *wid == window_id && *candidate == owner_id)
     });
 }
 
 pub(crate) fn cancel_window_children(window_id: u8) {
     cancel_processes_matching(|owner| match owner {
-        ProcessCallOwner::WebSocket { window_id: wid, .. }
+        ProcessCallOwner::BridgeSession { window_id: wid, .. }
         | ProcessCallOwner::Synchronous { window_id: wid, .. }
         | ProcessCallOwner::Ipc { window_id: wid, .. } => *wid == window_id,
     });
@@ -1368,9 +1368,9 @@ async fn signal_child(ctx: CallContext, request: ApiRequest) -> Result<()> {
     let process = process_controls()
         .lock()
         .map_err(|_| anyhow::anyhow!("child registry poisoned"))?
-        .get(&ProcessCallOwner::WebSocket {
+        .get(&ProcessCallOwner::BridgeSession {
             window_id: ctx.window.id,
-            connection_id: ctx.connection_id,
+            owner_id: ctx.connection_id,
             call_id,
         })
         .cloned();
@@ -1646,9 +1646,9 @@ mod node_process_tests {
     static NEXT_TEST_OWNER: AtomicU64 = AtomicU64::new(0);
 
     fn test_owner() -> ProcessCallOwner {
-        ProcessCallOwner::WebSocket {
+        ProcessCallOwner::BridgeSession {
             window_id: 253,
-            connection_id: NEXT_TEST_OWNER.fetch_add(1, Ordering::Relaxed),
+            owner_id: NEXT_TEST_OWNER.fetch_add(1, Ordering::Relaxed),
             call_id: NEXT_TEST_OWNER.fetch_add(1, Ordering::Relaxed),
         }
     }

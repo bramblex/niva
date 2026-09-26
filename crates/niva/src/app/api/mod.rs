@@ -37,11 +37,11 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
 }
 
 pub(crate) fn cancel_process_call(window_id: u8, connection_id: u64, call_id: u64) {
-    process::cancel_ws_child(window_id, connection_id, call_id);
+    process::cancel_bridge_child(window_id, connection_id, call_id);
 }
 
 pub(crate) fn cancel_process_connection(window_id: u8, connection_id: u64) {
-    process::cancel_ws_connection(window_id, connection_id);
+    process::cancel_bridge_session(window_id, connection_id);
 }
 
 pub(crate) fn cancel_process_window(window_id: u8) {

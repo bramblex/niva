@@ -1,4 +1,4 @@
-/* Runs in an explicitly authorized remote-origin WebView. No Node test runtime. */
+/* Runs in a remote-grant or trusted-debug WebView. No Node test runtime. */
 (async function () {
   const config = await (await fetch('/fixture')).json();
   const checks = [];
@@ -19,13 +19,11 @@
     assert(rejected, 'unsupported call did not reject');
   }
   const leaseOnly = new URL(window.location.href).searchParams.get('leaseOnly') === '1';
+  const skipSessionLiveness = new URL(window.location.href).searchParams.get('skipSessionLiveness') === '1';
+  const skipLease = new URL(window.location.href).searchParams.get('skipLease') === '1' || skipSessionLiveness;
   if (!leaseOnly) {
-  await check('page selects IPC after WS is unavailable', async () => {
-    const deadline = Date.now() + 8000;
-    while (!Niva.bridge.isIpcOnly() && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    assert(Niva.bridge.isIpcOnly(), 'unexpected WS transport');
+  await check('page trust matches the configured IPC authorization mode', async () => {
+    assert(Niva.bridge.isTrustedLocal() === config.trustedDebug, 'page trust does not match its configured authorization mode');
   });
   await check('text file write/read/append', async () => {
     await Niva.fs.promises.writeFile(config.file, '中文 IPC', 'utf8');
@@ -36,9 +34,16 @@
     const stat = await Niva.fs.promises.stat(config.file);
     assert(stat.isFile() && stat.size > 0, 'invalid file metadata');
   });
-  await check('oversized write rejects before changing the file', async () => {
-    await rejects(() => Niva.fs.promises.writeFile(config.file, 'x'.repeat(300 * 1024), 'utf8'));
-    assert(await Niva.fs.promises.readFile(config.file, 'utf8') === '中文 IPC\n追加', 'rejected write changed the existing file');
+  await check('large file write streams locally or rejects before remote mutation', async () => {
+    if (Niva.bridge.isTrustedLocal()) {
+      const text = 'x'.repeat(300 * 1024);
+      await Niva.fs.promises.writeFile(config.file, text, 'utf8');
+      assert((await Niva.fs.promises.stat(config.file)).size === text.length, 'large local write was truncated');
+      await Niva.fs.promises.writeFile(config.file, '中文 IPC\n追加', 'utf8');
+    } else {
+      await rejects(() => Niva.fs.promises.writeFile(config.file, 'x'.repeat(300 * 1024), 'utf8'));
+      assert(await Niva.fs.promises.readFile(config.file, 'utf8') === '中文 IPC\n追加', 'rejected write changed the existing file');
+    }
   });
   await check('directory create, rename, copy, list and recursive removal', async () => {
     const fs = Niva.fs.promises;
@@ -82,11 +87,37 @@
     const result = await Niva.child_process.execFileText(config.python, ['-c', 'print("niva-exec-file")']);
     assert(result.status === 0 && result.stdout.trim() === 'niva-exec-file', 'execFile result mismatch');
   });
+  if (Niva.bridge.isTrustedLocal()) {
+    await check('IPC Channel carries binary stdin/stdout/stderr', async () => {
+      const input = Uint8Array.from({length: 256}, (_, index) => index);
+      const code = 'import sys; d=sys.stdin.buffer.read(); sys.stdout.buffer.write(d); sys.stderr.buffer.write(bytes([255,0,10]))';
+      const child = Niva.child_process.spawn(config.python, ['-c', code], {stdio: 'pipe'});
+      const stdout = [];
+      const stderr = [];
+      child.stdout.on('data', chunk => stdout.push(...chunk));
+      child.stderr.on('data', chunk => stderr.push(...chunk));
+      child.stdin.end(input);
+      const outcome = await new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', (code, signal) => resolve({code, signal}));
+      });
+      assert(outcome.code === 0 && outcome.signal === null, 'IPC child did not exit cleanly');
+      assert(JSON.stringify(stdout) === JSON.stringify(Array.from(input)), 'binary stdout was corrupted');
+      assert(JSON.stringify(stderr) === JSON.stringify([255, 0, 10]), 'binary stderr was corrupted');
+    });
+  }
   await check('exec output limit rejects rather than truncating', () => rejects(() =>
     Niva.child_process.execFileText(config.python, ['-c', 'print("x"*4096)'], {maxOutputBytes: 128})));
   await check('exec timeout terminates instead of hanging', () => rejects(() =>
     Niva.child_process.execFileText(config.python, ['-c', 'import time;time.sleep(5)'], {timeoutMs: 200})));
-  await check('binary file read rejects', () => rejects(() => Niva.fs.promises.readFile(config.file)));
+  await check('binary file reads require local trust and preserve bytes', async () => {
+    if (Niva.bridge.isTrustedLocal()) {
+      const data = await Niva.fs.promises.readFile(config.file);
+      assert(data instanceof Uint8Array && new TextDecoder().decode(data) === '中文 IPC\n追加', 'local binary file read was corrupted');
+    } else {
+      await rejects(() => Niva.fs.promises.readFile(config.file));
+    }
+  });
   await check('synchronous file read rejects', () => rejects(() => Niva.fs.readFileSync(config.file, 'utf8')));
   await check('raw fs.node cannot bypass binary restriction', () => rejects(() =>
     Niva.bridge.call('fs.node', ['readFile', {path: config.file}])));
@@ -94,7 +125,11 @@
   await check('IPC cannot create a persistent Native window', () => rejects(() => Niva.bridge.call('window.open', [{}])));
   await check('IPC cannot obtain a persistent file descriptor', () => rejects(() => Niva.bridge.call('fs.node', ['open', {path: config.file, flag: 'r'}])));
   await check('file unlink over IPC', () => Niva.fs.promises.unlink(config.file));
-  await check('active IPC heartbeat keeps a long exec alive', async () => {
+  if (skipSessionLiveness) {
+    checks.push({name: 'active IPC heartbeat keeps a long exec alive', ok: true, skipped: true});
+    await publishProgress('active heartbeat check skipped because this WebView may be background-suspended');
+  } else {
+    await check('active IPC heartbeat keeps a long exec alive', async () => {
     await publishProgress('active IPC heartbeat request started');
     const outcome = await Promise.race([
       Niva.child_process.execFileText(config.python,
@@ -110,19 +145,22 @@
     assert(!outcome.error, `active IPC heartbeat call rejected: ${String(outcome.error)}`);
     const result = outcome.result;
     assert(result.status === 0 && result.stdout.trim() === 'heartbeat-alive', 'active lease was not renewed');
-  });
-  }
-  if (leaseOnly) {
-    await check('page selects IPC after WS is unavailable', async () => {
-      const deadline = Date.now() + 8000;
-      while (!Niva.bridge.isIpcOnly() && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      assert(Niva.bridge.isIpcOnly(), 'unexpected WS transport');
     });
   }
-  await check('lost IPC heartbeat delivery expires the lease and cancels exec', async () => {
-    await publishProgress('lease check entered', {pageVisible: !document.hidden, ipcOnly: Niva.bridge.isIpcOnly()});
+  }
+  if (leaseOnly) {
+    await check('trusted page completes async call while CSP blocks WS', async () => {
+      assert(Niva.bridge.isTrustedLocal(), 'trusted debug origin did not receive local capability');
+      const result = await Niva.child_process.execFileText(config.python, ['-c', 'print("ipc-fallback")']);
+      assert(result.status === 0 && result.stdout.trim() === 'ipc-fallback', 'IPC fallback call failed');
+    });
+  }
+  if (skipLease) {
+    checks.push({name: 'lost IPC heartbeat delivery expires the lease and cancels exec', ok: true, skipped: true});
+    await publishProgress('lease expiry check skipped by explicit runner option');
+  } else {
+    await check('lost IPC heartbeat delivery expires the lease and cancels exec', async () => {
+    await publishProgress('lease check entered', {pageVisible: !document.hidden, trustedLocal: Niva.bridge.isTrustedLocal()});
     // Keep WebKit's page loop and Native reply path intact while suppressing
     // only the runtime's one-second lease-renewal timer in this harness.
     const timerDescriptor = Object.getOwnPropertyDescriptor(window, 'setTimeout');
@@ -188,8 +226,11 @@
       if (timerDescriptor) Object.defineProperty(window, 'setTimeout', timerDescriptor);
       else delete window.setTimeout;
     }
-  });
-  const report = {ok: checks.every(check => check.ok), checks, pageMarker, documentHidden: document.hidden};
+    });
+  }
+  const report = {ok: checks.every(check => check.ok), checks, pageMarker, documentHidden: document.hidden,
+    leaseCheck: skipLease ? 'skipped' : 'included',
+    sessionLiveness: skipSessionLiveness ? 'skipped' : 'included'};
   document.getElementById('status').textContent = JSON.stringify(report, null, 2);
   await fetch('/result', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(report)});
 })().catch(async error => {

@@ -9,7 +9,7 @@ test("sync fd calls preserve typed-array slices and native descriptor lifecycle"
   const calls = [];
   const niva = {
     bridge: {
-      isIpcOnly: () => false,
+      isTrustedLocal: () => true,
       callSync(method, args) {
         assert.equal(method, "fs.node");
         const [operation, payload] = args;
@@ -45,10 +45,10 @@ test("sync fd calls preserve typed-array slices and native descriptor lifecycle"
   assert.throws(() => fs.fstatSync(fd), { code: "EBADF" });
 });
 
-test("sync fd calls reject in IPC-only mode before dispatch", () => {
+test("sync fd calls reject in remote permission context before dispatch", () => {
   let dispatched = false;
-  const niva = { bridge: { isIpcOnly: () => true, callSync() { dispatched = true; } }, bootstrap: {} };
+  const niva = { bridge: { isTrustedLocal: () => false, callSync() { dispatched = true; } }, bootstrap: {} };
   const fs = runtime.createFsModule(niva);
-  assert.throws(() => fs.openSync("notes.txt"), { code: "ERR_NIVA_IPC_SYNC_UNSUPPORTED" });
+  assert.throws(() => fs.openSync("notes.txt"), { code: "ERR_NIVA_LOCAL_PAGE_REQUIRED" });
   assert.equal(dispatched, false);
 });

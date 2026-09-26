@@ -13,17 +13,27 @@
 
 - 打包本地页面由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，因此同一应用跨重启及窗口保持稳定，不同应用使用不同origin。Windows WebView2将其映射为 `http://niva-<uuid>.app`；macOS/Linux使用协议origin。`niva://app/`仅作为配置入口别名。Linux尚无构建或运行验收。窗口以本地包启动时才建立可信
   origin；初始化脚本只在顶层文档的当前 origin 精确匹配该值、且路径不在 `__niva_fs`
-  下时注入按窗口生成且仅存内存的 WS token。同源页面导航仍满足 origin 条件。WS 握手
-  继续校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID
-  绑定到该 token。
+  下时注入按窗口生成且仅存内存的本地 bridge token。同源页面导航仍满足 origin 条件。WS 握手
+  校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID 绑定到该 token；
+  IPC Channel 在 Rust 侧校验真实 source/frame、token、窗口、session、call 与 channel capability。
+  每个 JS realm 首次发起 async call/stream 时最多等待500ms建立并认证 WS，随后锁定 WS 或 IPC；锁定
+  IPC 后晚到的 WS 不升级。WS session断开会清理该session全部pending calls和资源，当前调用失败，realm
+  后续调用锁定IPC；调用不跨transport重放。IPC发送/ACK走
+  平台消息，Native到JS的Channel帧/事件由 `evaluate_script` 投递。二进制完整18-byte wire frame
+  通过Base64跨IPC边界，payload不超过16 KiB，并受序号、有界队列、ACK/背压、取消及session lease
+  约束；该路径不是零拷贝或性能优势的证明。
 - macOS 26.6.2固定bundle identity的临时`.app`已实测同UUID重启保留localStorage、不同UUID互相不可见；当前最低构建目标macOS 11.0尚未真机复测。
 - 远端页面和 frame 通过原生 IPC 来源 URL 按窗口 grant 授权。grant 使用精确
-  HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 不提供流式调用，且
+  HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 仅提供 unary 调用，不提供
+  Channel、流或二进制，且
   `window.open`、`webview.baseFileSystemUrl` 不允许经 grant 开放。
-- 源码具备 macOS 与 Windows frame 级 IPC 路径；Windows 真机关键流程仍待验证。
+- 源码具备 macOS 与 Windows frame 级 IPC 路径；Windows 真机关键流程仍待验证。macOS与
+  Windows真实WebView上的完整双bridge、二进制流、背压及断线行为仍须分别做端到端验收，
+  源码和单测不代表平台验收完成。
 - 显式开发启动中的本机 Vite 页仍使用精确 loopback HTTP origin。打包模式的普通
   HTTP 静态和 NodeCompat 路由关闭；`/__niva_ws` 与按窗口 token 验证的
-  `/__niva_fs/<window-token>/...` 仍由动态 loopback HTTP 服务提供。
+  `/__niva_fs/<window-token>/...` 仍由动态 loopback HTTP 服务提供。`/__niva_sync`仅服务
+  同步 `callSync`；`__niva_fs`是独立资源读取接口，不承载异步API或Channel传输。
 - UUID派生的 `niva-<uuid>://` 协议处理器只读取本应用资源；拒绝 `__niva_*` 内部路径，NodeCompat
   仅在启用且 asset 通过模块 allowlist 时可读。异步队列为 4 个工作线程、32 个等待
   请求；超时 15 秒，响应上限 32 MiB。该限制不构成性能测试结果。
@@ -62,7 +72,7 @@
 ## 2. 剩余风险与验收边界
 
 - bridge 权限隔离不等于远端内容可信。仅授予确有需要的 API；不要在有原生权限的
-  frame 执行未经信任的网络脚本。`http.requestText` 与受信 WS 上的 `http.requestStream`
+  frame 执行未经信任的网络脚本。`http.requestText` 与受信 WS/IPC Channel 上的 `http.requestStream`
   接受任意绝对 HTTP(S) 地址并拒绝 URL userinfo；客户端关闭环境代理和自动重定向，
   但不限制目标是否为 loopback、私网或公网地址。应用代码应把原生网络权限视为可访问
   本机网络的能力；如需限制目标范围，必须另行定义产品策略并在 Native resolver 层实施。
@@ -70,7 +80,9 @@
   内；仅有 macOS smoke 证明打包模式 `/index.html` 返回 404，其他平台和调试路由仍需
   按预期暴露范围核查。不要把 WS token 或 IPC grant 当成通用 HTTP 鉴权。
 - macOS 临时 app smoke（2026-09-23）观察到 `niva://app`，主页面和同源 iframe 均通过
-  WS 原生调用，普通 loopback 静态请求返回 404，匿名 `__niva_fs` 返回 403。另一个仅选
+  WS 原生调用，普通 loopback 静态请求返回 404，匿名 `__niva_fs` 返回 403。该历史结果
+  不证明当前双bridge IPC Channel、Base64二进制流、ACK/背压或WS断线选路已在真实WebView
+  验收。另一个仅选
   `path/fs/assert/stream` 的临时包验证了部分 NodeCompat ESM、Promise 与 allowlist
   路径；这不代表完整模块语义已验收。上述结果均不是 Windows、二进制流、存储迁移、
   异步负载或性能验收证据。Wry 异步处理只避免在协议回调同步读取资源。

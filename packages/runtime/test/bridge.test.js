@@ -69,7 +69,7 @@ test("package ESM exports resolve and registration enforces the bridge version",
 
 
 test('fs uses native operations for callbacks, promises and synchronous binary data', async () => {
-  const files=new Map(),calls=[];
+  const files=new Map(),calls=[],streams=[];
   function dispatch(method,[op,args]){
     assert.equal(method,'fs.node');calls.push([op,args]);
     if(op==='writeFile'){files.set(args.path,args.data);return null;}
@@ -79,18 +79,68 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
     if(op==='copyFile'){files.set(args.destination,files.get(args.path));return null;}
     return null;
   }
-  const niva={bridge:{call:(...args)=>Promise.resolve().then(()=>dispatch(...args)),callSync:dispatch}};
+  let nextStreamId=0,nextHandleId=0;
+  const handles=new Map();
+  const niva={bridge:{isTrustedLocal:()=>true,call:(...args)=>Promise.resolve().then(()=>dispatch(...args)),callSync:dispatch,
+    stream(method,args,handlers){
+      streams.push([method,args]);
+      const id=++nextStreamId;
+      if(method==='fs.openHandle'){
+        const [path,flag]=args;
+        const exists=files.has(path);
+        if(flag.startsWith('r')&&!exists)return {id,promise:Promise.reject(Object.assign(new Error('missing'),{code:'ENOENT'}))};
+        if(flag.includes('x')&&exists)return {id,promise:Promise.reject(Object.assign(new Error('already exists'),{code:'EEXIST'}))};
+        if(flag.startsWith('w'))files.set(path,Buffer.alloc(0).toString('base64'));
+        if(flag.startsWith('a')&&!exists)files.set(path,Buffer.alloc(0).toString('base64'));
+        const handle=++nextHandleId;
+        handles.set(handle,{path,position:flag.startsWith('a')?Buffer.from(files.get(path),'base64').length:0,append:flag.startsWith('a')});
+        queueMicrotask(()=>handlers.onEvent('open',{handle}));
+        return {id,promise:Promise.resolve()};
+      }
+      assert.equal(method,'fs.handle');
+      const [handleId,operation,options]=args;
+      const handle=handles.get(handleId);
+      assert.ok(handle,`unknown handle ${handleId}`);
+      const data=Buffer.from(files.get(handle.path)||'','base64');
+      if(operation==='read'){
+        const start=options.position===undefined?handle.position:options.position;
+        const chunk=data.subarray(start,start+options.length);
+        if(options.position===undefined)handle.position+=chunk.length;
+        return {id,promise:Promise.resolve({bytesRead:chunk.length,data:chunk.toString('base64')})};
+      }
+      if(operation==='write'){
+        const chunk=Buffer.from(options.data,'base64');
+        const start=handle.append?data.length:options.position===undefined?handle.position:options.position;
+        const output=Buffer.alloc(Math.max(data.length,start+chunk.length));
+        data.copy(output);chunk.copy(output,start);
+        files.set(handle.path,output.toString('base64'));
+        if(options.position===undefined)handle.position=start+chunk.length;
+        return {id,promise:Promise.resolve({bytesWritten:chunk.length})};
+      }
+      if(operation==='close'){
+        handles.delete(handleId);
+        return {id,promise:Promise.resolve(null)};
+      }
+      throw new Error(`unexpected handle operation ${operation}`);
+    },
+  }};
   const fs=runtime.createFsModule(niva);
   fs.writeFileSync('/bytes',Uint8Array.of(0,255,65),{mode:0o600,flag:'wx'});
   assert.deepEqual([...fs.readFileSync('/bytes')],[0,255,65]);
   assert.deepEqual([...await fs.promises.readFile('/bytes')],[0,255,65]);
   assert.equal(await new Promise((resolve,reject)=>fs.readFile('/bytes','hex',(error,data)=>error?reject(error):resolve(data))),'00ff41');
+  await fs.promises.writeFile('/streamed',Uint8Array.of(1,0,255));
+  await fs.promises.appendFile('/streamed',Uint8Array.of(2));
+  assert.deepEqual([...await fs.promises.readFile('/streamed')],[1,0,255,2]);
   assert.equal(fs.statSync('/bytes').mtimeMs,20);
   assert.equal(fs.existsSync('/absent'),false);
   await assert.rejects(fs.promises.readFile('/absent'),{code:'ENOENT'});
   assert.throws(()=>fs.readFile('/bytes'),TypeError);
   await fs.promises.copyFile('/bytes','/copy',fs.constants.COPYFILE_EXCL);
   assert.deepEqual(calls.find(([op])=>op==='copyFile')[1],{path:'/bytes',destination:'/copy',flags:1});
+  assert.ok(streams.some(([method])=>method==='fs.openHandle'));
+  assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='read'));
+  assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='write'));
   assert.equal(calls[0][1].mode,0o600);assert.equal(calls[0][1].flag,'wx');
 });
 

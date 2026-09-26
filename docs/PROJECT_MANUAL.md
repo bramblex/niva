@@ -50,23 +50,23 @@ niva/
 
 ## 3. 窗口、页面与通信
 
-### 3.1 每窗口的桥接选择
+### 3.1 每 realm 的桥接选择
 
-Niva 并非只使用 WebSocket，也并非统一改用 IPC。每个窗口根据启动方式、平台和页面来源选择通信路径：
+JS/Rust 高层API共用同一套调用与流处理逻辑，传输由每个JS realm的bridge session决定，不按启动方式直接分配。realm首次发起async call/stream时最多等待500ms建立并认证WebSocket；成功后锁定WS，否则锁定IPC。锁定IPC后即使WS晚到也不升级。WS断开时Native清理该session所有pending calls和资源，当前调用失败，realm后续调用锁定IPC；在途或已执行调用不跨传输重放。
 
-- 受信任的本地页面在支持且满足条件时使用该窗口专属 WebSocket；窗口管理器为每个窗口生成独立凭据，调用和事件使用 `initialize_script.js` 中的 wire 协议。
+- 受信任本地页面可以使用本地WS或IPC Channel；窗口管理器为窗口生成独立凭据，Rust仍验证来源、窗口、session、frame和权限。IPC Channel的控制、发送与ACK使用平台IPC，Native到JS帧/事件经 `evaluate_script` 投递。二进制完整18-byte wire frame在IPC边界使用Base64，payload最多16 KiB；队列有界并使用序号、ACK/背压与取消。此机制不代表零拷贝或性能更快。
 - **打包本地页**由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，同一应用跨重启和窗口使用相同origin，不同应用使用不同origin。Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`仅作为配置入口别名。WebSocket 与 `__niva_fs` 仍经动态 `127.0.0.1:<port>` 服务；打包模式普通 HTTP 静态路由关闭。
-- macOS 通过 WKWebView 消息处理器传递 IPC；Windows 通过 WebView2 WebMessage 与 frame 处理器传递 IPC。跨源页面/iframe 等需要 IPC 的上下文可走平台 IPC 路径。
+- macOS 通过 WKWebView 消息处理器传递 IPC；Windows 通过 WebView2 WebMessage 与 frame 处理器传递 IPC。跨源页面/iframe只能使用精确origin grant允许的unary JSON IPC，不开放Channel、流或二进制。XHR仅用于同步`callSync`；`__niva_fs`是独立文件资源接口。
 - 显式 debug 启动可加载跨端口开发入口并授予该窗口桥接；带 `--debug-resource` 的开发启动继续通过 loopback HTTP 加载静态资源。普通打包启动忽略配置中的 debug entry。每个原生 API 调用仍需在 Rust 侧做窗口、来源与授权校验。
-- WebSocket 断开、事件转发和页面来源边界应以 `docs/bridge.md`、`docs/security.md` 及对应平台代码为准。
+- WebSocket 断开、事件转发和页面来源边界应以 `docs/bridge.md`、`docs/security.md` 及对应平台代码为准。完整双bridge、二进制流、500ms选择和断线清理行为仍需macOS、Windows真实WebView端到端验收。
 
-当前验收记录：macOS 常规 WebView 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-23 另以临时 app 实测固定协议 origin `niva://app`、主页面/同源 iframe 的 WS 原生调用、静态 JS 资源，以及普通 loopback 静态请求 404。通过 `webview.baseFileSystemUrl()` 在该页 `fetch` 文件成功；有效 token 配非匹配 Origin 时服务端不返回 ACAO，无效 token 返回 403。另用只选 `path/fs/assert/stream` 的临时包验证静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 资源 404。未测 NodeCompat 全模块语义、WS 二进制流、存储迁移或性能。Windows 已有限实测 WebView2 打包页、同源 iframe、文件 URL 和部分 NodeCompat；详见 `docs/windows-validation-2026-09-23.md`。远端 IPC 与完整行为矩阵仍待验收。
+当前验收记录：macOS 常规 WebView 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-23 另以临时 app 实测固定协议 origin `niva://app`、主页面/同源 iframe 的 WS 原生调用、静态 JS 资源，以及普通 loopback 静态请求 404。通过 `webview.baseFileSystemUrl()` 在该页 `fetch` 文件成功；有效 token 配非匹配 Origin 时服务端不返回 ACAO，无效 token 返回 403。另用只选 `path/fs/assert/stream` 的临时包验证静态 `import 'path'`、`Niva.import('fs/promises')`、`require('assert/strict')` 和未选 `child_process.js` 资源 404。未测 NodeCompat 全模块语义、WS 二进制流、存储迁移或性能。Windows 已有限实测 WebView2 打包页、同源 iframe、文件 URL 和部分 NodeCompat；详见 `docs/windows-validation-2026-09-23.md`。远端 IPC 与完整行为矩阵仍待验收。上述既有WS/IPC手工记录不代表当前per-realm双bridge选择、IPC Channel二进制流、背压及断线清理已通过真实WebView端到端验收。
 
 ### 3.2 API 调度与协议
 
 API 名称在 `crates/niva/src/app/api/` 注册，`ApiManager` 将请求按窗口和方法分派。异步 API 直接运行；可能阻塞的调用应走 blocking 执行路径；长任务可采用流式接口并支持取消。公开签名以 `packages/types/Niva_zh.d.ts` 和 `docs/bridge.md` 为准，避免依赖手册中的旧 API 数量或行号。
 
-WebSocket wire 协议和二进制帧格式以 `docs/bridge.md` 与 `crates/niva/src/app/api_manager/protocol.rs` 为准。IPC 使用各平台消息封装，不能将 WS 文本帧格式误认为平台 IPC 的传输格式。
+WebSocket与IPC Channel共用的wire协议、18-byte二进制帧以 `docs/bridge.md` 与 `crates/niva/src/app/api_manager/protocol.rs` 为准。WS传递原始帧；IPC在边界以Base64封装完整帧，不能将其称作零拷贝。
 
 ### 3.3 stdio Host Bridge
 

@@ -2,7 +2,15 @@
 
 > 状态：原 session-cookie 方案已被当前按窗口 scoped file-token 实现取代；打包普通
 > 静态资源现由应用UUID派生的Wry自定义协议（macOS/Linux `niva-<uuid>://app/`，Windows `http://niva-<uuid>.app/`）提供，不再经过普通 HTTP 静态路由。loopback
-> 服务继续承载 WS、`__niva_fs` 和显式调试模式下的静态/NodeCompat HTTP 路由。不要将
+> 服务继续承载 WS、同步 `__niva_sync`、`__niva_fs` 和显式调试模式下的静态/NodeCompat HTTP 路由。
+> 异步 API 使用统一 handler：每个 JS realm 首次 async call/stream 最多等待500ms建立并认证 WS，随后锁定
+> WS或IPC；锁定IPC后晚到的WS不升级。WS断开清理该session全部pending calls和资源，当前调用失败，realm
+> 后续调用锁定IPC；调用不跨transport重放。IPC channelSend/ACK
+> 走原生 IPC，Native→JS帧/事件经 `evaluate_script`。IPC二进制使用完整18-byte wire frame的Base64
+> 表示（payload最多16 KiB），并有序号、有界队列、ACK/背压、取消和session lease。XHR仅用于同步
+> `callSync`，`__niva_fs`是独立文件资源接口。远端页面仅有精确origin
+> grant下的unary IPC，不开放Channel/流/二进制。上述是代码契约描述；macOS与Windows真实WebView
+> 双bridge端到端验收仍须另行完成。不要将
 > 下文旧设计视为待实现要求或当前协议；源码见 `http_server`、`custom_protocol`、
 > `window_manager/builder.rs` 与 `docs/bridge.md`。
 
@@ -15,6 +23,7 @@
   `FileSystemResource` 边界不同；请求路径按 URL 百分号编码解码，单次响应上限 32 MiB。
 - 成功的文件响应带 `Content-Security-Policy: sandbox` 与
   `X-Content-Type-Options: nosniff`。
+- 文件资源接口只负责文件读取，与 async WS/IPC Channel 传输无关；XHR `__niva_sync`只供同步 `callSync`。
 - 文件响应只在请求 `Origin` 与 token 所属窗口的 `trusted_ws_origin` 精确相同时返回
   `Access-Control-Allow-Origin`。2026-09-23 macOS smoke验证当时固定origin `niva://app` 页面通过
   `webview.baseFileSystemUrl()` 跨源 fetch 读取成功；带有效 token 但 Origin 不匹配时

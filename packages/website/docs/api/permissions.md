@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # 远端页面权限
 
-远端页面通过原生 IPC 调用 API 时，Niva 按**窗口配置、调用 frame 的来源 URL 和 API 方法名**逐次授权。没有匹配项时拒绝调用。该 grant 只适用于非流式 JSON API；流式 API 和二进制传输始终不能通过 IPC 授权。
+远端页面通过原生 IPC 调用 API 时，Niva 按**窗口配置、调用 frame 的来源 URL 和 API 方法名**逐次授权。没有匹配项时拒绝调用。远端页面的 grant 只适用于非流式 unary JSON API；流式 API 和二进制传输不能通过 IPC 授权。
 
 ## 配置
 
@@ -26,10 +26,10 @@ origin 必须是精确的 `http` 或 `https` 来源，包括协议、主机和�
 
 ## 调用时的校验
 
-远端页面没有本地 WebSocket 凭据。macOS IPC 从 WebKit 消息的发送 frame URL 取来源；Windows IPC 从 WebView2 frame 消息取来源，并在回包前检查导航状态。Rust 根据来源 origin、窗口自己的 permissions 和完整 API 名称进行检查，不信任消息体中的 `wid` 或 origin。
+远端页面没有本地 WebSocket 凭据，也不能加入本地IPC Channel session。macOS IPC 从 WebKit 消息的发送 frame URL 取来源；Windows IPC 从 WebView2 frame 消息取来源，并在回包前检查导航状态。Rust 根据来源 origin、窗口自己的 permissions 和完整 API 名称进行检查，不信任消息体中的 `wid` 或 origin。
 
 - 单次IPC请求JSON最多256KiB、响应最多8MiB；高层操作还有body/输出与超时限制，在途IPC采用失联租约。
-- IPC只支持明确白名单内的一次性JSON操作；仅注册为Unary并不足以放行。`Niva.bridge.stream`、Native同步、二进制帧和持久handler不可用。
+- 远端 IPC只支持明确白名单内的一次性JSON操作；仅注册为Unary并不足以放行。`Niva.bridge.stream`、Native同步、二进制帧和持久handler不可用。
 - `window.open` 与 `webview.baseFileSystemUrl` 即使在 grant 中列出也会被拒绝。
 - API 错误会使 `Niva.bridge.call()` 返回的 Promise reject；权限拒绝使用 bridge 错误码 `-4`。
 
@@ -43,7 +43,7 @@ try {
 }
 ```
 
-`permissions` 控制远端 IPC，不控制本地 WebSocket 页面。同源 frame 按浏览器同源规则可访问顶层页面的本地 bridge 凭据；请只在信任本地包页面及其同源脚本时使用完整本地 API。详见[Bridge 与传输方式](./bridge)。
+`permissions` 控制远端 IPC，不控制可信本地页面的WS/IPC Channel session。同源 frame 按浏览器同源规则可访问顶层页面的本地 bridge 凭据；请只在信任本地包页面及其同源脚本时使用完整本地 API。详见[Bridge 与传输方式](./bridge)。
 
 ## 验收边界
 

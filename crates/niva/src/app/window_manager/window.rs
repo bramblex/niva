@@ -16,7 +16,7 @@ use wry::WebView;
 
 use crate::{
     app::{
-        NivaApp, NivaWindowTarget,
+        NivaApp, NivaEvent, NivaWindowTarget,
         api_manager::protocol::ServerMsg,
         utils::{ArcMut, arc, arc_mut},
     },
@@ -211,10 +211,90 @@ impl NivaWindow {
         let payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
         let seq = self.next_event_seq();
         let envelope = ServerMsg::event(None, seq, event.into(), payload);
-        self.send_ws_envelope(&envelope.encode())
+        let encoded = envelope.encode();
+        self.send_ws_envelope(&encoded) || self.send_ipc_envelope(&encoded)
+    }
+
+    /// Push one Channel frame through the Native IPC bridge. Binary frames are
+    /// encoded only at this transport boundary; API handlers keep passing
+    /// their original bytes through `CallContext`.
+    pub fn send_ipc_frame(
+        self: &Arc<Self>,
+        session_id: &str,
+        call_id: u64,
+        channel_seq: u64,
+        frame: WsOut,
+    ) -> bool {
+        use base64::Engine;
+
+        let frame = match frame {
+            WsOut::Text(data) => serde_json::json!({ "t": "text", "data": data }),
+            WsOut::Binary(bytes) => serde_json::json!({
+                "t": "binary",
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+            }),
+        };
+        let message = serde_json::json!({
+            "sessionId": session_id,
+            "id": call_id,
+            "seq": channel_seq,
+            "frame": frame,
+        });
+        let Ok(encoded) = serialize_script_json(&message) else {
+            return false;
+        };
+        self.send_ipc_script(format!(
+            "if(typeof window.__niva_native_frame==='function')window.__niva_native_frame({encoded});"
+        ))
+    }
+
+    /// Deliver the same event envelope through the local Native IPC bridge
+    /// when no WebSocket connection is available. Evaluation is queued onto
+    /// the event loop so callers may safely invoke this from the main thread.
+    fn send_ipc_envelope(self: &Arc<Self>, envelope: &str) -> bool {
+        let Ok(encoded) = serialize_script_json(envelope) else {
+            return false;
+        };
+        self.send_ipc_script(format!(
+            "if(typeof window.__niva_native_event==='function')window.__niva_native_event({encoded});"
+        ))
+    }
+
+    fn send_ipc_script(self: &Arc<Self>, script: String) -> bool {
+        if self.trusted_ws_origin.is_none() {
+            return false;
+        }
+        let app = self.app.clone();
+        let window_id = self.id;
+        let expected_origin = self.trusted_ws_origin.clone().unwrap_or_default();
+        let scheme = super::super::custom_protocol::scheme_for_uuid(&app.launch_info.uuid);
+        let event = NivaEvent::new(move |_, _| {
+            let window = app.window()?.get_window(window_id)?;
+            let Ok(current_url) = window.webview.url() else {
+                return Ok(());
+            };
+            let Ok(current_url) = url::Url::parse(&current_url) else {
+                return Ok(());
+            };
+            let current_origin =
+                super::super::custom_protocol::origin_from_page_url(&current_url, &scheme)
+                    .unwrap_or_else(|| current_url.origin().ascii_serialization());
+            if current_origin == expected_origin {
+                window.webview.evaluate_script(&script)?;
+            }
+            Ok(())
+        });
+        self.app.event_loop_proxy.send_event(event).is_ok()
     }
 
     pub(crate) fn next_event_seq(&self) -> u64 {
         self.next_event_seq.fetch_add(1, Ordering::Relaxed)
     }
+}
+
+fn serialize_script_json<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<String> {
+    let encoded = serde_json::to_string(value)?;
+    Ok(encoded
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029"))
 }

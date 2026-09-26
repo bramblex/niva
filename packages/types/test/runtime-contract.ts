@@ -1,5 +1,5 @@
 const trustedBridge: NivaBridge = Niva.bridge;
-const routeHint: boolean = trustedBridge.isIpcOnly();
+const localCapability: boolean = trustedBridge.isTrustedLocal();
 const osSnapshot: NivaOsInfo = Niva.os.info;
 const dirs: Promise<NivaAppDirs> = Niva.os.dirs();
 const fileText: Promise<string> = Niva.fs.promises.readFile("notes.txt", "utf8");
@@ -16,7 +16,7 @@ const compatVersion: "22.14.0" = Niva.process.versions.nodeCompat;
 const streamConstructor: NivaPageStream = Niva.stream;
 const moduleConstructor: NivaModule = Niva.module;
 
-void routeHint;
+void localCapability;
 void osSnapshot;
 void dirs;
 void fileText;

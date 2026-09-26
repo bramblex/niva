@@ -105,6 +105,41 @@
                 return raw === null ? undefined : raw;
             return raw === null ? undefined : raw;
         }
+        function isTrustedLocal() {
+            return !!(niva && niva.bridge && typeof niva.bridge.isTrustedLocal === "function" && niva.bridge.isTrustedLocal());
+        }
+        function invokeTrustedFileStream(name, prepared) {
+            var flag = prepared.args.flag;
+            if (flag === undefined)
+                flag = name === "readFile" ? "r" : name === "appendFile" ? "a" : "w";
+            return promises.open(prepared.args.path, flag, prepared.args.mode).then(async function (handle) {
+                var result, failure;
+                try {
+                    if (name === "readFile") {
+                        result = await handle.readFile(prepared.options);
+                    }
+                    else {
+                        // File bytes travel through the existing Native file-handle
+                        // stream in bounded chunks; the IPC transport Base64-encodes
+                        // each binary frame at its boundary.
+                        result = await handle.writeFile(Buffer.from(prepared.args.data, "base64"));
+                    }
+                }
+                catch (error) {
+                    failure = error;
+                }
+                try {
+                    await handle.close();
+                }
+                catch (error) {
+                    if (!failure)
+                        failure = error;
+                }
+                if (failure)
+                    throw failure;
+                return result;
+            });
+        }
         function invoke(name, values, sync) {
             var prepared = prepare(name, values);
             if (prepared.options.signal && prepared.options.signal.aborted) {
@@ -112,37 +147,37 @@
                 error.name = "AbortError";
                 throw error;
             }
-            function dispatch(ipcOnly) {
-                if (ipcOnly) {
+            if (!sync && isTrustedLocal() && ["readFile", "writeFile", "appendFile"].includes(name))
+                return invokeTrustedFileStream(name, prepared);
+            function dispatch(externalPage) {
+                if (externalPage) {
                     if (sync)
-                        throw runtime.bridgeError("Synchronous file APIs are unavailable over Niva IPC", "ERR_NIVA_IPC_SYNC_UNSUPPORTED");
+                        throw runtime.bridgeError("Synchronous file APIs require a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
                     if (name === "readFile") {
                         var readEncoding = prepared.options.encoding;
                         if (typeof readEncoding !== "string" || !["utf8", "utf-8"].includes(readEncoding.toLowerCase()))
-                            throw runtime.bridgeError("IPC readFile requires an explicit UTF-8 encoding; binary/default Buffer reads are unsupported", "ERR_NIVA_IPC_BINARY_UNSUPPORTED");
+                            throw runtime.bridgeError("Remote pages may read text files only with an explicit UTF-8 encoding", "ERR_NIVA_FS_DATA_UNSUPPORTED");
                         return runtime.call(niva, "fs.readText", [prepared.args.path, readEncoding, { flag: prepared.args.flag }]).then(function (value) { return value; }, function (error) { throw runtime.nativeError(error); });
                     }
                     if (name === "writeFile" || name === "appendFile") {
                         var input = values[1];
                         var writeEncoding = prepared.options.encoding || "utf8";
                         if (typeof input !== "string" || typeof writeEncoding !== "string" || !["utf8", "utf-8"].includes(writeEncoding.toLowerCase()))
-                            throw runtime.bridgeError("IPC file writes require UTF-8 string data", "ERR_NIVA_IPC_BINARY_UNSUPPORTED");
+                            throw runtime.bridgeError("Remote pages may write UTF-8 string data only", "ERR_NIVA_FS_DATA_UNSUPPORTED");
                         var method = name === "appendFile" ? "fs.appendText" : "fs.writeText";
                         var writeOptions = { flag: prepared.args.flag, mode: prepared.args.mode };
                         return runtime.call(niva, method, [prepared.args.path, input, writeEncoding, writeOptions]).then(function () { return undefined; }, function (error) { throw runtime.nativeError(error); });
                     }
                     if (!["stat", "lstat", "readdir", "access", "realpath", "mkdir", "rename", "copyFile", "rm", "unlink", "cp"].includes(name))
-                        throw runtime.bridgeError("fs." + name + " is unavailable over Niva IPC", "ERR_NIVA_IPC_METHOD_UNSUPPORTED");
+                        throw runtime.bridgeError("fs." + name + " requires a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
                 }
                 if (sync)
                     return decode(name, runtime.callSync(niva, "fs.node", [name, prepared.args]), prepared.options, prepared.args.path);
                 return runtime.call(niva, "fs.node", [name, prepared.args]).then(function (raw) { return decode(name, raw, prepared.options, prepared.args.path); }, function (error) { throw runtime.nativeError(error); });
             }
             if (sync)
-                return dispatch(!!(niva && niva.bridge && typeof niva.bridge.isIpcOnly === "function" && niva.bridge.isIpcOnly()));
-            if (niva && niva.bridge && typeof niva.bridge.waitForTransport === "function")
-                return niva.bridge.waitForTransport().then(dispatch);
-            return dispatch(!!(niva && niva.bridge && typeof niva.bridge.isIpcOnly === "function" && niva.bridge.isIpcOnly()));
+                return dispatch(!isTrustedLocal());
+            return dispatch(!isTrustedLocal());
         }
         var module: any = { constants: constants }, promises: any = { constants: constants };
         ["readFile", "writeFile", "appendFile", "mkdir", "readdir", "stat", "lstat", "realpath", "rename", "copyFile", "access", "rm", "unlink"].forEach(function (name) {
@@ -162,8 +197,8 @@
         });
         var syncFileDescriptors = new Map<number, any>();
         function syncFdCall(operation, args) {
-            if (niva && niva.bridge && typeof niva.bridge.isIpcOnly === "function" && niva.bridge.isIpcOnly())
-                throw runtime.bridgeError("Synchronous file descriptors are unavailable over Niva IPC", "ERR_NIVA_IPC_SYNC_UNSUPPORTED");
+            if (!isTrustedLocal())
+                throw runtime.bridgeError("Synchronous file descriptors require a trusted local Niva page", "ERR_NIVA_LOCAL_PAGE_REQUIRED");
             return runtime.callSync(niva, "fs.node", [operation, args]);
         }
         function syncFd(fd) {

@@ -3,9 +3,9 @@ export {};
 export type NivaCallResult = unknown;
 export interface NivaBridge {
     call(methodName: string, args?: unknown[]): Promise<NivaCallResult>;
-    /** Synchronous XHR is available only on trusted local pages; throws for IPC-only pages. */
+    /** Synchronous XHR is available only on trusted local pages. */
     callSync(methodName: string, args?: unknown[]): NivaCallResult;
-    /** Native streams are WebSocket-only. */
+    /** Opens a Native stream using the selected transport hidden by the bridge. */
     stream(methodName: string, args?: unknown[], handlers?: {
         onEvent?: (name: string, data: unknown) => void;
         onChunk?: (chunk: Uint8Array, isStderr: boolean) => void;
@@ -16,10 +16,8 @@ export interface NivaBridge {
         cancel(): boolean;
     };
     streamSend(id: number, data: ArrayBuffer | Uint8Array | string, end?: boolean): boolean;
-    /** Routing hint only. Native Rust authorization remains authoritative. */
-    isIpcOnly(): boolean;
-    /** Waits until the initial local WebSocket is ready or an authorized IPC route is selected. */
-    waitForTransport(): Promise<boolean>;
+    /** Local trust/capability hint only. Native Rust authorization remains authoritative. */
+    isTrustedLocal(): boolean;
     readonly sessionId: string;
 }
 export interface NivaBootstrap {
@@ -281,12 +279,12 @@ export interface NivaObj {
     readonly runtimeConfig: {
         readonly injectCommonJs: boolean;
         readonly injectEsm: boolean;
-        readonly ipcOnly: boolean;
+        readonly trustedLocal: boolean;
     };
     readonly bridge: NivaBridge;
-    /** @internal routing hint mirrored for generated Devtools adapters. */
-  readonly __bridge: Pick<NivaBridge, "isIpcOnly">;
-  /** @internal lifecycle hook used by Native-backed handles and streams. */
+    /** @internal trust hint mirrored for generated Devtools adapters. */
+    readonly __bridge: Pick<NivaBridge, "isTrustedLocal">;
+    /** @internal lifecycle hook used by Native-backed handles and streams. */
   readonly __runtime: { registerResource(resource: object, finalizeNative?: () => unknown): NivaResourceOwner; readonly isMainProcess: boolean };
     addEventListener<K extends keyof NivaEventMap>(event: K, listener: NivaEventMap[K]): void;
     removeEventListener<K extends keyof NivaEventMap>(event: K, listener: Function): void;
