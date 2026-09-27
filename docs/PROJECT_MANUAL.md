@@ -82,7 +82,7 @@ WebSocket与IPC Channel共用的wire协议、18-byte二进制帧以 `docs/bridge
 
 `niva.json` 同时包含应用元数据、窗口/托盘/快捷键/API 设置和平台覆盖。项目配置字段与类型以 `packages/types/Niva_zh.d.ts`、`crates/niva/src/app/options.rs` 和 Devtools 配置编辑器为准。`nodeCompat` 是显式 opt-in：可选 `true` 或模块/importmap 配置；默认关闭时不把适配文件加入应用资源。
 
-启用 NodeCompat 后，Devtools 按允许的模块集合暂存并打包 `packages/node-compat` 文件。运行时仅在符合条件的 HTML 文档导航响应中注入脚本和 importmap；打包模式下脚本和被 allowlist 的 ESM 资源通过当前应用UUID派生的Wry协议提供，文件系统 debug 模式沿用 loopback HTTP 路由。importmap 合并遵循实现中的用户映射优先规则。模块清单、配置格式和限制见 `docs/node-compat-design.md` 与 `packages/node-compat/README.md`。它不提供完整 Node.js 运行时或任意 npm 包兼容；真实 WebView smoke 覆盖了少量选中模块，不代表完整模块/API 验收。
+启用 NodeCompat 后，Devtools 按允许的模块集合暂存并打包 `packages/node-compat` 文件。运行时仅在符合条件的 HTML 文档导航响应中注入脚本和 importmap；打包模式下脚本和被 allowlist 的 ESM 资源通过当前应用UUID派生的Wry协议提供，文件系统 debug 模式沿用 loopback HTTP 路由。`bootstrap.js` 在构建时单独以 raw Deflate 压缩并嵌入，创建 WebView 初始化脚本时由 Rust 解压到内存并注入；不额外包装 ZIP。importmap 合并遵循实现中的用户映射优先规则。模块清单、配置格式和限制见 `docs/node-compat-design.md` 与 `packages/node-compat/README.md`。它不提供完整 Node.js 运行时或任意 npm 包兼容；真实 WebView smoke 覆盖了少量选中模块，不代表完整模块/API 验收。
 
 ## 5. Devtools 与构建
 

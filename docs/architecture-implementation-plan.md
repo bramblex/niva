@@ -10,6 +10,8 @@
 
 > 2026-09-26 路由决定更新（覆盖下文早期“IPC fallback”提案）：对外分为异步API与Node兼容同步API。普通异步调用固定走平台IPC/`evaluate_script`；大吞吐文件/网络、二进制和流式stdio在每个新操作创建时优先使用已建立的WS优化bridge，否则由同语义IPC Channel承载，IPC binary frame在边界Base64编码。资源及其后续control/signal操作沿用创建时bridge；已提交操作断连时明确失败，不重放或迁移。同步XHR只服务需要同步返回的Node兼容API，按公开方法首调warning；`process.chdir`为异步API。最新macOS arm64完整release SHA `9108b915…` 为2,994,936 bytes；其真实WebView基础bridge 7/7、可信IPC 23项、远端grant IPC 21项通过，两个IPC场景各跳过2项隐藏窗口lease心跳。Windows真机和完整资源owner生命周期仍待验收。
 
+> 2026-09-27 bootstrap 存储决定：`bootstrap.js` 在 runtime build 后作为独立 runtime asset，以 raw Deflate（level 6）压缩并连同索引嵌入 Native；不再套 ZIP 容器。Native 构建 WebView 初始化脚本时解压为内存字符串，再交给 Wry 注入。当前 macOS arm64 产物记录的 bootstrap 原文为 619,117 bytes、压缩条目为 190,192 bytes，全部嵌入 runtime asset blob 为 196,428 bytes；这组数只对应该 runtime fingerprint/平台快照。当前每个 WebView 构建都会解压一次；缓存解压结果只能减少多窗口重复 CPU，不会继续减小 exe，暂不增加该复杂度。
+
 **最后构建**：暂停前已经启动的release构建正常完成，未再启动新构建。`target/release/niva`为macOS ARM64，3,106,128 bytes，SHA256 `6dba027b7a3198269be21957cdb933380764b6930e76bac24ad4b213e940cf57`；runtime完整构建fingerprint `fad96616b63d1de542452fe13dbb5a58c11833131f144e28db645727d54609ea`。该Native产物包含版本元数据调整，但尚未用它重跑RWA或全部Native验收。最近已经完成主要真实验证的冻结产物仍为`/tmp/niva-architecture-release-e269ac719067`。
 
 **必须继续的事项（未完成，不宣称全部落地）**：
