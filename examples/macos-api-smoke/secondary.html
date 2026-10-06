@@ -8,25 +8,100 @@
     <h1>Secondary navigation page</h1>
     <script>
       (() => {
-        async function send(name, data) {
-          const payload = JSON.stringify({ protocol: "niva-fixture", version: 1, event: "message", name, data });
-          return Niva.window.sendMessage(payload, 0);
+        let pollController = null;
+
+        async function report(name, data) {
+          const response = await fetch("/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            body: JSON.stringify({ name, data }),
+          });
+          if (!response.ok) throw new Error(`navigation fixture report failed (${response.status})`);
+        }
+
+        async function reportPageShowProbe(persisted) {
+          try {
+            await fetch("/probe", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              cache: "no-store",
+              body: JSON.stringify({
+                name: "secondary-pageshow",
+                data: { persisted, href: location.href },
+              }),
+            });
+          } catch (_) {}
         }
 
         async function reportReady() {
-          try {
-            await send("secondary-ready", {
-              url: await Niva.webview.url(),
-              canGoBack: await Niva.webview.canGoBack(),
-              canGoForward: await Niva.webview.canGoForward(),
-            });
-          } catch (error) {
-            await send("secondary-error", { message: String(error) });
+          await report("secondary-ready", {
+            url: await Niva.webview.url(),
+            canGoBack: await Niva.webview.canGoBack(),
+            canGoForward: await Niva.webview.canGoForward(),
+          });
+        }
+
+        function stopPolling() {
+          if (pollController) pollController.abort();
+          pollController = null;
+        }
+
+        async function handleCommand(command) {
+          if (command && command.command === "webview-back") {
+            stopPolling();
+            try {
+              await Niva.webview.goBack();
+            } catch (error) {
+              await report("secondary-command-error", { message: String(error) });
+            }
+            return true;
+          }
+          await report("secondary-command-error", {
+            message: `unsupported navigation command: ${JSON.stringify(command)}`,
+          });
+          return false;
+        }
+
+        async function pollCommands(signal) {
+          while (!signal.aborted) {
+            try {
+              const response = await fetch("/command", { cache: "no-store", signal });
+              if (response.status === 204) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                continue;
+              }
+              if (!response.ok) throw new Error(`navigation fixture command failed (${response.status})`);
+              if (await handleCommand(await response.json())) return;
+            } catch (error) {
+              if (signal.aborted) return;
+              try {
+                await report("secondary-error", { message: String(error) });
+              } catch (_) {}
+              return;
+            }
           }
         }
 
-        window.addEventListener("pageshow", () => {
-          setTimeout(reportReady, 150);
+        function startPolling() {
+          stopPolling();
+          pollController = new AbortController();
+          void pollCommands(pollController.signal);
+        }
+
+        window.addEventListener("pagehide", stopPolling);
+        window.addEventListener("pageshow", event => {
+          void reportPageShowProbe(event.persisted);
+          setTimeout(async () => {
+            try {
+              await reportReady();
+              startPolling();
+            } catch (error) {
+              try {
+                await report("secondary-error", { message: String(error) });
+              } catch (_) {}
+            }
+          }, 150);
         });
       })();
     </script>

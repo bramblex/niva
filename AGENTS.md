@@ -8,6 +8,8 @@
 
 本版不代表完整 Node.js 兼容、不代表移除 WebSocket、不代表 IPC 零拷贝，也不代表 v1.0 发布门禁已通过。候选验收状态以 `docs/release-0.10.0-beta.1.md` 为准；逐平台未验证项必须保留开放。
 
+当前 bridge 已实现 API 控制面/纯数据面分离；当前源码合约与验证状态见 [`docs/bridge.md`](docs/bridge.md) 和 [`docs/bridge-v2-validation.md`](docs/bridge-v2-validation.md)。同步XHR保留为Node同步兼容入口；异步API以IPC `t:"api_call"`创建/控制，Native结果和流 `channelOpened`/capability 统一经Wry `evaluate_script`回调 `__niva_ipc_reply({sessionId,rid,sourceOrigin,response})`返回。资源owner固定为创建时IPC session，数据transport独立；WS v2仅attach/data/ack/cancel。顶层与同源iframe共用Wry路径；跨源iframe即使有grant也fail-closed。旧runtime指纹和旧平台报告不能替代当前源码证据；Windows target check 不等于真机验收。现有WKWebView reply handler与WebView2专用IPC/reply路径已移除，统一使用Wry IPC与`evaluate_script`。
+
 ## 改动验收
 
 - Rust 代码改动完成后，运行 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace`。影响 Windows 条件编译代码时，另运行 `cargo check --target x86_64-pc-windows-msvc`；无法运行的检查要写明原因与未覆盖范围。

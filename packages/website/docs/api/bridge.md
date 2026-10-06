@@ -1,6 +1,6 @@
 # Bridge调用与授权
 
-> 当前合约说明。普通异步调用经稳定IPC/evaluate_script桥；重载与流式数据可选用WebSocket优化桥。实现状态以当前源码和对应平台端到端验证为准，本文不表示所有目标行为已完成。
+> 当前源码实现 API 控制面/纯数据面分离与 WS Wire v2；真实 macOS custom-protocol 和严格 CSP 双 lane smoke 已通过。Windows target check 因 MSVC 头文件缺失未完成，Windows 真机与 CI 仍未验证。准确范围、产物指纹及测试记录见[Bridge v2 验收记录](../../../../docs/bridge-v2-validation.md)和[Bridge 合约](../../../../docs/bridge.md)。
 
 低层传输统一位于`Niva.bridge`：
 
@@ -11,14 +11,15 @@ const title = await Niva.bridge.call('window.title', []);
 
 | API类别/桥接路径 | 用途 |
 | --- | --- |
-| 异步API：稳定IPC/evaluate_script | 普通异步调用Rust Native API；保证不依赖WS可用 |
-| 异步API：可选WebSocket优化桥 | 大量文件/网络数据、二进制数据、流式 `child_process` stdio；不可用时由同语义IPC通道承载 |
+| 异步API控制面：IPC `t:"api_call"` | 统一创建和控制Native API调用；method/args与dispatch不走WS |
+| Native→JS结果/凭证：Wry `evaluate_script` | 调用 `__niva_ipc_reply({sessionId,rid,sourceOrigin,response})` 返回小结果及 `channelOpened`/capability |
+| 纯双向数据面 | 先创建并拿凭证，再attach；WS v2只处理attach/data/ack/cancel，hello和binary header版本为2；稳定路径为Wry IPC/eval |
 | Node兼容同步API：同步XHR | 只供确需同步语义的兼容方法；每个方法首次调用时应发出warning |
 
-纯JS或启动静态数据不需要bridge。传输属于低层实现，调用方不选择WS或IPC。稳定异步桥是IPC/evaluate_script，WebSocket只负责可选的性能优化。桥接切换不得重复已提交操作；无法确定操作是否已提交时应明确失败。进程cwd等状态变更应提供异步API，不能走同步XHR。`/__niva_fs`是独立文件资源接口，不承载异步bridge。
+纯JS或启动静态数据不需要bridge。Native资源owner固定归属创建它的IPC session，数据transport独立选择；attach或切换transport不改变owner。WS建连失败时可用稳定数据路径；不承诺已开始流断线无损迁移，切换数据通道不得重放API副作用，提交状态不确定时应明确失败。进程cwd等状态变更应提供异步API，不能走同步XHR。`/__niva_fs`是独立文件资源接口，不承载异步bridge。
 
-本地资源及明确的本机开发origin使用窗口token与精确来源验证。普通远端/跨源frame通过平台IPC真实source URL和窗口permissions授权，默认零权限；payload自报origin或sessionId不能授予权限。本地IPC Channel同样由Rust校验来源、凭据、窗口/session/frame与调用权限；远端页面仍只可通过精确origin grant调用unary API，不开放流或二进制。`--resource`/`--config`仅选择输入，不授予调试能力。
+本地顶层文档及同源iframe共用Wry IPC/eval；父页按 JS session 路由同源 child reply，Native 校验来源 URL/top-origin、token、session、call 与 ticket，不依赖 Wry 未提供的真实 Native frame ID。普通远端顶层页面仅可按精确origin grant调用unary API，不开放流或二进制。跨源iframe即使配置grant也必须fail-closed：Wry eval只定向主文档，不能安全定向跨源child，也不得让parent观察child秘密。payload自报origin或sessionId不能授予权限。`--resource`/`--config`仅选择输入，不授予调试能力。
 
-WS按socket连接清理；IPC session在有在途任务时每1秒心跳、3秒租约，失联后失败任务并清理所属资源。路由已在当前runtime/Rust源码接线；macOS基础WS bridge与WS受限IPC WebView smoke已通过，完整资源生命周期和Windows真机仍待验收。窗口关闭/可观测导航由Native清理；macOS单iframe无可靠销毁通知时按租约确认。JS阻塞或平台节流也可能触发失联错误，不能声称GC/unload必然即时发生。显式close/dispose为主，GC只兜底。
+当前实现保留session租约和资源清理；真实 macOS smoke 覆盖了同源 child session reply 和 iframe 后 parent unary。窗口关闭/可观测导航由Native清理；macOS单iframe无可靠销毁通知时按租约确认。JS阻塞或平台节流也可能触发失联错误，不能声称GC/unload必然即时发生。显式close/dispose为主，GC只兜底。Windows与其他未列平台仍须独立验证。
 
-IPC请求JSON最多256KiB，响应最多8MiB（包含文本转义）；专用文本操作还有更小body/输出限制。IPC二进制Channel对完整18-byte wire frame做Base64，payload最多16 KiB，使用严格序号、有界队列、ACK/背压与取消；Base64会产生额外编码开销，不代表零拷贝或性能更快。Wire版本仍为1，不能将JS接口重命名理解为协议版本升级。
+IPC请求JSON最多256KiB，响应最多8MiB（包含文本转义）；专用文本操作还有更小body/输出限制。IPC二进制Channel对完整18-byte wire frame做Base64，payload最多16 KiB，使用严格序号、有界队列、ACK/背压与取消；Base64会产生额外编码开销，不代表零拷贝或性能更快。当前 WS hello 与 binary header wire version 均为2；历史 Wire v1 只见[Bridge 合约的历史快照](../../../../docs/bridge.md)。

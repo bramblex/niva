@@ -88,6 +88,11 @@ pub type CancellableApiHandler = Arc<
 #[derive(Clone, Debug)]
 pub struct IpcFrameSource {
     pub source_url: String,
+    /// URL of the current top-level document, captured by the native WebView
+    /// callback. Cross-origin frames are rejected before dispatch; same-origin
+    /// child frames may relay through their parent using browser same-origin
+    /// access, but never supply this value themselves.
+    pub top_url: String,
     pub frame_id: u64,
     pub generation: u64,
     pub is_main_frame: bool,
@@ -167,6 +172,18 @@ impl CancellationContext {
     pub async fn cancelled(&self) {
         let _ = self.cancel_rx.recv().await;
     }
+
+    /// Stable owner id for resources created by stream APIs. IPC unary
+    /// controls share the originating page session's owner with its streams.
+    pub fn resource_owner_id(&self) -> Option<u64> {
+        match &self.owner {
+            ApiCallOwner::BridgeSession { owner_id } => Some(*owner_id),
+            ApiCallOwner::Ipc { session_id, .. } => {
+                Some(session_owner_id(self.window_id, session_id))
+            }
+            ApiCallOwner::Synchronous { .. } => None,
+        }
+    }
 }
 
 type IpcApiFuture = Pin<Box<dyn Future<Output = Result<Value>> + Send>>;
@@ -180,13 +197,21 @@ type IpcApiHandler = Arc<dyn Fn(IpcCallContext, ApiRequest) -> IpcApiFuture + Se
     deny_unknown_fields
 )]
 enum IpcMessage {
-    Call {
+    #[serde(rename = "api_call")]
+    ApiCall {
         rid: u64,
         id: u64,
         method: String,
         args: Value,
         session_id: String,
         token: Option<String>,
+    },
+    ChannelAttach {
+        rid: u64,
+        id: u64,
+        session_id: String,
+        token: Option<String>,
+        capability: String,
     },
     ChannelSend {
         rid: u64,
@@ -258,6 +283,7 @@ pub struct CallInner {
     pub seq: AtomicU64,
     pub cancel_rx: async_channel::Receiver<()>,
     pub inbound_rx: async_channel::Receiver<InboundChunk>,
+    http_response_ack_rx: async_channel::Receiver<u64>,
     lifecycle: Arc<CallLifecycle>,
 }
 
@@ -393,6 +419,32 @@ impl CallContext {
         self.inbound_rx.recv_blocking().ok()
     }
 
+    /// Blocking receive that also wakes when this call is cancelled. Use this
+    /// from blocking stream handlers that must hold a resource lock while
+    /// consuming the upload lane.
+    pub fn next_chunk_blocking_cancellable(&self) -> Option<InboundChunk> {
+        smol::block_on(smol::future::or(
+            async {
+                let _ = self.cancel_rx.recv().await;
+                None
+            },
+            async { self.inbound_rx.recv().await.ok() },
+        ))
+    }
+
+    /// Wait for the next HTTP response-body credit, waking when this stream is
+    /// cancelled. Response credits use a separate IPC control lane so request
+    /// upload END remains final.
+    pub fn next_http_response_ack_blocking(&self) -> Option<u64> {
+        smol::block_on(smol::future::or(
+            async {
+                let _ = self.cancel_rx.recv().await;
+                None
+            },
+            async { self.inner.http_response_ack_rx.recv().await.ok() },
+        ))
+    }
+
     /// Gather inbound chunks until END into one buffer.
     #[allow(dead_code)]
     pub async fn collect_all(&self) -> Vec<u8> {
@@ -515,6 +567,7 @@ struct DispatchChannels {
     cancel_rx: async_channel::Receiver<()>,
     inbound_tx: async_channel::Sender<InboundChunk>,
     inbound_rx: async_channel::Receiver<InboundChunk>,
+    http_response_ack_rx: async_channel::Receiver<u64>,
 }
 
 type SyncCallKey = (u8, String, u64);
@@ -984,6 +1037,20 @@ fn normalize_ipc_source_origin(url: &url::Url) -> Result<String> {
     Ok(origin)
 }
 
+fn same_origin_ipc_source(frame: &IpcFrameSource) -> Result<String> {
+    let source_url =
+        url::Url::parse(&frame.source_url).map_err(|_| anyhow!("IPC source URL is unavailable"))?;
+    let top_url =
+        url::Url::parse(&frame.top_url).map_err(|_| anyhow!("IPC top-level URL is unavailable"))?;
+    let source_origin = normalize_ipc_source_origin(&source_url)?;
+    let top_origin = normalize_ipc_source_origin(&top_url)?;
+    anyhow::ensure!(
+        source_origin == top_origin,
+        "cross-origin frame IPC is denied"
+    );
+    Ok(source_origin)
+}
+
 async fn monitor_ipc_call(
     sessions: Arc<Mutex<IpcSessions>>,
     key: IpcSessionKey,
@@ -1184,12 +1251,84 @@ struct IpcChannelKey {
 }
 
 struct IpcChannelCall {
+    method: String,
     capability: String,
     connection_id: u64,
+    transport: Option<IpcChannelTransport>,
+    attach_tx: async_channel::Sender<IpcChannelTransport>,
     next_upload_seq: u64,
     upload_ended: bool,
+    next_http_response_ack_seq: u64,
+    http_response_ack_tx: async_channel::Sender<u64>,
     awaiting_output_seq: Option<u64>,
     output_ack_tx: async_channel::Sender<u64>,
+}
+
+#[derive(Clone)]
+enum IpcChannelTransport {
+    Ipc,
+    WebSocket {
+        connection_id: u64,
+        sender: mpsc::Sender<WsOut>,
+    },
+}
+
+impl IpcChannelTransport {
+    fn same_route(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ipc, Self::Ipc) => true,
+            (
+                Self::WebSocket {
+                    connection_id: left,
+                    ..
+                },
+                Self::WebSocket {
+                    connection_id: right,
+                    ..
+                },
+            ) => left == right,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum WsAttachDeliveryError {
+    PumpUnavailable,
+    ConfirmationUnavailable(String),
+}
+
+fn attach_ws_transport_then_confirm(
+    channel: &mut IpcChannelCall,
+    transport: IpcChannelTransport,
+    confirm: impl FnOnce() -> std::result::Result<(), String>,
+) -> std::result::Result<(), WsAttachDeliveryError> {
+    channel.transport = Some(transport.clone());
+    if channel.attach_tx.try_send(transport).is_err() {
+        channel.transport = None;
+        return Err(WsAttachDeliveryError::PumpUnavailable);
+    }
+    confirm().map_err(WsAttachDeliveryError::ConfirmationUnavailable)
+}
+
+fn find_ws_channel_key(
+    channels: &HashMap<IpcChannelKey, IpcChannelCall>,
+    window_id: u8,
+    trusted_origin: &str,
+    session_id: &str,
+    call_id: u64,
+    capability: &str,
+) -> Option<IpcChannelKey> {
+    channels
+        .iter()
+        .find(|(key, channel)| {
+            key.session.window_id == window_id
+                && key.session.source_origin == trusted_origin
+                && key.session.session_id == session_id
+                && key.call_id == call_id
+                && constant_time_string_eq(&channel.capability, capability)
+        })
+        .map(|(key, _)| key.clone())
 }
 
 const MAX_CHANNEL_BINARY_PAYLOAD: usize = 16 * 1024;
@@ -1585,6 +1724,88 @@ fn validate_ipc_channel_upload_frame(
     Ok((header, payload))
 }
 
+fn validate_open_channel_upload_frame<'a>(
+    channel: &IpcChannelCall,
+    raw_frame: &'a [u8],
+    call_id: u64,
+) -> Result<(protocol::ChunkHeader, &'a [u8])> {
+    anyhow::ensure!(
+        !channel.upload_ended,
+        "ERR_NIVA_CHANNEL_CLOSED: upload stream already ended"
+    );
+    validate_ipc_channel_upload_frame(raw_frame, call_id, channel.next_upload_seq)
+}
+
+fn grant_http_response_credit(channel: &mut IpcChannelCall, seq: u64) -> Result<()> {
+    anyhow::ensure!(
+        channel.method == "http.requestStream",
+        "ERR_NIVA_CHANNEL_DENIED: response credit requires an HTTP request stream"
+    );
+    anyhow::ensure!(
+        channel.transport.is_some(),
+        "ERR_NIVA_CHANNEL_CLOSED: HTTP request stream is not attached"
+    );
+    anyhow::ensure!(
+        channel.upload_ended,
+        "ERR_NIVA_CHANNEL_STATE: HTTP response credit is unavailable before upload END"
+    );
+    anyhow::ensure!(
+        seq == channel.next_http_response_ack_seq,
+        "ERR_NIVA_CHANNEL_SEQUENCE: expected HTTP response credit {}",
+        channel.next_http_response_ack_seq
+    );
+    let next_seq = seq
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("ERR_NIVA_CHANNEL_SEQUENCE: HTTP response sequence exhausted"))?;
+    channel
+        .http_response_ack_tx
+        .try_send(seq)
+        .map_err(|error| match error {
+            async_channel::TrySendError::Full(_) => {
+                anyhow!("ERR_NIVA_CHANNEL_BACKPRESSURE: HTTP response credit is already pending")
+            }
+            async_channel::TrySendError::Closed(_) => {
+                anyhow!("ERR_NIVA_CHANNEL_CLOSED: HTTP request stream is closed")
+            }
+        })?;
+    channel.next_http_response_ack_seq = next_seq;
+    Ok(())
+}
+
+fn grant_http_response_credit_for_session(
+    channels: &Mutex<HashMap<IpcChannelKey, IpcChannelCall>>,
+    active: &Mutex<ActiveCalls>,
+    session: &IpcSessionKey,
+    stream_id: u64,
+    seq: u64,
+) -> Result<()> {
+    let key = IpcChannelKey {
+        session: session.clone(),
+        call_id: stream_id,
+    };
+    let mut channels = channels
+        .lock()
+        .map_err(|_| anyhow!("IPC channel table poisoned"))?;
+    let channel = channels
+        .get_mut(&key)
+        .ok_or_else(|| anyhow!("ERR_NIVA_CHANNEL_DENIED: unknown HTTP request stream"))?;
+    anyhow::ensure!(
+        channel.connection_id == session_owner_id(session.window_id, &session.session_id),
+        "ERR_NIVA_CHANNEL_DENIED: HTTP request stream owner mismatch"
+    );
+    let active_key = (session.window_id, channel.connection_id, stream_id);
+    let active = active
+        .lock()
+        .map_err(|_| anyhow!("active call table poisoned"))?;
+    anyhow::ensure!(
+        active
+            .get(&active_key)
+            .is_some_and(|call| !call.lifecycle.is_terminal()),
+        "ERR_NIVA_CHANNEL_CLOSED: HTTP request stream is not active"
+    );
+    grant_http_response_credit(channel, seq)
+}
+
 fn acknowledge_ipc_channel_output(channel: &mut IpcChannelCall, seq: u64) -> Result<()> {
     anyhow::ensure!(
         channel.awaiting_output_seq == Some(seq),
@@ -1595,6 +1816,36 @@ fn acknowledge_ipc_channel_output(channel: &mut IpcChannelCall, seq: u64) -> Res
         .output_ack_tx
         .try_send(seq)
         .map_err(|error| anyhow!("ERR_NIVA_CHANNEL_ACK: {error}"))
+}
+
+fn send_ws_channel_frame(
+    sender: &mpsc::Sender<WsOut>,
+    session_id: &str,
+    call_id: u64,
+    channel_seq: u64,
+    frame: WsOut,
+) -> bool {
+    match frame {
+        WsOut::Text(data) => serde_json::to_string(&json!({
+            "t":"channelData",
+            "sessionId":session_id,
+            "id":call_id,
+            "seq":channel_seq,
+            "frame":{"t":"text","data":data},
+        }))
+        .map(|text| sender.send(WsOut::Text(text)).is_ok())
+        .unwrap_or(false),
+        WsOut::Binary(mut bytes) => {
+            let Ok((header, _)) = decode_chunk(&bytes) else {
+                return false;
+            };
+            if header.id != call_id {
+                return false;
+            }
+            bytes[10..18].copy_from_slice(&channel_seq.to_be_bytes());
+            sender.send(WsOut::Binary(bytes)).is_ok()
+        }
+    }
 }
 
 fn enqueue_ipc_channel_chunk(
@@ -1625,24 +1876,42 @@ fn enqueue_ipc_channel_chunk(
 }
 
 impl ApiManager {
-    pub fn ipc_error_response(raw_body: &str, error: &str) -> String {
-        let (id, rid) = if raw_body.len() <= 256 * 1024 {
-            serde_json::from_str::<Value>(raw_body)
-                .ok()
-                .map(|message| {
-                    (
-                        message.get("id").and_then(Value::as_u64).unwrap_or(0),
-                        message.get("rid").and_then(Value::as_u64),
-                    )
+    pub fn ipc_error_envelope(
+        raw_body: &str,
+        error: &str,
+        frame: &IpcFrameSource,
+    ) -> Option<String> {
+        if raw_body.len() > MAX_IPC_REQUEST_BYTES {
+            return None;
+        }
+        let request: Value = serde_json::from_str(raw_body).ok()?;
+        let session_id = request.get("sessionId")?.as_str()?;
+        let rid = request.get("rid")?.as_u64()?;
+        let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
+        let source_origin = same_origin_ipc_source(frame).ok()?;
+        let response = match request.get("t").and_then(Value::as_str) {
+            Some("channelAttach" | "channelSend" | "channelAck" | "channelCancel") => {
+                json!({
+                    "t":"channelError", "id":id,
+                    "code":"ERR_NIVA_IPC", "message":error, "retryable":false,
                 })
-                .unwrap_or((0, None))
-        } else {
-            (0, None)
+            }
+            Some("heartbeat") => json!({
+                "t":"heartbeatError", "sessionId":session_id,
+                "code":"ERR_NIVA_IPC", "message":error,
+            }),
+            _ => json!({
+                "t":"result", "id":id, "code":-1,
+                "message":error, "data":null,
+            }),
         };
-        with_optional_rid(
-            ServerMsg::result(id, -1, error.to_string(), json!(null)).encode(),
-            rid,
-        )
+        serde_json::to_string(&json!({
+            "sessionId":session_id,
+            "rid":rid,
+            "sourceOrigin":source_origin,
+            "response":response,
+        }))
+        .ok()
     }
 
     pub fn new(options: &NivaOptions) -> Self {
@@ -1722,6 +1991,37 @@ impl ApiManager {
         let _ = self.app.set(app);
     }
 
+    /// Grant one application-level response-body credit for an HTTP request
+    /// stream. The control API has already authenticated this exact IPC frame;
+    /// the ticket lookup binds the credit to that frame's complete session and
+    /// to the live `http.requestStream` resource.
+    pub fn acknowledge_http_response(
+        &self,
+        context: &IpcCallContext,
+        stream_id: u64,
+        seq: u64,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            !context.is_cancelled(),
+            "ECANCELED: HTTP response acknowledgement was cancelled"
+        );
+        let session = IpcSessionKey {
+            window_id: context.window.id,
+            source_origin: context.source_origin.clone(),
+            session_id: context.session_id.clone(),
+            frame_id: context.frame_id,
+            generation: context.generation,
+            is_main_frame: context.is_main_frame,
+        };
+        grant_http_response_credit_for_session(
+            &self.ipc_channels,
+            &self.active,
+            &session,
+            stream_id,
+            seq,
+        )
+    }
+
     pub fn module_resolver(&self) -> Result<Arc<ModuleResolver>> {
         self.module_resolver
             .get()
@@ -1743,12 +2043,48 @@ impl ApiManager {
             return Err(anyhow!("IPC request exceeds 256 KiB"));
         }
         let message: IpcMessage = serde_json::from_str(raw_body)?;
-        match message {
+        let (session_id, rid) = match &message {
+            IpcMessage::ApiCall {
+                session_id, rid, ..
+            }
+            | IpcMessage::ChannelAttach {
+                session_id, rid, ..
+            }
+            | IpcMessage::ChannelSend {
+                session_id, rid, ..
+            }
+            | IpcMessage::ChannelAck {
+                session_id, rid, ..
+            }
+            | IpcMessage::ChannelCancel {
+                session_id, rid, ..
+            } => (session_id.clone(), Some(*rid)),
+            IpcMessage::Heartbeat {
+                session_id, rid, ..
+            } => (session_id.clone(), *rid),
+        };
+        let source_origin = same_origin_ipc_source(&frame)?;
+        let response = match message {
             IpcMessage::Heartbeat {
                 rid,
                 session_id,
                 token,
             } => self.ipc_heartbeat(window_id, frame, &session_id, token.as_deref(), rid),
+            IpcMessage::ChannelAttach {
+                rid,
+                id,
+                session_id,
+                token,
+                capability,
+            } => self.ipc_channel_attach(
+                window_id,
+                frame,
+                rid,
+                id,
+                &session_id,
+                token.as_deref(),
+                &capability,
+            ),
             IpcMessage::ChannelSend {
                 rid,
                 id,
@@ -1798,7 +2134,7 @@ impl ApiManager {
                 token.as_deref(),
                 &capability,
             ),
-            IpcMessage::Call {
+            IpcMessage::ApiCall {
                 rid,
                 id,
                 method,
@@ -1818,7 +2154,19 @@ impl ApiManager {
                 )
                 .await
             }
+        }?;
+        let mut response: Value = serde_json::from_str(&response)?;
+        if let Some(response) = response.as_object_mut() {
+            // `rid`, session identity and provenance are carried by the
+            // evaluate-script envelope, outside the API response payload.
+            response.remove("rid");
         }
+        Ok(serde_json::to_string(&json!({
+            "sessionId": session_id,
+            "rid": rid,
+            "sourceOrigin": source_origin,
+            "response": response,
+        }))?)
     }
 
     fn ipc_heartbeat(
@@ -1932,10 +2280,12 @@ impl ApiManager {
                 Err(_) => return Ok(denied(-4, "permission denied", json!(null))),
             };
         let trusted_local = trusted_local_ipc_source(&window, &source_origin, token);
-        if matches!(
-            request.1.as_str(),
-            "window.open" | "webview.baseFileSystemUrl"
-        ) {
+        if !trusted_local
+            && matches!(
+                request.1.as_str(),
+                "window.open" | "webview.baseFileSystemUrl"
+            )
+        {
             return Ok(denied(-4, "permission denied", json!(null)));
         }
         if let Some(HandlerEntry {
@@ -2077,8 +2427,10 @@ impl ApiManager {
         let window = app.window()?.get_window(key.window_id)?;
         let (cancel_tx, cancel_rx) = async_channel::bounded(1);
         let (inbound_tx, inbound_rx) = async_channel::bounded::<InboundChunk>(8);
+        let (http_response_ack_tx, http_response_ack_rx) = async_channel::bounded::<u64>(1);
         let (outbound_tx, outbound_rx) = mpsc::sync_channel::<WsOut>(CHANNEL_OUTBOUND_QUEUE_FRAMES);
         let (output_ack_tx, output_ack_rx) = async_channel::bounded::<u64>(1);
+        let (attach_tx, attach_rx) = async_channel::bounded::<IpcChannelTransport>(1);
         let connection_id = session_owner_id(key.window_id, &key.session_id);
         let session_connection_id = match self
             .ipc_sessions
@@ -2156,10 +2508,15 @@ impl ApiManager {
             channels.insert(
                 channel_key.clone(),
                 IpcChannelCall {
+                    method: request.1.clone(),
                     capability: capability.clone(),
                     connection_id: session_connection_id,
+                    transport: None,
+                    attach_tx,
                     next_upload_seq: 1,
                     upload_ended: false,
+                    next_http_response_ack_seq: 1,
+                    http_response_ack_tx,
                     awaiting_output_seq: None,
                     output_ack_tx,
                 },
@@ -2171,13 +2528,14 @@ impl ApiManager {
             cancel_rx,
             inbound_tx,
             inbound_rx,
+            http_response_ack_rx,
         };
         let queued = self.dispatch_with_output(
             key.window_id,
             session_connection_id,
             CallOutput::Channel(outbound_tx),
             request,
-            Some(channels),
+            channels,
         );
         if !queued {
             self.remove_ipc_channel(&channel_key);
@@ -2222,9 +2580,23 @@ impl ApiManager {
         let push_sessions = self.ipc_sessions.clone();
         let push_output = outbound_rx;
         let push_ack_rx = output_ack_rx;
+        let push_attach_rx = attach_rx;
         let pump_result = thread::Builder::new()
             .name("niva-ipc-channel".into())
             .spawn(move || {
+                let transport = match smol::block_on(push_attach_rx.recv()) {
+                    Ok(transport) => transport,
+                    Err(_) => {
+                        cancel_ipc_channel_call(
+                            &push_app,
+                            &push_sessions,
+                            &push_channels,
+                            &push_key,
+                            session_connection_id,
+                        );
+                        return;
+                    }
+                };
                 let mut channel_seq = 1u64;
                 while let Ok(frame) = push_output.recv() {
                     let pending = push_channels.lock().ok().and_then(|mut channels| {
@@ -2239,12 +2611,22 @@ impl ApiManager {
                         break;
                     };
                     let terminal = is_terminal_output(&frame);
-                    if !push_window.send_ipc_frame(
-                        &push_key.session.session_id,
-                        id,
-                        channel_seq,
-                        frame,
-                    ) {
+                    let sent = match transport.clone() {
+                        IpcChannelTransport::Ipc => push_window.send_ipc_frame(
+                            &push_key.session.session_id,
+                            id,
+                            channel_seq,
+                            frame,
+                        ),
+                        IpcChannelTransport::WebSocket { sender, .. } => send_ws_channel_frame(
+                            &sender,
+                            &push_key.session.session_id,
+                            id,
+                            channel_seq,
+                            frame,
+                        ),
+                    };
+                    if !sent {
                         cancel_ipc_channel_call(
                             &push_app,
                             &push_sessions,
@@ -2314,6 +2696,89 @@ impl ApiManager {
             "id": id,
             "capability": capability,
         }))?)
+    }
+
+    fn ipc_channel_attach(
+        &self,
+        window_id: u8,
+        frame: IpcFrameSource,
+        rid: u64,
+        call_id: u64,
+        session_id: &str,
+        token: Option<&str>,
+        capability: &str,
+    ) -> Result<String> {
+        let Some(token) = token else {
+            return Ok(channel_error(
+                rid,
+                call_id,
+                "ERR_NIVA_CHANNEL_DENIED",
+                "trusted local page token is required",
+                false,
+            ));
+        };
+        let key = match self.authorize_ipc_channel_route(
+            window_id,
+            &frame.source_url,
+            token,
+            session_id,
+            call_id,
+            capability,
+            Some(&frame),
+        ) {
+            Ok(key) => key,
+            Err(error) => {
+                return Ok(channel_error(
+                    rid,
+                    call_id,
+                    "ERR_NIVA_CHANNEL_DENIED",
+                    &error.to_string(),
+                    false,
+                ));
+            }
+        };
+        match self.bind_channel_transport(&key, IpcChannelTransport::Ipc) {
+            Ok(()) => Ok(serde_json::to_string(&json!({
+                "t":"channelAttached",
+                "rid":rid,
+                "id":call_id,
+                "accepted":true,
+            }))?),
+            Err(error) => Ok(channel_error(
+                rid,
+                call_id,
+                "ERR_NIVA_CHANNEL_ATTACH",
+                &error.to_string(),
+                false,
+            )),
+        }
+    }
+
+    fn bind_channel_transport(
+        &self,
+        key: &IpcChannelKey,
+        transport: IpcChannelTransport,
+    ) -> Result<()> {
+        let mut channels = self
+            .ipc_channels
+            .lock()
+            .map_err(|_| anyhow!("IPC channel table poisoned"))?;
+        let channel = channels
+            .get_mut(key)
+            .ok_or_else(|| anyhow!("ERR_NIVA_CHANNEL_CLOSED: channel is no longer active"))?;
+        if let Some(existing) = &channel.transport {
+            anyhow::ensure!(
+                existing.same_route(&transport),
+                "ERR_NIVA_CHANNEL_ATTACHED: ticket is already pinned to another transport"
+            );
+            return Ok(());
+        }
+        channel.transport = Some(transport.clone());
+        if channel.attach_tx.try_send(transport).is_err() {
+            channel.transport = None;
+            anyhow::bail!("ERR_NIVA_CHANNEL_CLOSED: channel pump is unavailable");
+        }
+        Ok(())
     }
 
     fn remove_ipc_channel(&self, key: &IpcChannelKey) {
@@ -2437,12 +2902,17 @@ impl ApiManager {
         let channel = channels
             .get_mut(&key)
             .ok_or_else(|| anyhow!("ERR_NIVA_CHANNEL_CLOSED: channel is no longer active"))?;
-        anyhow::ensure!(
-            !channel.upload_ended,
-            "ERR_NIVA_CHANNEL_CLOSED: upload stream already ended"
-        );
+        if !matches!(channel.transport.as_ref(), Some(IpcChannelTransport::Ipc)) {
+            return Ok(channel_error(
+                rid,
+                call_id,
+                "ERR_NIVA_CHANNEL_TRANSPORT",
+                "channel is not attached to IPC",
+                false,
+            ));
+        }
         let (header, payload) =
-            match validate_ipc_channel_upload_frame(&raw_frame, call_id, channel.next_upload_seq) {
+            match validate_open_channel_upload_frame(channel, &raw_frame, call_id) {
                 Ok(frame) => frame,
                 Err(error) => {
                     return Ok(channel_error(
@@ -2551,6 +3021,15 @@ impl ApiManager {
                 false,
             ));
         };
+        if !matches!(channel.transport.as_ref(), Some(IpcChannelTransport::Ipc)) {
+            return Ok(channel_error(
+                rid,
+                call_id,
+                "ERR_NIVA_CHANNEL_TRANSPORT",
+                "channel is not attached to IPC",
+                false,
+            ));
+        }
         if let Err(error) = acknowledge_ipc_channel_output(channel, seq) {
             let error_text = error.to_string();
             return Ok(channel_error(
@@ -3089,28 +3568,212 @@ impl ApiManager {
                     self.cancel_connection(window_id, connection_id);
                 }
             }
-            ClientMsg::Cancel { id, session_id } => {
-                if let Some(owner_id) =
-                    self.ws_session_owner_id(window_id, connection_id, &session_id)
-                {
-                    self.cancel_call(window_id, owner_id, id);
-                }
-            }
-            ClientMsg::Call {
+            ClientMsg::Attach {
                 id,
-                method,
-                args,
                 session_id,
+                capability,
             } => {
-                let request = ApiRequest(id, method, ApiArguments(args));
-                if let Some(owner_id) =
-                    self.ws_session_owner_id(window_id, connection_id, &session_id)
-                {
-                    self.dispatch(window_id, owner_id, tx.clone(), request);
-                } else {
-                    respond(tx, request.err(-4, "invalid WebSocket session id"));
+                if let Err((code, message)) = self.ws_attach_channel(
+                    window_id,
+                    connection_id,
+                    tx,
+                    id,
+                    &session_id,
+                    &capability,
+                ) {
+                    let _ = tx.send(WsOut::Text(
+                        json!({
+                            "t":"attachError", "id":id, "sessionId":session_id,
+                            "code":code, "message":message,
+                        })
+                        .to_string(),
+                    ));
                 }
             }
+            ClientMsg::Ack {
+                id,
+                session_id,
+                seq,
+            } => {
+                if let Err((code, message)) =
+                    self.ws_ack_channel(window_id, connection_id, &session_id, id, seq)
+                {
+                    let _ = tx.send(WsOut::Text(
+                        json!({
+                            "t":"channelError", "id":id, "sessionId":session_id,
+                            "code":code, "message":message, "retryable":false,
+                        })
+                        .to_string(),
+                    ));
+                }
+            }
+            ClientMsg::Cancel { id, session_id } => {
+                self.ws_cancel_channel(window_id, connection_id, &session_id, id);
+            }
+        }
+    }
+
+    fn ws_attach_channel(
+        &self,
+        window_id: u8,
+        connection_id: u64,
+        tx: &mpsc::Sender<WsOut>,
+        call_id: u64,
+        session_id: &str,
+        capability: &str,
+    ) -> std::result::Result<(), (&'static str, String)> {
+        if !self.ws_session_matches(window_id, connection_id, session_id) {
+            return Err((
+                "ERR_NIVA_CHANNEL_DENIED",
+                "invalid WebSocket session".into(),
+            ));
+        }
+        let app = self.app.get().cloned().ok_or((
+            "ERR_NIVA_CHANNEL_CLOSED",
+            "API manager is shutting down".into(),
+        ))?;
+        let window = app
+            .window()
+            .and_then(|windows| windows.get_window(window_id))
+            .map_err(|error| ("ERR_NIVA_CHANNEL_CLOSED", error.to_string()))?;
+        let trusted_origin = window.trusted_ws_origin.as_deref().ok_or((
+            "ERR_NIVA_CHANNEL_DENIED",
+            "WebSocket streams require a trusted local page".into(),
+        ))?;
+        let mut channels = self
+            .ipc_channels
+            .lock()
+            .map_err(|error| ("ERR_NIVA_CHANNEL_CLOSED", error.to_string()))?;
+        let key = find_ws_channel_key(
+            &channels,
+            window_id,
+            trusted_origin,
+            session_id,
+            call_id,
+            capability,
+        )
+        .ok_or((
+            "ERR_NIVA_CHANNEL_DENIED",
+            "invalid or expired stream ticket".into(),
+        ))?;
+        let channel = channels
+            .get_mut(&key)
+            .ok_or(("ERR_NIVA_CHANNEL_CLOSED", "stream ticket expired".into()))?;
+        let transport = IpcChannelTransport::WebSocket {
+            connection_id,
+            sender: tx.clone(),
+        };
+        if let Some(existing) = &channel.transport {
+            if !existing.same_route(&transport) {
+                return Err((
+                    "ERR_NIVA_CHANNEL_ATTACHED",
+                    "stream ticket is already pinned to another transport".into(),
+                ));
+            }
+            let response = json!({"t":"attached","id":call_id,"sessionId":session_id});
+            tx.send(WsOut::Text(response.to_string()))
+                .map_err(|error| ("ERR_NIVA_CHANNEL_CLOSED", error.to_string()))?;
+            return Ok(());
+        }
+
+        let response = json!({"t":"attached","id":call_id,"sessionId":session_id});
+        match attach_ws_transport_then_confirm(channel, transport, || {
+            tx.send(WsOut::Text(response.to_string()))
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => {}
+            Err(WsAttachDeliveryError::PumpUnavailable) => {
+                return Err((
+                    "ERR_NIVA_CHANNEL_CLOSED",
+                    "stream channel pump is unavailable".into(),
+                ));
+            }
+            Err(WsAttachDeliveryError::ConfirmationUnavailable(error)) => {
+                let owner_id = channel.connection_id;
+                // The pump has been released and the ticket is pinned. If the
+                // success reply cannot be queued, consume the ticket and cancel
+                // the call after dropping the channel lock; it must not be
+                // rebound to IPC on a later attach attempt.
+                channels.remove(&key);
+                drop(channels);
+                self.cancel_call(window_id, owner_id, call_id);
+                return Err(("ERR_NIVA_CHANNEL_CLOSED", error));
+            }
+        }
+        Ok(())
+    }
+
+    fn ws_channel_key(
+        &self,
+        window_id: u8,
+        connection_id: u64,
+        session_id: &str,
+        call_id: u64,
+    ) -> Option<IpcChannelKey> {
+        if !self.ws_session_matches(window_id, connection_id, session_id) {
+            return None;
+        }
+        self.ipc_channels.lock().ok().and_then(|channels| {
+            channels
+                .iter()
+                .find(|(key, channel)| {
+                    key.session.window_id == window_id
+                        && key.session.session_id == session_id
+                        && key.call_id == call_id
+                        && matches!(
+                            channel.transport.as_ref(),
+                            Some(IpcChannelTransport::WebSocket {
+                                connection_id: owner,
+                                ..
+                            }) if *owner == connection_id
+                        )
+                })
+                .map(|(key, _)| key.clone())
+        })
+    }
+
+    fn ws_ack_channel(
+        &self,
+        window_id: u8,
+        connection_id: u64,
+        session_id: &str,
+        call_id: u64,
+        seq: u64,
+    ) -> std::result::Result<(), (&'static str, String)> {
+        let key = self
+            .ws_channel_key(window_id, connection_id, session_id, call_id)
+            .ok_or((
+                "ERR_NIVA_CHANNEL_DENIED",
+                "stream is not attached to this socket".into(),
+            ))?;
+        let mut channels = self
+            .ipc_channels
+            .lock()
+            .map_err(|error| ("ERR_NIVA_CHANNEL_CLOSED", error.to_string()))?;
+        let channel = channels
+            .get_mut(&key)
+            .ok_or(("ERR_NIVA_CHANNEL_CLOSED", "stream is closed".into()))?;
+        acknowledge_ipc_channel_output(channel, seq)
+            .map_err(|error| ("ERR_NIVA_CHANNEL_ACK", error.to_string()))
+    }
+
+    fn ws_cancel_channel(&self, window_id: u8, connection_id: u64, session_id: &str, call_id: u64) {
+        let Some(key) = self.ws_channel_key(window_id, connection_id, session_id, call_id) else {
+            return;
+        };
+        if let Ok(mut sessions) = self.ipc_sessions.lock()
+            && let Some(sender) = sessions.cancel_call(&key.session, call_id)
+        {
+            sender.close();
+        }
+        let owner_id = self
+            .ipc_channels
+            .lock()
+            .ok()
+            .and_then(|channels| channels.get(&key).map(|channel| channel.connection_id));
+        if let Some(owner_id) = owner_id {
+            self.cancel_call(window_id, owner_id, call_id);
+            self.remove_ipc_channel(&key);
         }
     }
 
@@ -3144,30 +3807,17 @@ impl ApiManager {
             .is_some_and(|expected| expected == session_id)
     }
 
-    fn ws_session_owner_id(
-        &self,
-        window_id: u8,
-        connection_id: u64,
-        session_id: &str,
-    ) -> Option<u64> {
-        self.ws_sessions
+    /// Entry for binary frames from the transport (non-blocking).
+    pub fn on_binary(&self, window_id: u8, connection_id: u64, frame: &[u8]) {
+        let Some(session_id) = self
+            .ws_sessions
             .lock()
             .ok()
             .and_then(|sessions| sessions.get(&(window_id, connection_id)).cloned())
-            .filter(|expected| expected == session_id)
-            .map(|_| connection_id)
-    }
-
-    /// Entry for binary frames from the transport (non-blocking).
-    pub fn on_binary(&self, window_id: u8, connection_id: u64, frame: &[u8]) {
-        let Some(owner_id) = self.ws_sessions.lock().ok().and_then(|sessions| {
-            sessions
-                .contains_key(&(window_id, connection_id))
-                .then_some(connection_id)
-        }) else {
+        else {
             return;
         };
-        let (header, payload) = match decode_chunk(frame) {
+        let (header, _payload) = match decode_chunk(frame) {
             Ok(pair) => pair,
             Err(err) => {
                 crate::niva_log!(
@@ -3177,7 +3827,48 @@ impl ApiManager {
                 return;
             }
         };
-        route_inbound_chunk(&self.active, window_id, owner_id, header, payload);
+        let Some(key) = self.ws_channel_key(window_id, connection_id, &session_id, header.id)
+        else {
+            crate::niva_log!(
+                crate::app::logging::Level::Warn,
+                "[niva] dropped WebSocket data for an unattached channel"
+            );
+            return;
+        };
+        let (owner_id, upload_header, upload_payload) = {
+            let mut channels = match self.ipc_channels.lock() {
+                Ok(channels) => channels,
+                Err(_) => return,
+            };
+            let Some(channel) = channels.get_mut(&key) else {
+                return;
+            };
+            let (upload_header, upload_payload) =
+                match validate_open_channel_upload_frame(channel, frame, header.id) {
+                    Ok(upload) => upload,
+                    Err(error) => {
+                        crate::niva_log!(
+                            crate::app::logging::Level::Warn,
+                            "[niva] rejected WebSocket channel upload: {error}"
+                        );
+                        return;
+                    }
+                };
+            channel.next_upload_seq = channel.next_upload_seq.saturating_add(1);
+            channel.upload_ended = upload_header.end;
+            (
+                channel.connection_id,
+                upload_header,
+                upload_payload.to_vec(),
+            )
+        };
+        route_inbound_chunk(
+            &self.active,
+            window_id,
+            owner_id,
+            upload_header,
+            &upload_payload,
+        );
     }
 
     /// Abort one call (client cancel). Silent when unknown.
@@ -3220,6 +3911,34 @@ impl ApiManager {
         if let Ok(mut sessions) = self.ws_sessions.lock() {
             sessions.remove(&(window_id, connection_id));
         }
+        let attached = self
+            .ipc_channels
+            .lock()
+            .map(|channels| {
+                channels
+                    .iter()
+                    .filter_map(|(key, channel)| {
+                        matches!(
+                            channel.transport.as_ref(),
+                            Some(IpcChannelTransport::WebSocket {
+                                connection_id: attached_connection,
+                                ..
+                            }) if *attached_connection == connection_id
+                        )
+                        .then_some((key.clone(), channel.connection_id))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for (key, owner_id) in attached {
+            if let Ok(mut sessions) = self.ipc_sessions.lock()
+                && let Some(sender) = sessions.cancel_call(&key.session, key.call_id)
+            {
+                sender.close();
+            }
+            self.cancel_call(window_id, owner_id, key.call_id);
+            self.remove_ipc_channel(&key);
+        }
         self.cancel_owner_connection(window_id, connection_id);
     }
 
@@ -3250,45 +3969,20 @@ impl ApiManager {
         }
     }
 
-    pub(crate) fn dispatch(
-        &self,
-        window_id: u8,
-        connection_id: u64,
-        tx: mpsc::Sender<WsOut>,
-        request: ApiRequest,
-    ) {
-        self.dispatch_with_output(
-            window_id,
-            connection_id,
-            CallOutput::WebSocket(tx),
-            request,
-            None,
-        );
-    }
-
     fn dispatch_with_output(
         &self,
         window_id: u8,
         connection_id: u64,
         outbound: CallOutput,
         request: ApiRequest,
-        channels: Option<DispatchChannels>,
+        channels: DispatchChannels,
     ) -> bool {
-        let channels = channels.unwrap_or_else(|| {
-            let (cancel_tx, cancel_rx) = async_channel::bounded::<()>(1);
-            let (inbound_tx, inbound_rx) = async_channel::bounded::<InboundChunk>(64);
-            DispatchChannels {
-                cancel_tx,
-                cancel_rx,
-                inbound_tx,
-                inbound_rx,
-            }
-        });
         let DispatchChannels {
             cancel_tx,
             cancel_rx,
             inbound_tx,
             inbound_rx,
+            http_response_ack_rx,
         } = channels;
         let lifecycle = Arc::new(CallLifecycle::new());
         let key = (window_id, connection_id, request.0);
@@ -3414,6 +4108,7 @@ impl ApiManager {
                 seq: AtomicU64::new(1),
                 cancel_rx,
                 inbound_rx,
+                http_response_ack_rx,
                 lifecycle: lifecycle.clone(),
             }),
         };
@@ -3979,14 +4674,18 @@ mod ipc_tests {
     }
 
     #[test]
-    fn ipc_messages_accept_the_bootstrap_javascript_camel_case_envelopes() {
+    fn ipc_messages_accept_api_calls_and_channel_controls() {
         let call: IpcMessage = serde_json::from_str(
-            r#"{"t":"call","rid":70,"id":7,"method":"http.requestText","args":[{}],"sessionId":"0123456789abcdef0123456789abcdef","token":"window-token"}"#,
+            r#"{"t":"api_call","rid":70,"id":7,"method":"http.requestText","args":[{}],"sessionId":"0123456789abcdef0123456789abcdef","token":"window-token"}"#,
         )
         .unwrap();
         assert!(
-            matches!(call, IpcMessage::Call { rid: 70, id: 7, session_id, .. } if session_id == "0123456789abcdef0123456789abcdef")
+            matches!(call, IpcMessage::ApiCall { rid: 70, id: 7, session_id, .. } if session_id == "0123456789abcdef0123456789abcdef")
         );
+        assert!(serde_json::from_str::<IpcMessage>(
+            r#"{"t":"call","rid":70,"id":7,"method":"http.requestText","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#
+        )
+        .is_err());
 
         let heartbeat: IpcMessage = serde_json::from_str(
             r#"{"t":"heartbeat","rid":71,"sessionId":"0123456789abcdef0123456789abcdef","token":"window-token"}"#,
@@ -4026,6 +4725,409 @@ mod ipc_tests {
             cancel,
             IpcMessage::ChannelCancel { rid: 73, id: 7, .. }
         ));
+
+        let attach: IpcMessage = serde_json::from_str(
+            r#"{"t":"channelAttach","rid":75,"id":7,"sessionId":"0123456789abcdef0123456789abcdef","capability":"0123456789abcdef"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            attach,
+            IpcMessage::ChannelAttach { rid: 75, id: 7, .. }
+        ));
+    }
+
+    #[test]
+    fn ipc_source_must_match_native_top_origin_including_custom_scheme_normalization() {
+        let local = IpcFrameSource {
+            source_url: "niva-a51c1728d17442d48f577d296c966b51://app/child".into(),
+            top_url: "niva-a51c1728d17442d48f577d296c966b51://app/index.html".into(),
+            frame_id: 1,
+            generation: 0,
+            is_main_frame: false,
+        };
+        assert_eq!(
+            same_origin_ipc_source(&local).unwrap(),
+            "niva-a51c1728d17442d48f577d296c966b51://app"
+        );
+        let cross_origin = IpcFrameSource {
+            source_url: "https://remote.example/frame".into(),
+            top_url: "https://local.example/index".into(),
+            frame_id: 2,
+            generation: 0,
+            is_main_frame: false,
+        };
+        assert!(same_origin_ipc_source(&cross_origin).is_err());
+    }
+
+    #[test]
+    fn ws_ticket_requires_matching_window_session_origin_and_capability() {
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let key = IpcChannelKey {
+            session: IpcSessionKey {
+                window_id: 7,
+                source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+                session_id: session_id.into(),
+                frame_id: 0,
+                generation: 0,
+                is_main_frame: true,
+            },
+            call_id: 42,
+        };
+        let (attach_tx, _attach_rx) = async_channel::bounded(1);
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let channel = IpcChannelCall {
+            method: "http.requestStream".into(),
+            capability: "0123456789abcdef0123456789abcdef".into(),
+            connection_id: session_owner_id(7, session_id),
+            transport: None,
+            attach_tx,
+            next_upload_seq: 1,
+            upload_ended: false,
+            next_http_response_ack_seq: 1,
+            http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+            awaiting_output_seq: None,
+            output_ack_tx: ack_tx,
+        };
+        let mut channels = HashMap::new();
+        channels.insert(key.clone(), channel);
+        assert_eq!(
+            find_ws_channel_key(
+                &channels,
+                7,
+                &key.session.source_origin,
+                session_id,
+                42,
+                "0123456789abcdef0123456789abcdef",
+            ),
+            Some(key.clone())
+        );
+        assert!(
+            find_ws_channel_key(
+                &channels,
+                7,
+                &key.session.source_origin,
+                "abcdef0123456789abcdef0123456789",
+                42,
+                "0123456789abcdef0123456789abcdef",
+            )
+            .is_none()
+        );
+        assert!(
+            find_ws_channel_key(
+                &channels,
+                8,
+                &key.session.source_origin,
+                session_id,
+                42,
+                "0123456789abcdef0123456789abcdef",
+            )
+            .is_none()
+        );
+        assert!(
+            find_ws_channel_key(
+                &channels,
+                7,
+                "https://remote.example",
+                session_id,
+                42,
+                "0123456789abcdef0123456789abcdef",
+            )
+            .is_none()
+        );
+        assert!(
+            find_ws_channel_key(
+                &channels,
+                7,
+                &key.session.source_origin,
+                session_id,
+                42,
+                "wrong-capability",
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn channel_ticket_transport_cannot_be_rebound() {
+        let options: NivaOptions = serde_json::from_value(json!({
+            "name": "ticket-pin-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let key = IpcChannelKey {
+            session: IpcSessionKey {
+                window_id: 7,
+                source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+                session_id: session_id.into(),
+                frame_id: 0,
+                generation: 0,
+                is_main_frame: true,
+            },
+            call_id: 42,
+        };
+        let (attach_tx, attach_rx) = async_channel::bounded(1);
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        manager.ipc_channels.lock().unwrap().insert(
+            key.clone(),
+            IpcChannelCall {
+                method: "http.requestStream".into(),
+                capability: "capability".into(),
+                connection_id: session_owner_id(7, session_id),
+                transport: None,
+                attach_tx,
+                next_upload_seq: 1,
+                upload_ended: false,
+                next_http_response_ack_seq: 1,
+                http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+                awaiting_output_seq: None,
+                output_ack_tx: ack_tx,
+            },
+        );
+        assert!(
+            attach_rx.try_recv().is_err(),
+            "ticket is pending before attach"
+        );
+        assert!(
+            manager.ipc_channels.lock().unwrap()[&key]
+                .transport
+                .is_none()
+        );
+        let ws_sender = mpsc::channel().0;
+        manager
+            .bind_channel_transport(
+                &key,
+                IpcChannelTransport::WebSocket {
+                    connection_id: 99,
+                    sender: ws_sender.clone(),
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            attach_rx.try_recv(),
+            Ok(IpcChannelTransport::WebSocket {
+                connection_id: 99,
+                ..
+            })
+        ));
+        assert_eq!(
+            manager.ipc_channels.lock().unwrap()[&key].connection_id,
+            session_owner_id(7, session_id),
+            "data transport must not replace the IPC resource owner"
+        );
+        assert!(
+            manager
+                .bind_channel_transport(
+                    &key,
+                    IpcChannelTransport::WebSocket {
+                        connection_id: 100,
+                        sender: ws_sender
+                    },
+                )
+                .is_err()
+        );
+        manager
+            .bind_channel_transport(
+                &key,
+                IpcChannelTransport::WebSocket {
+                    connection_id: 99,
+                    sender: mpsc::channel().0,
+                },
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn websocket_attach_queues_pump_before_success_and_never_confirms_unavailable_pump() {
+        let (attach_tx, attach_rx) = async_channel::bounded(1);
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let mut channel = IpcChannelCall {
+            method: "http.requestStream".into(),
+            capability: "capability".into(),
+            connection_id: 7,
+            transport: None,
+            attach_tx,
+            next_upload_seq: 1,
+            upload_ended: false,
+            next_http_response_ack_seq: 1,
+            http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+            awaiting_output_seq: None,
+            output_ack_tx: ack_tx,
+        };
+        let transport = IpcChannelTransport::WebSocket {
+            connection_id: 99,
+            sender: mpsc::channel().0,
+        };
+        let mut pump_was_queued_before_confirmation = false;
+
+        attach_ws_transport_then_confirm(&mut channel, transport, || {
+            pump_was_queued_before_confirmation = matches!(
+                attach_rx.try_recv(),
+                Ok(IpcChannelTransport::WebSocket {
+                    connection_id: 99,
+                    ..
+                })
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(pump_was_queued_before_confirmation);
+        assert!(matches!(
+            channel.transport,
+            Some(IpcChannelTransport::WebSocket {
+                connection_id: 99,
+                ..
+            })
+        ));
+
+        let (attach_tx, attach_rx) = async_channel::bounded(1);
+        drop(attach_rx);
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let mut unavailable_channel = IpcChannelCall {
+            method: "http.requestStream".into(),
+            capability: "capability".into(),
+            connection_id: 7,
+            transport: None,
+            attach_tx,
+            next_upload_seq: 1,
+            upload_ended: false,
+            next_http_response_ack_seq: 1,
+            http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+            awaiting_output_seq: None,
+            output_ack_tx: ack_tx,
+        };
+        let mut confirmation_called = false;
+        assert_eq!(
+            attach_ws_transport_then_confirm(
+                &mut unavailable_channel,
+                IpcChannelTransport::WebSocket {
+                    connection_id: 100,
+                    sender: mpsc::channel().0,
+                },
+                || {
+                    confirmation_called = true;
+                    Ok(())
+                },
+            ),
+            Err(WsAttachDeliveryError::PumpUnavailable)
+        );
+        assert!(!confirmation_called);
+        assert!(unavailable_channel.transport.is_none());
+    }
+
+    #[test]
+    fn websocket_attach_confirmation_failure_keeps_ticket_pinned_until_cleanup() {
+        let (attach_tx, attach_rx) = async_channel::bounded(1);
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let mut channel = IpcChannelCall {
+            method: "http.requestStream".into(),
+            capability: "capability".into(),
+            connection_id: 7,
+            transport: None,
+            attach_tx,
+            next_upload_seq: 1,
+            upload_ended: false,
+            next_http_response_ack_seq: 1,
+            http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+            awaiting_output_seq: None,
+            output_ack_tx: ack_tx,
+        };
+        let transport = IpcChannelTransport::WebSocket {
+            connection_id: 99,
+            sender: mpsc::channel().0,
+        };
+
+        assert_eq!(
+            attach_ws_transport_then_confirm(&mut channel, transport, || {
+                Err("confirmation queue closed".into())
+            }),
+            Err(WsAttachDeliveryError::ConfirmationUnavailable(
+                "confirmation queue closed".into()
+            ))
+        );
+        assert!(matches!(
+            attach_rx.try_recv(),
+            Ok(IpcChannelTransport::WebSocket {
+                connection_id: 99,
+                ..
+            })
+        ));
+        assert!(matches!(
+            channel.transport,
+            Some(IpcChannelTransport::WebSocket {
+                connection_id: 99,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn websocket_pump_uses_one_sequence_for_binary_data_and_ack() {
+        let (sender, receiver) = mpsc::channel();
+        let original = encode_chunk(42, 7, false, false, true, b"stderr");
+        assert!(send_ws_channel_frame(
+            &sender,
+            "0123456789abcdef0123456789abcdef",
+            42,
+            3,
+            WsOut::Binary(original),
+        ));
+        let WsOut::Binary(frame) = receiver.recv().unwrap() else {
+            panic!("binary frame expected");
+        };
+        let (header, payload) = decode_chunk(&frame).unwrap();
+        assert_eq!(header.id, 42);
+        assert_eq!(header.seq, 3);
+        assert!(header.stderr);
+        assert_eq!(payload, b"stderr");
+
+        let (sender, receiver) = mpsc::channel();
+        assert!(send_ws_channel_frame(
+            &sender,
+            "0123456789abcdef0123456789abcdef",
+            42,
+            4,
+            WsOut::Text("{\"t\":\"result\",\"id\":42}".into()),
+        ));
+        let WsOut::Text(frame) = receiver.recv().unwrap() else {
+            panic!("text frame expected");
+        };
+        let value: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(value["t"], "channelData");
+        assert_eq!(value["seq"], 4);
+        assert_eq!(value["frame"]["data"], "{\"t\":\"result\",\"id\":42}");
+    }
+
+    #[test]
+    fn websocket_api_method_dispatch_is_rejected() {
+        let options: NivaOptions = serde_json::from_value(json!({
+            "name": "ws-api-rejected-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let mut manager = ApiManager::new(&options);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_in_handler = calls.clone();
+        manager.register_api("test.api", move |_, _, _| {
+            let calls = calls_in_handler.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Value::Null)
+            }
+        });
+        let manager = manager;
+        let session_id = "0123456789abcdef0123456789abcdef";
+        assert!(manager.bind_ws_session(3, 4, session_id));
+        let (tx, _rx) = mpsc::channel();
+        for text in [
+            r#"{"t":"call","id":5,"method":"test.api","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#,
+            r#"{"t":"api_call","id":5,"method":"test.api","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#,
+        ] {
+            manager.on_text(3, 4, &tx, text);
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -4176,6 +5278,88 @@ mod ipc_tests {
     }
 
     #[test]
+    fn websocket_upload_rejects_frames_after_end() {
+        let options: NivaOptions = serde_json::from_value(json!({
+            "name": "ws-upload-end-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let window_id = 7;
+        let connection_id = 44;
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let call_id = 42;
+        let owner_id = session_owner_id(window_id, session_id);
+        assert!(manager.bind_ws_session(window_id, connection_id, session_id));
+
+        let key = IpcChannelKey {
+            session: IpcSessionKey {
+                window_id,
+                source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+                session_id: session_id.into(),
+                frame_id: 0,
+                generation: 0,
+                is_main_frame: true,
+            },
+            call_id,
+        };
+        let (cancel_tx, _) = async_channel::bounded(1);
+        let (inbound_tx, inbound_rx) = async_channel::bounded(2);
+        let (outbound_tx, _) = mpsc::channel();
+        manager.active.lock().unwrap().insert(
+            (window_id, owner_id, call_id),
+            ActiveCall {
+                cancel_tx,
+                inbound_tx,
+                outbound: CallOutput::WebSocket(outbound_tx),
+                lifecycle: Arc::new(CallLifecycle::new()),
+            },
+        );
+        let (ack_tx, _ack_rx) = async_channel::bounded(1);
+        let (attach_tx, _attach_rx) = async_channel::bounded(1);
+        manager.ipc_channels.lock().unwrap().insert(
+            key,
+            IpcChannelCall {
+                method: "http.requestStream".into(),
+                capability: "capability".into(),
+                connection_id: owner_id,
+                transport: Some(IpcChannelTransport::WebSocket {
+                    connection_id,
+                    sender: mpsc::channel().0,
+                }),
+                attach_tx,
+                next_upload_seq: 1,
+                upload_ended: false,
+                next_http_response_ack_seq: 1,
+                http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+                awaiting_output_seq: None,
+                output_ack_tx: ack_tx,
+            },
+        );
+
+        manager.on_binary(
+            window_id,
+            connection_id,
+            &encode_chunk(call_id, 1, true, true, false, b"final"),
+        );
+        let final_chunk = inbound_rx.try_recv().unwrap();
+        assert_eq!(final_chunk.seq, 1);
+        assert_eq!(final_chunk.data, b"final");
+        assert!(final_chunk.end);
+
+        manager.on_binary(
+            window_id,
+            connection_id,
+            &encode_chunk(call_id, 2, false, false, false, b"after-end"),
+        );
+        assert!(inbound_rx.try_recv().is_err());
+        let channels = manager.ipc_channels.lock().unwrap();
+        let channel = channels.values().next().unwrap();
+        assert_eq!(channel.next_upload_seq, 2);
+        assert!(channel.upload_ended);
+    }
+
+    #[test]
     fn channel_input_queue_returns_retryable_backpressure_without_dropping_sequence() {
         let (out_tx, _out_rx) = mpsc::channel();
         let (cancel_tx, _) = async_channel::bounded(1);
@@ -4235,11 +5419,17 @@ mod ipc_tests {
     #[test]
     fn output_ack_requires_the_exact_pending_sequence_and_is_one_shot() {
         let (ack_tx, ack_rx) = async_channel::bounded(1);
+        let (attach_tx, _attach_rx) = async_channel::bounded(1);
         let mut channel = IpcChannelCall {
+            method: "http.requestStream".into(),
             capability: "capability".into(),
             connection_id: 1,
+            transport: None,
+            attach_tx,
             next_upload_seq: 1,
             upload_ended: false,
+            next_http_response_ack_seq: 1,
+            http_response_ack_tx: async_channel::bounded::<u64>(1).0,
             awaiting_output_seq: Some(8),
             output_ack_tx: ack_tx,
         };
@@ -4247,6 +5437,161 @@ mod ipc_tests {
         acknowledge_ipc_channel_output(&mut channel, 8).unwrap();
         assert_eq!(ack_rx.try_recv().unwrap(), 8);
         assert!(acknowledge_ipc_channel_output(&mut channel, 8).is_err());
+    }
+
+    #[test]
+    fn http_response_credit_is_session_pinned_ordered_and_bounded_after_upload_end() {
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let session = IpcSessionKey {
+            window_id: 7,
+            source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+            session_id: session_id.into(),
+            frame_id: 3,
+            generation: 4,
+            is_main_frame: false,
+        };
+        let channel_key = IpcChannelKey {
+            session: session.clone(),
+            call_id: 42,
+        };
+
+        let make_channel = |method: &str, upload_ended: bool| {
+            let (http_response_ack_tx, http_response_ack_rx) = async_channel::bounded(1);
+            let (attach_tx, _attach_rx) = async_channel::bounded(1);
+            let (output_ack_tx, _output_ack_rx) = async_channel::bounded(1);
+            (
+                IpcChannelCall {
+                    method: method.into(),
+                    capability: "capability".into(),
+                    connection_id: session_owner_id(session.window_id, &session.session_id),
+                    transport: Some(IpcChannelTransport::Ipc),
+                    attach_tx,
+                    next_upload_seq: 3,
+                    upload_ended,
+                    next_http_response_ack_seq: 1,
+                    http_response_ack_tx,
+                    awaiting_output_seq: None,
+                    output_ack_tx,
+                },
+                http_response_ack_rx,
+            )
+        };
+        let (channel, response_acks) = make_channel("http.requestStream", true);
+        let channel_table = Mutex::new(HashMap::from([(channel_key.clone(), channel)]));
+        let lifecycle = Arc::new(CallLifecycle::new());
+        let (cancel_tx, _cancel_rx) = async_channel::bounded(1);
+        let (inbound_tx, _inbound_rx) = async_channel::bounded(1);
+        let (outbound_tx, _outbound_rx) = mpsc::sync_channel(1);
+        let active_key = (
+            session.window_id,
+            session_owner_id(session.window_id, &session.session_id),
+            channel_key.call_id,
+        );
+        let active_table = Mutex::new(HashMap::from([(
+            active_key,
+            ActiveCall {
+                cancel_tx,
+                inbound_tx,
+                outbound: CallOutput::Channel(outbound_tx),
+                lifecycle: lifecycle.clone(),
+            },
+        )]));
+
+        let mut wrong_frame = session.clone();
+        wrong_frame.frame_id += 1;
+        assert!(
+            grant_http_response_credit_for_session(
+                &channel_table,
+                &active_table,
+                &wrong_frame,
+                channel_key.call_id,
+                1,
+            )
+            .is_err()
+        );
+
+        assert!(
+            grant_http_response_credit_for_session(
+                &channel_table,
+                &active_table,
+                &session,
+                channel_key.call_id,
+                2,
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            response_acks.try_recv(),
+            Err(async_channel::TryRecvError::Empty)
+        ));
+
+        grant_http_response_credit_for_session(
+            &channel_table,
+            &active_table,
+            &session,
+            channel_key.call_id,
+            1,
+        )
+        .unwrap();
+        assert!(
+            grant_http_response_credit_for_session(
+                &channel_table,
+                &active_table,
+                &session,
+                channel_key.call_id,
+                2,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("BACKPRESSURE")
+        );
+        assert_eq!(response_acks.try_recv().unwrap(), 1);
+        grant_http_response_credit_for_session(
+            &channel_table,
+            &active_table,
+            &session,
+            channel_key.call_id,
+            2,
+        )
+        .unwrap();
+        assert_eq!(response_acks.try_recv().unwrap(), 2);
+        assert!(
+            grant_http_response_credit_for_session(
+                &channel_table,
+                &active_table,
+                &session,
+                channel_key.call_id,
+                2,
+            )
+            .is_err()
+        );
+
+        lifecycle.cancel();
+        assert!(
+            grant_http_response_credit_for_session(
+                &channel_table,
+                &active_table,
+                &session,
+                channel_key.call_id,
+                3,
+            )
+            .is_err()
+        );
+
+        cleanup_ipc_channel_resources(&channel_table, &channel_key);
+        assert!(matches!(
+            response_acks.try_recv(),
+            Err(async_channel::TryRecvError::Closed)
+        ));
+
+        let (mut wrong_method, _) = make_channel("fs.handle", true);
+        assert!(grant_http_response_credit(&mut wrong_method, 1).is_err());
+        let (mut before_end, _) = make_channel("http.requestStream", false);
+        assert!(grant_http_response_credit(&mut before_end, 1).is_err());
+        let (detached, _) = make_channel("http.requestStream", true);
+        let mut detached = detached;
+        detached.transport = None;
+        assert!(grant_http_response_credit(&mut detached, 1).is_err());
     }
 
     #[test]
@@ -4310,10 +5655,15 @@ mod ipc_tests {
             "fs.writeText",
             "fs.appendText",
             "fs.node",
+            "fs.handle",
+            "fs.handleControl",
             "http.requestText",
+            "http.responseAck",
             "process.execText",
             "process.execFileText",
+            "process.signal",
             "process.spawnSync",
+            "socket.control",
         ] {
             assert!(
                 manager.handlers.contains_key(method) || manager.ipc_handlers.contains_key(method),
@@ -4352,6 +5702,8 @@ mod ipc_tests {
             ));
             assert!(ipc_method_allowed(method));
         }
+        assert!(manager.ipc_handlers.contains_key("http.responseAck"));
+        assert!(!ipc_method_allowed("http.responseAck"));
         assert!(matches!(
             manager
                 .handlers
@@ -4361,6 +5713,24 @@ mod ipc_tests {
         ));
         assert!(sync_method_allowed("process.spawnSync"));
         assert!(!ipc_method_allowed("process.spawnSync"));
+
+        for method in ["fs.handleControl", "process.signal", "socket.control"] {
+            assert!(matches!(
+                manager.handlers.get(method).map(|entry| &entry.handler),
+                Some(HandlerKind::CancellableUnary(_))
+            ));
+            assert!(
+                !ipc_method_allowed(method),
+                "resource controls remain unavailable to remote IPC callers"
+            );
+        }
+        assert!(matches!(
+            manager
+                .handlers
+                .get("fs.handle")
+                .map(|entry| &entry.handler),
+            Some(HandlerKind::Stream(_))
+        ));
     }
 
     #[test]
@@ -4374,18 +5744,14 @@ mod ipc_tests {
         let session = "0123456789abcdef0123456789abcdef";
         assert!(manager.bind_ws_session(9, 44, session));
         assert!(manager.ws_session_matches(9, 44, session));
-        assert_eq!(manager.ws_session_owner_id(9, 44, session), Some(44));
-        assert_ne!(
-            manager.ws_session_owner_id(9, 44, session),
-            Some(session_owner_id(9, session))
-        );
+        assert_ne!(44, session_owner_id(9, session));
         assert!(!manager.ws_session_matches(9, 44, "abcdef0123456789abcdef0123456789"));
         manager.cancel_connection(9, 44);
         assert!(!manager.ws_session_matches(9, 44, session));
     }
 
     #[test]
-    fn websocket_disconnect_cancels_only_connection_owned_work() {
+    fn websocket_disconnect_cancels_attached_stream_by_ipc_session_owner() {
         let options: NivaOptions = serde_json::from_value(json!({
             "name": "disconnect-scope-test",
             "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
@@ -4397,42 +5763,6 @@ mod ipc_tests {
         let session_id = "0123456789abcdef0123456789abcdef";
         let ipc_owner_id = session_owner_id(window_id, session_id);
         assert!(manager.bind_ws_session(window_id, connection_id, session_id));
-        let websocket_owner_id = manager
-            .ws_session_owner_id(window_id, connection_id, session_id)
-            .unwrap();
-        assert_eq!(websocket_owner_id, connection_id);
-        assert_ne!(websocket_owner_id, ipc_owner_id);
-
-        let websocket_call_id = 11;
-        let (websocket_cancel_tx, websocket_cancel_rx) = async_channel::bounded(1);
-        let (websocket_inbound_tx, _) = async_channel::bounded(1);
-        let (websocket_out_tx, _) = mpsc::channel();
-        let websocket_lifecycle = Arc::new(CallLifecycle::new());
-        manager.active.lock().unwrap().insert(
-            (window_id, websocket_owner_id, websocket_call_id),
-            ActiveCall {
-                lifecycle: websocket_lifecycle.clone(),
-                outbound: CallOutput::WebSocket(websocket_out_tx),
-                cancel_tx: websocket_cancel_tx,
-                inbound_tx: websocket_inbound_tx,
-            },
-        );
-
-        let ipc_call_id = 12;
-        let (ipc_cancel_tx, ipc_cancel_rx) = async_channel::bounded(1);
-        let (ipc_inbound_tx, _) = async_channel::bounded(1);
-        let (ipc_out_tx, _) = mpsc::sync_channel(1);
-        let ipc_lifecycle = Arc::new(CallLifecycle::new());
-        manager.active.lock().unwrap().insert(
-            (window_id, ipc_owner_id, ipc_call_id),
-            ActiveCall {
-                lifecycle: ipc_lifecycle.clone(),
-                outbound: CallOutput::Channel(ipc_out_tx),
-                cancel_tx: ipc_cancel_tx.clone(),
-                inbound_tx: ipc_inbound_tx,
-            },
-        );
-
         let ipc_key = IpcSessionKey {
             window_id,
             source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
@@ -4441,149 +5771,145 @@ mod ipc_tests {
             generation: 0,
             is_main_frame: true,
         };
+        let attached_call_id = 11;
+        let fallback_call_id = 12;
+        let (attached_cancel_tx, attached_cancel_rx) = async_channel::bounded(1);
+        let (fallback_cancel_tx, fallback_cancel_rx) = async_channel::bounded(1);
+        let (attached_inbound_tx, _) = async_channel::bounded(1);
+        let (fallback_inbound_tx, _) = async_channel::bounded(1);
+        let (attached_out_tx, _) = mpsc::sync_channel(1);
+        let (fallback_out_tx, _) = mpsc::sync_channel(1);
+        let attached_lifecycle = Arc::new(CallLifecycle::new());
+        let fallback_lifecycle = Arc::new(CallLifecycle::new());
+        manager.active.lock().unwrap().insert(
+            (window_id, ipc_owner_id, attached_call_id),
+            ActiveCall {
+                lifecycle: attached_lifecycle.clone(),
+                outbound: CallOutput::Channel(attached_out_tx),
+                cancel_tx: attached_cancel_tx.clone(),
+                inbound_tx: attached_inbound_tx,
+            },
+        );
+        manager.active.lock().unwrap().insert(
+            (window_id, ipc_owner_id, fallback_call_id),
+            ActiveCall {
+                lifecycle: fallback_lifecycle.clone(),
+                outbound: CallOutput::Channel(fallback_out_tx),
+                cancel_tx: fallback_cancel_tx.clone(),
+                inbound_tx: fallback_inbound_tx,
+            },
+        );
         manager
             .ipc_sessions
             .lock()
             .unwrap()
             .reserve(
                 ipc_key.clone(),
-                ipc_call_id,
-                ipc_cancel_tx,
+                attached_call_id,
+                attached_cancel_tx,
                 ipc_owner_id,
                 Instant::now(),
             )
             .unwrap();
-        let (ack_tx, _ack_rx) = async_channel::bounded(1);
-        let channel_key = IpcChannelKey {
-            session: ipc_key,
-            call_id: ipc_call_id,
-        };
-        manager.ipc_channels.lock().unwrap().insert(
-            channel_key.clone(),
-            IpcChannelCall {
-                capability: "test-capability".into(),
-                connection_id: ipc_owner_id,
-                next_upload_seq: 1,
-                upload_ended: false,
-                awaiting_output_seq: None,
-                output_ack_tx: ack_tx,
-            },
-        );
-
-        let sync_call_id = 13;
-        let (sync_cancel_tx, sync_cancel_rx) = async_channel::bounded(1);
-        let sync_key = (window_id, session_id.to_owned(), sync_call_id);
         manager
-            .sync_active
+            .ipc_sessions
             .lock()
             .unwrap()
-            .insert(sync_key.clone(), sync_cancel_tx);
+            .reserve(
+                ipc_key.clone(),
+                fallback_call_id,
+                fallback_cancel_tx,
+                ipc_owner_id,
+                Instant::now(),
+            )
+            .unwrap();
+        let (attached_ack_tx, _attached_ack_rx) = async_channel::bounded(1);
+        let (attached_route_tx, _attached_route_rx) = async_channel::bounded(1);
+        let attached_key = IpcChannelKey {
+            session: ipc_key,
+            call_id: attached_call_id,
+        };
+        let (fallback_ack_tx, _fallback_ack_rx) = async_channel::bounded(1);
+        let (fallback_route_tx, _fallback_route_rx) = async_channel::bounded(1);
+        let fallback_key = IpcChannelKey {
+            session: attached_key.session.clone(),
+            call_id: fallback_call_id,
+        };
+        manager.ipc_channels.lock().unwrap().insert(
+            attached_key.clone(),
+            IpcChannelCall {
+                method: "http.requestStream".into(),
+                capability: "attached-capability".into(),
+                connection_id: ipc_owner_id,
+                transport: Some(IpcChannelTransport::WebSocket {
+                    connection_id,
+                    sender: mpsc::channel().0,
+                }),
+                attach_tx: attached_route_tx,
+                next_upload_seq: 1,
+                upload_ended: false,
+                next_http_response_ack_seq: 1,
+                http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+                awaiting_output_seq: None,
+                output_ack_tx: attached_ack_tx,
+            },
+        );
+        manager.ipc_channels.lock().unwrap().insert(
+            fallback_key.clone(),
+            IpcChannelCall {
+                method: "http.requestStream".into(),
+                capability: "fallback-capability".into(),
+                connection_id: ipc_owner_id,
+                transport: Some(IpcChannelTransport::Ipc),
+                attach_tx: fallback_route_tx,
+                next_upload_seq: 1,
+                upload_ended: false,
+                next_http_response_ack_seq: 1,
+                http_response_ack_tx: async_channel::bounded::<u64>(1).0,
+                awaiting_output_seq: None,
+                output_ack_tx: fallback_ack_tx,
+            },
+        );
 
         manager.cancel_connection(window_id, connection_id);
 
         assert!(!manager.ws_session_matches(window_id, connection_id, session_id));
-        assert!(!manager.active.lock().unwrap().contains_key(&(
-            window_id,
-            websocket_owner_id,
-            websocket_call_id
-        )));
         assert!(matches!(
-            *websocket_lifecycle.phase.lock().unwrap(),
+            *attached_lifecycle.phase.lock().unwrap(),
             CallPhase::Cancelled
         ));
-        assert!(websocket_cancel_rx.is_closed());
-
+        assert!(attached_cancel_rx.is_closed());
         assert!(manager.active.lock().unwrap().contains_key(&(
             window_id,
             ipc_owner_id,
-            ipc_call_id
+            fallback_call_id
         )));
         assert!(matches!(
-            *ipc_lifecycle.phase.lock().unwrap(),
+            *fallback_lifecycle.phase.lock().unwrap(),
             CallPhase::Queued
         ));
-        assert!(!ipc_cancel_rx.is_closed());
-        assert!(matches!(
-            ipc_cancel_rx.try_recv(),
-            Err(async_channel::TryRecvError::Empty)
+        assert!(fallback_cancel_rx.try_recv().is_err());
+        assert!(
+            !manager
+                .ipc_channels
+                .lock()
+                .unwrap()
+                .contains_key(&attached_key)
+        );
+        let channels = manager.ipc_channels.lock().unwrap();
+        let fallback_channel = channels.get(&fallback_key).unwrap();
+        assert_eq!(fallback_channel.connection_id, ipc_owner_id);
+        assert!(!matches!(
+            fallback_channel.transport.as_ref(),
+            Some(IpcChannelTransport::WebSocket { .. })
         ));
         assert!(
             manager
                 .ipc_sessions
                 .lock()
                 .unwrap()
-                .active_call(&channel_key.session, ipc_call_id)
+                .active_call(&fallback_key.session, fallback_call_id)
         );
-        assert!(
-            manager
-                .ipc_channels
-                .lock()
-                .unwrap()
-                .contains_key(&channel_key)
-        );
-        assert!(manager.sync_active.lock().unwrap().contains_key(&sync_key));
-        assert!(!sync_cancel_rx.is_closed());
-        assert!(matches!(
-            sync_cancel_rx.try_recv(),
-            Err(async_channel::TryRecvError::Empty)
-        ));
-
-        let navigation_connection_id = connection_id + 1;
-        assert!(manager.bind_ws_session(window_id, navigation_connection_id, session_id));
-        let (navigation_cancel_tx, navigation_cancel_rx) = async_channel::bounded(1);
-        let (navigation_inbound_tx, _) = async_channel::bounded(1);
-        let (navigation_out_tx, _) = mpsc::channel();
-        let navigation_lifecycle = Arc::new(CallLifecycle::new());
-        let navigation_call_id = 14;
-        manager.active.lock().unwrap().insert(
-            (window_id, navigation_connection_id, navigation_call_id),
-            ActiveCall {
-                lifecycle: navigation_lifecycle.clone(),
-                outbound: CallOutput::WebSocket(navigation_out_tx),
-                cancel_tx: navigation_cancel_tx,
-                inbound_tx: navigation_inbound_tx,
-            },
-        );
-
-        manager.cancel_ipc_window_for_navigation(window_id);
-
-        assert!(!manager.active.lock().unwrap().contains_key(&(
-            window_id,
-            ipc_owner_id,
-            ipc_call_id
-        )));
-        assert!(matches!(
-            *ipc_lifecycle.phase.lock().unwrap(),
-            CallPhase::Cancelled
-        ));
-        assert!(ipc_cancel_rx.is_closed());
-        assert!(
-            !manager
-                .ipc_sessions
-                .lock()
-                .unwrap()
-                .active_call(&channel_key.session, ipc_call_id)
-        );
-        assert!(
-            !manager
-                .ipc_channels
-                .lock()
-                .unwrap()
-                .contains_key(&channel_key)
-        );
-        assert!(!manager.sync_active.lock().unwrap().contains_key(&sync_key));
-        assert!(sync_cancel_rx.is_closed());
-        assert!(!manager.ws_session_matches(window_id, navigation_connection_id, session_id));
-        assert!(!manager.active.lock().unwrap().contains_key(&(
-            window_id,
-            navigation_connection_id,
-            navigation_call_id
-        )));
-        assert!(matches!(
-            *navigation_lifecycle.phase.lock().unwrap(),
-            CallPhase::Cancelled
-        ));
-        assert!(navigation_cancel_rx.is_closed());
     }
 
     #[test]
@@ -4705,15 +6031,39 @@ mod ipc_tests {
     }
 
     #[test]
-    fn error_reply_keeps_the_call_id() {
-        let reply = ApiManager::ipc_error_response(
-            r#"{"t":"call","id":42,"method":"os.info","args":[]}"#,
+    fn error_reply_envelope_keeps_request_identity_and_native_origin() {
+        let source = IpcFrameSource {
+            source_url: "https://example.com/page".into(),
+            top_url: "https://example.com/other".into(),
+            frame_id: 0,
+            generation: 0,
+            is_main_frame: true,
+        };
+        let reply = ApiManager::ipc_error_envelope(
+            r#"{"t":"api_call","rid":41,"id":42,"method":"os.info","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#,
             "bad request",
-        );
+            &source,
+        )
+        .unwrap();
         let decoded: Value = serde_json::from_str(&reply).unwrap();
-        assert_eq!(decoded["t"], "result");
-        assert_eq!(decoded["id"], 42);
-        assert_eq!(decoded["code"], -1);
+        assert_eq!(decoded["sessionId"], "0123456789abcdef0123456789abcdef");
+        assert_eq!(decoded["rid"], 41);
+        assert_eq!(decoded["sourceOrigin"], "https://example.com");
+        assert_eq!(decoded["response"]["t"], "result");
+        assert_eq!(decoded["response"]["id"], 42);
+        assert_eq!(decoded["response"]["code"], -1);
+        assert!(ApiManager::ipc_error_envelope(
+            r#"{"t":"api_call","rid":41,"id":42,"sessionId":"0123456789abcdef0123456789abcdef"}"#,
+            "cross origin",
+            &IpcFrameSource {
+                source_url: "https://evil.example/page".into(),
+                top_url: "https://example.com/page".into(),
+                frame_id: 1,
+                generation: 0,
+                is_main_frame: false,
+            },
+        )
+        .is_none());
     }
 
     #[test]

@@ -20,14 +20,19 @@ use serde_json::Value;
 pub enum ClientMsg {
     /// Bind a WebSocket connection to one page-realm session.
     Hello { wid: u8, v: u8, session_id: String },
-    /// Unary or stateful call: `{t:"call", id, method, args, sessionId}`.
-    Call {
+    /// Attach a previously-created IPC stream ticket to this data socket.
+    Attach {
         id: u64,
-        method: String,
-        args: Value,
         session_id: String,
+        capability: String,
     },
-    /// Abort a stateful call belonging to this page-realm session.
+    /// Acknowledge one downlink frame of an attached IPC stream.
+    Ack {
+        id: u64,
+        session_id: String,
+        seq: u64,
+    },
+    /// Cancel an attached stream. API creation and other API calls never use WS.
     Cancel { id: u64, session_id: String },
 }
 
@@ -99,7 +104,7 @@ impl ServerMsg {
 
 /// Binary chunk header: version(1) + flags(1) + id u64 BE + seq u64 BE.
 /// Current wire version (text hello + binary header).
-pub const WIRE_VERSION: u8 = 1;
+pub const WIRE_VERSION: u8 = 2;
 pub const BIN_VERSION: u8 = WIRE_VERSION;
 pub const BIN_HEADER_LEN: usize = 18;
 pub const FLAG_START: u8 = 0x01;
@@ -206,34 +211,41 @@ mod tests {
     }
 
     #[test]
-    fn text_messages_roundtrip() {
-        let call = ClientMsg::Call {
+    fn websocket_text_messages_only_attach_ack_and_cancel() {
+        let attach = ClientMsg::Attach {
             id: 300,
-            method: "fs.read".into(),
-            args: serde_json::json!(["/tmp/x"]),
             session_id: "0123456789abcdef0123456789abcdef".into(),
+            capability: "0123456789abcdef".into(),
         };
-        let text = serde_json::to_string(&call).unwrap();
+        let text = serde_json::to_string(&attach).unwrap();
         let back: ClientMsg = serde_json::from_str(&text).unwrap();
         match back {
-            ClientMsg::Call { id, method, .. } => {
+            ClientMsg::Attach { id, capability, .. } => {
                 assert_eq!(id, 300);
-                assert_eq!(method, "fs.read");
+                assert_eq!(capability, "0123456789abcdef");
             }
             _ => panic!("wrong variant"),
         }
 
+        assert!(serde_json::from_str::<ClientMsg>(
+            r#"{"t":"call","id":1,"method":"os.info","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<ClientMsg>(
+            r#"{"t":"api_call","id":1,"method":"os.info","args":[],"sessionId":"0123456789abcdef0123456789abcdef"}"#
+        )
+        .is_err());
+
         // u64 ids beyond the old u8 range must survive.
-        let big = ClientMsg::Call {
+        let big = ClientMsg::Attach {
             id: u64::MAX,
-            method: "x".into(),
-            args: Value::Null,
             session_id: "0123456789abcdef0123456789abcdef".into(),
+            capability: "0123456789abcdef".into(),
         };
         let text = serde_json::to_string(&big).unwrap();
         let back: ClientMsg = serde_json::from_str(&text).unwrap();
         match back {
-            ClientMsg::Call { id, .. } => assert_eq!(id, u64::MAX),
+            ClientMsg::Attach { id, .. } => assert_eq!(id, u64::MAX),
             _ => panic!("wrong variant"),
         }
     }

@@ -80,7 +80,7 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
     return null;
   }
   let nextStreamId=0,nextHandleId=0;
-  const handles=new Map();
+  const handles=new Map(), writeStreams=new Map();
   const niva={bridge:{isTrustedLocal:()=>true,call:(...args)=>Promise.resolve().then(()=>dispatch(...args)),callSync:dispatch,
     stream(method,args,handlers){
       const id=++nextStreamId;
@@ -97,6 +97,11 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
         queueMicrotask(()=>handlers.onEvent('open',{handle}));
         return {id,promise:Promise.resolve()};
       }
+      if(method==='fs.handleControl'){
+        const [handleId,operation]=args;
+        if(operation==='close')handles.delete(handleId);
+        return {id,promise:Promise.resolve(null)};
+      }
       assert.equal(method,'fs.handle');
       const [handleId,operation,options]=args;
       const handle=handles.get(handleId);
@@ -106,22 +111,36 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
         const start=options.position===undefined?handle.position:options.position;
         const chunk=data.subarray(start,start+options.length);
         if(options.position===undefined)handle.position+=chunk.length;
-        return {id,promise:Promise.resolve({bytesRead:chunk.length,data:chunk.toString('base64')})};
+        if(chunk.length)handlers.onChunk(chunk,false);
+        return {id,promise:Promise.resolve({bytesRead:chunk.length})};
       }
       if(operation==='write'){
-        const chunk=Buffer.from(options.data,'base64');
-        const start=handle.append?data.length:options.position===undefined?handle.position:options.position;
-        const output=Buffer.alloc(Math.max(data.length,start+chunk.length));
-        data.copy(output);chunk.copy(output,start);
-        files.set(handle.path,output.toString('base64'));
-        if(options.position===undefined)handle.position=start+chunk.length;
-        return {id,promise:Promise.resolve({bytesWritten:chunk.length})};
-      }
-      if(operation==='close'){
-        handles.delete(handleId);
-        return {id,promise:Promise.resolve(null)};
+        let resolve;
+        const promise=new Promise(res=>{resolve=res;});
+        writeStreams.set(id,{handle,handlers,position:options.position,total:0,seq:0,resolve});
+        return {id,promise,cancel(){writeStreams.delete(id);}};
       }
       throw new Error(`unexpected handle operation ${operation}`);
+    },
+    streamSend(id,bytes,end){
+      const state=writeStreams.get(id);
+      assert.ok(state,`unknown write stream ${id}`);
+      const chunk=Buffer.from(bytes);
+      state.seq+=1;
+      if(chunk.length){
+        const current=Buffer.from(files.get(state.handle.path)||'','base64');
+        const start=state.handle.append?current.length:state.position===undefined?state.handle.position+state.total:state.position+state.total;
+        const output=Buffer.alloc(Math.max(current.length,start+chunk.length));
+        current.copy(output);chunk.copy(output,start);
+        files.set(state.handle.path,output.toString('base64'));
+        state.total+=chunk.length;
+        if(state.position===undefined)state.handle.position=start+chunk.length;
+      }
+      queueMicrotask(()=>{
+        state.handlers.onEvent('uploadAck',{seq:state.seq,bytesWritten:chunk.length});
+        if(end){state.resolve({bytesWritten:state.handle.path==='/bad-terminal'?state.total+1:state.total});writeStreams.delete(id);}
+      });
+      return true;
     },
   }};
   Object.defineProperty(niva.bridge, Symbol.for('niva.internal.bridge.streamRelated'), { value(ownerCall,method,args,handlers) {
@@ -136,6 +155,7 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
   await fs.promises.writeFile('/streamed',Uint8Array.of(1,0,255));
   await fs.promises.appendFile('/streamed',Uint8Array.of(2));
   assert.deepEqual([...await fs.promises.readFile('/streamed')],[1,0,255,2]);
+  await assert.rejects(fs.promises.writeFile('/bad-terminal',Uint8Array.of(1,2)),{code:'ERR_NIVA_IPC_RESPONSE'});
   assert.equal(fs.statSync('/bytes').mtimeMs,20);
   assert.equal(fs.existsSync('/absent'),false);
   await assert.rejects(fs.promises.readFile('/absent'),{code:'ENOENT'});
@@ -145,6 +165,9 @@ test('fs uses native operations for callbacks, promises and synchronous binary d
   assert.ok(streams.some(([method])=>method==='fs.openHandle'));
   assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='read'));
   assert.ok(streams.some(([method,args])=>method==='fs.handle'&&args[1]==='write'));
+  const writeRequests=streams.filter(([method,args])=>method==='fs.handle'&&args[1]==='write');
+  assert.ok(writeRequests.every(([,args])=>Object.hasOwn(args[2],'position')&&!Object.hasOwn(args[2],'data')),'write bytes travel through streamSend, not API-call metadata');
+  assert.ok(streams.some(([method,args])=>method==='fs.handleControl'&&args[1]==='close'));
   const openIds=new Set(streams.filter(([method])=>method==='fs.openHandle').map(([, ,id])=>id));
   assert.ok(relatedStreams.some(({method})=>method==='fs.handle'));
   assert.ok(relatedStreams.filter(({method})=>method==='fs.handle').every(({ownerCall})=>openIds.has(ownerCall.id)));

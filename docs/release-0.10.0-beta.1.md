@@ -8,6 +8,18 @@
 
 不将完整 Node 兼容、移除 WebSocket、IPC 零拷贝、完整跨平台验收作为已有能力。IPC 二进制边界仍使用 Base64。CJS 不支持 `require(ESM)`；RWA 的相关失败保留为兼容边界，不修改上游项目掩盖失败。
 
+> 当前状态（2026-10-06）：Bridge v2 已在当前源码实现，最新检查和 macOS 真实 WebView 证据见[Bridge v2 验收记录](bridge-v2-validation.md)。本节及下方原始候选表格保留 2026-09-28 绑定旧 runtime fingerprint 的历史快照，不改写其当时结果，也不以旧指纹证明当前源码。
+
+## 2026-10 当前 Bridge/runtime 验收增补
+
+本增补记录最新 runtime snapshot，不改写下方 2026-09-28 候选执行过程、失败项或冻结产物。当前 runtime fingerprint 为 `913941add7a034925743fae092bb4e4ef27107383d7de4426a4a78ee588ccd06`，bootstrap 为 625,046 bytes。Runtime tests 167/167；Rust fmt/check/clippy/workspace tests 与 Native debug build exit 0；Devtools build、types typecheck、consumer typechecks、fresh-pack checks exit 0。Node compatibility 179 checks/17 cases 通过，含 HTTP 并发 barrier 检查。另有 Node 5-case bootstrap 与 top-level bridge 7-case smoke 最新复跑通过。
+
+真实 macOS bridge-route custom-protocol WS 与严格 CSP IPC 两 lane 均通过，覆盖 IPC API calls、WS v2 attach/data/ACK、IPC data lane、同源 iframe 独立 session、iframe 后 parent unary、1 MiB FileHandle 和 Node/Niva child-process 二进制流。可信 IPC fallback 27 项、远端精确 origin grant IPC 25 项均在真实 WebView 通过；远端覆盖 HTTP/HTTPS、响应限制、拒绝与 lease expiry，不代表完整权限矩阵。报告与边界详见[Bridge v2 验收记录](bridge-v2-validation.md)。
+
+macOS ARM64 当前完整 release 主程序 `target/release/niva` 为 3,040,832 bytes，SHA256 `09caa686b07c65dd3743f4066ce558b302d6a8a77e799e9581e83222699ea380`；通过严格小于 3,300,000 bytes 的硬门禁，高于 macOS 3,000,000 bytes 参考目标。当前 bridge debug binary SHA256 为 `f02bf63898362f8053210194dc12cb19671bdb1e384e93a4befbb40338dcf4f0`。
+
+仍开放：Windows target check 因 `lzma-sys` 缺 MSVC `stdlib.h` 未完成，且无 Windows 真机验收；远端 CI 未核对，本机 `gh` 未认证，无法读取远端工作流状态。默认 macOS Native API suite 最新运行失败（exit 1，`/tmp/niva-bridge-macos-api-final.log`）：首次 back 命中 BFCache 后 fixture 用 `location.reload()` 切到 fresh document，API/URL/forward 能力与 stdout report 通过，显式 reload 通过；之后 forward 等待 15 秒没有收到 secondary `pageshow`/ready。根因未确认，不能写成通过。源码在 pagehide 时永久 expire session（`packages/runtime/src/bootstrap.ts:1331-1334`），真实 GUI diagnostic 记录 BFCache 返回后 `Niva page session is no longer active`（`/tmp/niva-bridge-macos-api-diagnostic.log`）；基线提交 `9bb3d694bfd485afc52bff789b04c4e07239e363` 的源码也已有同样的 pagehide expire 行为。BFCache 原 session 恢复是独立开放 review 问题；fixture fresh-document reload 不是产品修复，也不验证 BFCache session 恢复。
+
 ## 执行顺序与责任
 
 1. Luna Deep `acceptance_evidence`：版本字段、平台版本格式、锁文件与打包路径收口；针对性检查。

@@ -15,12 +15,15 @@ const fixtureFiles = new Map([
   ["/app/throw.cjs", "throw new Error('source path fixture');"],
 ]);
 
-function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply } = {}) {
+function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", href, sourceOrigin, serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply, syncBlock, failPagehideOnce = false, captureBootstrapError = false } = {}) {
   const requests = [];
   const importMaps = [];
   const sockets = [];
   const pageListeners = new Map();
+  const pageHref = href || `${origin}/app/index.html`;
+  const pageUrl = new URL(pageHref);
   let context;
+  let shouldFailPagehide = failPagehideOnce;
   let remainingWebSocketThrows = webSocketThrows;
   function resolve(specifier, parent) {
     if (specifier === "#native-fs") return "node:fs";
@@ -45,18 +48,26 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
   }
   function ipcResponse(request, value) {
     if (value && typeof value === "object" && typeof value.t === "string") {
-      return { ...value, rid: request.rid, ...(value.id === undefined && request.id !== undefined ? { id: request.id } : {}) };
+      return { ...value, ...(value.id === undefined && request.id !== undefined ? { id: request.id } : {}) };
     }
-    return { t: "result", rid: request.rid, ...(request.id === undefined ? {} : { id: request.id }), code: 0, data: value };
+    return { t: "result", ...(request.id === undefined ? {} : { id: request.id }), code: 0, data: value };
   }
-  const webviewListeners = new Map();
-  const mockWebview = { addEventListener(name, listener) { webviewListeners.set(name, listener); } };
-  const mockIpc = windowsIpc ? { postMessage(text) {
+  const ipcHandler = ipcReply || windowsIpc;
+  const mockIpc = ipcHandler ? { postMessage(text) {
     const request = JSON.parse(text);
-    requests.push({ transport: "ipc", ...request });
-    Promise.resolve(windowsIpc(request)).then((value) => {
+    const requestRecord = { transport: "ipc", ...request };
+    requests.push(requestRecord);
+    const handled = request.t === "channelAttach"
+      ? { t: "channelAttached", id: request.id, accepted: true }
+      : ipcHandler(request);
+    Promise.resolve(handled).then((value) => {
       const response = ipcResponse(request, value);
-      webviewListeners.get("message")?.({ data: JSON.stringify(response) });
+      requestRecord.replyAccepted = context.__niva_ipc_reply?.({
+        sessionId: request.sessionId,
+        rid: request.rid,
+        sourceOrigin: context.__niva_source_origin || context.location.origin,
+        response,
+      }) === true;
     });
   } } : undefined;
   class TestXHR {
@@ -66,6 +77,7 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
       const envelope = JSON.parse(text);
       const [id, method, args] = envelope.request;
       requests.push({ method, args, async: this.async, token: envelope.token, url: this.url });
+      if (syncBlock) syncBlock({ id, method, args, url: this.url });
       let data;
       if (method === "module.resolve") data = resolve(args[0], args[1]);
       else if (method === "module.load") {
@@ -102,7 +114,8 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
     console: consoleImpl,
     ...(ErrorConstructor ? { Error: ErrorConstructor } : {}),
     document,
-    location: { pathname: "/app/index.html", href: `${origin}/app/index.html`, origin },
+    location: { pathname: pageUrl.pathname, href: pageHref, origin: pageUrl.origin },
+    ...(sourceOrigin ? { __niva_source_origin: sourceOrigin } : {}),
     __niva_server_origin: iframeParent ? undefined : serverOrigin,
     __niva_window_id: iframeParent ? undefined : 4,
     __niva_node_bootstrap: iframeParent ? undefined : {
@@ -111,13 +124,12 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
       process: { version: "v0.10.0-beta.1", versions: { niva: "0.10.0-beta.1" }, argv: [], env: {}, stdioIsTTY: { stdin: true, stdout: false, stderr: true } },
     },
     __niva_runtime_config: iframeParent ? undefined : { injectCommonJs, injectEsm, nonce: "test-nonce" },
-    webkit: ipcReply ? { messageHandlers: { nivaReply: { postMessage(text) {
-      const request = JSON.parse(text);
-      requests.push({ transport: "ipc", ...request });
-      return Promise.resolve(ipcReply(request)).then((value) => JSON.stringify(ipcResponse(request, value)));
-    } } } } : undefined,
-    ...(windowsIpc ? { chrome: { webview: mockWebview }, ipc: mockIpc } : {}),
+    ...(mockIpc ? { ipc: mockIpc } : {}),
     addEventListener(name, listener) {
+      if (name === "pagehide" && shouldFailPagehide) {
+        shouldFailPagehide = false;
+        throw new Error("fixture pagehide registration failed");
+      }
       const listeners = pageListeners.get(name) || [];
       listeners.push(listener);
       pageListeners.set(name, listeners);
@@ -158,13 +170,22 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
   } else {
     context.parent = iframeParent?.context || context;
     context.top = iframeParent?.context?.top || context.parent;
+    if (iframeParent?.context) {
+      const frames = iframeParent.context.frames || (iframeParent.context.frames = []);
+      frames.push(context);
+    }
   }
   if (local && !iframeParent) {
     context.__niva_ws_url = "wss://niva.test/__niva_ws";
     context.__niva_token = "fixture-secret";
   }
-  vm.runInContext(bootstrapSource, context, { filename: "bootstrap.js" });
-  return { context, requests, importMaps, sockets, fakeTimerHandles, initialMap, originalCaptureStackTrace };
+  let bootstrapError;
+  try { vm.runInContext(bootstrapSource, context, { filename: "bootstrap.js" }); }
+  catch (error) {
+    if (!captureBootstrapError) throw error;
+    bootstrapError = error;
+  }
+  return { context, requests, importMaps, sockets, fakeTimerHandles, initialMap, originalCaptureStackTrace, pageListeners, bootstrapError };
 }
 
 const bootCommonJsPage = () => bootPage({ injectCommonJs: true, injectEsm: false });
@@ -198,6 +219,71 @@ test("base Native page initializes without injecting CommonJS globals", () => {
   assert.equal(context.Niva.tty.isatty(-1), false);
   assert.throws(() => new context.Niva.tty.ReadStream(0), { code: "ENOTSUP" });
   assert.throws(() => new context.Niva.tty.WriteStream(1), { code: "ENOTSUP" });
+});
+
+test("root-path CommonJS bootstrap avoids sync cwd until a relative path needs it", () => {
+  const { context, requests } = bootPage({
+    injectCommonJs: true,
+    injectEsm: false,
+    href: "https://niva.test/",
+    syncBlock({ method }) {
+      if (method === "process.currentDir") throw new Error("CSP blocked __niva_sync by connect-src");
+    },
+  });
+
+  assert.equal(context.location.pathname, "/");
+  assert.equal(context.Niva.runtimeConfig.injectCommonJs, true);
+  assert.equal(context.Niva.__runtimeBootstrap, true);
+  assert.equal(typeof context.require, "function");
+  assert.equal(requests.some((request) => request.method === "process.currentDir"), false,
+    "installing absolute global module paths must not query cwd during document bootstrap");
+  assert.equal(context.Niva.path.resolve("/"), "/");
+  assert.equal(requests.some((request) => request.method === "process.currentDir"), false,
+    "resolving an absolute path must not query cwd");
+
+  assert.throws(() => context.Niva.path.resolve("relative"), /CSP blocked __niva_sync/,
+    "relative paths still need the Native process cwd and surface a blocked sync request");
+  assert.equal(requests.filter((request) => request.method === "process.currentDir").length, 1);
+  assert.equal(context.Niva.__runtimeBootstrap, true,
+    "a later path operation failure must not change the successfully completed bootstrap marker");
+});
+
+test("Windows path resolution queries cwd only for rooted or drive-relative paths", () => {
+  const { context, requests } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    syncBlock({ method }) {
+      if (method === "process.currentDir") throw new Error("CSP blocked __niva_sync by connect-src");
+    },
+  });
+  context.navigator = { platform: "Win32" };
+  const windowsPath = context[Symbol.for("niva.node-compat.runtime")].createPathModule();
+
+  assert.equal(windowsPath.resolve("C:\\absolute\\file"), "C:\\absolute\\file");
+  assert.equal(windowsPath.resolve("\\\\server\\share\\file"), "\\\\server\\share\\file");
+  assert.equal(requests.some((request) => request.method === "process.currentDir"), false);
+  assert.throws(() => windowsPath.resolve("\\rooted"), /CSP blocked __niva_sync/);
+  assert.throws(() => windowsPath.resolve("C:drive-relative"), /CSP blocked __niva_sync/);
+  assert.equal(requests.filter((request) => request.method === "process.currentDir").length, 2);
+});
+
+test("failed page initialization stays retryable until the bootstrap reaches completion", () => {
+  const { context, pageListeners, bootstrapError } = bootPage({
+    injectCommonJs: true,
+    injectEsm: false,
+    failPagehideOnce: true,
+    captureBootstrapError: true,
+  });
+
+  assert.match(bootstrapError?.message || "", /pagehide registration failed/);
+  assert.notEqual(context.Niva.__runtimeBootstrap, true,
+    "an initialization exception must not leave the completion guard set");
+  assert.equal(pageListeners.has("pagehide"), false);
+
+  vm.runInContext(bootstrapSource, context, { filename: "bootstrap-retry.js" });
+  assert.equal(context.Niva.__runtimeBootstrap, true);
+  assert.equal(pageListeners.get("pagehide")?.length, 1,
+    "a retry after partial initialization must install the remaining lifecycle hook");
 });
 
 test("constants builtin aliases fs.constants and exposes host open flags", () => {
@@ -283,39 +369,140 @@ test("cross-origin iframe receives no parent bridge credentials or process metad
   assert.equal(child.context.Niva.bridge.isTrustedLocal(), false);
 });
 
-test("ordinary async calls use IPC while an available WebSocket optimizes streams", async () => {
+test("API calls stay on IPC while an available WebSocket only attaches stream tickets", async () => {
   const warnings = [];
   const { context, sockets, requests } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     consoleImpl: { warn: (message) => warnings.push(message), error() {} },
-    ipcReply(request) { return { t: "result", id: request.id, code: 0, data: { method: request.method } }; },
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "fs.readStream") {
+        return { t: "channelOpened", id: request.id, capability: "ws-capability" };
+      }
+      if (request.t === "channelAttach") return { t: "channelAttached", id: request.id, accepted: true };
+      return { t: "result", id: request.id, code: 0, data: { method: request.method } };
+    },
   });
   const socket = sockets[0];
   socket.open();
   const helloFrame = socket.sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "hello");
   assert.equal(helloFrame.sessionId, context.Niva.bridge.sessionId);
+  assert.equal(helloFrame.v, 2);
   const unaryResult = await context.Niva.bridge.call("window.getTitle", []);
   assert.deepEqual(JSON.parse(JSON.stringify(unaryResult)), { method: "window.getTitle" });
   assert.equal(requests[0].transport, "ipc");
   assert.equal(requests[0].method, "window.getTitle");
+  assert.equal(requests[0].t, "api_call");
   assert.equal(socket.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t === "call").length, 0);
 
   const stream = context.Niva.bridge.stream("fs.readStream", []);
   const streamResult = stream.promise;
-  await Promise.resolve();
-  const streamCallFrame = socket.sent.map((text) => JSON.parse(text)).filter((frame) => frame.t === "call").at(-1);
-  assert.ok(streamCallFrame);
-  assert.equal(streamCallFrame.method, "fs.readStream");
-  socket.receive(JSON.stringify({ t: "result", id: stream.id, code: 0, data: "stream done" }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const streamRequest = requests.find((request) => request.method === "fs.readStream");
+  assert.equal(streamRequest.t, "api_call");
+  const attach = socket.sent.map((text) => JSON.parse(text)).find((frame) => frame.t === "attach");
+  assert.deepEqual(JSON.parse(JSON.stringify(attach)), {
+    t: "attach", id: stream.id, sessionId: context.Niva.bridge.sessionId, capability: "ws-capability",
+  });
+  assert.equal(Object.hasOwn(attach, "method"), false);
+  socket.receive(JSON.stringify({ t: "attached", id: stream.id, sessionId: context.Niva.bridge.sessionId }));
+  socket.receive(JSON.stringify({
+    t: "channelData", id: stream.id, seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: stream.id, code: 0, data: "stream done" }) },
+  }));
   assert.equal(await streamResult, "stream done");
+  assert.ok(socket.sent.map((frame) => JSON.parse(frame)).some((frame) => frame.t === "ack" && frame.id === stream.id && frame.seq === 1));
+  assert.deepEqual(requests.filter((request) => request.method).map((request) => request.t), ["api_call", "api_call"]);
 
   assert.equal(context.Niva.bridge.callSync("process.currentDir", []), "/app");
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /synchronous XHR/);
   assert.equal(context.Niva.bridge.callSync("process.currentDir", []), "/app");
   assert.equal(warnings.length, 1, "the sync warning is emitted once per method per realm");
+});
+
+test("native stream wrappers accept small direct results without attaching a data lane", async () => {
+  const { context, requests, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.execStream") {
+        return { t: "channelOpened", id: request.id, capability: "owner-capability" };
+      }
+      if (request.t === "api_call" && request.method === "process.signal") {
+        return { t: "result", id: request.id, code: 0, data: true };
+      }
+      return { t: "heartbeatAck", sessionId: request.sessionId };
+    },
+  });
+  const owner = context.Niva.bridge.stream("process.execStream", ["helper"]);
+  owner.promise.catch(() => {});
+  await new Promise((resolve) => setImmediate(resolve));
+  const runtime = context[Symbol.for("niva.node-compat.runtime")];
+  const control = runtime.streamRelated(context.Niva, owner, "process.signal", [owner.id, "SIGTERM"]);
+  assert.equal(await control.promise, true);
+  const signal = requests.find((request) => request.method === "process.signal");
+  assert.equal(signal.t, "api_call");
+  assert.equal(requests.some((request) => request.t === "channelAttach" && request.id === signal.id), false);
+  assert.equal(sockets[0].sent.map((frame) => JSON.parse(frame)).some((frame) => frame.id === signal.id), false);
+  owner.cancel();
+});
+
+test("IPC reply settlement checks the requested session, rid, and source origin", async () => {
+  let callRequest;
+  const { context } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      callRequest = request;
+      return new Promise(() => {});
+    },
+  });
+  const result = context.Niva.bridge.call("window.getTitle", []);
+  await new Promise((resolve) => setImmediate(resolve));
+  const sessionId = context.Niva.bridge.sessionId;
+  const sourceOrigin = context.location.origin;
+  const response = { t: "result", id: callRequest.id, code: 0, data: "settled" };
+  const envelope = { sessionId, rid: callRequest.rid, sourceOrigin, response };
+  assert.equal(context.__niva_ipc_reply({ ...envelope, sessionId: "other-session" }), false);
+  assert.equal(context.__niva_ipc_reply({ ...envelope, rid: callRequest.rid + 1 }), false);
+  assert.equal(context.__niva_ipc_reply({ ...envelope, sourceOrigin: "https://attacker.test" }), false);
+  assert.equal(context.__niva_ipc_reply({ ...envelope, sourceOrigin: "null" }), false);
+  assert.equal(context.__niva_ipc_reply(envelope), true);
+  assert.equal(await result, "settled");
+  assert.equal(context.__niva_ipc_reply(envelope), false, "a settled rid cannot be replayed");
+});
+
+test("opaque packaged origins require the matching Native-injected app origin", async () => {
+  const { context, requests } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    origin: "null",
+    href: "niva-12345678-1234-1234-1234-123456789abc://app/index.html",
+    sourceOrigin: "niva-12345678-1234-1234-1234-123456789abc://app",
+    ipcReply(request) { return { t: "result", id: request.id, code: 0, data: "custom-origin" }; },
+  });
+  assert.equal(await context.Niva.bridge.call("window.getTitle", []), "custom-origin");
+  assert.equal(requests.find((request) => request.t === "api_call").sourceOrigin, undefined, "page metadata is not sent as authorization input");
+
+  const rejected = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    origin: "null",
+    href: "niva-12345678-1234-1234-1234-123456789abc://app/index.html",
+    sourceOrigin: "niva-12345678-1234-1234-1234-123456789abc://other",
+    ipcReply() { return null; },
+  });
+  await assert.rejects(rejected.context.Niva.bridge.call("window.getTitle", []), { code: "ERR_NIVA_IPC_UNAVAILABLE" });
+  assert.equal(rejected.requests.length, 0);
+});
+
+test("async reply handling does not depend on platform-specific WebView reply handlers", () => {
+  assert.doesNotMatch(bootstrapSource, /webkit\.messageHandlers\.nivaReply|chrome\.webview/);
 });
 
 test("sync compatibility aliases warn once by their public Node method name", () => {
@@ -365,7 +552,7 @@ test("CommonJS module resolve and load warnings each emit once with their RPC na
   context.require("./cycle-b.cjs");
   context.require.resolve("./cycle-a.cjs");
   const names = warnings.map((message) => /^Niva synchronous compatibility API '([^']+)'/.exec(message)?.[1]);
-  assert.deepEqual(names, ["path.resolve", "module.resolve", "module.load"]);
+  assert.deepEqual(names, ["module.resolve", "module.load"]);
 });
 
 test("callSyncAs and related streams delegate through the current bridge methods", () => {
@@ -413,7 +600,8 @@ test("a stream started before WebSocket opens stays on IPC; later streams may us
     injectCommonJs: false,
     injectEsm: false,
     ipcReply(request) {
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "channelAttach") return { t: "channelAttached", id: request.id, accepted: true };
       if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
       throw new Error(`Unexpected IPC message ${request.t}`);
@@ -421,7 +609,8 @@ test("a stream started before WebSocket opens stays on IPC; later streams may us
   });
   const first = context.Niva.bridge.stream("fs.readStream", []);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requests.find((request) => request.t === "call").transport, "ipc");
+  assert.equal(requests.find((request) => request.t === "api_call").transport, "ipc");
+  assert.ok(requests.some((request) => request.t === "channelAttach" && request.id === first.id));
   assert.equal(sockets.length, 1);
   sockets[0].open();
   context.__niva_native_frame({
@@ -435,11 +624,127 @@ test("a stream started before WebSocket opens stays on IPC; later streams may us
   const second = context.Niva.bridge.stream("fs.readStream", []);
   const secondResult = second.promise;
   await new Promise((resolve) => setImmediate(resolve));
-  const wsCall = sockets[0].sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "call");
+  const wsCall = requests.find((request) => request.t === "api_call" && request.id === second.id);
   assert.equal(wsCall.method, "fs.readStream");
-  sockets[0].receive(JSON.stringify({ t: "result", id: second.id, code: 0, data: "ws stream done" }));
+  const wsAttach = sockets[0].sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "attach" && frame.id === second.id);
+  assert.equal(wsAttach.capability, "fixture-capability");
+  sockets[0].receive(JSON.stringify({ t: "attached", id: second.id, sessionId: context.Niva.bridge.sessionId }));
+  sockets[0].receive(JSON.stringify({
+    t: "channelData", id: second.id, seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: second.id, code: 0, data: "ws stream done" }) },
+  }));
   assert.equal(await secondResult, "ws stream done");
-  assert.equal(requests.filter((request) => request.t === "call").length, 1);
+  assert.equal(requests.filter((request) => request.t === "api_call").length, 2);
+});
+
+test("explicit WS attach rejection reuses the existing ticket on IPC without replaying the API", async () => {
+  const { context, requests, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "same-ticket" };
+      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
+  });
+  const socket = sockets[0];
+  socket.open();
+  const stream = context.Niva.bridge.stream("fs.readStream", []);
+  const settled = stream.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  socket.receive(JSON.stringify({
+    t: "attachError", id: stream.id, sessionId: context.Niva.bridge.sessionId,
+    code: "ERR_NIVA_WS_ATTACH", message: "not attached",
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const apiCalls = requests.filter((request) => request.t === "api_call");
+  const ipcAttach = requests.find((request) => request.t === "channelAttach");
+  assert.equal(apiCalls.length, 1);
+  assert.equal(ipcAttach.id, stream.id);
+  assert.equal(ipcAttach.capability, "same-ticket");
+  assert.deepEqual(socket.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t !== "hello"), [
+    { t: "attach", id: stream.id, sessionId: context.Niva.bridge.sessionId, capability: "same-ticket" },
+  ]);
+  context.__niva_native_frame({
+    sessionId: context.Niva.bridge.sessionId,
+    id: stream.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: stream.id, code: 0, data: "ipc fallback" }) },
+  });
+  assert.equal(await settled, "ipc fallback");
+});
+
+test("WS binary data uses the outer sequence for its ACK and terminal result", async () => {
+  const { context, requests, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "binary-capability" };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
+  });
+  const socket = sockets[0];
+  socket.open();
+  const chunks = [];
+  const stream = context.Niva.bridge.stream("fs.handle", [3, "read", { length: 3 }], {
+    onChunk: (chunk) => chunks.push(...chunk),
+  });
+  const settled = stream.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  socket.receive(JSON.stringify({ t: "attached", id: stream.id, sessionId: context.Niva.bridge.sessionId }));
+
+  const binary = vm.runInContext("new ArrayBuffer(21)", context);
+  const view = new DataView(binary);
+  view.setUint8(0, 2);
+  view.setUint32(6, stream.id);
+  view.setUint32(14, 1);
+  new Uint8Array(binary, 18).set([4, 5, 6]);
+  socket.receive(binary);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(chunks, [4, 5, 6]);
+
+  socket.receive(JSON.stringify({
+    t: "channelData", id: stream.id, seq: 2,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: stream.id, code: 0, data: { bytesRead: 3 } }) },
+  }));
+  assert.deepEqual(JSON.parse(JSON.stringify(await settled)), { bytesRead: 3 });
+  const acks = socket.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t === "ack");
+  assert.deepEqual(acks.map((frame) => frame.seq), [1, 2]);
+  assert.equal(requests.some((request) => request.t === "channelAck"), false, "WS receives ACKs on the same lane");
+});
+
+test("WS binary frames with a mismatched outer sequence are rejected and never ACKed", async () => {
+  const { context, sockets } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "bad-sequence" };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      throw new Error(`Unexpected IPC message ${request.t}`);
+    },
+  });
+  const socket = sockets[0];
+  socket.open();
+  const stream = context.Niva.bridge.stream("fs.handle", [3, "read", { length: 3 }]);
+  const rejected = assert.rejects(stream.promise, { code: "ERR_NIVA_CHANNEL_SEQUENCE" });
+  await new Promise((resolve) => setImmediate(resolve));
+  socket.receive(JSON.stringify({ t: "attached", id: stream.id, sessionId: context.Niva.bridge.sessionId }));
+  const binary = vm.runInContext("new ArrayBuffer(19)", context);
+  const view = new DataView(binary);
+  view.setUint8(0, 2);
+  view.setUint32(6, stream.id);
+  view.setUint32(14, 2);
+  new Uint8Array(binary, 18).set([9]);
+  socket.receive(binary);
+  await rejected;
+  const frames = socket.sent.map((frame) => typeof frame === "string" ? JSON.parse(frame) : null).filter(Boolean);
+  assert.equal(frames.some((frame) => frame.t === "ack"), false);
+  assert.ok(frames.some((frame) => frame.t === "cancel" && frame.id === stream.id));
 });
 
 test("related resource calls keep their IPC owner after WebSocket connects", async () => {
@@ -448,7 +753,9 @@ test("related resource calls keep their IPC owner after WebSocket connects", asy
     injectEsm: false,
     fakeTimers: true,
     ipcReply(request) {
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "api_call" && request.method === "fs.openHandle") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "api_call" && request.method === "fs.handleControl") return { t: "result", id: request.id, code: 0, data: 0 };
+      if (request.t === "channelAttach") return { t: "channelAttached", id: request.id, accepted: true };
       if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
       throw new Error(`Unexpected IPC message ${request.t}`);
@@ -458,28 +765,30 @@ test("related resource calls keep their IPC owner after WebSocket connects", asy
   const owner = context.Niva.bridge.stream("fs.openHandle", ["/tmp/owned"]);
   owner.promise.catch(() => {});
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requests.find((request) => request.t === "call").transport, "ipc");
+  assert.equal(requests.find((request) => request.t === "api_call").transport, "ipc");
 
   sockets[0].open();
-  const control = runtime.streamRelated(context.Niva, owner, "fs.handle", ["handle-id", "read", { length: 1 }]);
+  const control = runtime.streamRelated(context.Niva, owner, "fs.handleControl", ["handle-id", "stat", {}]);
   control.promise.catch(() => {});
   await new Promise((resolve) => setImmediate(resolve));
 
-  const calls = requests.filter((request) => request.t === "call");
+  const calls = requests.filter((request) => request.t === "api_call");
   assert.deepEqual(calls.map((request) => request.transport), ["ipc", "ipc"]);
-  assert.deepEqual(calls.map((request) => request.method), ["fs.openHandle", "fs.handle"]);
+  assert.deepEqual(calls.map((request) => request.method), ["fs.openHandle", "fs.handleControl"]);
   assert.equal(sockets[0].sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.t === "call").length, 0);
+  assert.equal(await control.promise, 0, "small related API results do not open a data channel");
 
   owner.cancel();
   control.cancel();
 });
 
-test("related calls fail on their pinned WebSocket after that connection closes", async () => {
+test("related calls fail locally after their resource owner closes", async () => {
   const { context, requests, sockets } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     ipcReply(request) {
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "ws-capability" };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
       throw new Error(`Unexpected IPC message ${request.t}`);
     },
@@ -488,16 +797,16 @@ test("related calls fail on their pinned WebSocket after that connection closes"
   socket.open();
   const owner = context.Niva.bridge.stream("process.execStream", ["helper"]);
   const ownerError = owner.promise.then(() => null, (error) => error);
-  const wsCall = socket.sent.map((frame) => JSON.parse(frame)).find((frame) => frame.t === "call");
+  const wsCall = requests.find((request) => request.t === "api_call");
   assert.equal(wsCall.method, "process.execStream");
+  await new Promise((resolve) => setImmediate(resolve));
+  socket.receive(JSON.stringify({ t: "attached", id: owner.id, sessionId: context.Niva.bridge.sessionId }));
 
   socket.close();
   assert.equal((await ownerError).code, "ECONNRESET");
   const runtime = context[Symbol.for("niva.node-compat.runtime")];
-  const control = runtime.streamRelated(context.Niva, owner, "process.signal", [owner.id, "SIGTERM"]);
-  const controlError = await control.promise.then(() => null, (error) => error);
-  assert.equal(controlError.code, "ECONNRESET");
-  assert.equal(requests.filter((request) => request.t === "call").length, 0, "closed WS work must not migrate to IPC");
+  assert.throws(() => runtime.streamRelated(context.Niva, owner, "process.signal", [owner.id, "SIGTERM"]), { code: "ERR_NIVA_STREAM_OWNER_CLOSED" });
+  assert.equal(requests.filter((request) => request.t === "api_call").length, 1, "closed resource owners do not issue control API calls");
 });
 
 test("internal route helpers honor monkey-patched bridge methods without exposing route choice", () => {
@@ -527,11 +836,11 @@ test("WebSocket disconnect fails WS streams but preserves concurrent IPC calls a
     injectEsm: false,
     fakeTimers: true,
     ipcReply(request) {
-      if (request.t === "call" && request.method === "slow.ipc") {
+      if (request.t === "api_call" && request.method === "slow.ipc") {
         return new Promise((resolve) => { finishUnary = () => resolve({ t: "result", id: request.id, code: 0, data: "ipc survived" }); });
       }
-      if (request.t === "call" && request.method === "fs.readStream") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
-      if (request.t === "call") return { t: "result", id: request.id, code: 0, data: { method: request.method } };
+      if (request.t === "api_call" && request.method === "fs.readStream") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "api_call") return { t: "result", id: request.id, code: 0, data: { method: request.method } };
       if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
       throw new Error(`Unexpected IPC message ${request.t}`);
@@ -568,7 +877,7 @@ test("WebSocket disconnect fails WS streams but preserves concurrent IPC calls a
   const fallbackStream = context.Niva.bridge.stream("fs.readStream", []);
   const fallbackSettled = fallbackStream.promise;
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requests.filter((request) => request.transport === "ipc" && request.t === "call").length, 4);
+  assert.equal(requests.filter((request) => request.transport === "ipc" && request.t === "api_call").length, 5);
   context.__niva_native_frame({
     sessionId: context.Niva.bridge.sessionId,
     id: fallbackStream.id,
@@ -579,14 +888,14 @@ test("WebSocket disconnect fails WS streams but preserves concurrent IPC calls a
   assert.equal(sockets.length, 1, "the failed WebSocket is not reconnected");
 });
 
-test("Windows postMessage IPC opens a Channel and native push is routed through rid-correlated ACKs", async () => {
+test("standard Wry IPC opens a Channel and native push is routed through rid-correlated ACKs", async () => {
   const { context, requests } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     webSocketThrows: 1,
     windowsIpc(request) {
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
       if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
       if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
@@ -598,7 +907,7 @@ test("Windows postMessage IPC opens a Channel and native push is routed through 
   const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((request) => request.t === "channelPoll").length, 0, "Native pushes frames without a polling loop");
-  const open = requests.find((request) => request.t === "call");
+  const open = requests.find((request) => request.t === "api_call");
   assert.equal(typeof open.rid, "number");
   assert.equal(open.token, "fixture-secret");
 
@@ -626,30 +935,25 @@ test("Windows postMessage IPC opens a Channel and native push is routed through 
 });
 
 test("main-frame Channel push reaches only the matching same-origin child session and decodes binary frames", async () => {
+  const nativeRequests = [];
   const parent = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     webSocketThrows: 1,
     ipcReply(request) {
+      nativeRequests.push(request);
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "child-capability" };
       if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
       return { t: "heartbeatAck", sessionId: request.sessionId };
     },
   });
-  const childRequests = [];
   const child = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     webSocketThrows: 1,
     iframeParent: parent,
-    ipcReply(request) {
-      childRequests.push(request);
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "child-capability" };
-      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
-      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
-      throw new Error(`Unexpected child IPC message ${request.t}`);
-    },
   });
   const crossOrigin = bootPage({
     injectCommonJs: false,
@@ -662,24 +966,28 @@ test("main-frame Channel push reaches only the matching same-origin child sessio
   let crossOriginMessageCount = 0;
   crossOrigin.context.addEventListener("message", () => { crossOriginMessageCount += 1; });
   parent.context.frames = [child.context, crossOrigin.context];
+  // vm contexts do not model WindowProxy identity, so register the exact same-origin target explicitly.
+  assert.equal(parent.context.__niva_register_frame_session(child.context.Niva.bridge.sessionId, child.context, "register"), true);
 
   const chunks = [];
   const stream = child.context.Niva.bridge.stream("fs.readStream", [], { onChunk: (bytes) => chunks.push(...bytes) });
   const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
   await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(nativeRequests.some((request) => request.t === "api_call" && request.sessionId === child.context.Niva.bridge.sessionId));
+  assert.ok(parent.requests.some((request) => request.t === "channelAttach" && request.sessionId === child.context.Niva.bridge.sessionId));
   const bytes = Buffer.from([0, 1, 127, 128, 255]);
   const binaryFrame = Buffer.alloc(18 + bytes.length);
-  binaryFrame[0] = 1;
+  binaryFrame[0] = 2;
   binaryFrame[1] = 3;
   binaryFrame.writeUInt32BE(stream.id, 6);
   binaryFrame.writeUInt32BE(1, 14);
   bytes.copy(binaryFrame, 18);
-  parent.context.__niva_native_frame({
+  assert.equal(parent.context.__niva_native_frame({
     sessionId: child.context.Niva.bridge.sessionId,
     id: stream.id,
     seq: 1,
     frame: { t: "binary", data: binaryFrame.toString("base64") },
-  });
+  }), true);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(chunks, Array.from(bytes));
   assert.equal(crossOriginMessageCount, 0, "the native frame relay skips another origin");
@@ -691,9 +999,10 @@ test("main-frame Channel push reaches only the matching same-origin child sessio
     frame: { t: "text", data: JSON.stringify({ t: "result", id: stream.id, code: 0, message: "ok", data: "done" }) },
   });
   assert.equal((await settled).value, "done");
-  assert.deepEqual(childRequests.filter((request) => request.t === "channelAck").map((request) => request.seq), [1, 2]);
-  assert.equal(childRequests[0].sessionId, child.context.Niva.bridge.sessionId);
-  assert.equal(childRequests[0].token, "fixture-secret");
+  assert.deepEqual(nativeRequests.filter((request) => request.t === "channelAck").map((request) => request.seq), [1, 2]);
+  assert.equal(nativeRequests[0].sessionId, child.context.Niva.bridge.sessionId);
+  assert.equal(nativeRequests[0].token, "fixture-secret");
+  assert.ok(nativeRequests.some((request) => request.t === "api_call" && request.sessionId === child.context.Niva.bridge.sessionId));
 });
 
 test("Native IPC window events relay recursively only through exact same-origin frames", async () => {
@@ -731,17 +1040,16 @@ test("Native IPC window events relay recursively only through exact same-origin 
   });
 });
 
-test("native output arriving before channelOpened is bounded and acknowledged after capability setup", async () => {
-  let openChannel;
+test("IPC channel data is accepted only after the API ticket and channel attachment", async () => {
   const requests = [];
-  const { context } = bootPage({
+  const { context, requests: mockRequests } = bootPage({
     injectCommonJs: false,
     injectEsm: false,
     fakeTimers: true,
     webSocketThrows: 1,
     ipcReply(request) {
       requests.push(request);
-      if (request.t === "call") return new Promise((resolve) => { openChannel = resolve; });
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "fixture-capability" };
       if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
       if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
       throw new Error(`Unexpected IPC message ${request.t}`);
@@ -751,19 +1059,19 @@ test("native output arriving before channelOpened is bounded and acknowledged af
   const stream = context.Niva.bridge.stream("fs.readStream", [], { onEvent: (name) => events.push(name) });
   const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(typeof openChannel, "function");
+  const api = mockRequests.find((request) => request.t === "api_call");
+  const attach = mockRequests.find((request) => request.t === "channelAttach");
+  assert.ok(api && attach);
+  assert.ok(mockRequests.indexOf(api) < mockRequests.indexOf(attach), "the channel ticket is created before the data lane attaches");
   assert.equal(context.__niva_native_frame({
     sessionId: context.Niva.bridge.sessionId,
     id: stream.id,
     seq: 1,
     frame: { t: "text", data: JSON.stringify({ t: "event", id: stream.id, seq: 1, name: "ready", data: {} }) },
   }), true);
-  assert.equal(requests.some((request) => request.t === "channelAck"), false, "the frame waits until its capability arrives");
-
-  openChannel({ t: "channelOpened", id: stream.id, capability: "late-capability" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(events, ["ready"]);
-  assert.ok(requests.some((request) => request.t === "channelAck" && request.capability === "late-capability"));
+  assert.ok(requests.some((request) => request.t === "channelAck" && request.capability === "fixture-capability"));
   context.__niva_native_frame({
     sessionId: context.Niva.bridge.sessionId,
     id: stream.id,
@@ -776,7 +1084,7 @@ test("native output arriving before channelOpened is bounded and acknowledged af
 test("IPC stream sends base64 full binary frames in order and bounds the queued backlog", async () => {
   const sends = [];
   const reply = (request) => {
-    if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "ipc-capability" };
+    if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "ipc-capability" };
     if (request.t === "channelSend") return new Promise((resolve) => sends.push({ request, resolve }));
     if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
     if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
@@ -808,7 +1116,7 @@ test("IPC stream sends base64 full binary frames in order and bounds the queued 
     assert.equal(request.token, "fixture-secret");
     assert.equal(request.capability, "ipc-capability");
     const frame = Buffer.from(request.frame, "base64");
-    assert.equal(frame[0], 1);
+    assert.equal(frame[0], 2);
     assert.equal(frame.readUInt32BE(14), index + 1);
     assert.equal(!!(frame[1] & 2), index === 2);
     const expectedLength = index < 2 ? 16384 : 40000 - 32768;
@@ -834,7 +1142,7 @@ test("retryable IPC backpressure retries the same frame and sequence before cont
     webSocketThrows: 1,
     ipcReply(request) {
       requests.push(request);
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "retry-capability" };
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "retry-capability" };
       if (request.t === "channelSend") {
         sends.push(request);
         const seq = Buffer.from(request.frame, "base64").readUInt32BE(14);
@@ -876,7 +1184,7 @@ test("a non-retryable IPC send rejection fails and cancels the stream", async ()
     webSocketThrows: 1,
     ipcReply(request) {
       requests.push(request);
-      if (request.t === "call") return { t: "channelOpened", id: request.id, capability: "reject-capability" };
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "reject-capability" };
       if (request.t === "channelSend") return { t: "channelError", id: request.id, seq: Buffer.from(request.frame, "base64").readUInt32BE(14), code: "EPIPE", message: "send closed", retryable: false };
       if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
       return { t: "heartbeatAck", sessionId: request.sessionId };

@@ -195,11 +195,11 @@ class Harness:
         if name in {"smoke-error", "command-error", "dialog-error", "main-reloaded-error", "main-restored-error", "secondary-error", "headless-error"}:
             raise SmokeError(f"page reported {name}: {frame.get('data')}")
 
-    def _read_new_frame(self, timeout: float) -> dict:
+    def _read_new_frame(self, timeout: float, waiting_for: str = "Niva output") -> dict:
         try:
             frame = self.frames.get(timeout=timeout)
         except queue.Empty as error:
-            raise SmokeError(f"timed out after {timeout:.1f}s waiting for Niva output") from error
+            raise SmokeError(f"timed out after {timeout:.1f}s waiting for {waiting_for}") from error
         self._check_error(frame)
         if frame.get("event") == "eof":
             raise SmokeError(f"fixture stdout closed (status {self.process.poll()})")
@@ -224,7 +224,7 @@ class Harness:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise SmokeError(f"timed out after {timeout:.1f}s waiting for message {name!r}")
-            frame = self._read_new_frame(remaining)
+            frame = self._read_new_frame(remaining, f"fixture message {name!r}")
             if frame.get("event") == "message" and frame.get("name") == name:
                 return frame
             self.backlog.append(frame)
@@ -239,7 +239,7 @@ class Harness:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise SmokeError(f"timed out after {timeout:.1f}s waiting for one of {sorted(names)}")
-            frame = self._read_new_frame(remaining)
+            frame = self._read_new_frame(remaining, f"one of fixture messages {sorted(names)}")
             if frame.get("event") == "message" and frame.get("name") in names:
                 return frame
             self.backlog.append(frame)
@@ -285,6 +285,116 @@ class ProgressSink:
         self.url = f"http://127.0.0.1:{self._server.server_address[1]}/progress"
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=2)
+
+
+class NavigationFixtureServer:
+    """Serve the history page and its narrow report/command control channel."""
+
+    def __init__(self, document: Path):
+        self.document = document.read_bytes()
+        self._messages: queue.Queue[dict] = queue.Queue()
+        self._commands: queue.Queue[dict] = queue.Queue()
+        server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                path = urlsplit(self.path).path
+                if path == "/command":
+                    try:
+                        command = server._commands.get_nowait()
+                    except queue.Empty:
+                        self.send_response(204)
+                        self.send_header("Cache-Control", "no-store")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                    else:
+                        body = json.dumps(command, separators=(",", ":")).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Cache-Control", "no-store")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    return
+                if path != "/secondary.html":
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(server.document)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(server.document)
+
+            def do_POST(self):
+                path = urlsplit(self.path).path
+                if path not in {"/report", "/probe"}:
+                    self.send_error(404)
+                    return
+                try:
+                    content_length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < content_length <= 16 * 1024:
+                        raise ValueError("invalid report size")
+                    message = json.loads(self.rfile.read(content_length))
+                    if (
+                        not isinstance(message, dict)
+                        or not isinstance(message.get("name"), str)
+                        or not message["name"]
+                        or len(message["name"]) > 80
+                        or not isinstance(message.get("data"), dict)
+                    ):
+                        raise ValueError("invalid report shape")
+                except (ValueError, json.JSONDecodeError):
+                    self.send_error(400)
+                    return
+                if path == "/report":
+                    server._messages.put(message)
+                    print(f"NAVIGATION FIXTURE: received {message['name']}", flush=True)
+                else:
+                    print(
+                        "NAVIGATION FIXTURE: probe "
+                        + json.dumps(message, sort_keys=True, separators=(",", ":")),
+                        flush=True,
+                    )
+                self.send_response(204)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server.daemon_threads = True
+        self.origin = f"http://127.0.0.1:{self._server.server_address[1]}"
+        self.url = f"{self.origin}/secondary.html"
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def send_command(self, name: str) -> None:
+        self._commands.put({"command": name})
+        print(f"NAVIGATION FIXTURE: queued command {name}", flush=True)
+
+    def wait_message(self, name: str, timeout: float = 20) -> dict:
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SmokeError(f"timed out after {timeout:.1f}s waiting for navigation message {name!r}")
+            try:
+                message = self._messages.get(timeout=remaining)
+            except queue.Empty as error:
+                raise SmokeError(f"timed out after {timeout:.1f}s waiting for navigation message {name!r}") from error
+            if message["name"] in {"secondary-error", "secondary-command-error"}:
+                raise SmokeError(f"navigation page reported {message['name']}: {message['data']!r}")
+            if message["name"] != name:
+                raise SmokeError(f"expected navigation message {name!r}, received {message!r}")
+            return message["data"]
 
     def close(self) -> None:
         self._server.shutdown()
@@ -460,7 +570,12 @@ def register_case(cases: dict[str, str], method: str, assertion: str) -> None:
 
 
 def expect_message_data(harness: Harness, name: str, timeout: float = 20) -> dict:
-    frame = harness.wait_message(name, timeout)
+    try:
+        frame = harness.wait_message(name, timeout)
+    except SmokeError as error:
+        if "timed out" in str(error):
+            raise SmokeError(f"timed out waiting for fixture API message {name!r}: {error}") from error
+        raise
     data = frame.get("data")
     if not isinstance(data, dict):
         raise SmokeError(f"message {name!r} did not contain an object: {frame!r}")
@@ -524,45 +639,74 @@ def run_tray(harness: Harness, cases: dict[str, str]) -> None:
         }[method])
 
 
-def run_webview_history(harness: Harness, cases: dict[str, str]) -> None:
+def run_webview_history(
+    harness: Harness,
+    cases: dict[str, str],
+    expected_initial_url: str,
+    expected_secondary_url: str,
+    navigation_server: NavigationFixtureServer,
+) -> None:
+    print("WEBVIEW HISTORY: navigating from the packaged page to the HTTP fixture", flush=True)
     harness.send("smoke-command", {"command": "webview-navigate"})
     try:
-        first_secondary = expect_message_data(harness, "secondary-ready")
+        first_secondary = navigation_server.wait_message("secondary-ready")
     except SmokeError as error:
         observed = [(frame.get("event"), frame.get("name")) for frame in harness.backlog[-20:]]
         raise SmokeError(f"{error}; navigation frames={observed}") from error
-    if not first_secondary.get("url", "").endswith("/secondary.html") or first_secondary.get("canGoBack") is not True:
+    if first_secondary.get("url") != expected_secondary_url or first_secondary.get("canGoBack") is not True:
         raise SmokeError(f"webview.loadUrl did not create a back-history entry: {first_secondary!r}")
+    print(f"WEBVIEW HISTORY: secondary loaded with back history: {first_secondary!r}", flush=True)
     register_case(cases, "webview.loadUrl", "loads the isolated secondary page and creates back history")
 
-    harness.send("smoke-command", {"command": "webview-back"})
-    main_frame = harness.wait_one_of({"main-restored", "main-reloaded"}, timeout=15)
-    main_state = main_frame.get("data", {})
-    if not main_state.get("url", "").endswith("/index.html") or main_state.get("canGoForward") is not True:
+    navigation_server.send_command("webview-back")
+    print("WEBVIEW HISTORY: waiting for a fresh main-page document after secondary goBack", flush=True)
+    main_state = expect_message_data(harness, "main-reloaded", timeout=15)
+    if main_state.get("url") != expected_initial_url or main_state.get("canGoForward") is not True:
         raise SmokeError(f"back navigation has the wrong main-page state: {main_state!r}")
-    register_case(cases, "webview.goBack", "returns to the main page and exposes forward history")
+    fresh_reload = main_state.get("freshReload") is True
+    if fresh_reload:
+        print(
+            "WEBVIEW HISTORY: BFCache page was reloaded for a fresh Native session; "
+            "BFCache session restoration is not claimed",
+            flush=True,
+        )
+    else:
+        print("WEBVIEW HISTORY: back reached a newly loaded main-page document", flush=True)
+    go_back_assertion = "returns to the main page and exposes forward history"
+    if fresh_reload:
+        go_back_assertion += "; reloads the BFCache-restored document after its Native page session expires (BFCache session restoration is not validated)"
+    register_case(cases, "webview.goBack", go_back_assertion)
     cases["webview.canGoBack"] += "; reports back history on the secondary document"
     cases["webview.canGoForward"] += "; reports forward history after navigating back"
 
+    print("WEBVIEW HISTORY: asking the packaged page to reload", flush=True)
     harness.send("smoke-command", {"command": "webview-reload"})
     reloaded = expect_message_data(harness, "main-reloaded", timeout=15)
-    if not reloaded.get("url", "").endswith("/index.html") or reloaded.get("canGoForward") is not True:
+    if reloaded.get("url") != expected_initial_url or reloaded.get("canGoForward") is not True:
         raise SmokeError(f"webview.reload did not retain the current history state: {reloaded!r}")
     register_case(cases, "webview.reload", "reloads the same local document while retaining forward history")
 
+    print("WEBVIEW HISTORY: asking the packaged page to go forward", flush=True)
     harness.send("smoke-command", {"command": "webview-forward"})
-    second_secondary = expect_message_data(harness, "secondary-ready", timeout=15)
-    if not second_secondary.get("url", "").endswith("/secondary.html") or second_secondary.get("canGoBack") is not True:
+    second_secondary = navigation_server.wait_message("secondary-ready", timeout=15)
+    if second_secondary.get("url") != expected_secondary_url or second_secondary.get("canGoBack") is not True:
         raise SmokeError(f"webview.goForward did not restore the secondary page: {second_secondary!r}")
     register_case(cases, "webview.goForward", "returns to the secondary page and restores back history")
     cases["webview.url"] += "; reads both fixture URLs and follows navigation"
 
     # Subsequent tray/clipboard/shortcut/dialog commands are handled by the
     # main page. Return there after validating forward navigation.
-    harness.send("smoke-command", {"command": "webview-back"})
-    final_main = harness.wait_one_of({"main-restored", "main-reloaded"}, timeout=15)
-    if not final_main.get("data", {}).get("url", "").endswith("/index.html"):
+    print("WEBVIEW HISTORY: asking secondary page to go back a second time", flush=True)
+    navigation_server.send_command("webview-back")
+    final_main = expect_message_data(harness, "main-reloaded", timeout=15)
+    if final_main.get("url") != expected_initial_url:
         raise SmokeError(f"navigation did not return to the command page: {final_main!r}")
+    print(
+        "WEBVIEW HISTORY: final back used a fresh-document reload"
+        if final_main.get("freshReload") is True
+        else "WEBVIEW HISTORY: final back reached a newly loaded main-page document",
+        flush=True,
+    )
 
 
 def dismiss_native_dialog(method: str) -> None:
@@ -897,13 +1041,16 @@ def run_default_suite(
     dialog_root: Path,
     clipboard_guard: ClipboardGuard | None,
     cases: dict[str, str],
+    expected_initial_url: str,
+    expected_secondary_url: str,
+    navigation_server: NavigationFixtureServer,
 ) -> None:
     smoke = expect_message_data(harness, "smoke", timeout=60)
     cases.update(validate_method_coverage(smoke))
     initial_url = smoke.get("initialUrl", "")
-    if not initial_url.startswith("http://127.0.0.1:"):
-        raise SmokeError(f"smoke page did not use an isolated loopback origin: {initial_url!r}")
-    print(f"APP READY: pid={process.pid} origin={initial_url.split('/')[0]}")
+    if initial_url != expected_initial_url:
+        raise SmokeError(f"smoke page URL did not match the generated app's exact custom-protocol document; expected {expected_initial_url!r}, got {initial_url!r}")
+    print(f"APP READY: pid={process.pid} url={initial_url}")
 
     nonce = f"echo-{uuid.uuid4()}"
     harness.send("smoke-command", {"command": "echo", "nonce": nonce})
@@ -919,7 +1066,13 @@ def run_default_suite(
         for item in supervised:
             print(f"  SUPERVISED NOT RUN: {item['method']}: {item['action']}")
 
-    run_webview_history(harness, cases)
+    run_webview_history(
+        harness,
+        cases,
+        expected_initial_url,
+        expected_secondary_url,
+        navigation_server,
+    )
     if args.clipboard:
         if clipboard_guard is None:
             raise SmokeError("clipboard guard was not initialized")
@@ -1009,6 +1162,7 @@ def main() -> int:
     success = False
     error_message: str | None = None
     stderr_tail = ""
+    navigation_server: NavigationFixtureServer | None = None
 
     log_fd, log_name = tempfile.mkstemp(prefix="niva-macos-api-smoke-", suffix=".log")
     os.close(log_fd)
@@ -1021,6 +1175,12 @@ def main() -> int:
             resources.mkdir()
             for filename in ("index.html", "secondary.html", "headless.html", "window-cases.js", "system-cases.js", "fixture-protocol.js"):
                 shutil.copy2(HERE / filename, resources / filename)
+            navigation_server = NavigationFixtureServer(HERE / "secondary.html")
+            (resources / "navigation-config.js").write_text(
+                "window.__nivaMacApiSmokeNavigationOrigin = " + json.dumps(navigation_server.origin) + ";\n"
+                "window.__nivaMacApiSmokeSecondaryUrl = " + json.dumps(navigation_server.url) + ";\n",
+                encoding="utf-8",
+            )
             (resources / "child.html").write_text(
                 "<!doctype html><html><body><h1>Isolated child</h1></body></html>\n",
                 encoding="utf-8",
@@ -1052,6 +1212,14 @@ def main() -> int:
                             "visible": True,
                             "resizable": True,
                             "decorations": True,
+                            "permissions": {
+                                navigation_server.origin: [
+                                    "webview.goBack",
+                                    "webview.url",
+                                    "webview.canGoBack",
+                                    "webview.canGoForward",
+                                ]
+                            },
                         },
                         "api": {"timeoutMs": 180000} if args.dialogs else {},
                     },
@@ -1083,11 +1251,18 @@ def main() -> int:
                 raise SmokeError(f"unexpected fixture ready event: {ready!r}")
             if args.clipboard:
                 clipboard_guard = ClipboardGuard(root)
-            run_default_suite(harness, process, args, root, dialog_root, clipboard_guard, cases)
+            expected_initial_url = f"niva-{app_uuid.replace('-', '').lower()}://app/index.html"
+            if navigation_server is None:
+                raise SmokeError("navigation fixture server was not initialized")
+            expected_secondary_url = navigation_server.url
+            run_default_suite(harness, process, args, root, dialog_root, clipboard_guard, cases,
+                              expected_initial_url, expected_secondary_url, navigation_server)
             success = True
     except Exception as error:
         error_message = f"{type(error).__name__}: {error}"
     finally:
+        if navigation_server is not None:
+            navigation_server.close()
         if clipboard_guard is not None:
             try:
                 restored, clipboard_restoration = clipboard_guard.restore_if_unchanged()

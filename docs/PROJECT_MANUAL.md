@@ -32,7 +32,7 @@ Native bootstrap 总会创建 `Niva`，原生 API 和 Node 风格适配器都是
 
 `packages/runtime/src/contracts.ts` 是公开 runtime 合约的来源，`packages/types/` 从该合约生成声明。类型包根入口面向浏览器页面，只添加 `Niva` 和 `NivaOptions`，默认不提供 Node 全局或 `node:*` ambient 模块。`@types/node` 是可选 peer；浏览器消费者不会因此安装或自动发现 Node 声明。TypeScript 程序应按用途独立选择声明模式：启用 `injectCommonJs` 的 Niva 页面使用 `@niva/types/commonjs`；运行于 Node 的工具使用 `@niva/types/node`、安装 `@types/node` 并设置 `types: ["node"]`。运行时注入开关与声明模式是两项独立选择，完整说明见[types README](../packages/types/README.md)。Native API 与模块兼容 API 的桥接和权限边界见[Bridge 合约](bridge.md)。
 
-普通异步调用经平台 IPC 与 `evaluate_script`；高流量或流式操作可使用已认证的 WebSocket 优化通道，无法建立 WebSocket 时使用同语义的 IPC Channel。调用者不选择传输。IPC 二进制帧在桥接边界使用 Base64；同步 XHR 仅用于必须同步返回的 Node 兼容接口。完整帧格式、来源授权和限制以[Bridge 合约](bridge.md)为准。
+Bridge 当前源码已实现 API 控制面/纯数据面分离：异步 API 以 IPC `t:"api_call"`创建/控制，Native 小结果和流 `channelOpened`/capability 经 Wry `evaluate_script`调用 `__niva_ipc_reply({sessionId,rid,sourceOrigin,response})`返回；流拿到凭证后才 attach。WS v2 仅承载 attach/data/ack/cancel，hello 与18字节 binary header 的 version 均为2；Native 资源 owner 固定为创建时 IPC session，数据 transport 独立。顶层与同源 iframe 共用 Wry IPC/eval；远端顶层页面仅有精确 origin grant 下的 unary API，跨源 iframe 即使有 grant 也 fail-closed。现有 WK reply handler 与 WebView2 专用 IPC/reply 已移除，统一使用 Wry IPC 与 `evaluate_script`。真实 macOS 两 lane WebView smoke 已通过；Windows target check 和真机/CI 状态仍开放，完整证据见[Bridge v2 验收记录](bridge-v2-validation.md)及[Bridge 合约](bridge.md)。
 
 runtime 构建会生成 Native 所需的 bootstrap、ESM facade 和类型声明。Cargo 不执行 npm 构建；Native 构建会检查生成资产及其哈希，缺失或过期时需要先重建 runtime。[Runtime README](../packages/runtime/README.md#build-and-verification)说明了生成和检查流程。
 

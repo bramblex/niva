@@ -1,12 +1,22 @@
 # Niva 架构 review 实施计划与验收台账
 
-## 当前候选状态：0.10.0-beta.1（2026-09-28）
+## 历史候选快照：0.10.0-beta.1（2026-09-28）
 
 本台账保留架构决定、实现过程与历史证据；当前候选的验收清单、平台范围和未关闭项以[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)为准。下方带日期的状态是对应时间点的快照，不自动证明当前源码或当前候选通过。
 
 本版冻结现有 Niva 原生 API、统一 TypeScript runtime、可选的 CommonJS/ESM Node 风格模块子集、IPC 稳定异步通道与可选 WebSocket 流式优化，以及 GUI/CLI 共用打包核心。同步 XHR 仅服务需要同步返回的兼容 API。本范围不声称完整 Node.js 兼容、移除 WebSocket、IPC 零拷贝或 v1.0 验收完成。
 
-> 本台账后续章节包含带日期的历史快照、当时计划和旧路径，保留这些内容用于追溯，不代表当前源码状态或现行命令。当前 runtime 和类型入口以 [`packages/runtime/README.md`](../packages/runtime/README.md) 与 [`packages/types/README.md`](../packages/types/README.md) 为准；候选平台验收以 [`docs/release-0.10.0-beta.1.md`](release-0.10.0-beta.1.md) 为准。当前 Node 兼容目标是 `process.version=v22.14.0`、`versions.node/nodeCompat=22.14.0`，实际 Niva 版本见 `versions.niva`。
+## 当前 bridge 实现与验证状态（2026-10-06）
+
+下方带日期的路由决定、测试快照和实施日志保留为历史证据，不因本节而改写。当前源码已实现新的 API/data-plane 分离：同步XHR只保留给Node同步兼容API；异步API创建和控制使用IPC `t:"api_call"`；Native结果及流 `channelOpened`/capability 经Wry `evaluate_script`调用 `__niva_ipc_reply({sessionId,rid,sourceOrigin,response})`返回。流先创建并拿到凭证，再经数据transport attach。WS v2只允许attach/data/ack/cancel，不传method/args或API dispatch；hello和18字节binary header的version均为2。Native资源owner固定为创建时IPC session，数据transport独立。
+
+实现保留Rust侧source URL/top-origin、token、窗口、session、call及流凭证校验；Wry 不提供真实 Native child-frame ID，同源 iframe 通过父页 relay 与 JS session 路由 reply，不得把 relay 描述为真实 frame ID。远端页面不得因通道变化扩权。顶层本地文档和同源iframe共用Wry IPC/eval；远端顶层页面按精确origin grant仅开放unary API；跨源iframe即使有grant也fail-closed，因为Wry eval只定向主文档，无法安全定向子frame且不得让parent观察child秘密。数据流继续提供严格seq、ACK、背压、有界队列、cancel和租约清理。WS建连失败可使用IPC数据路径，但不承诺活跃流断线无损迁移；换数据通道不得重放API副作用，提交状态不确定时应明确失败。WK reply handler与WebView2专用IPC/reply已从当前源码移除；统一使用Wry IPC与`evaluate_script`。内部ticket格式与状态机另由实现设计确定。
+
+主线程报告最新 runtime build 与 167/167 runtime tests 通过；Rust fmt/check/clippy/workspace tests、Devtools build、types checks/consumer/fresh-pack checks 均以 exit 0 完成。真实 macOS bridge-route 两 lane 均通过，含严格 CSP 下 CommonJS globals、ticket/attach、1 MiB FileHandle、Node 与 Niva child_process 二进制流、同源 iframe 独立 session 与 iframe 后 top unary。ARM64 release `target/release/niva` 为 3,040,832 bytes，小于 3,300,000 bytes 硬门禁；SHA、fingerprint 与完整报告见[Bridge v2 验收记录](bridge-v2-validation.md)。
+
+当前证据只覆盖列明的 macOS ARM64/WebView 和检查。Node compatibility 179/17、bootstrap 5 cases、top-level bridge 7 cases、trusted IPC 27 checks、remote IPC 25 checks 与 bridge-route 双 lane smoke 均已通过；默认 macOS Native API suite 最新运行失败：fresh-document API 检查通过，但随后 forward 导航 15 秒未收到 secondary pageshow/ready，根因未确认。另有源码和 GUI evidence 表明 BFCache 返回后的原 session 已失效；fixture 的 `location.reload()` workaround 只覆盖 fresh-document 路径，不验证 BFCache session 恢复，此问题仍开放。Windows target check 因 `lzma-sys` 缺少 MSVC `stdlib.h` 而未完成；Windows 真机与远端 CI 尚未核实。旧快照和跨编译均不能替代当前目标平台验证。详细合约见[Bridge 合约](bridge.md)及[Bridge v2 验收记录](bridge-v2-validation.md)。
+
+> 本台账后续章节包含带日期的历史快照、当时计划和旧路径，保留这些内容用于追溯，不代表当前源码状态或现行命令。当前 runtime 和类型入口以 [`packages/runtime/README.md`](../packages/runtime/README.md) 与 [`packages/types/README.md`](../packages/types/README.md) 为准；当前 bridge 验收以[Bridge v2 验收记录](bridge-v2-validation.md)为准。当前 Node 兼容目标是 `process.version=v22.14.0`、`versions.node/nodeCompat=22.14.0`，实际 Niva 版本见 `versions.niva`。
 
 完整 runtime 主程序的硬体积门禁为严格小于 3,300,000 bytes；macOS 3,000,000 bytes 是参考目标。候选需按目标平台重新构建并记录文件、SHA256、runtime 指纹和实测体积；旧平台或旧指纹结果不能替代当前候选验收。
 

@@ -981,11 +981,10 @@ mod tests {
     }
 
     #[test]
-    fn ws_handshake_binds_hello_session_before_forwarding_calls_to_api_manager() {
+    fn ws_handshake_binds_session_and_rejects_legacy_api_calls() {
         use crate::app::{
             api_manager::{ApiManager, protocol::WIRE_VERSION},
             options::NivaOptions,
-            window_manager::window::WsOut,
         };
 
         let options: NivaOptions = serde_json::from_value(serde_json::json!({
@@ -1006,50 +1005,30 @@ mod tests {
         register_ws_hello(&manager, 7, 44, &hello).unwrap();
         assert!(manager.ws_session_matches(7, 44, session_id));
 
-        // Exercise the same ApiManager receive entry used immediately after
-        // ws_pump consumes Hello. A valid session reaches normal dispatch;
-        // a different session is rejected at the transport boundary.
+        // The active receive entry must not accept the removed method/args
+        // protocol, even after a valid hello bound the socket session.
         let (tx, rx) = mpsc::channel();
-        manager.on_text(
-            7,
-            44,
-            &tx,
-            &serde_json::json!({
+        for message in [
+            serde_json::json!({
                 "t": "call",
                 "id": 1,
                 "method": "test.unregistered",
                 "args": [],
                 "sessionId": session_id
-            })
-            .to_string(),
-        );
-        let WsOut::Text(accepted) = rx.recv().unwrap() else {
-            panic!("expected a unary text response");
-        };
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&accepted).unwrap()["message"],
-            "API manager not ready"
-        );
-
-        manager.on_text(
-            7,
-            44,
-            &tx,
-            &serde_json::json!({
-                "t": "call",
+            }),
+            serde_json::json!({
+                "t": "api_call",
                 "id": 2,
                 "method": "test.unregistered",
                 "args": [],
-                "sessionId": "abcdef0123456789abcdef0123456789"
-            })
-            .to_string(),
-        );
-        let WsOut::Text(rejected) = rx.recv().unwrap() else {
-            panic!("expected a unary text response");
-        };
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&rejected).unwrap()["message"],
-            "invalid WebSocket session id"
+                "sessionId": session_id
+            }),
+        ] {
+            manager.on_text(7, 44, &tx, &message.to_string());
+        }
+        assert!(
+            rx.try_recv().is_err(),
+            "WebSocket must not dispatch API calls"
         );
 
         manager.cancel_connection(7, 44);

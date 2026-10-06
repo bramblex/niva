@@ -253,13 +253,21 @@
       }
 
       function resolveFor(apiName, paths) {
-        var baseCwd = currentCwd(apiName);
+        var baseCwd;
+        var hasBaseCwd = false;
+        function getBaseCwd() {
+          if (!hasBaseCwd) {
+            baseCwd = currentCwd(apiName);
+            hasBaseCwd = true;
+          }
+          return baseCwd;
+        }
         if (!windows) {
           var posixTail = "";
           var posixAbsolute = false;
           var posixArgs = paths;
           for (var posixIndex = posixArgs.length - 1; posixIndex >= -1 && !posixAbsolute; posixIndex -= 1) {
-            var posixPath = posixIndex >= 0 ? posixArgs[posixIndex] : baseCwd;
+            var posixPath = posixIndex >= 0 ? posixArgs[posixIndex] : getBaseCwd();
             assertPath(posixPath, posixIndex >= 0 ? "paths[" + posixIndex + "]" : "path");
             if (posixPath.length === 0) continue;
             if (posixPath.charCodeAt(0) === 47) posixAbsolute = true;
@@ -280,10 +288,11 @@
             assertPath(path, "paths[" + i + "]");
             if (path.length === 0) continue;
           } else if (!resolvedDevice) {
-            path = baseCwd;
+            path = getBaseCwd();
           } else {
-            var cwdInfo = winRoot(baseCwd);
-            path = cwdInfo.device.toLowerCase() === resolvedDevice.toLowerCase() ? baseCwd : resolvedDevice + "\\";
+            var cwd = getBaseCwd();
+            var cwdInfo = winRoot(cwd);
+            path = cwdInfo.device.toLowerCase() === resolvedDevice.toLowerCase() ? cwd : resolvedDevice + "\\";
           }
           var rootInfo = winRoot(path);
           var device = rootInfo.device;

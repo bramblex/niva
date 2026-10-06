@@ -103,11 +103,6 @@ impl NivaWindow {
             &token,
         )?;
 
-        #[cfg(target_os = "macos")]
-        crate::app::ipc_macos::install(&webview, app.clone(), id)?;
-        #[cfg(target_os = "windows")]
-        crate::app::ipc_windows_frames::install(&webview, app.clone(), id)?;
-
         Ok(arc(Self {
             app: app.clone(),
             id,

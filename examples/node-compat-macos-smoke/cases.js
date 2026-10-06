@@ -375,6 +375,7 @@
 
   add("http", [
     "http.request", "http.get", "ClientRequest.on(response)",
+    "http.get.concurrent",
     "ClientRequest.setHeader", "ClientRequest.getHeader", "ClientRequest.getHeaders", "ClientRequest.hasHeader",
     "ClientRequest.removeHeader", "ClientRequest.write", "ClientRequest.end", "IncomingMessage.statusCode",
     "IncomingMessage.headers", "IncomingMessage.setEncoding", "IncomingMessage.data", "IncomingMessage.end", "IncomingMessage.pipe",
@@ -398,6 +399,19 @@
     equal(getResponse.message.statusCode, 200, "http.get status");
     assert(getResponse.message.headers["content-length"], "IncomingMessage.headers");
     equal(getResponse.text, "NodeCompat macOS integration smoke", "IncomingMessage data/end");
+    var parallelUrl = root.process.env.NIVA_SMOKE_HTTP_PARALLEL_URL;
+    assert(parallelUrl && parallelUrl.startsWith("http://127.0.0.1:"), "parallel HTTP fixture URL");
+    var concurrentResponses = await Promise.all([
+      collect(http.get(parallelUrl + "?id=first")),
+      collect(http.get(parallelUrl + "?id=second")),
+    ]);
+    for (var i = 0; i < concurrentResponses.length; i++) {
+      var expectedId = i === 0 ? "first" : "second";
+      var response = concurrentResponses[i];
+      if (response.message.statusCode !== 200)
+        throw new Error("parallel HTTP fixture failed for " + expectedId + " with status " + response.message.statusCode + ": " + response.text);
+      equal(response.text, "parallel response " + expectedId + ": both requests arrived", "independent concurrent HTTP response body " + expectedId);
+    }
     var request = http.request(requestUrl, {method: "POST", headers: {"x-niva-smoke": "first", "content-length": "8"}});
     equal(request.method, "POST", "ClientRequest method");
     request.setHeader("x-niva-smoke", "second");

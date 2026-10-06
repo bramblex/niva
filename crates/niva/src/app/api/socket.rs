@@ -44,7 +44,11 @@ use x509_parser::{
     prelude::{ParsedExtension, parse_x509_certificate},
 };
 
-use crate::app::api_manager::{ApiManager, ApiRequest, CallContext, InboundChunk};
+use crate::app::NivaApp;
+use crate::app::api_manager::{
+    ApiManager, ApiRequest, CallContext, CancellationContext, InboundChunk,
+};
+use crate::app::window_manager::window::NivaWindow;
 
 const MAX_ACTIVE_PER_OWNER: usize = 128;
 const MAX_PENDING_PER_LISTENER: usize = 32;
@@ -70,7 +74,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_stream_api_with("socket.tlsAttach", Some(None), tls_attach);
     api_manager.register_stream_api_with("socket.udpBind", Some(None), udp_bind);
     api_manager.register_stream_api("socket.udpSend", udp_send);
-    api_manager.register_stream_api("socket.control", socket_control);
+    api_manager.register_cancellable_api("socket.control", socket_control);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -836,9 +840,23 @@ async fn udp_send(ctx: CallContext, request: ApiRequest) -> Result<()> {
     Err(last_error.unwrap_or_else(|| anyhow!("UDP destination resolved to no addresses")))
 }
 
-async fn socket_control(ctx: CallContext, request: ApiRequest) -> Result<()> {
+async fn socket_control(
+    ctx: CancellationContext,
+    _app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
     let args = request.args().get::<(ControlArgs,)>()?.0;
-    let owner = Owner::from(&ctx);
+    anyhow::ensure!(
+        !ctx.is_cancelled(),
+        "ECANCELED: socket control was cancelled"
+    );
+    let owner = Owner {
+        window_id: window.id,
+        connection_id: ctx
+            .resource_owner_id()
+            .ok_or_else(|| anyhow!("socket resource owner is unavailable"))?,
+    };
     let entry = active_handle(&args.socket_id, owner)?;
     if args.action == "readAck" {
         let bytes = args
@@ -849,10 +867,7 @@ async fn socket_control(ctx: CallContext, request: ApiRequest) -> Result<()> {
             .as_ref()
             .ok_or_else(|| anyhow!("socket does not have a readable byte stream"))?;
         credit.grant(bytes)?;
-        ctx.respond(Ok(
-            json!({"socketId":args.socket_id,"action":args.action,"ok":true}),
-        ));
-        return Ok(());
+        return Ok(json!({"socketId":args.socket_id,"action":args.action,"ok":true}));
     }
     let command = match args.action.as_str() {
         "pauseRead" => SocketCommand::PauseRead,
@@ -880,10 +895,7 @@ async fn socket_control(ctx: CallContext, request: ApiRequest) -> Result<()> {
     if !delivered {
         bail!("socket control action is not supported for this handle");
     }
-    ctx.respond(Ok(
-        json!({"socketId":args.socket_id,"action":args.action,"ok":true}),
-    ));
-    Ok(())
+    Ok(json!({"socketId":args.socket_id,"action":args.action,"ok":true}))
 }
 
 fn try_send_control(

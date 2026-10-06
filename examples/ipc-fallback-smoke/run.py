@@ -144,6 +144,8 @@ def main():
             elif path == '/cases.js':
                 page_loads['casesScript'] += 1
                 self.respond(200, (HERE / 'cases.js').read_bytes(), 'application/javascript')
+            elif path == '/blank':
+                self.respond(200, b'<!doctype html><meta charset="utf-8"><title>IPC window.open child</title>', 'text/html')
             elif self.path == '/fixture':
                 self.respond(200, json.dumps(fixture).encode(), 'application/json')
             elif self.path == '/text':

@@ -266,8 +266,8 @@
             }, function (error) { throw runtime.nativeError(error); });
         }
         class NativeHttpTransport {
-            call: any; owner: any; response: any; started: boolean; destroyed: boolean; callSettled: boolean; timeout: number; timeoutCallback: any; timeoutId: any; pendingWrite: any;
-            constructor() { this.call = null; this.owner = null; this.response = null; this.started = false; this.destroyed = false; this.timeout = 0; this.timeoutCallback = null; this.timeoutId = undefined; this.pendingWrite = null; }
+            call: any; owner: any; response: any; started: boolean; destroyed: boolean; callSettled: boolean; timeout: number; timeoutCallback: any; timeoutId: any; pendingWrite: any; responseAckSeq: number;
+        constructor() { this.call = null; this.owner = null; this.response = null; this.started = false; this.destroyed = false; this.timeout = 0; this.timeoutCallback = null; this.timeoutId = undefined; this.pendingWrite = null; this.responseAckSeq = 0; }
             setOwner(owner) { this.owner = owner; }
             begin(options) {
                 if (this.started) throw fail("HTTP request already started", "ERR_HTTP_HEADERS_SENT");
@@ -357,7 +357,14 @@
             }
             ackResponse() {
                 if (this.destroyed || !this.call) return;
-                if (!runtime.streamSend(niva, this.call.id, new Uint8Array(0), false)) this.destroy(fail("HTTP response stream is full", "ENOBUFS"));
+                var seq = ++this.responseAckSeq;
+                var self = this;
+                runtime.call(niva, "http.responseAck", [{ id: this.call.id, seq: seq }]).then(function (result) {
+                    if (!result || result.accepted !== true || result.seq !== seq)
+                        throw fail("Invalid HTTP response acknowledgement", "ERR_NIVA_IPC_RESPONSE");
+                }).catch(function (error) {
+                    if (!self.destroyed) self._onError(runtime.nativeError(error));
+                });
             }
             setTimeout(timeout, callback?: () => void) {
                 this.timeout = Number(timeout) || 0;

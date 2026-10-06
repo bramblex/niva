@@ -4,10 +4,6 @@ pub(crate) mod custom_protocol;
 mod event_handler;
 pub(crate) mod fs_ops;
 pub(crate) mod http_server;
-#[cfg(target_os = "macos")]
-mod ipc_macos;
-#[cfg(target_os = "windows")]
-mod ipc_windows_frames;
 pub(crate) mod logging;
 pub(crate) mod main_exec;
 mod menu;

@@ -4,6 +4,8 @@ The 164 rows below are the distinct Native case IDs actually tracked in this tab
 
 The 10 Windows-only handlers are registered under `cfg(target_os = "windows")`; their macOS cases assert bridge error code `-1` and `api not found`. The supervised suites use disposable windows, Finder, Dock and Accessibility/CoreGraphics observations, with cleanup after each run.
 
+The WebView history fixture exercises real `loadUrl`, back, reload and forward navigation. When returning to a `pageshow.persisted` document, the fixture reloads that same history entry to obtain a fresh Native page session because the prior session expires on `pagehide`. This verifies the navigation and retained-history behavior after session renewal; it does not verify IPC recovery inside a BFCache-restored realm. BFCache session recovery remains an open product review item.
+
 | Public method | macOS scenario and expected result | Fixture / case | Actual execution status |
 |---|---|---|---|
 | `clipboard.read` | Snapshot NSPasteboard; require text equals saved plainText or null; restore snapshot if unchanged. | optional run.py --clipboard | PASS real macOS: clipboard-shortcut |
@@ -70,7 +72,7 @@ The 10 Windows-only handlers are registered under `cfg(target_os = "windows")`; 
 | `webview.reload` | Reload index.html and require same URL and retained forward history. | default run.py / index.html and secondary.html | PASS real macOS: default |
 | `webview.url` | Require index.html initially and secondary.html after navigation. | default run.py / index.html and secondary.html | PASS real macOS: default |
 | `webview.print` | Open print preview for a disposable marked page; expect preview contains the marker and no job is submitted; cleanup: cancel the panel | system-cases.js / supervised | PASS real macOS: system-supervised |
-| `webview.goBack` | Return to index.html and require forward history. | default run.py / index.html and secondary.html | PASS real macOS: default |
+| `webview.goBack` | Return to index.html and require forward history; if restored from BFCache, reload the same entry for a fresh Native session. | default run.py / index.html and secondary.html | PASS real macOS: default |
 | `webview.goForward` | Return to secondary.html and require back history. | default run.py / index.html and secondary.html | PASS real macOS: default |
 | `webview.canGoBack` | Require back-history state on secondary page. | default run.py / index.html and secondary.html | PASS real macOS: default |
 | `webview.canGoForward` | Require forward history after back navigation. | default run.py / index.html and secondary.html | PASS real macOS: default |

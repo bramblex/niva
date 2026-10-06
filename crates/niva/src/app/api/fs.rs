@@ -22,6 +22,7 @@ pub fn register_api_instances(api_manager: &mut ApiManager) {
     api_manager.register_cancellable_api("fs.node", node_operation);
     api_manager.register_stream_api_with("fs.openHandle", Some(None), node_open_handle);
     api_manager.register_stream_api("fs.handle", node_handle_operation);
+    api_manager.register_cancellable_api("fs.handleControl", node_handle_control);
     api_manager.register_stream_api_with("fs.watch", Some(None), node_watch);
     api_manager.register_blocking_api("fs.exists", exists);
     api_manager.register_stream_api("fs.readStream", read_stream);
@@ -1655,83 +1656,274 @@ async fn node_open_handle(ctx: CallContext, request: ApiRequest) -> Result<()> {
     Ok(())
 }
 
-async fn node_handle_operation(ctx: CallContext, request: ApiRequest) -> Result<()> {
-    use base64::{Engine, engine::general_purpose::STANDARD};
-    use std::io::{Read, Seek, SeekFrom, Write};
-    let (id, operation, args): (String, String, Value) = request.args().get()?;
-    let handle = {
-        let files = node_files()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
-        let handle = files
-            .get(&id)
-            .ok_or_else(|| anyhow::anyhow!("EBADF: file closed"))?;
-        anyhow::ensure!(
-            handle.owner == (ctx.window.id, ctx.connection_id),
-            "EACCES: file belongs to another connection"
-        );
-        handle.clone()
+fn node_handle_stream_operation(operation: &str) -> bool {
+    matches!(operation, "read" | "write")
+}
+
+fn node_handle_control_operation(operation: &str) -> bool {
+    matches!(
+        operation,
+        "close" | "stat" | "sync" | "datasync" | "truncate"
+    )
+}
+
+fn node_handle_for_owner(id: &str, owner: (u8, u64)) -> Result<Arc<NodeFileHandle>> {
+    let files = node_files()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
+    let handle = files
+        .get(id)
+        .ok_or_else(|| anyhow::anyhow!("EBADF: file closed"))?;
+    anyhow::ensure!(
+        handle.owner == owner,
+        "EACCES: file belongs to another connection"
+    );
+    Ok(handle.clone())
+}
+
+fn ensure_node_handle_registered(id: &str, handle: &Arc<NodeFileHandle>) -> Result<()> {
+    let files = node_files()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
+    anyhow::ensure!(
+        files
+            .get(id)
+            .is_some_and(|registered| Arc::ptr_eq(registered, handle)),
+        "EBADF: file closed"
+    );
+    Ok(())
+}
+
+fn file_operation_position(args: &Value) -> Result<Option<u64>> {
+    match args.get("position") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("EINVAL: invalid file position")),
+    }
+}
+
+fn optional_nonnegative_integer(args: &Value, field: &str, default: u64) -> Result<u64> {
+    match args.get(field) {
+        None => Ok(default),
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("EINVAL: invalid file {field}")),
+    }
+}
+
+fn with_file_position<F: Seek, T>(
+    file: &mut F,
+    position: Option<u64>,
+    operation: impl FnOnce(&mut F) -> Result<T>,
+) -> Result<T> {
+    let original = if let Some(position) = position {
+        let original = file.stream_position()?;
+        file.seek(SeekFrom::Start(position))?;
+        Some(original)
+    } else {
+        None
     };
-    let result = crate::blocking!({
-        if operation == "close" {
-            node_files()
-                .lock()
-                .map_err(|_| anyhow::anyhow!("file registry poisoned"))?
-                .remove(&id);
-            handle.closed.close();
-            Ok(Value::Null)
-        } else {
+    let result = operation(file);
+    let restore = match original {
+        Some(position) => file.seek(SeekFrom::Start(position)).map(|_| ()),
+        None => Ok(()),
+    };
+    match (result, restore) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error.into()),
+        (Err(error), Err(restore_error)) => Err(anyhow::anyhow!(
+            "{error}; additionally failed to restore file position: {restore_error}"
+        )),
+    }
+}
+
+const NODE_HANDLE_MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
+const NODE_HANDLE_CHUNK_BYTES: usize = 16 * 1024;
+
+fn read_handle_chunks<R: Read + Seek>(
+    file: &mut R,
+    length: u64,
+    position: Option<u64>,
+    mut emit: impl FnMut(&[u8]),
+    mut is_cancelled: impl FnMut() -> bool,
+) -> Result<Option<u64>> {
+    with_file_position(file, position, |file| {
+        let mut buffer = [0u8; NODE_HANDLE_CHUNK_BYTES];
+        let mut remaining = length;
+        let mut total = 0u64;
+        while remaining > 0 {
+            if is_cancelled() {
+                return Ok(None);
+            }
+            let capacity = remaining.min(buffer.len() as u64) as usize;
+            let count = file.read(&mut buffer[..capacity])?;
+            if count == 0 {
+                break;
+            }
+            emit(&buffer[..count]);
+            total += count as u64;
+            remaining -= count as u64;
+        }
+        Ok(Some(total))
+    })
+}
+
+fn write_handle_chunks<W: Write + Seek>(
+    file: &mut W,
+    position: Option<u64>,
+    mut next_chunk: impl FnMut() -> Option<crate::app::api_manager::InboundChunk>,
+    mut acknowledge: impl FnMut(u64, usize),
+    mut is_cancelled: impl FnMut() -> bool,
+) -> Result<Option<u64>> {
+    with_file_position(file, position, |file| {
+        let mut total = 0u64;
+        loop {
+            if is_cancelled() {
+                return Ok(None);
+            }
+            let chunk = next_chunk().ok_or_else(|| {
+                anyhow::anyhow!("ERR_NIVA_CHANNEL_UPLOAD_INCOMPLETE: upload ended without END")
+            })?;
+            let written = if chunk.data.is_empty() {
+                0
+            } else {
+                file.write(&chunk.data)?
+            };
+            total = total
+                .checked_add(written as u64)
+                .ok_or_else(|| anyhow::anyhow!("EFBIG: written byte count overflow"))?;
+            acknowledge(chunk.seq, written);
+            if chunk.end {
+                return Ok(Some(total));
+            }
+        }
+    })
+}
+
+async fn node_handle_operation(ctx: CallContext, request: ApiRequest) -> Result<()> {
+    let (id, operation, args): (String, String, Value) = request.args().get()?;
+    anyhow::ensure!(
+        node_handle_stream_operation(&operation),
+        "ENOTSUP: file-handle control operations use fs.handleControl"
+    );
+    let handle = node_handle_for_owner(&id, (ctx.window.id, ctx.connection_id))?;
+    let position = file_operation_position(&args)?;
+    if operation == "read" {
+        let length = optional_nonnegative_integer(&args, "length", 65536)?;
+        anyhow::ensure!(
+            length <= NODE_HANDLE_MAX_READ_BYTES,
+            "EFBIG: file-handle read exceeds 8 MiB"
+        );
+        let read_ctx = ctx.clone();
+        let bytes_read = crate::blocking!({
+            anyhow::ensure!(!read_ctx.is_cancelled(), "ECANCELED: file read cancelled");
             let mut file = handle
                 .file
                 .lock()
                 .map_err(|_| anyhow::anyhow!("file lock poisoned"))?;
-            let restore = if let Some(position) = args["position"].as_u64() {
-                let old = file.stream_position()?;
-                file.seek(SeekFrom::Start(position))?;
-                Some(old)
-            } else {
-                None
-            };
-            let operation_result = (|| -> Result<Value> {
-                match operation.as_str() {
-                    "read" => {
-                        let length = args["length"].as_u64().unwrap_or(65536);
-                        anyhow::ensure!(length <= 8 * 1024 * 1024, "read chunk too large");
-                        let mut data = vec![0; length as usize];
-                        let size = file.read(&mut data)?;
-                        data.truncate(size);
-                        Ok(json!({"bytesRead":size,"data":STANDARD.encode(data)}))
-                    }
-                    "write" => {
-                        let data = STANDARD.decode(args["data"].as_str().unwrap_or(""))?;
-                        let size = file.write(&data)?;
-                        Ok(json!({"bytesWritten":size}))
-                    }
-                    "stat" => Ok(node_stat(&file.metadata()?)),
-                    "sync" => {
-                        file.sync_all()?;
-                        Ok(Value::Null)
-                    }
-                    "datasync" => {
-                        file.sync_data()?;
-                        Ok(Value::Null)
-                    }
-                    "truncate" => {
-                        file.set_len(args["length"].as_u64().unwrap_or(0))?;
-                        Ok(Value::Null)
-                    }
-                    _ => anyhow::bail!("ENOTSUP: unsupported FileHandle operation"),
-                }
-            })();
-            if let Some(position) = restore {
-                file.seek(SeekFrom::Start(position))?;
+            ensure_node_handle_registered(&id, &handle)?;
+            read_handle_chunks(
+                &mut *file,
+                length,
+                position,
+                |bytes| read_ctx.chunk(bytes, false),
+                || read_ctx.is_cancelled(),
+            )
+        })
+        .await?;
+        if let Some(bytes_read) = bytes_read {
+            ctx.respond(Ok(json!({"bytesRead":bytes_read})));
+        }
+        return Ok(());
+    }
+
+    let write_ctx = ctx.clone();
+    let bytes_written = crate::blocking!({
+        anyhow::ensure!(!write_ctx.is_cancelled(), "ECANCELED: file write cancelled");
+        let mut file = handle
+            .file
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file lock poisoned"))?;
+        ensure_node_handle_registered(&id, &handle)?;
+        write_handle_chunks(
+            &mut *file,
+            position,
+            || write_ctx.next_chunk_blocking_cancellable(),
+            |seq, bytes_written| {
+                write_ctx.push("uploadAck", json!({"seq":seq,"bytesWritten":bytes_written}));
+            },
+            || write_ctx.is_cancelled(),
+        )
+    })
+    .await?;
+    if let Some(bytes_written) = bytes_written {
+        ctx.respond(Ok(json!({"bytesWritten":bytes_written})));
+    }
+    Ok(())
+}
+
+async fn node_handle_control(
+    ctx: CancellationContext,
+    _app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<Value> {
+    let (id, operation, args): (String, String, Value) = request.args().get()?;
+    anyhow::ensure!(
+        node_handle_control_operation(&operation),
+        "ENOTSUP: unsupported file-handle control operation"
+    );
+    let owner_id = ctx
+        .resource_owner_id()
+        .ok_or_else(|| anyhow::anyhow!("file resource owner is unavailable"))?;
+    let handle = node_handle_for_owner(&id, (window.id, owner_id))?;
+    let control_ctx = ctx.clone();
+    crate::blocking!({
+        anyhow::ensure!(
+            !control_ctx.is_cancelled(),
+            "ECANCELED: file-handle control cancelled"
+        );
+        let file = handle
+            .file
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file lock poisoned"))?;
+        ensure_node_handle_registered(&id, &handle)?;
+        match operation.as_str() {
+            "close" => {
+                let mut files = node_files()
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("file registry poisoned"))?;
+                anyhow::ensure!(
+                    files
+                        .get(&id)
+                        .is_some_and(|registered| Arc::ptr_eq(registered, &handle)),
+                    "EBADF: file closed"
+                );
+                files.remove(&id);
+                handle.closed.close();
+                Ok(Value::Null)
             }
-            operation_result
+            "stat" => Ok(node_stat(&file.metadata()?)),
+            "sync" => {
+                file.sync_all()?;
+                Ok(Value::Null)
+            }
+            "datasync" => {
+                file.sync_data()?;
+                Ok(Value::Null)
+            }
+            "truncate" => {
+                let length = optional_nonnegative_integer(&args, "length", 0)?;
+                file.set_len(length)?;
+                Ok(Value::Null)
+            }
+            _ => unreachable!("operation allowlist checked above"),
         }
     })
-    .await;
-    ctx.respond(result);
-    Ok(())
+    .await
 }
 
 async fn node_watch(ctx: CallContext, request: ApiRequest) -> Result<()> {
@@ -1856,6 +2048,120 @@ mod tests {
             data: data.to_vec(),
             end,
         }
+    }
+
+    #[test]
+    fn file_handle_controls_and_binary_streams_are_separate_routes() {
+        for operation in ["read", "write"] {
+            assert!(node_handle_stream_operation(operation));
+            assert!(!node_handle_control_operation(operation));
+        }
+        for operation in ["close", "stat", "sync", "datasync", "truncate"] {
+            assert!(node_handle_control_operation(operation));
+            assert!(!node_handle_stream_operation(operation));
+        }
+        assert!(!node_handle_stream_operation("unexpected"));
+        assert!(!node_handle_control_operation("unexpected"));
+    }
+
+    #[test]
+    fn file_handle_offsets_and_lengths_reject_negative_or_noninteger_values() {
+        assert_eq!(file_operation_position(&json!({})).unwrap(), None);
+        assert_eq!(
+            file_operation_position(&json!({"position":12})).unwrap(),
+            Some(12)
+        );
+        assert!(file_operation_position(&json!({"position":-1})).is_err());
+        assert_eq!(
+            optional_nonnegative_integer(&json!({}), "length", 65536).unwrap(),
+            65536
+        );
+        assert_eq!(
+            optional_nonnegative_integer(&json!({"length":0}), "length", 65536).unwrap(),
+            0
+        );
+        assert!(optional_nonnegative_integer(&json!({"length":-1}), "length", 65536).is_err());
+    }
+
+    #[test]
+    fn file_handle_read_stream_emits_raw_chunks_and_restores_explicit_position() {
+        let mut file = std::io::Cursor::new(b"abcdef".to_vec());
+        file.set_position(5);
+        let mut output = Vec::new();
+        let bytes_read = read_handle_chunks(
+            &mut file,
+            4,
+            Some(1),
+            |chunk| output.extend_from_slice(chunk),
+            || false,
+        )
+        .unwrap();
+
+        assert_eq!(bytes_read, Some(4));
+        assert_eq!(output, b"bcde");
+        assert_eq!(file.position(), 5);
+    }
+
+    struct ShortWriter {
+        inner: std::io::Cursor<Vec<u8>>,
+        max_write: usize,
+    }
+
+    impl Write for ShortWriter {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            let count = buffer.len().min(self.max_write);
+            self.inner.write(&buffer[..count])
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    impl Seek for ShortWriter {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(position)
+        }
+    }
+
+    #[test]
+    fn file_handle_write_acks_short_writes_and_the_empty_end_frame() {
+        let mut file = ShortWriter {
+            inner: std::io::Cursor::new(Vec::new()),
+            max_write: 2,
+        };
+        let chunks = [
+            InboundChunk {
+                seq: 1,
+                data: b"abc".to_vec(),
+                end: false,
+            },
+            InboundChunk {
+                seq: 2,
+                data: b"c".to_vec(),
+                end: false,
+            },
+            InboundChunk {
+                seq: 3,
+                data: Vec::new(),
+                end: true,
+            },
+        ];
+        let mut received = chunks.into_iter();
+        let mut acknowledgements = Vec::new();
+        let bytes_written = write_handle_chunks(
+            &mut file,
+            Some(0),
+            || received.next(),
+            |seq, count| acknowledgements.push((seq, count)),
+            || false,
+        )
+        .unwrap();
+
+        assert_eq!(bytes_written, Some(3));
+        assert_eq!(file.inner.get_ref(), b"abc");
+        assert_eq!(file.inner.position(), 0);
+        assert_eq!(acknowledgements, [(1, 2), (2, 1), (3, 0)]);
     }
 
     #[test]

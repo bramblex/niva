@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
+import urllib.error
+import urllib.request
 import unittest
 from pathlib import Path
 
@@ -66,11 +69,62 @@ class NodeCompatMacSmokeStaticTests(unittest.TestCase):
         methods = {method for case in self.catalog["cases"] for method in case["methods"]}
         for required in {
             "CommonJS.require", "browser.import", "fs/promises", "alias:assert/strict", "stream/promises.pipeline",
-            "fs.writeFile", "child_process.spawn", "http.request", "https.get",
+            "fs.writeFile", "child_process.spawn", "http.request", "http.get.concurrent", "https.get",
             "stream.pipeline", "crypto.createHash", "zlib.gunzip", "importmap:fs",
         }:
             with self.subTest(method=required):
                 self.assertIn(required, methods)
+
+    def test_http_parallel_fixture_releases_only_after_both_distinct_requests(self):
+        server, state = run.start_http_fixture_server(barrier_timeout=1.0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}/parallel?id="
+
+        def read(request_id: str) -> tuple[int, str]:
+            with urllib.request.urlopen(base + request_id, timeout=3) as response:
+                return response.status, response.read().decode()
+
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(read, request_id) for request_id in ("first", "second")]
+                results = [future.result(timeout=4) for future in futures]
+            self.assertEqual([status for status, _ in results], [200, 200])
+            self.assertEqual(
+                [body for _, body in results],
+                [
+                    "parallel response first: both requests arrived",
+                    "parallel response second: both requests arrived",
+                ],
+            )
+            self.assertEqual(state["parallel_ids"], {"first", "second"})
+            self.assertTrue(state["parallel_released"])
+            self.assertEqual(state["parallel_responses"], 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_http_parallel_fixture_returns_timeout_when_second_request_never_arrives(self):
+        server, state = run.start_http_fixture_server(barrier_timeout=0.1)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/parallel?id=first", timeout=2)
+            self.assertEqual(raised.exception.code, 504)
+            try:
+                self.assertIn(b"barrier timed out", raised.exception.read())
+            finally:
+                raised.exception.close()
+            self.assertTrue(state["parallel_failed"])
+            self.assertFalse(state["parallel_released"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_report_rejects_an_incomplete_passed_list(self):
         catalog = self.catalog["cases"]

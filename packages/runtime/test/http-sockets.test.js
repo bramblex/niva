@@ -32,7 +32,7 @@ const niva = { bridge: {
     const options = args[0], id = nextStreamId++;
     let resolve, reject;
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-    const state = { id, options, handlers, response: null, responseStarted: false, settled: false, uploads: [], responseAcks: 0 };
+    const state = { id, options, handlers, response: null, responseStarted: false, settled: false, uploadEnded: false, uploads: [], responseAcks: 0, postEndUploadAttempts: 0 };
     const request = nodeHttp.request(new URL(options.url), { method: options.method, headers: nodeHeaders(options.headers) });
     state.request = request;
     request.on('response', response => {
@@ -73,18 +73,25 @@ const niva = { bridge: {
     const state = streams.find(candidate => candidate.id === id);
     if (!state) return false;
     const bytes = Buffer.from(data);
-    if (state.responseStarted && !end && bytes.length === 0) {
-      state.responseAcks++;
-      state.response.resume();
-      return true;
-    }
+    if (state.uploadEnded) { state.postEndUploadAttempts++; return false; }
     if (end) {
+      state.uploadEnded = true;
       state.request.end(bytes);
       return true;
     }
     state.uploads.push(bytes.length);
     state.request.write(bytes, () => state.handlers.onEvent('uploadAck', {}));
     return true;
+  },
+  call(method, args) {
+    assert.equal(method, 'http.responseAck');
+    const [{ id, seq }] = args;
+    const state = streams.find(candidate => candidate.id === id);
+    assert.ok(state, `unknown HTTP response stream ${id}`);
+    assert.equal(seq, state.responseAcks + 1, 'response credits use increasing per-stream sequence numbers');
+    state.responseAcks++;
+    state.response.resume();
+    return Promise.resolve({ accepted: true, seq });
   },
 } };
 
@@ -124,6 +131,7 @@ test('HTTP client streams a chunked request and response through the Native brid
     assert.deepEqual(streams.at(-1).options.headers.map(([name]) => name), ['Host', 'Connection']);
     assert.ok(streams.at(-1).options.url.endsWith('/test'));
     assert.ok(streams.at(-1).responseAcks > 0);
+    assert.equal(streams.at(-1).postEndUploadAttempts, 0, 'response credits never reuse the ended request upload lane');
   } finally { await close(server); }
 });
 
@@ -147,6 +155,7 @@ test('HTTP client serializes repeated outbound headers as Native header pairs', 
     });
     assert.deepEqual(streams.at(-1).options.headers.slice(0, 2), [['X-Repeat', 'one'], ['X-Repeat', 'two']]);
     assert.deepEqual(streams.at(-1).options.headers.at(-1), ['Connection', 'close']);
+    assert.equal(streams.at(-1).postEndUploadAttempts, 0, 'GET response credits do not send frames after END');
     assert.deepEqual(receivedRawHeaders.filter((_, index) => index % 2 === 0 && receivedRawHeaders[index].toLowerCase() === 'x-repeat').length, 2);
   } finally { await close(server); }
 });

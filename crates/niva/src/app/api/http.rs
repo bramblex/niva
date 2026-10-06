@@ -42,6 +42,14 @@ const MAX_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_cancellable_api("http.requestText", request_text);
     api_manager.register_stream_api("http.requestStream", request_stream);
+    api_manager.register_ipc_api("http.responseAck", |context, request| async move {
+        let (options,): (ResponseAckOptions,) = request.args().get()?;
+        context
+            .app
+            .api()
+            .acknowledge_http_response(&context, options.id, options.seq)?;
+        Ok(json!({"accepted": true, "seq": options.seq}))
+    });
 }
 
 #[derive(Deserialize)]
@@ -62,6 +70,13 @@ struct StreamRequestOptions {
     method: Option<String>,
     headers: Option<Vec<(String, String)>>,
     timeout: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResponseAckOptions {
+    id: u64,
+    seq: u64,
 }
 
 async fn request_text(
@@ -180,7 +195,7 @@ async fn request_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
         cancel_ctx.cancelled().await;
         cancel_socket.cancel();
         Err(anyhow!(
-            "ECANCELED: HTTP request cancelled with its WebSocket session"
+            "ECANCELED: HTTP request cancelled with its IPC session"
         ))
     })
     .await?;
@@ -432,6 +447,7 @@ fn build_agent(timeout: Duration, socket: Arc<SocketControl>) -> Agent {
 
 trait HttpStreamCall: Send + Sync {
     fn next_chunk_blocking(&self) -> Option<InboundChunk>;
+    fn next_response_ack_blocking(&self) -> Option<u64>;
     fn push(&self, name: &str, data: Value);
     fn chunk(&self, data: &[u8], end: bool);
 }
@@ -439,6 +455,10 @@ trait HttpStreamCall: Send + Sync {
 impl HttpStreamCall for CallContext {
     fn next_chunk_blocking(&self) -> Option<InboundChunk> {
         CallContext::next_chunk_blocking(self)
+    }
+
+    fn next_response_ack_blocking(&self) -> Option<u64> {
+        CallContext::next_http_response_ack_blocking(self)
     }
 
     fn push(&self, name: &str, data: Value) {
@@ -460,7 +480,7 @@ fn execute_stream_request(
     socket: Arc<SocketControl>,
 ) -> Result<()> {
     if socket.is_cancelled() {
-        bail!("ECANCELED: HTTP request cancelled with its WebSocket session");
+        bail!("ECANCELED: HTTP request cancelled with its IPC session");
     }
     let agent = build_agent(timeout, socket.clone());
     let uri = url.parse::<http::Uri>()?;
@@ -504,6 +524,7 @@ fn execute_stream_request(
 
     let mut reader = body.into_reader();
     let mut buffer = [0u8; MAX_STREAM_CHUNK_BYTES];
+    let mut response_seq = 1u64;
     loop {
         if socket.is_cancelled() {
             bail!("ECANCELED: HTTP response stream cancelled");
@@ -513,7 +534,10 @@ fn execute_stream_request(
             break;
         }
         ctx.chunk(&buffer[..amount], false);
-        await_download_ack(ctx, &socket)?;
+        await_download_ack(ctx, &socket, response_seq)?;
+        response_seq = response_seq.checked_add(1).ok_or_else(|| {
+            anyhow!("ERR_NIVA_CHANNEL_SEQUENCE: HTTP response sequence exhausted")
+        })?;
     }
     ctx.chunk(&[], true);
     Ok(())
@@ -560,16 +584,20 @@ fn response_headers(headers: &http::HeaderMap) -> Result<(Map<String, Value>, Ve
     Ok((result, raw))
 }
 
-fn await_download_ack(ctx: &dyn HttpStreamCall, socket: &SocketControl) -> Result<()> {
+fn await_download_ack(
+    ctx: &dyn HttpStreamCall,
+    socket: &SocketControl,
+    expected_seq: u64,
+) -> Result<()> {
     if socket.is_cancelled() {
         bail!("ECANCELED: HTTP response stream cancelled");
     }
-    let chunk = ctx
-        .next_chunk_blocking()
+    let seq = ctx
+        .next_response_ack_blocking()
         .ok_or_else(|| anyhow!("ECANCELED: HTTP response consumer disconnected"))?;
     anyhow::ensure!(
-        !chunk.end && chunk.data.is_empty(),
-        "EPROTO: invalid HTTP response stream acknowledgement"
+        seq == expected_seq,
+        "ERR_NIVA_CHANNEL_SEQUENCE: expected HTTP response credit {expected_seq}"
     );
     Ok(())
 }
@@ -620,9 +648,8 @@ impl<'a> HttpRequestBodyReader<'a> {
                 )
             })?;
             if chunk.data.is_empty() && !chunk.end {
-                // Empty non-terminal frames are reserved for download credits.
-                // The response head is emitted only after request upload ends,
-                // so a credit during upload is invalid and ignored safely.
+                // Response credits use the separate IPC control lane; empty
+                // upload frames never grant download capacity.
                 continue;
             }
             if chunk.data.len() > MAX_STREAM_CHUNK_BYTES {
@@ -1329,12 +1356,17 @@ mod tests {
 
     struct TestHttpStreamCall {
         inbound: async_channel::Receiver<InboundChunk>,
+        response_ack: async_channel::Receiver<u64>,
         output: std::sync::mpsc::Sender<TestStreamOutput>,
     }
 
     impl HttpStreamCall for TestHttpStreamCall {
         fn next_chunk_blocking(&self) -> Option<InboundChunk> {
             self.inbound.recv_blocking().ok()
+        }
+
+        fn next_response_ack_blocking(&self) -> Option<u64> {
+            self.response_ack.recv_blocking().ok()
         }
 
         fn push(&self, name: &str, data: Value) {
@@ -1396,9 +1428,11 @@ mod tests {
         });
 
         let (inbound_tx, inbound_rx) = async_channel::bounded(64);
+        let (response_ack_tx, response_ack_rx) = async_channel::bounded(1);
         let (output_tx, output_rx) = std::sync::mpsc::channel();
         let ctx = Arc::new(TestHttpStreamCall {
             inbound: inbound_rx,
+            response_ack: response_ack_rx,
             output: output_tx,
         });
         let worker_ctx = ctx.clone();
@@ -1472,7 +1506,7 @@ mod tests {
         }
 
         let mut received = Vec::new();
-        let mut next_seq = 3;
+        let mut next_response_ack_seq = 1;
         loop {
             match output_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
                 TestStreamOutput::Chunk(bytes, true) => {
@@ -1482,19 +1516,19 @@ mod tests {
                 TestStreamOutput::Chunk(bytes, false) => {
                     assert!(bytes.len() <= MAX_STREAM_CHUNK_BYTES);
                     received.extend_from_slice(&bytes);
-                    inbound_tx
-                        .send_blocking(InboundChunk {
-                            seq: next_seq,
-                            data: Vec::new(),
-                            end: false,
-                        })
+                    response_ack_tx
+                        .send_blocking(next_response_ack_seq)
                         .unwrap();
-                    next_seq += 1;
+                    next_response_ack_seq += 1;
                 }
                 TestStreamOutput::Event(name, _) => panic!("unexpected HTTP stream event: {name}"),
             }
         }
         assert_eq!(received, response_body);
+        assert!(matches!(
+            ctx.inbound.try_recv(),
+            Err(async_channel::TryRecvError::Empty)
+        ));
         worker.join().unwrap().unwrap();
         server.join().unwrap();
     }
@@ -1562,9 +1596,11 @@ mod tests {
         });
 
         let (inbound_tx, inbound_rx) = async_channel::bounded(64);
+        let (response_ack_tx, response_ack_rx) = async_channel::bounded(1);
         let (output_tx, output_rx) = std::sync::mpsc::channel();
         let ctx = Arc::new(TestHttpStreamCall {
             inbound: inbound_rx,
+            response_ack: response_ack_rx,
             output: output_tx,
         });
         let worker_ctx = ctx.clone();
@@ -1603,20 +1639,20 @@ mod tests {
             TestStreamOutput::Event(name, _) if name == "response"
         ));
         match output_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
-            TestStreamOutput::Chunk(bytes, false) => assert_eq!(bytes, b"ok"),
+            TestStreamOutput::Chunk(bytes, false) => {
+                assert_eq!(bytes, b"ok");
+                response_ack_tx.send_blocking(1).unwrap();
+            }
             TestStreamOutput::Chunk(_, true) => panic!("body data must precede its end frame"),
             TestStreamOutput::Event(name, _) => panic!("unexpected HTTP stream event: {name}"),
         }
-        inbound_tx
-            .send_blocking(InboundChunk {
-                seq: 3,
-                data: Vec::new(),
-                end: false,
-            })
-            .unwrap();
         assert!(matches!(
             output_rx.recv_timeout(Duration::from_secs(5)).unwrap(),
             TestStreamOutput::Chunk(bytes, true) if bytes.is_empty()
+        ));
+        assert!(matches!(
+            ctx.inbound.try_recv(),
+            Err(async_channel::TryRecvError::Empty)
         ));
         worker.join().unwrap().unwrap();
         server.join().unwrap();
@@ -1636,8 +1672,10 @@ mod tests {
             })
             .unwrap();
         let (output_tx, _output_rx) = std::sync::mpsc::channel();
+        let (_response_ack_tx, response_ack_rx) = async_channel::bounded(1);
         let ctx = TestHttpStreamCall {
             inbound: inbound_rx,
+            response_ack: response_ack_rx,
             output: output_tx,
         };
         let socket = Arc::new(SocketControl::default());
@@ -1665,9 +1703,11 @@ mod tests {
                 end: true,
             })
             .unwrap();
+        let (response_ack_tx, response_ack_rx) = async_channel::bounded(1);
         let (output_tx, output_rx) = std::sync::mpsc::channel();
         let ctx = Arc::new(TestHttpStreamCall {
             inbound: inbound_rx,
+            response_ack: response_ack_rx,
             output: output_tx,
         });
         let worker_ctx = ctx.clone();
@@ -1693,7 +1733,7 @@ mod tests {
             }
             TestStreamOutput::Chunk(_, _) => panic!("response head must precede body chunks"),
         }
-        let mut next_seq = 2;
+        let mut next_response_seq = 1;
         let mut chunks = 0usize;
         loop {
             match output_rx.recv_timeout(Duration::from_secs(20)).unwrap() {
@@ -1705,14 +1745,8 @@ mod tests {
                     assert!(!bytes.is_empty());
                     assert!(bytes.len() <= MAX_STREAM_CHUNK_BYTES);
                     chunks += 1;
-                    inbound_tx
-                        .send_blocking(InboundChunk {
-                            seq: next_seq,
-                            data: Vec::new(),
-                            end: false,
-                        })
-                        .unwrap();
-                    next_seq += 1;
+                    response_ack_tx.send_blocking(next_response_seq).unwrap();
+                    next_response_seq += 1;
                 }
                 TestStreamOutput::Event(name, _) => panic!("unexpected HTTP stream event: {name}"),
             }

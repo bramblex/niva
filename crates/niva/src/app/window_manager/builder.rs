@@ -329,10 +329,16 @@ impl NivaBuilder {
         let trusted_bootstrap = trusted_ws_origin
             .as_ref()
             .map(|trusted_origin| {
+                let local_origin_guard = trusted_local_origin_guard(
+                    trusted_origin,
+                    use_custom_protocol,
+                    &app_scheme,
+                );
                 format!(
-                    "if(window.top===window && location.origin==={trusted_origin:?} && !location.pathname.startsWith('/__niva_fs/')){{\
+                    "if(window.top===window && {local_origin_guard} && !location.pathname.startsWith('/__niva_fs/')){{\
                     window.__niva_ws_url={:?};window.__niva_window_id={id};\
-                    window.__niva_token={window_token:?};window.__niva_node_bootstrap={node_bootstrap};\
+                    window.__niva_token={window_token:?};window.__niva_source_origin={trusted_origin:?};\
+                    window.__niva_node_bootstrap={node_bootstrap};\
                     window.__niva_runtime_config.nonce={runtime_nonce:?};}}",
                     format!("ws://127.0.0.1:{server_port}/__niva_ws"),
                 )
@@ -362,62 +368,111 @@ impl NivaBuilder {
             );
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            let ipc_app = app.clone();
-            builder = builder.with_ipc_handler(move |request| {
-                let source_url = request.uri().to_string();
-                let body = request.into_body();
-                let app = ipc_app.clone();
-                smol::spawn(async move {
-                    let source = crate::app::api_manager::IpcFrameSource {
-                        source_url: source_url.clone(),
-                        frame_id: 0,
-                        generation: 0,
-                        is_main_frame: true,
-                    };
-                    let response = match app.api().ipc_message(id, source, &body).await {
-                        Ok(response) => response,
-                        Err(err) => {
-                            crate::niva_log!(
-                                crate::app::logging::Level::Warn,
-                                "rejected IPC request: {err}"
-                            );
-                            crate::app::api_manager::ApiManager::ipc_error_response(
+        let ipc_app = app.clone();
+        let custom_ipc_origin = use_custom_protocol;
+        let ipc_app_scheme = app_scheme.clone();
+        builder = builder.with_ipc_handler(move |request| {
+            let source_url = request.uri().to_string();
+            let body = request.into_body();
+            let app = ipc_app.clone();
+            let app_for_top = app.clone();
+            let app_for_reply = app.clone();
+            let app_scheme = ipc_app_scheme.clone();
+            smol::spawn(async move {
+                // The standard Wry callback supplies the sending frame's URI.
+                // Capture the current top-level URL separately so a cross-origin
+                // iframe can never claim a grant by reporting its own origin.
+                let top_url = match crate::app::main_exec::run_on_main(
+                    &app,
+                    move |_, _| {
+                        let window = app_for_top.window()?.get_window(id)?;
+                        Ok(window.webview.url()?)
+                    },
+                )
+                .await
+                {
+                    Ok(url) => url,
+                    Err(error) => {
+                        crate::niva_log!(
+                            crate::app::logging::Level::Warn,
+                            "unable to read top-level URL for IPC: {error}"
+                        );
+                        return;
+                    }
+                };
+                let source = crate::app::api_manager::IpcFrameSource {
+                    source_url,
+                    top_url,
+                    frame_id: 0,
+                    generation: 0,
+                    is_main_frame: true,
+                };
+                let response = match app.api().ipc_message(id, source.clone(), &body).await {
+                    Ok(response) => response,
+                    Err(error) => {
+                        crate::niva_log!(
+                            crate::app::logging::Level::Warn,
+                            "rejected IPC request: {error}"
+                        );
+                        let Some(response) =
+                            crate::app::api_manager::ApiManager::ipc_error_envelope(
                                 &body,
-                                &err.to_string(),
+                                &error.to_string(),
+                                &source,
                             )
-                        }
-                    };
-                    let app_for_main = app.clone();
-                    if let Err(err) = crate::app::main_exec::run_on_main(&app, move |_, _| {
-                        use wry::WebViewExtWindows;
-                        let window = app_for_main.window()?.get_window(id)?;
+                        else {
+                            return;
+                        };
+                        response
+                    }
+                };
+                let envelope: serde_json::Value = match serde_json::from_str(&response) {
+                    Ok(envelope) => envelope,
+                    Err(error) => {
+                        crate::niva_log!(
+                            crate::app::logging::Level::Warn,
+                            "invalid IPC reply envelope: {error}"
+                        );
+                        return;
+                    }
+                };
+                let Some(source_origin) = envelope["sourceOrigin"].as_str().map(str::to_owned)
+                else {
+                    return;
+                };
+                let encoded = match serde_json::to_string(&envelope) {
+                    Ok(encoded) => encoded
+                        .replace('\u{2028}', "\\u2028")
+                        .replace('\u{2029}', "\\u2029"),
+                    Err(_) => return,
+                };
+                let script = format!(
+                    "if(typeof window.__niva_ipc_reply==='function')window.__niva_ipc_reply({encoded});"
+                );
+                if let Err(error) = crate::app::main_exec::run_on_main(
+                    &app,
+                    move |_, _| {
+                        let window = app_for_reply.window()?.get_window(id)?;
                         let current = window.webview.url()?;
-                        let current_origin =
-                            url::Url::parse(&current)?.origin().ascii_serialization();
-                        let request_origin =
-                            url::Url::parse(&source_url)?.origin().ascii_serialization();
-                        if current_origin == request_origin {
-                            unsafe {
-                                window.webview.webview().PostWebMessageAsString(
-                                    &windows::core::HSTRING::from(response.clone()),
-                                )?;
-                            }
+                        if page_origin(&current, custom_ipc_origin, &app_scheme)
+                            .as_deref()
+                            == Some(source_origin.as_str())
+                        {
+                            window.webview.evaluate_script(&script)?;
                         }
                         Ok(())
-                    })
-                    .await
-                    {
-                        crate::niva_log!(
-                            crate::app::logging::Level::Error,
-                            "unable to send IPC response: {err}"
-                        );
-                    }
-                })
-                .detach();
-            });
-        }
+                    },
+                )
+                .await
+                {
+                    crate::niva_log!(
+                        crate::app::logging::Level::Warn,
+                        "unable to deliver IPC reply: {error}"
+                    );
+                }
+            })
+            .detach();
+        });
         set_property!(builder, with_accept_first_mouse, true);
         set_property!(builder, with_clipboard, true);
         set_property_some!(builder, with_devtools, options.devtools);
@@ -577,9 +632,6 @@ impl NivaBuilder {
             false
         });
 
-        // NOTE: API traffic goes over our own WebSocket now
-        // (see http_server + initialize_script.js); wry's ipc handler is gone.
-
         Ok((
             builder.with_url(entry_url).build(window)?,
             trusted_ws_origin,
@@ -697,6 +749,21 @@ fn page_origin(raw_url: &str, is_custom_protocol: bool, app_scheme: &str) -> Opt
     Some(parsed.origin().ascii_serialization())
 }
 
+fn trusted_local_origin_guard(
+    trusted_origin: &str,
+    is_custom_protocol: bool,
+    app_scheme: &str,
+) -> String {
+    if is_custom_protocol && !cfg!(any(target_os = "windows", target_os = "android")) {
+        format!(
+            "new URL(location.href).protocol==={:?}&&new URL(location.href).hostname==='app'&&new URL(location.href).port===''&&new URL(location.href).username===''&&new URL(location.href).password===''",
+            format!("{app_scheme}:"),
+        )
+    } else {
+        format!("location.origin==={trusted_origin:?}")
+    }
+}
+
 fn physical_to_logical(position: (i32, i32), scale_factor: f64) -> tao::dpi::LogicalPosition<f64> {
     tao::dpi::PhysicalPosition::new(position.0 as f64, position.1 as f64).to_logical(scale_factor)
 }
@@ -790,6 +857,20 @@ mod tests {
             super::page_origin(&format!("http://{scheme}.app/index.html"), true, &scheme),
             Some(origin)
         );
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "android")))]
+    #[test]
+    fn custom_scheme_injection_guard_reads_credentials_from_url_not_location() {
+        let guard = super::trusted_local_origin_guard(
+            "niva-a51c1728d17442d48f577d296c966b51://app",
+            true,
+            "niva-a51c1728d17442d48f577d296c966b51",
+        );
+        assert!(guard.contains("new URL(location.href).username===''"));
+        assert!(guard.contains("new URL(location.href).password===''"));
+        assert!(!guard.contains("location.username"));
+        assert!(!guard.contains("location.password"));
     }
 
     #[cfg(target_os = "windows")]

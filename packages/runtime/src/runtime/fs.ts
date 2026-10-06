@@ -351,10 +351,96 @@
         } if (typeof callback !== "function")
             throw new TypeError("callback must be a function"); promises.cp(source, destination, opts).then(function () { callback(null); }, callback); };
         function control(id, op, args?, routeOwner?) {
+            if (op === "read") {
+                var readChunks: any[] = [];
+                var readStream;
+                try {
+                    var readHandlers = { onChunk: function (chunk) { if (chunk && chunk.byteLength) readChunks.push(Buffer.from(chunk)); } };
+                    var readArgs = [id, op, { length: args && args.length, position: args && args.position }];
+                    readStream = routeOwner
+                        ? runtime.streamRelated(niva, routeOwner, "fs.handle", readArgs, readHandlers)
+                        : runtime.stream(niva, "fs.handle", readArgs, readHandlers);
+                }
+                catch (error) {
+                    return Promise.reject(runtime.nativeError(error));
+                }
+                return readStream.promise.then(function (metadata) {
+                    var bytesRead = metadata && metadata.bytesRead;
+                    var data = Buffer.concat(readChunks);
+                    if (!Number.isSafeInteger(bytesRead) || bytesRead < 0 || bytesRead !== data.byteLength)
+                        throw runtime.bridgeError("Invalid Native file read stream result", "ERR_NIVA_IPC_RESPONSE");
+                    return { bytesRead: bytesRead, data: data };
+                }).catch(function (error) { throw runtime.nativeError(error); });
+            }
+            if (op === "write") {
+                var bytes = Buffer.from(args && args.data !== undefined ? args.data : []);
+                var position = args && args.position;
+                var writeStream, sentSeq = 0, offset = 0, pendingLength = 0, endSent = false, endAcked = false;
+                var transfer = new Promise(function (resolve, reject) {
+                    var settled = false;
+                    function fail(error) {
+                        if (settled) return;
+                        settled = true;
+                        try { writeStream && writeStream.cancel(); } catch (_) { }
+                        reject(runtime.nativeError(error));
+                    }
+                    function sendNext() {
+                        if (offset < bytes.byteLength) {
+                            var chunk = bytes.subarray(offset, Math.min(bytes.byteLength, offset + 16384));
+                            pendingLength = chunk.byteLength;
+                            sentSeq += 1;
+                            if (!runtime.streamSend(niva, writeStream.id, chunk, false))
+                                throw runtime.bridgeError("FileHandle write stream is full", "ENOBUFS");
+                            return;
+                        }
+                        if (!endSent) {
+                            endSent = true;
+                            pendingLength = 0;
+                            sentSeq += 1;
+                            if (!runtime.streamSend(niva, writeStream.id, new Uint8Array(0), true))
+                                throw runtime.bridgeError("FileHandle write stream is full", "ENOBUFS");
+                        }
+                    }
+                    try {
+                        var handlers = { onEvent: function (event, data) {
+                                if (event !== "uploadAck") return;
+                                if (!data || data.seq !== sentSeq || !Number.isSafeInteger(data.bytesWritten)
+                                    || data.bytesWritten < 0 || data.bytesWritten > pendingLength)
+                                    throw runtime.bridgeError("Invalid Native file write acknowledgement", "ERR_NIVA_IPC_RESPONSE");
+                                if (endSent && pendingLength === 0) {
+                                    if (data.bytesWritten !== 0) throw runtime.bridgeError("Invalid Native file write end acknowledgement", "ERR_NIVA_IPC_RESPONSE");
+                                    endAcked = true;
+                                    return;
+                                }
+                                if (data.bytesWritten === 0) throw runtime.bridgeError("FileHandle write made no progress", "EIO");
+                                offset += data.bytesWritten;
+                                pendingLength = 0;
+                                sendNext();
+                            } };
+                        var writeArgs = [id, op, { position: position }];
+                        writeStream = routeOwner
+                            ? runtime.streamRelated(niva, routeOwner, "fs.handle", writeArgs, handlers)
+                            : runtime.stream(niva, "fs.handle", writeArgs, handlers);
+                        writeStream.promise.then(function (metadata) {
+                            if (settled) return;
+                            if (!endAcked || !metadata || !Number.isSafeInteger(metadata.bytesWritten)
+                                || metadata.bytesWritten !== offset || offset !== bytes.byteLength) {
+                                fail(runtime.bridgeError("Invalid Native file write stream result", "ERR_NIVA_IPC_RESPONSE"));
+                                return;
+                            }
+                            settled = true;
+                            resolve({ bytesWritten: metadata.bytesWritten });
+                        }, fail);
+                        sendNext();
+                    }
+                    catch (error) { fail(error); }
+                });
+                return transfer.catch(function (error) { throw runtime.nativeError(error); });
+            }
             try {
                 var stream = routeOwner
-                    ? runtime.streamRelated(niva, routeOwner, "fs.handle", [id, op, args || {}])
-                    : runtime.stream(niva, "fs.handle", [id, op, args || {}]);
+                    ? runtime.streamRelated(niva, routeOwner, "fs.handleControl", [id, op, args || {}])
+                    : runtime.stream(niva, "fs.handleControl", [id, op, args || {}]);
                 return stream.promise.catch(function (error) { throw runtime.nativeError(error); });
             }
             catch (error) {
@@ -398,7 +484,7 @@
                                     length = buffer.length - offset;
                                 if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length < 0 || offset + length > buffer.byteLength)
                                     return Promise.reject(new RangeError("Invalid read range"));
-                                return op("read", { length: length, position: position }).then(function (raw) { new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(Buffer.from(raw.data, "base64"), offset); return { bytesRead: raw.bytesRead, buffer: buffer }; });
+                                return op("read", { length: length, position: position }).then(function (raw) { new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(Buffer.from(raw.data).subarray(0, raw.bytesRead), offset); return { bytesRead: raw.bytesRead, buffer: buffer }; });
                             },
                             write: function (buffer, offset, length, position) {
                                 var original = buffer, bytes;
@@ -413,18 +499,18 @@
                                         return Promise.reject(new RangeError("Invalid write range"));
                                     bytes = Buffer.from(buffer.buffer, buffer.byteOffset + offset, length);
                                 }
-                                return op("write", { data: bytes.toString("base64"), position: position }).then(function (raw) { return { bytesWritten: raw.bytesWritten, buffer: original }; });
+                                return op("write", { data: bytes, position: position }).then(function (raw) { return { bytesWritten: raw.bytesWritten, buffer: original }; });
                             },
                             readFile: async function (opts) { opts = options(opts); var chunks = [], size = 0; for (;;) {
                                 var part = await op("read", { length: 65536 });
                                 if (!part.bytesRead)
                                     break;
-                                var bytes = Buffer.from(part.data, "base64");
+                                var bytes = Buffer.from(part.data);
                                 chunks.push(bytes);
                                 size += bytes.length;
                             } var result = Buffer.concat(chunks, size); return opts.encoding ? result.toString(opts.encoding) : result; },
                             writeFile: async function (value, opts) { var bytes = Buffer.from(value, options(opts).encoding || "utf8"), offset = 0; while (offset < bytes.length) {
-                                var part = await op("write", { data: bytes.subarray(offset, offset + 65536).toString("base64") });
+                                var part = await op("write", { data: bytes.subarray(offset, offset + 65536) });
                                 if (!part.bytesWritten)
                                     throw runtime.bridgeError("No write progress", "EIO");
                                 offset += part.bytesWritten;

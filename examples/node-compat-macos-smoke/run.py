@@ -18,6 +18,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 
 HERE = Path(__file__).resolve().parent
@@ -27,6 +28,7 @@ EXPECTED_MODULES = {
     "buffer", "url", "crypto", "zlib", "http", "https", "assert", "stream", "tty",
 }
 RESULT_NAMES = {"nodecompat-macos-result", "nodecompat-macos-failure"}
+HTTP_PARALLEL_BARRIER_TIMEOUT_SECONDS = 8.0
 
 
 class SmokeError(RuntimeError):
@@ -127,6 +129,73 @@ def read_log(path: Path) -> str:
     return "\n".join(lines[-80:])
 
 
+def start_http_fixture_server(
+    barrier_timeout: float = HTTP_PARALLEL_BARRIER_TIMEOUT_SECONDS,
+) -> tuple[ThreadingHTTPServer, dict[str, Any]]:
+    barrier = threading.Condition()
+    state: dict[str, Any] = {
+        "parallel_ids": set(),
+        "parallel_failed": False,
+        "parallel_released": False,
+        "parallel_responses": 0,
+    }
+
+    class HttpFixture(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def _reply(self, status: int, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            url = urlsplit(self.path)
+            if url.path == "/parallel":
+                values = parse_qs(url.query).get("id", [])
+                request_id = values[0] if len(values) == 1 else ""
+                if request_id not in {"first", "second"}:
+                    self._reply(400, b"parallel request id must be first or second")
+                    return
+
+                with barrier:
+                    state["parallel_ids"].add(request_id)
+                    if len(state["parallel_ids"]) == 2:
+                        state["parallel_released"] = True
+                        barrier.notify_all()
+                    arrived = barrier.wait_for(
+                        lambda: state["parallel_released"] or state["parallel_failed"],
+                        timeout=barrier_timeout,
+                    )
+                    if not arrived:
+                        state["parallel_failed"] = True
+                        barrier.notify_all()
+                    released = state["parallel_released"] and not state["parallel_failed"]
+
+                if not released:
+                    self._reply(504, b"parallel HTTP barrier timed out before both request ids arrived")
+                    return
+                body = f"parallel response {request_id}: both requests arrived".encode()
+                self._reply(200, body)
+                with barrier:
+                    state["parallel_responses"] += 1
+                return
+
+            body = b"NodeCompat macOS integration smoke"
+            self._reply(200, body)
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            if body != b"buffered":
+                self._reply(400, b"")
+                return
+            self._reply(201, b"POST accepted")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HttpFixture)
+    return server, state
+
+
 def validate_report(report: dict[str, Any]) -> tuple[int, list[str]]:
     modules = report.get("modules")
     if not isinstance(modules, list) or set(modules) != EXPECTED_MODULES or len(modules) != len(EXPECTED_MODULES):
@@ -164,26 +233,7 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
     process: subprocess.Popen[bytes] | None = None
     frames: FrameReader | None = None
     result_report: dict[str, Any] | None = None
-    class HttpFixture(BaseHTTPRequestHandler):
-        def log_message(self, *args): pass
-        def do_GET(self):
-            body = b'NodeCompat macOS integration smoke'
-            self.send_response(200)
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        def do_POST(self):
-            body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
-            if body != b'buffered':
-                self.send_response(400)
-                self.end_headers()
-                return
-            body = b'POST accepted'
-            self.send_response(201)
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-    http_fixture = ThreadingHTTPServer(('127.0.0.1', 0), HttpFixture)
+    http_fixture, http_fixture_state = start_http_fixture_server()
     threading.Thread(target=http_fixture.serve_forever, daemon=True).start()
 
     try:
@@ -200,6 +250,7 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
         child_env["HOME"] = str(home)
         child_env["TMPDIR"] = str(tmp)
         child_env["NIVA_SMOKE_HTTP_URL"] = f'http://127.0.0.1:{http_fixture.server_port}/'
+        child_env["NIVA_SMOKE_HTTP_PARALLEL_URL"] = f'http://127.0.0.1:{http_fixture.server_port}/parallel'
         with log_path.open("wb") as log_file:
             process = subprocess.Popen(
                 [
@@ -236,9 +287,20 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
 
         if result_report is None:
             raise TimeoutError(f"NodeCompat case page did not report within {timeout:.1f}s")
+        if (
+            http_fixture_state["parallel_ids"] != {"first", "second"}
+            or http_fixture_state["parallel_failed"]
+            or not http_fixture_state["parallel_released"]
+            or http_fixture_state["parallel_responses"] != 2
+        ):
+            raise SmokeError(f"parallel HTTP fixture did not release two independent requests: {http_fixture_state!r}")
         method_count, methods = validate_report(result_report)
         (root / "result.json").write_text(json.dumps({
             "ok": True, "engine": "niva-webview", "methodCount": method_count,
+            "parallelHttpFixture": {
+                "requestIds": sorted(http_fixture_state["parallel_ids"]),
+                "successfulResponses": http_fixture_state["parallel_responses"],
+            },
             "nativeBinarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
             **result_report,
         }, indent=2) + "\n")

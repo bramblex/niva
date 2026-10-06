@@ -29,45 +29,49 @@ are exposed as `Niva.fs`, `Niva.process`, `Niva.os`, `Niva.path`, `Niva.url`,
 when called. `Niva.os.dirs()` returns application data, cache and temporary
 directories.
 
-Native APIs are asynchronous by default. Their stable bridge calls Rust over
-platform IPC; Native-to-JS frames and events use `evaluate_script`. Ordinary
-async API calls use this IPC/evaluate_script route. For high-volume file or
-network transfer, binary payloads, and streaming `child_process` stdio, the
-runtime may use an authenticated WebSocket bridge as an optional performance
-path. If that WebSocket cannot be established or is unavailable, the same
-operation must remain available through the stable IPC/evaluate_script bridge.
-The API and Rust handlers do not expose transport choice to callers. IPC binary
-frames encode the complete wire frame with Base64 at the bridge boundary;
-handlers continue to consume bytes. HTTP XHR is reserved for synchronous
-Node-compatibility APIs and must emit a warning on first use of each method. State-changing
-operations such as changing cwd should be asynchronous.
+The current bridge contract is implemented in the runtime and Native source.
+Async API creation/control uses IPC `t:"api_call"`; small Native results and
+stream `channelOpened`/capability return through Wry `evaluate_script` invoking
+`__niva_ipc_reply({sessionId,rid,sourceOrigin,response})`. WS v2 uses hello and
+18-byte binary header version 2. The stream ticket is created and returned
+before data transport attach. WebSocket carries only attach/data/ack/cancel; it
+never dispatches API methods or carries method/args. Native resource ownership
+stays with the creating IPC session, independent of the selected data transport.
+Top-level documents and same-origin iframes share the Wry IPC/eval path. Remote
+top-level origins may use only granted unary APIs; cross-origin iframes fail
+closed even if granted, because Wry eval targets the main document and must
+not expose child secrets to its parent. Synchronous XHR remains only for Node
+compatibility methods that require synchronous results, with a first-use
+warning per public method. Existing WK reply handlers and WebView2-specific
+IPC/reply channels have been removed; use Wry IPC and `evaluate_script`.
+State-changing operations such as changing cwd remain asynchronous. The actual
+macOS two-lane WebView run and remaining platform limits are recorded in the
+[Bridge v2 validation record](../../docs/bridge-v2-validation.md); source or
+macOS results do not imply Windows validation. See the [Bridge contract](../../docs/bridge.md)
+for security, flow-control and failure semantics.
 
-The runtime now implements this routing contract in source. macOS smoke covers
-the stable IPC unary/channel path and basic WebSocket streams; pinned-resource
-lifecycle and Windows WebView acceptance remain separate checks. The stable
-asynchronous bridge is IPC/evaluate_script; WebSocket is an optional
-optimization path.
-
-Authorized remote IPC supports a restricted asynchronous unary subset: UTF-8
-text file operations and metadata, `requestText`, `execText` and
-`execFileText`. Remote pages cannot open streaming Channels.
+The current source authorizes a restricted asynchronous unary subset for
+remote top-level pages: UTF-8 text file operations and metadata, `requestText`,
+`execText` and `execFileText`. Cross-origin iframes fail closed even if granted,
+and remote pages cannot open streaming Channels.
 `isTrustedLocal()` and `runtimeConfig.trustedLocal` describe the page's Native
 permission context; transport choice stays inside the bridge and is not exposed
 to Node adapters. Binary/default-Buffer file reads and synchronous operations
 remain unavailable to remote pages.
 
 For trusted local pages, Node-style async `readFile`, `writeFile` and
-`appendFile` reuse the Native file-handle Channel. Large file contents therefore
-move in bounded binary chunks, preferring WebSocket when available and using
-IPC with Base64-encoded complete wire frames otherwise. Synchronous variants
-exist only for Node compatibility and use synchronous XHR with a warning.
+`appendFile` currently reuse the Native file-handle Channel. Large file
+contents move in bounded binary chunks over the channel's selected data
+transport; the API owner remains its creating IPC session.
+Synchronous variants exist only for Node compatibility and use synchronous
+XHR with a warning.
 
 `Niva.http.requestText()` and `Niva.https.requestText()` are bounded text
 helpers for IPC-capable pages. They do not replace the streaming Node-style
 `http.request()` and `https.request()` contracts. Likewise,
 `Niva.child_process.execText()` and `execFileText()` are bounded text helpers;
-streaming child processes require a trusted local page and use the WebSocket
-optimization when available or IPC Channel otherwise.
+streaming child processes require a trusted local page. Their current
+data transport is independent of the IPC API call that creates the operation.
 
 ## Optional Node globals
 

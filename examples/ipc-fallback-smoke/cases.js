@@ -25,6 +25,18 @@
   await check('page trust matches the configured IPC authorization mode', async () => {
     assert(Niva.bridge.isTrustedLocal() === config.trustedDebug, 'page trust does not match its configured authorization mode');
   });
+  await check('process startup metadata follows the trusted main-page boundary', async () => {
+    const processMetadata = Niva.bootstrap && Niva.bootstrap.process;
+    const available = Niva.process && Niva.process.__nivaAvailable === true;
+    if (config.trustedDebug) {
+      assert(processMetadata && typeof processMetadata === 'object',
+        `trusted page has no Native process metadata (trusted=${Niva.bridge.isTrustedLocal()}, windowId=${String(window.__niva_window_id)}, bootstrapKeys=${Object.keys(Niva.bootstrap || {}).join(',')})`);
+      assert(available, 'trusted main-page process adapter is unavailable despite Native metadata');
+    } else {
+      assert(processMetadata === undefined && !available,
+        'remote grant unexpectedly exposed trusted main-page process metadata');
+    }
+  });
   await check('text file write/read/append', async () => {
     await Niva.fs.promises.writeFile(config.file, '中文 IPC', 'utf8');
     await Niva.fs.promises.appendFile(config.file, '\n追加', 'utf8');
@@ -132,7 +144,21 @@
   await check('raw fs.node cannot bypass binary restriction', () => rejects(() =>
     Niva.bridge.call('fs.node', ['readFile', {path: config.file}])));
   await check('Native synchronous process RPC cannot bypass IPC restrictions', () => rejects(() => Niva.bridge.call('process.spawnSync', ['unused', {}])));
-  await check('IPC cannot create a persistent Native window', () => rejects(() => Niva.bridge.call('window.open', [{}])));
+  await check('window.open is available only to trusted local pages', async () => {
+    if (!Niva.bridge.isTrustedLocal()) {
+      await rejects(() => Niva.bridge.call('window.open', [{}]));
+      return;
+    }
+
+    const childId = await Niva.bridge.call('window.open', [{entry: config.origin + '/blank', visible: false}]);
+    assert(Number.isInteger(childId) && childId >= 0, 'trusted window.open did not return a Native window id');
+    try {
+      const windows = await Niva.bridge.call('window.list', []);
+      assert(windows.some(windowInfo => windowInfo.id === childId), 'trusted window.open result is not present in window.list');
+    } finally {
+      await Niva.bridge.call('window.close', [childId]);
+    }
+  });
   await check('IPC cannot obtain a persistent file descriptor', () => rejects(() => Niva.bridge.call('fs.node', ['open', {path: config.file, flag: 'r'}])));
   await check('file unlink over IPC', () => Niva.fs.promises.unlink(config.file));
   if (skipSessionLiveness) {

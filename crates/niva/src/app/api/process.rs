@@ -26,7 +26,7 @@ pub fn register_apis(api_manager: &mut ApiManager) {
     api_manager.register_api("process.version", version);
     api_manager.register_blocking_api("process.open", open);
     api_manager.register_stream_api_with("process.execStream", Some(None), exec_stream);
-    api_manager.register_stream_api("process.signal", signal_child);
+    api_manager.register_cancellable_api("process.signal", signal_child);
     api_manager.register_cancellable_api("process.execText", exec_text);
     api_manager.register_cancellable_api("process.execFileText", exec_file_text);
 }
@@ -1362,21 +1362,32 @@ pub(crate) fn cancel_ipc_window(window_id: u8) {
         |owner| matches!(owner, ProcessCallOwner::Ipc { window_id: wid, .. } if *wid == window_id),
     );
 }
-async fn signal_child(ctx: CallContext, request: ApiRequest) -> Result<()> {
+async fn signal_child(
+    ctx: CancellationContext,
+    _app: Arc<NivaApp>,
+    window: Arc<NivaWindow>,
+    request: ApiRequest,
+) -> Result<bool> {
     let (call_id, signal): (u64, Option<String>) = request.args().optional(2)?;
     let signal = signal.as_deref().unwrap_or("SIGTERM");
+    let owner_id = ctx
+        .resource_owner_id()
+        .ok_or_else(|| anyhow::anyhow!("child resource owner is unavailable"))?;
+    anyhow::ensure!(
+        !ctx.is_cancelled(),
+        "ECANCELED: process signal was cancelled"
+    );
     let process = process_controls()
         .lock()
         .map_err(|_| anyhow::anyhow!("child registry poisoned"))?
         .get(&ProcessCallOwner::BridgeSession {
-            window_id: ctx.window.id,
-            owner_id: ctx.connection_id,
+            window_id: window.id,
+            owner_id,
             call_id,
         })
         .cloned();
     let Some(process) = process else {
-        ctx.respond(Ok(false));
-        return Ok(());
+        return Ok(false);
     };
     let pid = process.pid;
     #[cfg(unix)]
@@ -1391,7 +1402,7 @@ async fn signal_child(ctx: CallContext, request: ApiRequest) -> Result<()> {
         };
         // SAFETY: PID comes from a child created by this exact connection.
         let result = unsafe { libc::kill(pid as i32, signal) };
-        ctx.respond(Ok(result == 0));
+        Ok(result == 0)
     }
     #[cfg(windows)]
     {
@@ -1414,9 +1425,8 @@ async fn signal_child(ctx: CallContext, request: ApiRequest) -> Result<()> {
                 Err(_) => false,
             }
         };
-        ctx.respond(Ok(killed));
+        Ok(killed)
     }
-    Ok(())
 }
 
 #[cfg(test)]

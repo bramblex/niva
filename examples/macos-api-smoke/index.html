@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Niva macOS API smoke</title>
     <script src="fixture-protocol.js"></script>
+    <script src="navigation-config.js"></script>
     <script src="window-cases.js"></script>
     <script src="system-cases.js"></script>
     <script src="fixture-protocol.js"></script>
@@ -20,6 +21,7 @@
         const os = require("node:os");
         const process = require("node:process");
         const childProcess = require("node:child_process");
+        const freshNavigationReloadKey = "niva-macos-smoke-fresh-navigation-reload";
         const covered = [];
         let dialogHeartbeatTimer = null;
 
@@ -58,6 +60,19 @@
 
         function send(name, data) {
           return NivaFixture.send(name, data);
+        }
+
+        async function reportNavigationProbe(name, data) {
+          const origin = window.__nivaMacApiSmokeNavigationOrigin;
+          if (typeof origin !== "string") return;
+          try {
+            await fetch(`${origin}/probe`, {
+              method: "POST",
+              mode: "no-cors",
+              cache: "no-store",
+              body: JSON.stringify({ name, data }),
+            });
+          } catch (_) {}
         }
 
         async function runAutomaticCases() {
@@ -192,7 +207,17 @@
           record("webview.baseFileSystemUrl", "returns a per-window resource URL with a non-empty token (redacted in output)");
 
           const pageUrl = await webview.url();
-          assert(pageUrl.startsWith(baseUrl) && pageUrl.endsWith("/index.html"), "webview.url must identify the local fixture page");
+          const reportedUrl = new URL(pageUrl);
+          const currentUrl = new URL(window.location.href);
+          assert(
+            reportedUrl.protocol === currentUrl.protocol &&
+            reportedUrl.host === currentUrl.host &&
+            reportedUrl.pathname === currentUrl.pathname &&
+            reportedUrl.pathname === "/index.html" &&
+            reportedUrl.search === currentUrl.search &&
+            reportedUrl.hash === currentUrl.hash,
+            `webview.url must identify this fixture document (${currentUrl.href}); received ${reportedUrl.href}`
+          );
           record("webview.url", "identifies the current fixture document");
 
           equal(await webview.canGoBack(), false, "webview.canGoBack on first document");
@@ -326,6 +351,7 @@
 
         async function handleCommand(data) {
           if (!data || typeof data.command !== "string") return;
+          void reportNavigationProbe("main-command-start", { command: data.command });
           try {
             if (data.command === "clipboard") await runClipboard(data);
             else if (data.command === "shortcut") await send("shortcut-result", await runShortcut(data));
@@ -334,8 +360,10 @@
               await send("tray-result", { ok: true });
             } else if (data.command === "webview-reload") await runWebviewReload();
             else if (data.command === "webview-navigate") {
-              const base = await Niva.webview.baseUrl();
-              await Niva.webview.loadUrl(`${base}secondary.html`);
+              const secondaryUrl = window.__nivaMacApiSmokeSecondaryUrl;
+              assert(typeof secondaryUrl === "string" && /^http:\/\/127\.0\.0\.1:\d+\/secondary\.html$/.test(secondaryUrl),
+                "runner did not provide the exact local HTTP navigation fixture URL");
+              await Niva.webview.loadUrl(secondaryUrl);
             } else if (data.command === "webview-back") {
               await Niva.webview.goBack();
             } else if (data.command === "webview-forward") {
@@ -349,6 +377,10 @@
               setTimeout(() => NivaFixture.exit(0), 250);
             }
           } catch (error) {
+            void reportNavigationProbe("main-command-error", {
+              command: data.command,
+              message: String(error),
+            });
             await send("command-error", { command: data.command, message: String(error), stack: error?.stack });
           }
         }
@@ -356,19 +388,37 @@
         NivaFixture.onCommand("smoke-command", handleCommand);
 
         // clearAllBrowsingData intentionally clears sessionStorage in the
-        // extended WebView cases; window.name survives same-origin navigation.
+        // extended WebView cases; window.name is a second boot marker.
+        const freshNavigationReload = sessionStorage.getItem(freshNavigationReloadKey) === "yes";
+        if (freshNavigationReload) sessionStorage.removeItem(freshNavigationReloadKey);
         const mainBootWasSeen = window.name === "niva-macos-smoke-booted"
-          || sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
+          || sessionStorage.getItem("niva-macos-smoke-booted") === "yes"
+          || freshNavigationReload;
         window.name = "niva-macos-smoke-booted";
         sessionStorage.setItem("niva-macos-smoke-booted", "yes");
         NivaFixture.ready("macos-api", { url: location.href }).then(() => {
         if (mainBootWasSeen) {
           setTimeout(async () => {
+            let phase = "api";
+            let url = null;
             try {
-              const canGoForward = await Niva.webview.canGoForward();
-              await send("main-reloaded", { url: await Niva.webview.url(), canGoForward });
+              url = await Niva.webview.url();
+              const data = {
+                url,
+                canGoForward: await Niva.webview.canGoForward(),
+                freshReload: freshNavigationReload,
+              };
+              await reportNavigationProbe("main-reload-api-ok", data);
+              phase = "fixture-stdio";
+              await reportNavigationProbe("main-reload-stdio-start", data);
+              await send("main-reloaded", data);
+              await reportNavigationProbe("main-reload-stdio-ok", data);
             } catch (error) {
-              await send("main-reloaded-error", { message: String(error) });
+              const data = { phase, url, message: String(error) };
+              await reportNavigationProbe("main-reload-error", data);
+              try {
+                await send("main-reloaded-error", data);
+              } catch (_) {}
             }
           }, 250);
         } else {
@@ -379,16 +429,26 @@
         }).catch(async error => send("smoke-error", { message: String(error), stack: error?.stack }));
 
         window.addEventListener("pageshow", event => {
+          if (mainBootWasSeen) {
+            void reportNavigationProbe("main-pageshow", {
+              persisted: event.persisted,
+              href: location.href,
+            });
+          }
           if (event.persisted) {
             setTimeout(async () => {
-              try {
-                await send("main-restored", {
-                  url: await Niva.webview.url(),
-                  canGoForward: await Niva.webview.canGoForward(),
-                });
-              } catch (error) {
-                await send("main-restored-error", { message: String(error) });
-              }
+              const data = {
+                persisted: true,
+                href: location.href,
+                reason: "the Native page session expires on pagehide",
+                action: "reload the current history entry for a fresh session",
+              };
+              await Promise.race([
+                reportNavigationProbe("main-bfcache-fresh-reload", data),
+                new Promise(resolve => setTimeout(resolve, 500)),
+              ]);
+              sessionStorage.setItem(freshNavigationReloadKey, "yes");
+              window.location.reload();
             }, 250);
           }
         });

@@ -138,19 +138,27 @@ test("path labels only methods whose current implementation reads Native cwd", (
     assert.equal(path.posix.normalize("/a/../b"), "/b");
     assert.equal(path.posix.join("a", "b"), "a/b");
     assert.equal(path.posix.toNamespacedPath("/absolute/file"), "/absolute/file");
+    assert.deepEqual(calls, [], "absolute paths do not need the Native cwd");
+    assert.deepEqual(warnings, []);
+
+    assert.equal(path.posix.resolve("relative/file"), "/workspace/project/relative/file");
     assert.deepEqual(calls, [["process.currentDir", []]]);
     assert.deepEqual(warnings, ["path.resolve"]);
 
     assert.equal(path.posix.relative("/same", "/same"), "");
-    assert.equal(calls.length, 1, "equal relative paths return before reading cwd");
+    assert.equal(calls.length, 1, "equal paths return before reading cwd");
     assert.equal(path.posix.relative("/from", "/to"), "../to");
-    assert.equal(calls.length, 3, "unequal relative paths resolve both sides against cwd");
+    assert.equal(calls.length, 1, "absolute paths do not need cwd for relative calculation");
+    assert.equal(path.posix.relative("from", "to"), "../to");
+    assert.equal(calls.length, 3, "relative paths resolve both sides against cwd");
     assert.deepEqual(warnings, ["path.resolve", "path.relative"]);
 
     assert.equal(path.win32.toNamespacedPath("C:\\absolute\\file"), "\\\\?\\C:\\absolute\\file");
     assert.equal(path.win32._makeLong("C:\\absolute\\file"), "\\\\?\\C:\\absolute\\file");
-    assert.equal(calls.length, 5, "Windows namespacing resolves against cwd");
-    assert.deepEqual(warnings, ["path.resolve", "path.relative", "path.toNamespacedPath", "path._makeLong"]);
+    assert.equal(calls.length, 3, "fully drive-qualified Windows paths do not need cwd");
+    assert.equal(path.win32.toNamespacedPath("C:relative\\file"), "\\\\?\\C:\\relative\\file");
+    assert.equal(calls.length, 4, "drive-relative Windows paths need the cwd");
+    assert.deepEqual(warnings, ["path.resolve", "path.relative", "path.toNamespacedPath"]);
   } finally {
     if (previousNiva === undefined) delete globalThis.Niva;
     else globalThis.Niva = previousNiva;
