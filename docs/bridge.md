@@ -11,7 +11,7 @@
 - **Native 到 JS 的小结果**：由统一 Wry `evaluate_script`调用 `__niva_ipc_reply({sessionId,rid,sourceOrigin,response})` 回传。创建流成功后，先经此回调返回 `channelOpened` 与 capability，再选定一个数据 lane：IPC 发 `channelAttach` 并收到 `channelAttached`，或 WS 发 ticket `attach` 并收到 `attached`。所选 lane 确认后才传输数据；同一流不会连续 attach 两次。
 - **纯双向数据面**：只允许已鉴权的 WebSocket 优化路径，或稳定的 Wry IPC/`evaluate_script`路径。WS 使用 `{t:"hello",wid,v:2,sessionId}`；attach 为 `{t:"attach",id,sessionId,capability}`，Native 回复 `{t:"attached",id,sessionId}` 或 `{t:"attachError",id,sessionId,...}`。WS 此后只处理 attach、data、ack、cancel，不承载 method/args、API dispatch 或新的 API 副作用。文本数据消息为 `{t:"channelData",id,sessionId,seq,frame}`；二进制数据使用18-byte header `[version=2][flags][id u64 BE][seq u64 BE]`，其中 `id` 是 channel id，`seq` 是该 channel 的序号。确认消息为 `{t:"ack",id,sessionId,seq}`，取消为 `{t:"cancel",id,sessionId}`；ACK `seq` 表示该 channel 已确认的序号，与旧 Wire v1 语义不可混用。IPC 数据路径遵循同一 channel、序号、ACK 与取消语义。
 - **资源 owner**：Native 资源固定归属创建它的 IPC session；数据 transport 独立选择，可用 WS 或稳定 IPC，不因 attach、断线或数据通道选择而改变 owner。关闭 session 时清理其资源与流。
-- **页面 session 结束与 BFCache 恢复**：页面发出的 `session_close` 是带原 session id、来源上下文和本地 token（如适用）的单向 IPC 生命周期控制消息，不是异步 API，也不等待回复。Native 按完整 IPC session key（窗口、来源、session、frame/generation）鉴权并 tombstone 该 key；它取消在途 API/通道及 session-owned 进程资源，重复 close 幂等，迟到的旧 `api_call` 不得重新创建该 session。仅当 `pagehide` 与后续 `pageshow` 都标记为 persisted，且恢复页仍匹配原来源/frame/IPC host 时，runtime 才为同一页面 realm 生成新的 session ID（密码学随机 nonce）。恢复保留 realm、模块缓存、stdin 身份和监听器；旧调用已取消、普通 Native 句柄失效、旧 session 的迟到回调隔离，不重放 API。租约过期是终态，不能由 pageshow 复活；不匹配或非 persisted 的恢复也不重新启用旧 session。该 session ID nonce 与用于 CSP/runtime configuration 的 `runtimeConfig.nonce` 相互独立，后者保持不变。BFCache 期间延迟的 stdout/stderr write 只在旧调用已结算、session 已过期且 writer 满足 terminal/no-active-write/no-queue/no-end/no-manual-destroy 条件后清理 pinned `readable-stream@4.7.0` 的 stale pending callback residue；该清理先保留 canonical process stream，再让用户态原 Promise rejection 正常送达，不重放旧写入或 API 操作。
+- **页面 session 生命周期**：`session_close` 是经 IPC 发送的单向生命周期控制消息，不属于 API。持久化页面恢复时的匹配条件、旧请求取消、资源处置和新 session 行为见[BFCache 与页面生命周期](#bfcache-与页面生命周期)。
 - **流与切换**：保留严格 seq、ACK、背压、有界队列、cancel、session lease 和资源归属。WS 建立失败时可用稳定 IPC 数据路径；已开始流断线后的切换不得承诺无损，也不得重放可能已提交的 API 副作用。若实现切换，必须能区分仅数据传输恢复与 API 重试，并对不确定状态明确失败。
 - **授权与 frame 边界**：Rust 侧使用来源 URL/origin、token、窗口、session、call 与流凭证鉴权；切换数据通道不能扩权。Wry 不提供可供本协议依赖的真实 Native child-frame ID；同源 iframe 通过父页 relay 和 JS session 映射路由 reply，Native 仍校验来源 URL/origin、token、session 与 ticket。顶层本地文档与同源 iframe 可通过统一 Wry IPC/eval 路径使用 bridge。远端顶层页面仍受精确 origin grant 与 unary 权限边界约束，不因本地传输可用而获得流或二进制权限。跨源 iframe 一律 fail-closed，即使它自身配置了 origin grant 也拒绝 API bridge：Wry `evaluate_script`只定向主文档，无法安全定向跨源子 frame，且不得让 parent 观察 child 的秘密；不为此增加平台专用适配。
 - **平台抽象**：统一使用 Wry IPC 与 `evaluate_script` 的稳定机制；现有 WKWebView reply handler 与 WebView2 专用 IPC/reply 通道已移除，不保留也不新增平台专用 reply 协议。
@@ -39,6 +39,39 @@ JS -> Native     {t:"cancel",id,sessionId}
 `docs/release-0.10.0-beta.1.md`中的旧报告只证明各自记录的源码/runtime 快照；当前源码和本轮验收数据见[Bridge v2 验收记录](bridge-v2-validation.md)。
 
 所有页面API实现在`Niva`对象上。Node模块接口（例如`Niva.fs`）和Niva窗口接口（例如`Niva.window`）共用一套 API/Stream handler；传输选择属于低层 bridge，不暴露给调用方。`Niva.bridge`是低层入口，`Niva.stream`表示Node stream模块。下文明确标为历史实现快照的内容只记录旧路由与当时源码观察；权限限制按其明示的远端/本地边界理解，不得泛化为所有本地 `api_call` 的限制。当前 macOS 两 lane WebView smoke 已通过，Windows 真机及其他未列目标仍开放。
+
+## BFCache 与页面生命周期
+
+浏览器的 Back/Forward Cache（BFCache，前进/后退缓存）可能把离开页面时的整个 document
+暂存在内存中。命中 BFCache 返回时，浏览器恢复原来的 DOM、JavaScript realm、模块对象和事件
+监听器，并继续执行被冻结的页面；这不同于 reload，后者会创建新 document 并重新运行 bootstrap。
+
+旧 runtime 在 `pagehide` 时将 bridge session 永久标记为失效；BFCache 恢复原 JavaScript
+对象后仍持有已失效 session，Native API 调用因此失败。现在生命周期按以下顺序处理：
+
+1. `pagehide` 发生时，runtime 取消旧 session 的在途调用并发送不等待回复的 IPC `session_close`，
+   携带原 session ID、来源上下文及适用的 token。Native 校验完整 session key（窗口、来源、
+   session 及 frame/generation），关闭并 tombstone 旧 session；这不是可重用的普通 API 请求。
+2. 只有 `pagehide` 与后续 `pageshow` 都带 `persisted=true`，恢复页面来源仍匹配原来源、frame 仍受
+   支持且能够解析到 IPC host 时，runtime 才在原 realm 中生成新的密码学随机 session ID。Native
+   不依赖 Wry 未提供的真实子 frame ID；frame 支持边界仍按当前来源与 relay 合约执行。
+3. 新 session 建立后，旧调用保持取消状态，旧 session 的迟到回复按 session ID/epoch 丢弃；API
+   不自动重放。普通 Native 句柄属于旧 session，恢复后应重新创建。session lease 已过期时，
+   后续 `pageshow` 不能复活它。
+
+BFCache 保留页面 realm，因此模块缓存、页面监听器和 canonical `process.stdin`、`stdout`、
+`stderr` 对象身份可以延续。旧 stdin Native 流会取消；页面恢复后 runtime 为其建立新输入流。
+用于 CSP/模块执行的 `runtimeConfig.nonce` 保持不变；它不是新的 session ID（session ID 自身
+由一个密码学随机 nonce 生成）。
+
+stdout/stderr 只有在旧写入以 `ERR_NIVA_SESSION_EXPIRED` 结束、所有受跟踪的旧写入回调均已结算
+后，才可能恢复原 stream 对象。恢复要求 writer 已进入 `destroyed/closed/closeEmitted` 终态，
+没有活动写入或 write callback、队列为空，且用户没有显式调用 `destroy()` 或 `end()`（也未进入
+`ending/ended/finished` 状态）。此时才清理 pinned `readable-stream@4.7.0` 因缓冲错误回调留下的
+`pendingcb` 计数，并恢复同一 canonical stream。普通写入错误或任何条件不满足时都不恢复；
+旧 Promise 仍按原错误结束，不会重放写入或 API。
+
+当前实现与验证范围见[Bridge v2 验收记录](bridge-v2-validation.md)。以上行为有当前 runtime 测试与 macOS WebView 证据；Windows 真机与完整跨平台页面生命周期验收仍开放。
 
 ## 两类API与桥接路径
 
