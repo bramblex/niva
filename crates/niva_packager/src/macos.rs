@@ -481,6 +481,10 @@ mod tests {
             Some("com.niva.my-app.38b646a2-209e-45ed-a6c9-1817bd15aa4f")
         );
         assert!(dictionary.get("CFBundleIconFile").is_none());
+        assert_eq!(
+            app_version(&serde_json::json!({"version": "0.10.0-beta.1"})).unwrap(),
+            "0.10.0"
+        );
     }
 
     #[test]

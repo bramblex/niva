@@ -9,7 +9,7 @@
 - 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
 - 快速上手： [https://bramblex.github.io/niva/docs/tutorial/new-project](https://bramblex.github.io/niva/docs/tutorial/new-project)
 
-当前架构重构与验收进度见[实施台账](docs/architecture-implementation-plan.md)。基础API位于`Niva`命名空间；`injectCommonJs`和`injectEsm`分别控制Node CommonJS环境与浏览器ESM import map，默认关闭。窗口/文件/进程能力及传输边界见[Bridge合约](docs/bridge.md)，历史报告不代表本次重构已通过验收。
+当前候选为 **0.10.0-beta.1**，范围和逐平台验收状态见[候选验收记录](docs/release-0.10.0-beta.1.md)。本版提供现有`Niva`原生 API 和统一 TypeScript runtime；CommonJS 与 ESM Node 风格模块均可独立启用，并按现有模块实现能力，不承诺完整 Node.js 兼容。异步调用以 IPC 为稳定通道，流式操作可使用 WebSocket 优化通道；WebSocket 尚未移除，IPC 二进制帧目前仍经 Base64 编码。同步 XHR 仅用于需要同步返回的兼容 API。窗口/文件/进程能力及传输边界见[Bridge 合约](docs/bridge.md)。
 
 ## 从源码构建
 
@@ -26,18 +26,17 @@ npm run build --workspace=packages/devtools
 
 ## 目标
 
-以下保留原产品定位文案；当前实现、平台验收与体积实测以[路线图](docs/roadmap.md)为准。特别是 macOS 产物为 `.app` 应用包，Windows 产物为 `.exe`；“Electron 的 1/10”尚无本轮可复核的对照记录。
+本节描述产品方向，不替代当前候选范围或平台验收。完整 runtime 主程序体积硬门禁为严格小于 3,300,000 bytes；macOS 的 3,000,000 bytes 是参考目标。该口径不代表整个应用包或 build kit 的大小。
 
 - 超轻量
-  - 构建的桌面应用最小只有 3MB，仅有 Electron 的 1/10。
-  - Niva 使用系统 WebView，不随应用打包 Chromium 或 Node.js，极致的轻量。
+  - Niva 使用系统 WebView，不随应用打包 Chromium 或 Node.js。
 - 极易用
   - 仅使用前端技术，不需要学习复杂的 Node.js 和 Electron API 也不需要复杂的配置，即可构建出一个桌面应用。
-  - 构建单可执行文件，无需安装，点击即用。
+  - Windows 可输出单 EXE；macOS 交付 `.app` 应用包，可另行打成 ZIP。
 - 图形化
   - Niva 提供图形化界面的开发工具，一键点击构建桌面应用，无需复杂的命令行操作，也无需安装 Node 环境。
 - 跨平台
-  - 同时支持 Windows、macOS，无需额外的配置，即可构建出跨平台的桌面应用。
+  - 支持 Windows、macOS；具体支持范围和验收状态以候选记录为准。
 
 ## 亮点
 
@@ -57,7 +56,9 @@ npm run build --workspace=packages/devtools
 
 Niva 提供了丰富的 API, 如 clipboard, dialog, extra, fs, http, monitor, os, process, resource, shortcut, tray, webview, window, window_extra 等 API。详见 [API 文档](https://bramblex.github.io/niva/docs/api/niva)。
 
-## Todo
+## 后续计划
+
+0.10.0-beta.1 是候选版本，不代表 v1.0 验收通过。仍开放的门禁和证据边界见[路线图](docs/roadmap.md)与[候选验收记录](docs/release-0.10.0-beta.1.md)。
 
 - [ ] Niva 1.0
 

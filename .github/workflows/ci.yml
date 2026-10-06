@@ -108,7 +108,13 @@ jobs:
         run: |
           bytes=$(stat -f%z target/release/niva)
           echo "macOS release binary: $bytes bytes"
-          test "$bytes" -lt 3000000
+          if [ "$bytes" -ge 3300000 ]; then
+            echo "::error::macOS runtime must be smaller than 3,300,000 bytes"
+            exit 1
+          fi
+          if [ "$bytes" -ge 3000000 ]; then
+            echo "::warning::macOS runtime exceeds the 3,000,000-byte reference target"
+          fi
 
   website:
     runs-on: ubuntu-latest

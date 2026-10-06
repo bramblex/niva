@@ -1,8 +1,18 @@
 # Niva 架构 review 实施计划与验收台账
 
-## 收尾交接：按用户额度要求暂停（2026-09-25）
+## 当前候选状态：0.10.0-beta.1（2026-09-28）
 
-用户要求尽快结束，停止新增调查、构建和全量测试。已通知全部子代理停止；保留工作分支`codex/architecture-implementation`全部未提交改动，无commit/push/发布。以下状态优先于后面的历史进度。
+本台账保留架构决定、实现过程与历史证据；当前候选的验收清单、平台范围和未关闭项以[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)为准。下方带日期的状态是对应时间点的快照，不自动证明当前源码或当前候选通过。
+
+本版冻结现有 Niva 原生 API、统一 TypeScript runtime、可选的 CommonJS/ESM Node 风格模块子集、IPC 稳定异步通道与可选 WebSocket 流式优化，以及 GUI/CLI 共用打包核心。同步 XHR 仅服务需要同步返回的兼容 API。本范围不声称完整 Node.js 兼容、移除 WebSocket、IPC 零拷贝或 v1.0 验收完成。
+
+> 本台账后续章节包含带日期的历史快照、当时计划和旧路径，保留这些内容用于追溯，不代表当前源码状态或现行命令。当前 runtime 和类型入口以 [`packages/runtime/README.md`](../packages/runtime/README.md) 与 [`packages/types/README.md`](../packages/types/README.md) 为准；候选平台验收以 [`docs/release-0.10.0-beta.1.md`](release-0.10.0-beta.1.md) 为准。当前 Node 兼容目标是 `process.version=v22.14.0`、`versions.node/nodeCompat=22.14.0`，实际 Niva 版本见 `versions.niva`。
+
+完整 runtime 主程序的硬体积门禁为严格小于 3,300,000 bytes；macOS 3,000,000 bytes 是参考目标。候选需按目标平台重新构建并记录文件、SHA256、runtime 指纹和实测体积；旧平台或旧指纹结果不能替代当前候选验收。
+
+## 历史快照：收尾交接（2026-09-25）
+
+以下内容记录 2026-09-25 当日按额度暂停时的状态，不再优先于后续恢复工作的记录，也不是 0.10.0-beta.1 的当前验收结论。
 
 **已经实现并有对应验证快照**：统一TypeScript runtime/Niva命名空间、CJS/ESM独立开关、Rust CommonJS解析、三Bridge及有界IPC文件/HTTP/HTTPS/exec、资源取消、主窗stdio/独立日志、UUID目录、Devtools Node API迁移、统一packager和external资源、Windows WebView2引导代码、隔离类型包。
 
@@ -24,7 +34,7 @@
 6. OPT-01混合代码压缩/媒体按需存储仍未开始；external ZIP已实现但不代替此最后优化。真实视频播放/跨平台资源优化对照尚未验收。
 7. 最终统一源码门禁、最终release逐平台体积、文档/API表收口、完整三平台kit及远端CI仍需完成。GitHub CLI未登录；正式签名/公证及npm发布未执行。当前可用单host真实测试kit在`/tmp/niva-resource-layout-v4/single-host-test-kit`，不能冒称完整发布kit。
 
-继续时先读本节和最新Git diff，不清工作树；三个Luna Deep子任务分别交付runtime、Native/relay、types/Devtools，现均已要求停止。内存中的旧状态或旧测试总数不能代替本节与对应报告。
+当时的后续交接建议与子任务状态保留在此，仅作历史背景。之后恢复工作的实施、失败和验收证据按后续日期记录；本候选的实际状态以顶部链接的候选记录为准。
 
 2026-09-25。用户最新指令：IPC fallback所需Rust接口由执行方决定，保证基本文件读写、HTTP/HTTPS、exec等高层能力；开始规划并落实全部有效review决定。该指令明确开启实现，覆盖先前“仅review不改代码”的阶段限制。
 

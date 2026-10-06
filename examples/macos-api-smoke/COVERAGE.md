@@ -51,7 +51,7 @@ The 10 Windows-only handlers are registered under `cfg(target_os = "windows")`; 
 | `process.exit` | After temp file cleanup, request exit and require child status 0. | headless-safe run.py / headless.html | PASS real macOS: default |
 | `process.exec` | runs a harmless fixed command and checks its stdout/status | system-cases.js / automatic | PASS real macOS: extended |
 | `process.open` | Open a disposable text file through the system opener; expect default editor opens that exact temporary path; cleanup: close spawned editor window and delete only test file | system-cases.js / supervised | PASS real macOS: system-supervised |
-| `process.version` | Require package version from crates/niva/Cargo.toml. | headless-safe run.py / headless.html | PASS real macOS: headless |
+| `process.version` | Historical fixture expected the package version from crates/niva/Cargo.toml; current Node compatibility target and product version are distinct (`v22.14.0` and `versions.niva`). | headless-safe run.py / headless.html | Historical PASS real macOS: headless; migrated assertion not rerun |
 | `resource.exists` | Require true for headless-resource.txt in isolated debug resources. | headless-safe run.py / headless.html | PASS real macOS: headless |
 | `resource.read` | Require exact UTF-8 text headless-resource-ok plus newline. | headless-safe run.py / headless.html | PASS real macOS: headless |
 | `resource.extract` | extracts an isolated resource to a temp file and removes it | system-cases.js / automatic | PASS real macOS: extended |

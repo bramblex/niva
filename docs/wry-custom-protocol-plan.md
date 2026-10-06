@@ -1,5 +1,7 @@
 # Wry 自定义协议本地页面：实现与验收
 
+> 本文记录阶段性设计和平台验证快照；旧调试参数名仅用于解释当时方案。当前正式输入参数是 `--resource` 与 `--config`，源码拒绝 `--debug-resource`/`--debug-config`；当前候选状态见 [`docs/release-0.10.0-beta.1.md`](release-0.10.0-beta.1.md)。
+
 > 状态：打包资源的相对本地 `entry` 使用应用UUID派生的 Wry scheme：macOS/Linux 为 `niva-<uuid>://app/`，Windows WebView2 映射为 `http://niva-<uuid>.app/`；`niva://app/`只作为配置入口别名。固定origin的2026-09-23 macOS/Windows smoke 是历史快照，UUID变体的跨平台真机验证仍待完成。loopback HTTP/WS 继续使用动态端口，打包模式不通过普通 HTTP 路由提供页面静态资源。Windows既有有限真机 smoke 见 `docs/windows-validation-2026-09-23.md`。
 
 ## 功能与边界

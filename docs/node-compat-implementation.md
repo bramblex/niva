@@ -1,6 +1,6 @@
 # NodeCompat 实施与验收记录
 
-> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表当前候选验收。状态见[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)；原始 JSON 证据保持不变。
 
 2026-09-24，基于 `3787257` 的未提交工作区。机器证据见 [JSON 报告](node-api-implementation-evidence.json)。
 
@@ -72,7 +72,7 @@ NodeCompat 默认启用，并作为压缩 JS、ESM wrapper、索引和 loader �
 
 真实 fixture 覆盖同步二进制读写、callback、FileHandle、文件流/watch、子进程同步与异步执行/kill、hash/timingSafeEqual、600 KB HTTP 往返与关闭、有效 CA/SAN 的 HTTPS 与自然关闭、PKCS#1 RSA 私钥归一化后的 HTTPS、UDP echo、DNS A/TTL/TXT、UDP 截断转同端口 TCP、TCP 收到 FIN 后继续回复、OS 动态查询，以及 ESM/CommonJS 对象身份。
 
-运行入口：
+历史运行入口（`packages/node-compat` workspace 已移除；当前运行方式见[Node 官方测试规则](node-upstream-conformance.md)）：
 
 ```sh
 npm test --workspace=packages/node-compat

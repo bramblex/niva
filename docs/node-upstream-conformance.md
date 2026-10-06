@@ -1,12 +1,12 @@
 # Node 子集的官方测试验收规则
 
-> 历史基线说明（2026-09-25）：本页保留统一 runtime 重构前的范围与验收记录。文中的“当前”、模块/API 数量、通过数、体积和旧配置仅适用于对应历史快照，不代表 `codex/architecture-implementation` 的验证结果。新实现进度及重新验收证据见[架构实施台账](architecture-implementation-plan.md)；原始 JSON 证据保持不变。
+> **历史结果与当前操作入口分开记录。** 本页的 2026-09-25 固定范围、58/58 结果、模块/API 数量和相关旧结论属于当时的基线，不代表当前候选验收。当前候选状态见[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)。以下“当前运行方式”已更新为当前 `packages/runtime` runner；可复现历史结果仍以对应历史 JSON 和当时的 runner/source hash 为准。
 
 > 2026-09-24 决策：Niva 做 Node API 的严格子集。纳入承诺的调用契约必须通过对应的 Node 官方测试；只有相同名称、基本功能或自有 smoke 通过，不算 Node 兼容。
 
 > 2026-09-26 契约覆盖：`Niva.process.chdir()`按新桥接约定返回`Promise<void>`，有意不同于Node的同步`process.chdir()`。固定集合中的`test-process-chdir.js`和上述历史通过率不能用于宣称当前`chdir`符合Node同步语义；Niva以自身的异步IPC行为测试验收此API。该单项差异不缩减或重写原始上游manifest。
 
-## 当前固定集合
+## 历史 58 项集合结果（2026-09-25）
 
 固定门禁现有 **58 个未修改的 Node v22.14.0 官方测试文件、22 个模块族**：48 个纯 JS 契约和 10 个 Native/网络契约。本次 darwin/arm64 按用户确认的适用范围运行：**58 pass / 0 fail / 0 unsupported，另记录 2 处环境检查点跳过**，门禁退出码 0。失败、unsupported、未运行和无结果都保留在固定 58 项分母中，不会通过删文件或重挑测试降分母。最终逐文件结果见[统一报告](node-compat-upstream-results.json)。
 
@@ -16,7 +16,7 @@
 
 ### 用户确认的两处环境豁免
 
-2026-09-24，用户明确要求跳过这两处 Node 专属环境差异。版本化[豁免清单](../packages/node-compat/upstream/environment-exclusions.json)只包含：
+2026-09-24，用户明确要求跳过这两处 Node 专属环境差异。版本化[豁免清单](../packages/runtime/upstream/environment-exclusions.json)只包含：
 
 1. `test-util-format.js:196–199`：移除原型后仍要求显示 Foo 构造器名的那一次检查。
 2. `test-assert-deep.js:1365`：两个不同原生 CryptoKey 对象按内部密钥材料比较相等的那一次辅助检查调用。
@@ -27,7 +27,7 @@
 
 ## 基准与承诺单位
 
-首批上游测试固定为 **Node v22.14.0**，与仓库 CI 的 Node 22 主版本一致。它是可复现的测试语义基线，不是“最新 Node”，也不代表 Niva 携带或运行该 Node 版本。完整上游 commit、文件来源与 SHA-256 由 `packages/node-compat/upstream/` 清单记录。升级基线必须单独审查用例差异并重跑，不能跟随 `main` 自动变化。
+首批上游测试固定为 **Node v22.14.0**，与仓库 CI 的 Node 22 主版本一致。它是可复现的测试语义基线，不是“最新 Node”，也不代表 Niva 携带或运行该 Node 版本。当前冻结的上游 commit、文件来源与 SHA-256 由 [`packages/runtime/upstream/manifest.json`](../packages/runtime/upstream/manifest.json) 记录。升级基线必须单独审查用例差异并重跑，不能跟随 `main` 自动变化。
 
 本轮固定的上游提交是 `5d2feb257bcee090e57900eb51720171a6aa92f3`。CI 测试宿主也固定到 22.14.0，避免宿主断言工具随主版本漂移；该版本仅用于测试，不是生产环境 Node 版本建议。
 
@@ -64,30 +64,31 @@
 
 每个原始用例都在独立 Node 子进程中运行，host flags 为 `--expose-internals --no-warnings --unhandled-rejections=strict`。这些是测试运行器参数，不是生产运行时能力。
 
-**Native 10 项**仍由固定 Node host 加载原始测试、执行原始断言；不是把 Node 的 CommonJS 测试直接塞进浏览器执行。Runner 将 Niva API 代理接到一个独立真实 Niva WebView relay：`Niva.callSync`、`Niva.call`、`Niva.stream` 和 `streamSend` 经 relay 调用当前 release/debug binary 的 Native handlers。产品 fs、socket、TLS、DNS、进程等行为不使用 Node host fs/net/mock 代替。Relay 使用一次性 profile/resource 和 loopback token，测试间隔离。
+**Native 10 项**仍由固定 Node host 加载原始测试、执行原始断言；不是把 Node 的 CommonJS 测试直接塞进浏览器执行。Runner 将 Niva API 代理接到一个独立真实 Niva WebView relay：`Niva.bridge.callSync`、`Niva.bridge.call`、`Niva.bridge.stream` 和 `Niva.bridge.streamSend` 经 relay 调用所选 Niva binary 的 Native handlers。产品 fs、socket、TLS、DNS、进程等行为不使用 Node host fs/net/mock 代替。Relay 使用一次性 profile/resource 和 loopback token，测试间隔离。
 
 每个 Native 结果都必须同时记录固定 Node 版本、平台、relay binary 路径与 hash、原始 test 路径、测试辅助设施，以及 host 和 Native 两侧的失败信息。Node `assert` oracle 只是断言实现，除 assert 本身被测的文件外，不能据此声称 Niva `assert` 已兼容。
 
 现有 `examples/node-compat-macos-smoke/` 是另一套自有集成测试，不等于运行了 Node 官方测试。Niva 特有的 origin/权限、帧隔离、模块加载、CSP、打包与资源清理仍需自有测试，上游套件不会替代它们。
 
-## 接入顺序
+## 当前运行方式与历史套件范围
 
 固定 manifest 有 58 个原始文件：纯 JS 48 项加 Native relay 10 项。其模块映射和准确场景见[用例索引](node-test-case-index.md)，原始路径与 hash 见版本化 manifest。它只验收选中的契约，不表示 22 个模块或 179 个 API 全部兼容。
 
-仓库根目录使用 Node **v22.14.0** 运行。先验证宿主版本，并在需要时构建 vendor 和做 25 个运行器自检：
+仓库根目录使用 Node **v22.14.0** 运行。先验证宿主版本、构建当前 runtime 资产，再运行 harness 自检和选定的上游套件。当前 manifest 与豁免清单位于 `packages/runtime/upstream/`；不再使用已移除的 `packages/node-compat` workspace 或旧 `build:vendor` npm 脚本。
 
 ```sh
 node --version # 必须输出 v22.14.0
-npm run build:vendor --workspace=packages/node-compat
-npm run test:upstream:harness --workspace=packages/node-compat
-npm run test:upstream --workspace=packages/node-compat -- --suite js --report upstream-js-results.json
-env NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" npm run test:upstream --workspace=packages/node-compat -- --suite native --report upstream-native-results.json
-env NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" npm run test:upstream --workspace=packages/node-compat -- --suite all --report upstream-all-results.json
-# 诊断：恢复两处引擎检查，预期两个原始文件失败
-env NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" npm run test:upstream --workspace=packages/node-compat -- --include-environment-specific --report upstream-unfiltered-results.json
+npm run build --workspace=packages/runtime
+npm run test:upstream:harness --workspace=packages/runtime
+node packages/runtime/scripts/test-upstream.mjs --suite js --report /tmp/niva-upstream-js.json
+cargo build --release -p niva
+NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" node packages/runtime/scripts/test-upstream.mjs --suite native --report /tmp/niva-upstream-native.json
+NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" node packages/runtime/scripts/test-upstream.mjs --suite all --report /tmp/niva-upstream-all.json
+# 诊断：运行未应用两处环境豁免的结果，不作为验收通过率
+NIVA_UPSTREAM_BINARY="$PWD/target/release/niva" node packages/runtime/scripts/test-upstream.mjs --suite all --include-environment-specific --report /tmp/niva-upstream-unfiltered.json
 ```
 
-`--suite js` 运行纯 JS 48 项；`--suite native` 运行 Native 10 项，必须通过命令作用域变量 `NIVA_UPSTREAM_BINARY` 指定要验收的 Niva binary。该变量只传给这次测试命令和子进程，不持久化到用户环境。默认 `--suite all` 使用同一固定 58 项分母，任一失败都必须非零退出。各命令的报告写入 `packages/node-compat/` 下指定的文件；文档汇总报告链接为 [`node-compat-upstream-results.json`](node-compat-upstream-results.json)。
+`--suite js` 和 `--suite native` 的用例集合由 [`packages/runtime/upstream/manifest.json`](../packages/runtime/upstream/manifest.json) 固定；Native suite 必须通过命令作用域变量 `NIVA_UPSTREAM_BINARY` 指定要验收的 Niva binary。该变量只传给这次测试命令和子进程，不持久化到用户环境。`--suite all` 使用同一 manifest 中的全部文件，任一失败都必须非零退出。报告写入命令指定的 `/tmp` 路径；仓库内保留的历史汇总报告为 [`node-compat-upstream-results.json`](node-compat-upstream-results.json)，当前候选状态以[候选记录](release-0.10.0-beta.1.md)为准。
 
 CI 的纯 JS upstream job 在 macOS 与 Windows host 执行 `--suite js`；macOS release binary 执行 Native relay suite。**Windows 没有 Native upstream relay/真机验收**，Windows target compile 或纯 JS host pass 不能替代。CI workflow 已配置不表示远端结果通过，也不自动配置 GitHub 分支保护规则。
 

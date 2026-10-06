@@ -1,122 +1,110 @@
 # Niva 项目手册
 
-> 本文按 2026-09-26 的源码与已知验收记录整理，依赖版本和实现细节以对应清单与源码为准。文中区分源码状态与平台验收：macOS 的手工记录不能替代 Windows 真机验证。
+本文概述当前源码结构、开发入口和打包方式。当前候选为 0.10.0-beta.1；候选验收仍有发布阻断，平台状态、检查结果和未完成项以[候选验收记录](release-0.10.0-beta.1.md)为准。本手册不把源码存在或跨平台编译通过当作目标平台真机验收。
 
-## 1. 项目概览
+## 1. 项目结构
 
-Niva 是以 Rust 和系统 WebView 构建桌面应用的框架。Rust 管理窗口、资源、HTTP/WS、原生 IPC 和系统 API；前端可使用普通 HTML/JavaScript 或 Vue、React 等工具链。Devtools 是一个由 Niva 自举打包的桌面应用。
-
-### 1.1 技术组成
+Niva 使用 Rust 和系统 WebView 运行桌面应用，不随业务应用附带 Chromium 或 Node.js。Rust 宿主管理窗口、资源、原生 API 和桥接；页面侧统一使用 TypeScript runtime。图形化工具与命令行共用 `niva-packager` 打包核心。
 
 | 部分 | 当前实现 | 主要位置 |
 |---|---|---|
-| 桌面窗口与 WebView | Rust 2024、tao、wry | `crates/niva/Cargo.toml`、`crates/niva/src/app/window_manager/` |
-| 原生菜单、托盘、快捷键 | muda、tray-icon、global-hotkey | `crates/niva/src/app/{menu,tray_manager,shortcut_manager}/` |
-| API 调度与网络 | smol、async-channel、tungstenite、ureq 3 | `crates/niva/src/app/api_manager/`、`http_server/` |
-| 窗口通信 | 稳定异步 IPC/`evaluate_script` 桥，加可选 WebSocket 性能优化桥 | `window_manager/builder.rs`、`ipc_macos.rs`、`ipc_windows_frames.rs`、`initialize_script.js` |
-| 可选 Node 兼容层 | 独立 `packages/node-compat` 包，按项目配置打包 | `packages/node-compat/`、`crates/niva/src/app/node_compat.rs` |
+| 桌面宿主、原生 API、资源与桥接 | Rust、tao、wry | `crates/niva/` |
+| 页面 runtime 与 Node 风格适配器 | TypeScript | `packages/runtime/` |
+| 公开 API 类型 | 从 runtime 合约生成 | `packages/types/` |
 | 图形化开发工具 | React、Vite、TypeScript | `packages/devtools/` |
-| 类型声明 | `packages/types/Niva_zh.d.ts` | `packages/types/` |
-| Windows 资源封装 | 自研 `win_packager` | `crates/win_packager/` |
-
-精确依赖版本见 `Cargo.toml`、`package.json` 和各 workspace package manifest；手册不复制版本号，避免清单更新后产生过期版本表。
-
-### 1.2 仓库布局
+| GUI/CLI 共用打包器 | Rust 独立 CLI | `crates/niva_packager/` |
+| Windows 可执行文件资源支持 | Rust | `crates/win_packager/` |
 
 ```text
-niva/
-  crates/niva/                 # 桌面框架、原生 API、HTTP/WS、平台 IPC、stdio 与 NodeCompat
-  crates/win_packager/         # Windows 可执行文件和资源封装工具
-  crates/icon_creator/         # 图标转换辅助 crate
-  packages/devtools/           # Niva 图形化开发工具及构建脚本
-  packages/types/              # TypeScript API 声明
-  packages/node-compat/        # 可选 Node 风格模块适配包
-  packages/examples/           # 示例前端项目
-  examples/                    # stdio 宿主与示例 UI
-  docs/                        # 手册、协议、设计和验收记录
-  build_MacOS.sh               # macOS 自举构建脚本
-  build_Windows.cmd            # Windows 自举构建脚本
+crates/niva/             桌面运行时、原生 API、窗口与系统集成
+crates/niva_packager/    使用预编译 Niva runtime 构建业务应用
+crates/win_packager/     Windows 可执行文件与资源封装
+packages/runtime/        页面侧统一 TypeScript runtime
+packages/types/          公开 TypeScript 类型与生成脚本
+packages/devtools/       图形化项目管理、调试和构建工具
+examples/                示例项目
+docs/                    bridge、打包、设计与验收说明
 ```
 
-当前仓库中没有旧的 `async-lab/` 或 `crates/niva_macros/`。API 注册在 Rust 函数中完成；同步工作通过显式 blocking 注册/`blocking!` 处理，没有已删除的属性宏依赖。
+## 2. 页面 API、runtime 与类型
 
-## 2. 启动与应用生命周期
+Native bootstrap 总会创建 `Niva`，原生 API 和 Node 风格适配器都是它的属性。`injectCommonJs` 和 `injectEsm` 是独立配置，默认均为 `false`。前者启用 CommonJS 全局及加载器；当前支持 JavaScript/JSON 文件、缓存和循环依赖，不支持原生 addon、`require(ESM)` 或 `require.extensions`。后者为可信本地页面注入 Node 内置模块的 ESM import map；远端页面需要自行配置映射或打包相关依赖。两种模式使用同一 runtime，不代表完整 Node.js 兼容。[Runtime 说明](../packages/runtime/README.md#optional-node-globals)列出模块边界和限制。
 
-入口为 `crates/niva/src/main.rs`，应用组装在 `crates/niva/src/app/mod.rs`：解析命令行参数、读取项目配置与资源、注册 API、初始化窗口/托盘/快捷键管理器、启动本地回环 HTTP+WS 服务，然后进入 tao 事件循环。
+`packages/runtime/src/contracts.ts` 是公开 runtime 合约的来源，`packages/types/` 从该合约生成声明。类型包根入口面向浏览器页面，只添加 `Niva` 和 `NivaOptions`，默认不提供 Node 全局或 `node:*` ambient 模块。`@types/node` 是可选 peer；浏览器消费者不会因此安装或自动发现 Node 声明。TypeScript 程序应按用途独立选择声明模式：启用 `injectCommonJs` 的 Niva 页面使用 `@niva/types/commonjs`；运行于 Node 的工具使用 `@niva/types/node`、安装 `@types/node` 并设置 `types: ["node"]`。运行时注入开关与声明模式是两项独立选择，完整说明见[types README](../packages/types/README.md)。Native API 与模块兼容 API 的桥接和权限边界见[Bridge 合约](bridge.md)。
 
-主窗口 id 为 `0`。配置窗口、托盘和快捷键在事件循环启动时创建或注册。窗口关闭时清理它拥有的快捷键、托盘及未完成 API 调用；主窗口退出会结束应用。应用级 stdio 桥只服务主窗口。
+普通异步调用经平台 IPC 与 `evaluate_script`；高流量或流式操作可使用已认证的 WebSocket 优化通道，无法建立 WebSocket 时使用同语义的 IPC Channel。调用者不选择传输。IPC 二进制帧在桥接边界使用 Base64；同步 XHR 仅用于必须同步返回的 Node 兼容接口。完整帧格式、来源授权和限制以[Bridge 合约](bridge.md)为准。
 
-调试参数包括 `--debug-resource=DIR`、`--debug-config=PATH`、`--debug-entry=URL`、`--debug-devtools=true` 和 `--stdio`。`--project`/`--build` 由 Devtools 前端用于无人值守构建；Rust 也识别 `--build` 的存在，用它禁止打包时误用配置中的 Vite 调试入口。
+runtime 构建会生成 Native 所需的 bootstrap、ESM facade 和类型声明。Cargo 不执行 npm 构建；Native 构建会检查生成资产及其哈希，缺失或过期时需要先重建 runtime。[Runtime README](../packages/runtime/README.md#build-and-verification)说明了生成和检查流程。
 
-## 3. 窗口、页面与通信
+## 3. 启动、资源与调试参数
 
-### 3.1 异步主桥与可选 WebSocket 优化
+应用入口为 `crates/niva/src/main.rs`，应用组装和参数解析位于 `crates/niva/src/app/mod.rs`。相关命令行参数为：
 
-对外只有两类API：普通异步API与Node兼容同步API。JS/Rust高层API共用同一套调用与流处理逻辑，调用方不选择桥接传输。普通异步API固定以平台IPC调用Rust，Native→JS通知由 `evaluate_script` 投递。大文件/网络数据、二进制数据和流式 `child_process` stdio 等重载路径，在操作创建时优先使用已建立的WebSocket优化桥；否则由稳定IPC Channel承载。资源后续的控制请求沿用创建时的bridge；WS断开时资源明确失败，不迁移、不重放。IPC二进制帧在传输边界Base64编码，payload最多16 KiB。
+- `--resource=DIR`：读取业务资源的目录。
+- `--config=PATH`：读取 `niva.json` 配置。
+- `--debug-entry=URL`：显式指定本次调试页面入口。
+- `--debug-devtools[=true|false]`：启用配置中的调试入口；显式 `--debug-entry` 优先使用命令行入口。
+- `--build`：构建模式，不使用配置中的调试入口。
 
-同步XHR只供Node兼容所需的同步方法使用，每个方法首次调用时发出一次warning。进程cwd等状态变更应提供异步操作，不应转成同步XHR。
-
-- 受信任本地页面可通过稳定IPC Channel工作，也可由高流量操作使用WS优化桥；窗口管理器为窗口生成独立凭据，Rust仍验证来源、窗口、session、frame和权限。IPC Channel的控制、发送与ACK使用平台IPC，Native到JS帧/事件经 `evaluate_script` 投递。二进制完整18-byte wire frame在IPC边界使用Base64，payload最多16 KiB；队列有界并使用序号、ACK/背压与取消。此机制不代表零拷贝或性能更快。
-- **打包本地页**由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载；UUID来自应用配置，去掉连字符并转小写，同一应用跨重启和窗口使用相同origin，不同应用使用不同origin。Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`仅作为配置入口别名。WebSocket 与 `__niva_fs` 仍经动态 `127.0.0.1:<port>` 服务；打包模式普通 HTTP 静态路由关闭。
-- macOS 通过 WKWebView 消息处理器传递 IPC；Windows 通过 WebView2 WebMessage 与 frame 处理器传递 IPC。跨源页面/iframe只能使用精确origin grant允许的unary JSON IPC，不开放Channel、流或二进制。XHR仅用于同步`callSync`；`__niva_fs`是独立文件资源接口。
-- 显式 debug 启动可加载跨端口开发入口并授予该窗口桥接；带 `--debug-resource` 的开发启动继续通过 loopback HTTP 加载静态资源。普通打包启动忽略配置中的 debug entry。每个原生 API 调用仍需在 Rust 侧做窗口、来源与授权校验。
-- 当前runtime与Native路由已接线；IPC Channel/WS资源owner隔离、取消和权限边界见 `docs/bridge.md`、`docs/security.md` 及对应平台代码。macOS真实WebView已覆盖IPC unary、IPC Channel二进制stdio和WS stream基础路径；完整资源跨连接生命周期与Windows真机仍需单独验收。平台未实测的部分不视为已通过。
-
-当前验收记录：既有 macOS 手工验证覆盖本地主 frame 与同源 iframe 的 WS、跨源顶层页与 iframe 的 IPC，以及拒绝/授权、CSP、文件 URL 凭据场景。2026-09-26 macOS arm64 release `target/release/niva` 为 **2,994,936 bytes**，SHA256 `9108b915d0b4164ba0cc05dafea483791b1fc37ed7e5bfb49f4b47fa139ef9c9`，低于3,000,000目标5,064 bytes。该SHA真实WebView smoke：基础 bridge 7/7通过；WS受限稳定IPC下可信本地23项、远端精确grant 21项检查通过，均覆盖HTTP/HTTPS；可信本地还覆盖IPC Channel二进制child stdio和异步`process.chdir`。两组各跳过2项隐藏窗口lease心跳场景。仍未覆盖完整资源跨连接生命周期或Windows真机。既有origin及文件URL证据见 `docs/windows-validation-2026-09-23.md`；这些记录不代表NodeCompat全模块语义、WS性能或v1.0门禁已验收。
-
-### 3.2 API 调度与协议
-
-API 名称在 `crates/niva/src/app/api/` 注册，`ApiManager` 将请求按窗口和方法分派。异步 API 直接运行；可能阻塞的调用应走 blocking 执行路径；长任务可采用流式接口并支持取消。公开签名以 `packages/types/Niva_zh.d.ts` 和 `docs/bridge.md` 为准，避免依赖手册中的旧 API 数量或行号。
-
-WebSocket与IPC Channel共用的wire协议、18-byte二进制帧以 `docs/bridge.md` 与 `crates/niva/src/app/api_manager/protocol.rs` 为准。WS传递原始帧；IPC在边界以Base64封装完整帧，不能将其称作零拷贝。
-
-### 3.3 stdio Host Bridge
-
-`--stdio` 显式启用子进程宿主模式。`crates/niva/src/app/stdio.rs` 在 stdin/stdout 上收发 NDJSON：宿主发 `msg` 帧给主窗口，主窗口可通过 `Niva.api.host.send` 回发；WebSocket 主窗口握手后输出一次 `ready`。stdout 留给协议帧，诊断写 stderr。输入行有 64 MiB 上限，EOF 或管道写失败请求应用退出。接口与限制见 `docs/stdio-host-design.md`，可运行示例位于 `examples/stdio_host.py` 和 `examples/stdio-host/`。
-
-验收边界：roadmap 记录了 macOS Python 宿主往返、坏帧恢复、EOF/BrokenPipe 退出的实际验证；Windows Python 宿主的管道继承、坏帧恢复及 EOF 退出已真机验证；BrokenPipe 等边界仍待测。
-
-## 4. 资源、配置与 NodeCompat
-
-资源由 `ResourceManager` 抽象提供。调试时可从文件系统目录读取；打包应用从平台资源容器加载，索引记录资源路径及其压缩数据区间。macOS 使用 `.app/Contents/Resources`；Windows 使用可执行文件资源。打包格式与读取实现见 `crates/niva/src/app/resource_manager/` 以及平台构建脚本。
-
-`niva.json` 同时包含应用元数据、窗口/托盘/快捷键/API 设置和平台覆盖。项目配置字段与类型以 `packages/types/Niva_zh.d.ts`、`crates/niva/src/app/options.rs` 和 Devtools 配置编辑器为准。`nodeCompat` 是显式 opt-in：可选 `true` 或模块/importmap 配置；默认关闭时不把适配文件加入应用资源。
-
-启用 NodeCompat 后，Devtools 按允许的模块集合暂存并打包 `packages/node-compat` 文件。运行时仅在符合条件的 HTML 文档导航响应中注入脚本和 importmap；打包模式下脚本和被 allowlist 的 ESM 资源通过当前应用UUID派生的Wry协议提供，文件系统 debug 模式沿用 loopback HTTP 路由。`bootstrap.js` 在构建时单独以 raw Deflate 压缩并嵌入，创建 WebView 初始化脚本时由 Rust 解压到内存并注入；不额外包装 ZIP。importmap 合并遵循实现中的用户映射优先规则。模块清单、配置格式和限制见 `docs/node-compat-design.md` 与 `packages/node-compat/README.md`。它不提供完整 Node.js 运行时或任意 npm 包兼容；真实 WebView smoke 覆盖了少量选中模块，不代表完整模块/API 验收。
-
-## 5. Devtools 与构建
-
-Devtools 使用 Vite，开发服务器固定端口 `3000`（`strictPort`），与 `packages/devtools/niva.json` 中的调试入口一致；生产构建输出到 `packages/devtools/build`。`npm run build --workspace=packages/devtools` 执行 TypeScript 检查与 Vite 构建，prebuild 脚本会准备 NodeCompat 资源。
-
-Devtools 构建流程位于 `packages/devtools/src/build-scripts/`：macOS 生成 `.app` 目录结构、内嵌资源并生成 plist/图标；Windows 调用随 Devtools 资源发布的 `win_packager.exe`，封装资源和版本信息，可按项目配置处理图标及 NodeCompat 资源。Windows 当前构建路径已迁移到自研 `crates/win_packager`；`ResourceHacker.exe` 不再是活动实现或依赖，旧的 `icon_creator.exe`/ResourceHacker 两阶段脚本也不应再描述为现行流程。打包器行为和命令见 `crates/win_packager/README.md`。
-
-仓库根目录脚本负责编译 Niva 并启动 Devtools 自举构建。平台发布产物与签名配置以 `build_MacOS.sh`、`build_Windows.cmd`、Devtools signing scripts 和 `docs/roadmap.md` 中的实际记录为准。源码或 target check 通过不能替代目标平台真机验收。
-
-## 6. 开发与检查
-
-典型本地开发方式：先在 `packages/devtools` 启动 Vite，再运行 Niva 指向 Devtools 配置和本地入口：
+先完成第 6 节中的依赖安装和 `packages/runtime` 构建，生成 Native 要嵌入的页面 runtime。然后在两个终端中分别启动 Devtools 与 Niva；路径相对于仓库根目录。第一条命令会持续运行 Devtools Vite 服务：
 
 ```sh
 npm run start --workspace=packages/devtools
-cargo run -p niva -- \
-  --debug-resource=packages/devtools/public \
-  --debug-config=packages/devtools/niva.json \
-  --debug-entry=http://localhost:3000 --debug-devtools=true
 ```
 
-Windows target 编译检查与真机运行是不同的证据。文档或发布记录应明确说明所运行的命令、目标平台和是否使用真实设备；状态汇总见 `docs/roadmap.md`。CI workflow 文件已存在，但 roadmap 当前要求留下 GitHub 上实际运行成功的记录。
+在第二个终端运行：
 
-## 7. 窗口、菜单、托盘与快捷键状态
+```sh
+cargo run -p niva -- \
+  --resource=packages/devtools/public \
+  --config=packages/devtools/niva.json \
+  --debug-entry=http://localhost:3000 \
+  --debug-devtools=true
+```
 
-`docs/window-tray-menu-plan.md` 跟踪窗口/托盘/菜单整治。当前源码包含三个 P0 修复：快捷键管理器初始化不再因 `expect` 直接 panic、Windows owner 使用独立的 `owner_window` 配置字段、窗口菜单 set/hide/show 操作经主线程执行。源码状态不等于平台验收完成：Windows 已有限验证 owner、菜单点击及快捷键；macOS 菜单和更广行为矩阵仍待完成。
+`--debug-resource`、`--debug-config` 和 `--stdio` 已移除，当前入口会拒绝这些参数。`--resource` 与 `--config` 本身不授予调试页面权限；显式调试入口的来源限制与权限边界见[Bridge 合约](bridge.md#来源与鉴权)。
 
-方案中 P1 的菜单原生项日志处理、跨平台快捷键/菜单图标和 PNG 缩放需要分别按计划文档中源码状态核对；特别是 Windows 菜单快捷键消息循环限制仍需作为平台限制处理。托盘、菜单、快捷键的行为验收要在受影响平台实际操作。
+打包应用使用应用 UUID 派生的本地资源 origin；文件系统调试资源由 `ResourceManager` 读取。资源存储布局、路径和访问限制以当前实现及[打包说明](packager-usage.md)为准。
 
-## 8. 发布边界与当前未完成项
+## 4. 作为子进程运行与标准流
 
-- Windows target check 只证明交叉编译检查覆盖通过，不证明 Windows 上窗口、菜单、IPC、stdio 或打包流程可运行。
-- macOS 手工桥接与 stdio 验证有 roadmap 记录；Devtools Vite UI/HMR 的完整实际操作验收仍待补。
-- 固定打包 origin 与普通 HTTP 静态路由隔离已有源码和有限的 macOS smoke 证据；Windows WebView2 已有有限真机 smoke；严格 CSP、response-header 环境和其他 v1.0 门禁仍未完成。不要因本文描述实现存在而宣称 v1.0 发布门禁已关闭。
-- 本轮文档/版本字段核对后的 macOS 双架构 Devtools 候选标记为 `v0.9.10-18-gf3f9036-dirty`；其中 Niva release 裸二进制为 arm64 2,835,264 字节、x86_64 3,175,264 字节。两份 zip 完整性、Mach-O 架构和 `Info.plist` 的应用版本 `0.9.9.0` 已核对。这是带未提交改动的本机候选，不等于签名后的发布包；Windows 默认 unwind 裸二进制为 3,877,376 字节；macOS/Windows 共享 release profile 现使用 panic=abort，Windows 裸二进制为 2,450,432 字节，详见 Windows 验证记录。较早的本机 arm64 `target/release/niva` 为 2,904,944 字节，不与双架构产物混用。
+Shell、Python 等宿主程序可以直接启动 Niva。主窗口通过 `Niva.process.stdin`、`stdout` 和 `stderr` 收发字节；启用 CommonJS 注入后，也可通过 `process` 全局或 `require('process')` 使用。子窗口不提供宿主 process 标准流。
 
-最新状态以 `docs/roadmap.md`、专题设计文档和对应平台验收证据为准。本手册描述架构与使用路径，不是平台验收清单。
+没有专用 stdio 启动开关，也没有 Native 强制的 NDJSON、ready 消息或请求 ID；消息格式由应用双方约定。stdin EOF 只结束输入流，不自动退出窗口。stdout/stderr 的管道错误由应用处理。Niva 框架日志写入独立文件；日志初始化或轮转失败时不会改写应用的标准流。WebView 底层组件的直接系统输出仍需按平台实际验证。
+
+页面示例、管道拆包和回压说明见[普通 process 标准流宿主说明](stdio-host-design.md)。旧 `api.host`、`--stdio` 和框架内置 NDJSON 协议不属于当前接口。
+
+## 5. Devtools、打包器与 build kit
+
+Devtools 通过 Niva 原生 API 完成项目管理和构建操作；普通浏览器不能替代 Niva 宿主完成这些操作。界面通过 `niva-packager` CLI 调用统一 Rust 打包核心。CLI 用户也可直接调用同一个打包器。发布的 build kit 包含宿主打包器、预编译 Niva runtime、版本与哈希清单及许可材料；业务应用打包不要求用户安装 Node.js 或 Rust。[跨平台打包说明](packager-usage.md)包含 kit 布局、CLI 参数、签名和资源布局细节。
+
+```sh
+./niva-packager build \
+  --manifest ./manifest.json \
+  --config /path/to/project/niva.json \
+  --resource-dir /path/to/project/dist \
+  --output-dir /path/to/output \
+  --resource-layout embedded \
+  --target windows-x86_64 \
+  --target macos-aarch64 \
+  --target macos-x86_64
+```
+
+`embedded` 是默认资源布局：Windows 输出单个 `.exe`，macOS 输出包含 `.app` 的 ZIP。`external` 为业务资源保留独立目录，适合需要按需读取的大型资源。每个预编译 runtime 都必须通过严格小于 3,300,000 bytes 的体积门禁；这不等于整个业务应用或 build kit 的大小，也不表示所有候选目标已通过。
+
+## 6. 构建与检查
+
+从仓库根目录按顺序安装依赖、生成 runtime，再构建 Native 程序和 Devtools：
+
+```sh
+npm ci
+npm run build --workspace=packages/runtime
+cargo build --release -p niva -p niva-packager
+npm run build --workspace=packages/devtools
+```
+
+`packages/devtools` 的 build 包含 TypeScript 检查和 Vite 构建。涉及公开类型时，可运行 `npm run typecheck --workspace=packages/types`。Rust 改动的格式、检查、Clippy 和测试命令，以及其他仓库门禁，以根目录 `AGENTS.md` 为准。候选级检查结果不能由本手册中的命令列表推定；当前已执行和未通过项目见[0.10.0-beta.1 候选验收记录](release-0.10.0-beta.1.md)。
+
+## 7. 平台验收状态
+
+0.10.0-beta.1 尚未发布，候选记录仍列有发布阻断项。Windows MSVC target check 只证明交叉编译检查结果，不能代替 Windows 真机运行；macOS 记录也只适用于明确列出的目标和操作。窗口、托盘、菜单、快捷键、WebView、资源和打包行为的验收必须保留各平台各自的证据。当前逐项状态以[候选验收记录](release-0.10.0-beta.1.md)和[路线图](roadmap.md)为准。

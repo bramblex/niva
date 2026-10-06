@@ -1,6 +1,8 @@
 # Niva API 测试覆盖矩阵
 
-本表是覆盖跟踪清单，不代表整体覆盖验收。公开 API 清单以 `packages/types/Niva_zh.d.ts` 中 `NivaObj.api` 引用的命名空间接口里声明的 `MethodSignature` 为准，共 167 个方法；不计属性，也不将类型到 handler 的名字映射视为行为覆盖。初始化脚本中的 300 次通用代理调用压力测试同样不算逐方法行为测试。直接行为测试与 helper 级测试分别标注；helper 级用例验证底层 helper，不视为完整 Niva.api handler 覆盖。原生观察仅代表所列 smoke 的实际操作。2026-09-24 的 macOS 顺序套件 `examples/macos-api-smoke/run_all.py` 已实际调用 167/167 个 `Niva.api` 方法：161 个有行为断言或外部原生观察，6 个仅证实调用成功，效果仍待独立验证；另有 9/9 个 `NivaObj` bridge 方法在真实 WebView 中通过。NodeCompat 的 185 项真机 WebView 检查另见 `docs/node-compat-test-matrix.md`。
+> **历史测试记录（2026-09-24）**：本表记录旧 `Niva.api.*` 接口的覆盖情况。167 个方法、300 次通用代理调用及 9 个 bridge 方法的数字均保留为当时事实，不代表当前 API 清单或当前候选验收结果。旧类型入口 `packages/types/Niva_zh.d.ts` 已迁移；当前声明从 [`packages/types/dist/Niva_zh.d.ts`](../packages/types/dist/Niva_zh.d.ts) 导出，并以 [`packages/runtime/src/contracts.ts`](../packages/runtime/src/contracts.ts) 为源。当前 `NivaObj` 直接暴露 `Niva.window`、`Niva.process`、`Niva.bridge` 等属性，没有 `Niva.api` 命名空间；候选验收状态见[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)。
+
+本表是覆盖跟踪清单，不代表整体覆盖验收。历史清单不计属性，也不将类型到 handler 的名字映射视为行为覆盖。初始化脚本中的通用代理调用压力测试同样不算逐方法行为测试。直接行为测试与 helper 级测试分别标注；helper 级用例验证底层 helper，不视为完整 handler 覆盖。原生观察仅代表所列 smoke 的实际操作。2026-09-24 的 macOS 顺序套件 `examples/macos-api-smoke/run_all.py` 已实际调用 167/167 个旧 `Niva.api` 方法：161 个有行为断言或外部原生观察，6 个仅证实调用成功，效果仍待独立验证；另有 9/9 个旧 `NivaObj` bridge 方法在真实 WebView 中通过。NodeCompat 的 185 项真机 WebView 检查另见历史报告 [`docs/node-compat-test-matrix.md`](node-compat-test-matrix.md)。
 
 ## Niva.api（167 个方法）
 

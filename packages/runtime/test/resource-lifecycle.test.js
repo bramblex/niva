@@ -58,7 +58,7 @@ function pendingBridge() {
     },
     bootstrap: {
       os: { platform: "linux" },
-      process: { version: "v0.9.9", versions: { niva: "0.9.9" }, argv: [], env: {} },
+      process: { version: "v0.10.0-beta.1", versions: { niva: "0.10.0-beta.1" }, argv: [], env: {} },
     },
   };
 }

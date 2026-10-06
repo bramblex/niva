@@ -3586,7 +3586,7 @@ checksum = "e4a24736216ec316047a1fc4252e27dabb04218aa4a3f37c6e7ddbf1f9782b54"
 
 [[package]]
 name = "niva"
-version = "0.9.9"
+version = "0.10.0-beta.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3634,7 +3634,7 @@ dependencies = [
 
 [[package]]
 name = "niva-packager"
-version = "0.9.9"
+version = "0.10.0-beta.1"
 dependencies = [
  "anyhow",
  "apple-codesign",

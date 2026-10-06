@@ -8,6 +8,10 @@ import http from 'node:http';
 const hostBuffer = Buffer;
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const python = process.platform === 'win32' ? 'python' : 'python3';
+export function trustedLocalFromReady(ready) {
+  return ready?.trustedLocal === true;
+}
+
 export function startNativeBridge(binary) {
   const temporary = mkdtempSync(path.join(tmpdir(), 'niva-official-relay-'));
   const ready = path.join(temporary, 'ready.json');
@@ -21,6 +25,7 @@ export function startNativeBridge(binary) {
   while (!existsSync(ready) && Date.now() < deadline) spawnSync(python, ['-c', 'import time;time.sleep(.05)']);
   if (!existsSync(ready)) throw new Error('Real Native relay failed to start');
   const config = JSON.parse(readFileSync(ready));
+  const trustedLocal = trustedLocalFromReady(config);
   let sequence = 0;
   const streams = new Map();
   const cancelled = new Set();
@@ -62,7 +67,7 @@ export function startNativeBridge(binary) {
     }catch(error){for(const s of streams.values())s.reject(error);streams.clear();}
     finally{polling=false;}
   }
-  const bridge={bootstrap:config.bootstrap,
+  const bridge={bootstrap:config.bootstrap,isTrustedLocal(){return trustedLocal;},
     callSync(method,args=[]){return sync({op:'sync',method,args});},
     call(method,args=[]){return request('/rpc',{id:++sequence,op:'call',method,args}).then(decode);},
     stream(method,args=[],handlers={}){

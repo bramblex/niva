@@ -14,7 +14,7 @@ runtime-ready promise.
 const text = await Niva.fs.promises.readFile("notes.txt", "utf8");
 const response = await Niva.http.requestText({ url: "https://example.com/status" });
 
-console.log(text, response.statusCode, Niva.os.info);
+console.log(text, response.statusCode, response.body, Niva.os.info);
 ```
 
 Filesystem, process, OS, path, URL, child-process, socket, TLS, DNS, HTTP,
@@ -86,10 +86,11 @@ flags.
   `/__niva_runtime/` URLs without an asset-origin/CORS contract.
 
 The ESM facades in `@niva/runtime/<module>` expose the same objects as
-`Niva.<module>` after bootstrap. They are not a second runtime. The Node-shaped
-`process.version` remains the Niva version; `process.versions.nodeCompat` names
-the declared compatibility target, Node 22.14.0. Niva does not impersonate a
-host Node process or fall back to one for Native operations.
+`Niva.<module>` after bootstrap. They are not a second runtime. `process.version`
+and `process.versions.node` identify the compatibility target, Node 22.14.0;
+`process.versions.nodeCompat` repeats that target and `process.versions.niva`
+identifies the actual Niva product version. Niva does not impersonate a host
+Node process or fall back to one for Native operations.
 
 `Niva.crypto.timingSafeEqual()` is a JavaScript compatibility helper. It checks
 equal-length inputs and visits every byte, but JavaScript execution is not
@@ -98,9 +99,11 @@ timing resistance is required.
 
 Type declarations are generated from
 [`src/contracts.ts`](src/contracts.ts) and published through `@niva/types`.
-That package depends on `@types/node` 22.14.0 for the Node-shaped adapter types.
-The runtime flags control JavaScript global injection; they do not isolate
-TypeScript's ambient Node declarations. See [`../types/README.md`](../types/README.md).
+That package has an optional `@types/node` 22.14.0 peer for the explicit native
+Node tooling declaration mode. Browser consumers can use the default declaration
+mode without installing Node globals. The runtime flags control JavaScript
+global injection; see [`../types/README.md`](../types/README.md) for the
+separate declaration modes.
 
 ## Build and verification
 

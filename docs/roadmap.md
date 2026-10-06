@@ -1,7 +1,14 @@
 # Niva Roadmap / 待完善事项
 
-> 更新：2026-09-26。Windows 真机有限 smoke 见 [验证记录](windows-validation-2026-09-23.md)；当前实现与平台验收边界见下文。
-> v1.0 门禁见下一节；源码交付不等于目标平台真机验收。
+> 更新：2026-09-28。0.10.0-beta.1 候选范围与本轮验收状态见[候选记录](release-0.10.0-beta.1.md)；Windows 历史有限 smoke 见[验证记录](windows-validation-2026-09-23.md)。下方实现状态和平台验收边界分开记录。
+
+## 0.10.0-beta.1 候选范围
+
+- 冻结现有 Niva 原生 API、统一 TypeScript runtime、独立可选的 CommonJS/ESM Node 风格模块子集，以及 GUI/CLI 共用的打包核心。
+- 异步调用以 IPC 为稳定通道；符合条件的流式操作可选使用 WebSocket 优化通道。同步 XHR 仅用于同步兼容 API；WebSocket 尚未移除，IPC 二进制帧仍在边界使用 Base64，不宣称零拷贝。
+- Node 风格适配器仅承诺当前实现并选择启用的子集，不表示完整 Node.js 兼容；不得把部分 upstream、真实应用或单平台结果外推为全量兼容或跨平台验收。
+- 完整 runtime 主程序硬体积门禁为严格小于 3,300,000 bytes，统计 Native 代码、内嵌 JS、加载器和索引；macOS 3,000,000 bytes 为参考目标。build kit、打包后的业务应用和仅有 JS/Native 子样本均使用不同口径。
+- 本版候选准备不等于 v1.0 门禁通过。逐平台及远端 CI 的当前证据只在[候选记录](release-0.10.0-beta.1.md)中登记；以下历史记录不能替代本轮验收。
 
 ## v1.0 门禁（盖章前必须清零）
 
@@ -26,7 +33,7 @@
 - [ ] **CI**：`.github/workflows/ci.yml` 已加入双平台检查；待推送后实际运行并处理结果。
 - [ ] **Windows 真机完整验收**：已有 Devtools 构建/启动、stdio、打包页 bridge/HTTP、菜单/快捷键/owner 的有限 smoke；剩余用例见 [验证记录](windows-validation-2026-09-23.md)。
 
-以下能力不作为 v1.0 发布门禁：`win_packager` 的 Windows PE 写入和生成程序启动已有限实测；stdio bridge 已在 macOS 与 Windows 完成示例往返，更多边界仍待验证；NodeCompat 已作为 workspace package 存在，Windows 有限模块 smoke 已过，完整兼容性验收和独立仓拆分不纳入本版；wry 能力补齐（`docs/api-coverage.md` §3）与 devtools 自身签名（需证书）。MiniBlink 按用户决定暂缓，本轮不实施也不纳入验收。
+完整 Node.js 兼容性、独立拆仓和 MiniBlink 不纳入 0.10.0-beta.1。统一打包核心属于本版范围；`win_packager` 的 Windows PE 写入和生成程序启动、stdio bridge 目前只有有限历史 smoke，不能据此宣称完整 kit 或所有 stdio 边界均已验收，具体以[候选记录](release-0.10.0-beta.1.md)为准。wry 能力补齐（`docs/api-coverage.md` §3）及 Devtools 自身签名也不作本版全量验收承诺。
 
 ## 产品定位（已定）
 

@@ -45,11 +45,11 @@ Windows 目标使用 WebView2，目标机需要可用的 WebView2 Runtime。Wind
 ```json
 {
   "schemaVersion": 1,
-  "version": "0.9.9",
+  "version": "0.10.0-beta.1",
   "runtimes": {
     "windows-x86_64": {
       "path": "runtimes/niva-windows-x86_64.exe",
-      "version": "0.9.9",
+      "version": "0.10.0-beta.1",
       "sha256": "填写此文件的64位SHA256"
     }
   }

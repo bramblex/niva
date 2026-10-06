@@ -792,6 +792,7 @@ mod tests {
     fn version_info_ignores_prerelease_and_build_suffixes() {
         for (version, expected) in [
             ("v1.2.3-beta.4", "1,2,3,0"),
+            ("0.10.0-beta.1", "0,10,0,0"),
             ("1.2.3+build.4", "1,2,3,0"),
             ("1.2.3beta2", "1,2,3,0"),
             ("1.2.3.4-beta.5", "1,2,3,4"),
@@ -801,6 +802,9 @@ mod tests {
                 source.contains(&format!("FILEVERSION {expected}")),
                 "{version}"
             );
+            if version == "0.10.0-beta.1" {
+                assert!(source.contains("VALUE \"ProductVersion\", \"0.10.0-beta.1\""));
+            }
             win_packager::version_info::compile_version_info_rc(&source).unwrap();
         }
     }

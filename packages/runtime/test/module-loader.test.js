@@ -106,9 +106,9 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
     __niva_server_origin: iframeParent ? undefined : serverOrigin,
     __niva_window_id: iframeParent ? undefined : 4,
     __niva_node_bootstrap: iframeParent ? undefined : {
-      nivaVersion: "v0.9.9",
+      nivaVersion: "v0.10.0-beta.1",
       os: { platform, arch: "x64", homedir: "/home/test", tmpdir: "/tmp", EOL: "\n" },
-      process: { version: "v0.9.9", versions: { niva: "0.9.9" }, argv: [], env: {}, stdioIsTTY: { stdin: true, stdout: false, stderr: true } },
+      process: { version: "v0.10.0-beta.1", versions: { niva: "0.10.0-beta.1" }, argv: [], env: {}, stdioIsTTY: { stdin: true, stdout: false, stderr: true } },
     },
     __niva_runtime_config: iframeParent ? undefined : { injectCommonJs, injectEsm, nonce: "test-nonce" },
     webkit: ipcReply ? { messageHandlers: { nivaReply: { postMessage(text) {
@@ -187,7 +187,7 @@ test("base Native page initializes without injecting CommonJS globals", () => {
   assert.equal(context.Niva.process.version, "v22.14.0");
   assert.equal(context.Niva.process.versions.node, "22.14.0");
   assert.equal(context.Niva.process.versions.nodeCompat, "22.14.0");
-  assert.equal(context.Niva.process.versions.niva, "0.9.9");
+  assert.equal(context.Niva.process.versions.niva, "0.10.0-beta.1");
   assert.equal(context.Niva.process.stdout.fd, 1);
   assert.equal(context.Niva.process.stderr.fd, 2);
   assert.equal(context.Niva.process.stdin.isTTY, true);

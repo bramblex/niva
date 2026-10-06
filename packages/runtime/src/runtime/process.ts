@@ -11,7 +11,7 @@
     const metadata = target?.bootstrap?.process || null;
     const process: any = new runtime.events.EventEmitter();
     const nivaVersion = metadata?.versions?.niva ||
-      String(metadata?.version || target?.bootstrap?.nivaVersion || "v0.9.9").replace(/^v/, "");
+      String(metadata?.version || target?.bootstrap?.nivaVersion || "v0.10.0-beta.1").replace(/^v/, "");
     const versions = Object.assign({}, metadata?.versions || {}, {
       niva: nivaVersion,
       node: NODE_COMPAT_VERSION,

@@ -1,9 +1,11 @@
 # Historical macOS API and Node runtime test record — 2026-09-24
 
 This is a dated record of the pre-migration `Niva.api`/`--stdio` implementation.
-It is retained as historical evidence only; the fixture migration to direct
-Niva namespaces, Node modules, and fixture-owned process streams has not yet
-been executed on macOS. The historical 167/167 aggregate does not reconcile to
+It is retained as historical evidence only. The current runtime and migrated
+Node compatibility smoke are documented in
+[`../node-compat-macos-smoke/README.md`](../node-compat-macos-smoke/README.md);
+this historical result does not establish that migration's behavior. The
+historical 167/167 aggregate does not reconcile to
 the 164 distinct Native rows currently tracked in `COVERAGE.md`; the current
 runner reports those 164 cases separately from the 11 bridge methods.
 

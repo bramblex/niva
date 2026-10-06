@@ -1,5 +1,7 @@
 # Niva 整体架构 Review 档案
 
+> **现行源码入口（2026-10）**：本档主体保留各轮 review 的历史基线、旧路径、方案和讨论，不应直接作为当前目录或启动命令说明。当前页面运行时与模块入口见 [`packages/runtime/README.md`](../packages/runtime/README.md)，公开声明和消费者模式见 [`packages/types/README.md`](../packages/types/README.md)，当前发布范围及候选证据见 [`docs/release-0.10.0-beta.1.md`](release-0.10.0-beta.1.md)。当前 Native 参数为 `--resource`/`--config`；页面 API 位于 `Niva` 命名空间，主窗口宿主流使用 `process.stdin/stdout/stderr`。本档中的 `packages/node-compat`、`assets/initialize_script.js`、`packages/types/Niva_zh.d.ts`、`--debug-resource`、`--stdio` 和 `Niva.api.host` 等名称是历史基线或历史方案引用，不表示它们是当前使用入口；以对应 README 和源码为准。
+
 建立日期：2026-09-24。当前阶段：按2026-09-25用户最新指令进入实现；IPC fallback具体接口已授权执行方决定。实施范围、阶段与验证见architecture-implementation-plan.md。
 
 当前有效方案见文末「R15 当前方案与待决项」；此前MSI/WiX等已被替代的讨论保留作历史，不是实现指令。

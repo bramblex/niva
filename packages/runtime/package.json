@@ -1,6 +1,6 @@
 {
   "name": "@niva/runtime",
-  "version": "0.9.9",
+  "version": "0.10.0-beta.1",
   "private": true,
   "type": "module",
   "description": "Unified TypeScript page runtime and Node-style adapters for Niva",
@@ -139,7 +139,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
-    "@niva/types": "0.9.9",
+    "@niva/types": "0.10.0-beta.1",
     "acorn": "8.14.0",
     "acorn-walk": "8.3.4",
     "buffer": "6.0.3",

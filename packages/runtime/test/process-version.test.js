@@ -11,7 +11,7 @@ test("Niva process and ESM facade distinguish Node compatibility target from Niv
   assert.equal(process.version, "v22.14.0");
   assert.equal(process.versions.node, "22.14.0");
   assert.equal(process.versions.nodeCompat, "22.14.0");
-  assert.equal(process.versions.niva, "0.9.9");
+  assert.equal(process.versions.niva, "0.10.0-beta.1");
   assert.equal(facadeVersion, process.version);
   assert.strictEqual(facadeVersions, process.versions);
 });
@@ -20,8 +20,8 @@ test("process factory does not expose the Native product version as process.vers
   const process = runtime.createProcessModule({
     bootstrap: {
       process: {
-        version: "v0.9.9",
-        versions: { niva: "0.9.9", node: "0.9.9", nodeCompat: "0.9.9" },
+        version: "v0.10.0-beta.1",
+        versions: { niva: "0.10.0-beta.1", node: "20.0.0", nodeCompat: "21.0.0" },
         argv: [],
         env: {},
       },
@@ -33,7 +33,7 @@ test("process factory does not expose the Native product version as process.vers
     assert.equal(process.version, "v22.14.0");
     assert.equal(process.versions.node, "22.14.0");
     assert.equal(process.versions.nodeCompat, "22.14.0");
-    assert.equal(process.versions.niva, "0.9.9");
+    assert.equal(process.versions.niva, "0.10.0-beta.1");
   } finally {
     process.stdin?.__nivaResourceOwner?.release();
   }
@@ -42,7 +42,7 @@ test("process factory does not expose the Native product version as process.vers
 test("process.chdir updates the Native cwd through the async IPC API", async () => {
   const calls = [];
   const process = runtime.createProcessModule({
-    bootstrap: { process: { version: "v0.9.9", versions: { niva: "0.9.9" }, argv: [], env: {} } },
+    bootstrap: { process: { version: "v0.10.0-beta.1", versions: { niva: "0.10.0-beta.1" }, argv: [], env: {} } },
     bridge: {
       call(method, args) { calls.push([method, args]); return Promise.resolve(null); },
       callSync() { throw new Error("process.chdir must not use synchronous XHR"); },

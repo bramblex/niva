@@ -10,7 +10,7 @@ import vm from 'node:vm';
 import { inspect } from 'node:util';
 import * as hostUtil from 'node:util';
 import { totalmem as hostTotalMemory, tmpdir as hostTmpdir, homedir as hostHomeDir, hostname as hostHostname, release as hostOsRelease, type as hostOsType } from 'node:os';
-import { startNativeBridge } from './upstream-native-bridge.mjs';
+import { startNativeBridge, trustedLocalFromReady } from './upstream-native-bridge.mjs';
 import { environmentPolicy, policySha256, prepareEnvironmentExclusions } from './upstream-environment-exclusions.mjs';
 
 const script = fileURLToPath(import.meta.url);
@@ -25,7 +25,7 @@ const infrastructureRequire = createRequire(import.meta.url);
 function hostBootstrap() {
   const platform = hostProcess.platform;
   return {
-    nivaVersion: 'v0.9.9',
+    nivaVersion: 'v0.10.0-beta.1',
     os: {
       info: { os: platform, arch: hostProcess.arch, version: hostOsRelease() },
       arch: hostProcess.arch,
@@ -46,8 +46,8 @@ function hostBootstrap() {
       env: Object.assign({}, hostProcess.env),
       execPath: hostProcess.execPath,
       pid: hostProcess.pid,
-      version: 'v0.9.9',
-      versions: { niva: '0.9.9' },
+      version: 'v0.10.0-beta.1',
+      versions: { niva: '0.10.0-beta.1' },
     },
   };
 }
@@ -60,6 +60,7 @@ async function installRuntimeFixture(nativeBridge) {
     for (const name of ['call', 'callSync', 'stream', 'streamSend']) {
       globalThis.Niva.bridge[name] = nativeBridge[name];
     }
+    globalThis.Niva.bridge.isTrustedLocal = nativeBridge.isTrustedLocal;
   } else {
     globalThis.Niva.bridge.callSync = (method, parameters = []) => {
       assert.equal(method, 'process.currentDir', 'Only cwd is provided by the contract OS fixture');
@@ -122,11 +123,16 @@ function verifyNativeRelayContract() {
   assert.match(relay, /Niva\.bridge\.call\(/);
   assert.match(relay, /Niva\.bridge\.stream\(/);
   assert.match(relay, /Niva\.bridge\.streamSend\(/);
+  assert.match(relay, /Niva\.bridge\.isTrustedLocal\(\)/);
   assert.match(relay, /process\.stdin\.on\("data"/);
   assert.match(relay, /process\.stdout\.write\(/);
   assert.match(relay, /'--config='/);
   assert.match(relay, /'--resource='/);
   assert.match(bridge, /upstream-native-relay\.py/);
+  assert.equal(trustedLocalFromReady({trustedLocal: true}), true);
+  assert.equal(trustedLocalFromReady({trustedLocal: false}), false);
+  assert.equal(trustedLocalFromReady({}), false);
+  assert.equal(trustedLocalFromReady(undefined), false);
 }
 function sourceFingerprint() {
   const files = {};
@@ -389,6 +395,25 @@ async function runCase(name, synthetic) {
         unknownInternal() { try { requireNiva('internal/errors').codes.UNKNOWN_ERROR; } catch {} },
         unknownIntrospection() { try { requireNiva('internal/event_target').unknown; } catch {} },
         nativeRelayContract() { verifyNativeRelayContract(); },
+        untrustedRelayCannotUseSyncFiles() {
+          let calls = 0;
+          const priorTrust = globalThis.Niva.bridge.isTrustedLocal;
+          const priorCallSync = globalThis.Niva.bridge.callSync;
+          try {
+            for (const ready of [undefined, {}, {trustedLocal: false}, {trustedLocal: 'true'}]) {
+              globalThis.Niva.bridge.isTrustedLocal = () => trustedLocalFromReady(ready);
+              globalThis.Niva.bridge.callSync = () => { calls++; return null; };
+              assert.throws(
+                () => globalThis.Niva.fs.rmSync('/tmp/niva-upstream-trust-probe', {force: true}),
+                error => error && error.code === 'ERR_NIVA_LOCAL_PAGE_REQUIRED',
+              );
+            }
+            assert.equal(calls, 0, 'missing/false relay trust must not reach synchronous Native file APIs');
+          } finally {
+            globalThis.Niva.bridge.isTrustedLocal = priorTrust;
+            globalThis.Niva.bridge.callSync = priorCallSync;
+          }
+        },
         fixtureEscape() { requireNiva('child_process').spawnSync(hostProcess.execPath, [script]); },
         routing() { assert.strictEqual(requireNiva('path'), modules.path); assert.strictEqual(requireNiva('node:path'), modules.path); assert.strictEqual(Buffer, modules.buffer.Buffer); },
         assertion() { assert.fail('deliberate assertion failure'); },
@@ -452,7 +477,7 @@ if (args[0] === '--fixture') {
   await runCase(args[1], args[0] === '--probe');
 } else if (args[0] === '--self-test') {
   verifySnapshot();
-  const expected = { exclusionPolicy: 'pass', largeResult: 'fail', subtestFailure:'fail', subtestPending:'fail', subtestSkip:'unsupported', subtestSuccess:'pass', routing: 'pass', fixtureRouting: 'pass', internalRouting: 'unsupported', unknownInternal: 'unsupported', unknownIntrospection: 'unsupported', nativeRelayContract: 'pass', fixtureEscape: 'fail', counted: 'pass', assertion: 'fail', missing: 'fail',
+  const expected = { exclusionPolicy: 'pass', largeResult: 'fail', subtestFailure:'fail', subtestPending:'fail', subtestSkip:'unsupported', subtestSuccess:'pass', routing: 'pass', fixtureRouting: 'pass', internalRouting: 'unsupported', unknownInternal: 'unsupported', unknownIntrospection: 'unsupported', nativeRelayContract: 'pass', untrustedRelayCannotUseSyncFiles: 'pass', fixtureEscape: 'fail', counted: 'pass', assertion: 'fail', missing: 'fail',
     extra: 'fail', forbidden: 'fail', async: 'fail', rejection: 'fail', unknown: 'unsupported',
     helper: 'unsupported', swallowedHelper: 'unsupported', skip: 'unsupported', swallowed: 'unsupported', timeout: 'fail', earlyExit: 'fail', lateExtra: 'fail' };
   for (const [probe, status] of Object.entries(expected)) {

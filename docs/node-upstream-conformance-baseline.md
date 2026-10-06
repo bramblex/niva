@@ -1,5 +1,7 @@
 # Node 官方测试子集：首次运行记录
 
+> **历史诊断记录（2026-09-24）**：5/22/3 的失败与阻塞基线、原始 runner 和 manifest hash 均按当时结果保留，不代表当前候选验收。当前测试入口与状态见[运行规则](node-upstream-conformance.md)和[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)。原 Node v22.14.0 测试文件现位于 `packages/runtime/upstream/`。
+
 > 2026-09-24T08:13:42.143Z · Node v22.14.0 · darwin/arm64
 
 本次验证的是 Node 宿主中的 Niva JS 适配器，不是 WebView 或 Native 验收。固定的 30 个上游文件全部保留，未依据结果删除用例、修改断言或缩小产品目标。
@@ -8,7 +10,9 @@
 
 测试 runner 的 16 个自检通过，覆盖被测模块映射、漏调/多调回调、异步异常、未处理 rejection、未知模块/helper、吞掉不支持异常、请求跳过、提前退出及超时。另外，在临时目录篡改一个上游文件后，runner 在执行任何用例前拒绝运行并非零退出；仓库中的原始文件没有被改动。
 
-## 可复现入口
+## 历史执行入口
+
+以下命令记录本次历史运行使用的入口；`packages/node-compat` workspace 已移除，当前 runner 命令见[运行规则](node-upstream-conformance.md)。
 
 使用 Node 22.14.0，在仓库根目录执行：
 
@@ -27,36 +31,36 @@ npm run test:upstream --workspace=packages/node-compat -- --report upstream-resu
 
 | 模块 | 官方测试文件 | 结果 |
 | --- | --- | --- |
-| buffer | [test-buffer-alloc.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-alloc.js) | fail |
-| buffer | [test-buffer-bytelength.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-bytelength.js) | fail |
-| buffer | [test-buffer-compare.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-compare.js) | fail |
-| buffer | [test-buffer-concat.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-concat.js) | fail |
-| buffer | [test-buffer-fill.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-fill.js) | unsupported |
-| buffer | [test-buffer-from.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-from.js) | fail |
-| buffer | [test-buffer-indexof.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-indexof.js) | fail |
-| buffer | [test-buffer-tojson.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-tojson.js) | pass |
-| buffer | [test-buffer-write.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-buffer-write.js) | fail |
-| events | [test-events-list.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-events-list.js) | fail |
-| events | [test-events-listener-count-with-listener.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-events-listener-count-with-listener.js) | fail |
-| events | [test-events-once.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-events-once.js) | unsupported |
-| path | [test-path-basename.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-basename.js) | fail |
-| path | [test-path-dirname.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-dirname.js) | pass |
-| path | [test-path-extname.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-extname.js) | pass |
-| path | [test-path-glob.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-glob.js) | fail |
-| path | [test-path-isabsolute.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-isabsolute.js) | pass |
-| path | [test-path-join.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-join.js) | fail |
-| path | [test-path-normalize.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-normalize.js) | fail |
-| path | [test-path-parse-format.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-parse-format.js) | fail |
-| path | [test-path-relative.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-relative.js) | fail |
-| path | [test-path-resolve.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path-resolve.js) | unsupported |
-| path | [test-path.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-path.js) | fail |
-| querystring | [test-querystring-escape.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-querystring-escape.js) | fail |
-| querystring | [test-querystring-maxKeys-non-finite.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-querystring-maxKeys-non-finite.js) | fail |
-| querystring | [test-querystring-multichar-separator.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-querystring-multichar-separator.js) | pass |
-| querystring | [test-querystring.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-querystring.js) | fail |
-| string_decoder | [test-string-decoder-end.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-string-decoder-end.js) | fail |
-| string_decoder | [test-string-decoder-fuzz.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-string-decoder-fuzz.js) | fail |
-| string_decoder | [test-string-decoder.js](../packages/node-compat/upstream/node-v22.14.0/test/parallel/test-string-decoder.js) | fail |
+| buffer | [test-buffer-alloc.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-alloc.js) | fail |
+| buffer | [test-buffer-bytelength.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-bytelength.js) | fail |
+| buffer | [test-buffer-compare.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-compare.js) | fail |
+| buffer | [test-buffer-concat.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-concat.js) | fail |
+| buffer | [test-buffer-fill.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-fill.js) | unsupported |
+| buffer | [test-buffer-from.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-from.js) | fail |
+| buffer | [test-buffer-indexof.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-indexof.js) | fail |
+| buffer | [test-buffer-tojson.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-tojson.js) | pass |
+| buffer | [test-buffer-write.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-buffer-write.js) | fail |
+| events | [test-events-list.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-events-list.js) | fail |
+| events | [test-events-listener-count-with-listener.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-events-listener-count-with-listener.js) | fail |
+| events | [test-events-once.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-events-once.js) | unsupported |
+| path | [test-path-basename.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-basename.js) | fail |
+| path | [test-path-dirname.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-dirname.js) | pass |
+| path | [test-path-extname.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-extname.js) | pass |
+| path | [test-path-glob.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-glob.js) | fail |
+| path | [test-path-isabsolute.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-isabsolute.js) | pass |
+| path | [test-path-join.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-join.js) | fail |
+| path | [test-path-normalize.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-normalize.js) | fail |
+| path | [test-path-parse-format.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-parse-format.js) | fail |
+| path | [test-path-relative.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-relative.js) | fail |
+| path | [test-path-resolve.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path-resolve.js) | unsupported |
+| path | [test-path.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-path.js) | fail |
+| querystring | [test-querystring-escape.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-querystring-escape.js) | fail |
+| querystring | [test-querystring-maxKeys-non-finite.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-querystring-maxKeys-non-finite.js) | fail |
+| querystring | [test-querystring-multichar-separator.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-querystring-multichar-separator.js) | pass |
+| querystring | [test-querystring.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-querystring.js) | fail |
+| string_decoder | [test-string-decoder-end.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-string-decoder-end.js) | fail |
+| string_decoder | [test-string-decoder-fuzz.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-string-decoder-fuzz.js) | fail |
+| string_decoder | [test-string-decoder.js](../packages/runtime/upstream/node-v22.14.0/test/parallel/test-string-decoder.js) | fail |
 
 ## 已定位的差异与阻塞
 

@@ -5,9 +5,12 @@ on:
     paths:
       - ".cargo/**"
       - "Cargo.*"
+      - "package.json"
+      - "package-lock.json"
       - "crates/**"
       - "scripts/*packager*"
       - "packages/runtime/**"
+      - "packages/types/**"
       - ".github/workflows/packager.yml"
   push:
     branches: [main]
@@ -54,6 +57,16 @@ jobs:
       - if: runner.os == 'macOS'
         name: Remove Mach-O symbol table from runtime artifact
         run: strip -N target/${{ matrix.target }}/release/niva
+      - name: Enforce complete runtime size gate
+        shell: python
+        run: |
+          import pathlib
+          runtime = pathlib.Path('target/${{ matrix.target }}/release/niva${{ matrix.exe }}')
+          size = runtime.stat().st_size
+          limit = 3_300_000
+          print(f'{runtime}: {size} bytes (limit: < {limit})')
+          if size >= limit:
+              raise SystemExit(f'Runtime exceeds the {limit}-byte release limit')
       - run: cargo test --locked -p niva-packager
       - name: Collect binaries
         shell: python

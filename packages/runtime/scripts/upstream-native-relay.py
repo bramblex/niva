@@ -67,7 +67,7 @@ PAGE = '''<!doctype html><meta charset="utf-8"><script>
     }
   });
   process.stdin.on("end", () => { if (input.trim()) dispatch(input.trim()); });
-  void send("relay-ready", Niva.bootstrap);
+  void send("relay-ready", {bootstrap:Niva.bootstrap, trustedLocal:Niva.bridge.isTrustedLocal()});
 })()
 </script>'''
 
@@ -108,7 +108,9 @@ def main():
    if boot.empty():events.put({'fatal':'native process closed stdout before the page relay became ready'})
   threading.Thread(target=read,daemon=True).start()
   try:
-   bootstrap=boot.get(timeout=20)
+   ready=boot.get(timeout=20)
+   bootstrap=ready.get('bootstrap') if isinstance(ready,dict) else None
+   trusted_local=ready.get('trustedLocal') if isinstance(ready,dict) else None
    class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def do_POST(self):
@@ -134,7 +136,7 @@ def main():
       payload=json.dumps(value).encode();self.send_response(200);self.send_header('Content-Length',str(len(payload)));self.end_headers();self.wfile.write(payload)
      except Exception as e:self.send_error(500,str(e))
    server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
-   Path(ready_file).write_text(json.dumps({'url':'http://127.0.0.1:'+str(server.server_port),'token':token,'bootstrap':bootstrap,'directory':directory}))
+   Path(ready_file).write_text(json.dumps({'url':'http://127.0.0.1:'+str(server.server_port),'token':token,'bootstrap':bootstrap,'trustedLocal':trusted_local,'directory':directory}))
    server.serve_forever()
   finally:
    native.stdin.close()

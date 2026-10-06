@@ -2,6 +2,8 @@
 
 本文记录当前远端 API 授权契约。源码已实现配置解析、原生 IPC 调用校验和平台请求/回复路径；这不等同于浏览器或目标操作系统运行时验收。
 
+候选验收结果与尚未覆盖的平台见[0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)。文末 2026-09-23/26 的 smoke 是对应日期的历史观察，不代表当前候选已完成端到端授权验收。
+
 ## 授权配置
 
 每个窗口可在窗口配置的 `permissions` 中列出允许调用原生 unary JSON API 的页面 origin 和方法：
@@ -18,7 +20,7 @@
 
 - key 必须是精确的 `http` 或 `https` origin，包含 scheme、host 和有效端口；路径、query、fragment、用户名密码均不接受。协议和端口参与匹配。没有子域通配或自由正则。
 - grant 支持 `namespace.method` 和 `namespace.*`。没有匹配 grant 时默认拒绝。
-- `permissions` 授权远端 IPC；同源本地 Niva 页面使用经 token 认证的 WS bridge。
+- `permissions` 授权远端页面使用 unary JSON IPC；可信本地 Niva 页面使用经 token 认证的稳定 IPC。流和二进制操作按创建时可用状态选择 WS 优化桥，WS 不可用时走 IPC Channel；远端页面不开放 Channel。
 
 ## 原生校验路径
 
@@ -27,14 +29,14 @@
 - macOS 从 `WKScriptMessage` 的发送 frame request 取得 source URL，并绑定创建该 handler 的原生窗口 ID。`nivaReply.postMessage()` 返回 Promise 结果。
 - Windows IPC handler 同样把原生窗口 ID 和 request URI 交给 Rust 授权；响应投递前在主线程确认当前 WebView origin 仍等于请求 origin。前端通过 `window.ipc.postMessage()` 发起调用，通过 WebView message 事件收取响应。
 - Rust 根据窗口自己的 `WindowPermissions`，用 source URL 的精确 origin 检查完整方法名或 `namespace.*`。调用不能通过伪造 `wid` 切换窗口。
-- 远端 IPC 拒绝 `window.open` 与 `webview.baseFileSystemUrl`，即使配置 grant 也不开放。stream handler 和二进制数据没有 IPC 表示，不能经远端 IPC 授权或调用。
-- IPC 只接受 call 消息；请求体和编码后的响应最大 256 KiB。权限拒绝返回 bridge 错误码 `-4`。
+- 远端 IPC 拒绝 `window.open` 与 `webview.baseFileSystemUrl`，即使配置 grant 也不开放。远端消息只接受 unary `call`；stream、Channel 和二进制帧不能由远端 grant 开放。
+- IPC 控制请求最多 256 KiB，编码后的响应最多 8 MiB。文本 handler 另有较小的接口限额，例如 HTTP 响应 body 最多 1 MiB、`execText`/`execFileText` 的 stdout 与 stderr 合计最多 64 KiB；其他文本接口限额见[Bridge 合约](bridge.md)。权限拒绝返回 bridge 错误码 `-4`。
 
 ## 传输边界
 
-打包本地页面由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载：应用UUID去掉连字符并转小写，同一应用重启和多窗口使用相同origin，不同应用使用不同origin；Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`只作为配置入口别名。该origin边界用于Web存储隔离，不是调用授权。本地 WS 仍连接动态 `ws://127.0.0.1:<port>`，握手同时校验 loopback 服务 `Host`、对应窗口 token 和该窗口的平台精确页面 `Origin`；token 对应的窗口必须仍然存在。token 每窗单独随机生成并保存在内存。hello 帧中的 `wid` 必须等于 token 绑定的窗口 ID。每个 frame 的 WS 连接拥有独立调用 ID 空间；跨源 frame 不能读取主 frame 的本地凭据，因此只能使用自己的远端 IPC 来源与权限。
+打包本地页面由 Wry 异步自定义协议从 `niva-<uuid>://app/` 加载：应用UUID去掉连字符并转小写，同一应用重启和多窗口使用相同origin，不同应用使用不同origin；Windows WebView2映射为 `http://niva-<uuid>.app`。`niva://app/`只作为配置入口别名。该origin边界用于Web存储隔离，不是调用授权。可信本地页面的普通异步 API 经平台 IPC 调用 Rust，再以 `evaluate_script` 返回结果；本地 Channel 由 Rust 按窗口 token、真实 frame/source URL、session、call 和随机 capability 校验。重载流式操作可在创建时选用动态 `ws://127.0.0.1:<port>` 的 WS 优化桥；WS 握手校验 loopback 服务 `Host`、对应窗口 token 和该窗口的平台精确页面 `Origin`，WS 不可用时同一操作使用 IPC Channel。token 每窗单独随机生成并保存在内存，token 绑定的窗口必须仍然存在。hello 帧中的 `wid` 必须等于 token 绑定的窗口 ID。每个 frame 的 WS 连接拥有独立调用 ID 空间；跨源 frame 不能读取主 frame 的本地凭据，因此只能使用自己的远端 IPC 来源与权限。
 
-显式开发启动可把本机 Vite 入口的精确 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 作为该窗口的 WS 来源；握手仍逐窗校验 token、精确 `Origin` 和 Niva 服务 `Host`。带 `--debug-resource` 的文件系统资源调试也保留 loopback 静态服务。打包模式关闭普通 HTTP 静态路由，改从当前应用UUID对应的Wry协议读取包内静态文件；WS 和按窗口 token 鉴权的 `__niva_fs` 仍通过动态 loopback 服务。普通打包启动忽略嵌入配置的 `debug.entry`，不会因其指向本机端口而授予完整 bridge。
+显式开发启动可通过 `--debug-entry=http://localhost:<port>` 或 `--debug-entry=http://127.0.0.1:<port>` 指定本机 Vite 入口；也可由 Devtools 显式启动开关授权配置中的 `debug.entry`。`--resource` 只选择文件系统资源目录，`--config` 只选择配置文件；二者本身不授权调试入口。显式本机调试入口使用该窗口的精确 WS 来源，握手仍逐窗校验 token、精确 `Origin` 和 Niva 服务 `Host`；普通 HTTP 静态路由也仅在显式调试入口下开放。打包模式关闭普通 HTTP 静态路由，改从当前应用UUID对应的Wry协议读取包内静态文件；WS 和按窗口 token 鉴权的 `__niva_fs` 仍通过动态 loopback 服务。普通打包启动忽略嵌入配置的 `debug.entry`，不会因其指向本机端口而授予完整 bridge。
 
 若页面直接 `fetch` `webview.baseFileSystemUrl` 返回的 `__niva_fs` URL，打包 origin 与 loopback HTTP 是跨源。协议 CSP 会允许当前 WS 与 HTTP endpoint；文件路由先校验窗口 token，再仅对与该 token 所属窗口 `trusted_ws_origin` 精确匹配的 `Origin` 返回 `Access-Control-Allow-Origin`。2026-09-23 固定origin的macOS临时app smoke已验证 `niva://app` 页带token fetch成功；无效token返回403，非匹配Origin即使带有效token也不返回CORS allow header。当前UUID origin及Windows仍未在真机验收。
 

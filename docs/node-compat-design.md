@@ -1,10 +1,10 @@
 # 统一Niva运行时与Node接口设计
 
-> 2026-09-25：统一runtime实施中，完成度与验证见[实施台账](architecture-implementation-plan.md)。旧NodeCompat的模块/API数量、官方测试与二进制大小均为历史快照。
+> 统一 TypeScript runtime 的当前候选边界与验收状态见 [0.10.0-beta.1 候选记录](release-0.10.0-beta.1.md)。旧 NodeCompat 的模块/API 数量、官方测试与二进制大小均为历史快照，不代表当前候选验收结果。
 
 ## Native 能力优先复用
 
-文件、进程、网络、TLS及其它已有Native能力以Rust为实现来源；JavaScript层只保留Node接口与Native契约之间必要的适配，不再另造同一能力。Rust接口暂缺Node所需的流、背压、取消或生命周期语义时，应扩展Native桥接，再由JS包装成Node对象，同时保留已声明的行为范围。HTTP/HTTPS的`requestText`和Node `http.request/get`客户端都复用Rust ureq；Node流式客户端通过本地WebSocket逐块上传、逐块读取响应，JS只适配ClientRequest/IncomingMessage对象。`createServer`是独立的服务端能力，继续在JS上复用Native TCP/TLS，不由ureq替代。客户端连接复用、定制socket、upgrade、response trailers及原始自定义reason phrase不在当前支持范围内。进度和验收边界见[实施台账](architecture-implementation-plan.md)。
+文件、进程、网络、TLS及其它已有Native能力以Rust为实现来源；JavaScript层只保留Node接口与Native契约之间必要的适配，不再另造同一能力。Rust接口暂缺Node所需的流、背压、取消或生命周期语义时，应扩展Native桥接，再由JS包装成Node对象，同时保留已声明的行为范围。HTTP/HTTPS的`requestText`和Node `http.request/get`客户端都复用Rust ureq；Node流式客户端由Rust处理HTTP/HTTPS并逐块传输数据，创建时优先选已建立的WebSocket优化桥，不可用时使用稳定IPC Channel，JS只适配ClientRequest/IncomingMessage对象。`createServer`是独立的服务端能力，继续在JS上复用Native TCP/TLS，不由ureq替代。客户端连接复用、定制socket、upgrade、response trailers及原始自定义reason phrase不在当前支持范围内。当前候选进度及验收边界见[发布候选记录](release-0.10.0-beta.1.md)。
 
 ## 一个实现，多个导出入口
 
@@ -45,7 +45,7 @@ ESM开启时提供`/__niva_runtime/esm/*.mjs`与import map，执行/解析规则
 
 ## 传输与资源
 
-WS承载异步/流/二进制，同步XHR承载Native同步，IPC只提供明确有界的一次性JSON接口。文本文件、HTTP/HTTPS文本与exec文本可降级；默认Buffer、Native同步、watch、持久文件/socket句柄和流不能伪装成IPC能力。详见[Bridge合约](bridge.md)。
+普通异步调用使用稳定的 IPC/`evaluate_script` 桥。大量文件或网络数据、二进制操作及流式 `child_process` stdio 可在创建时选择已建立的 WebSocket 优化桥；WebSocket 不可用时，同一流式操作可使用 IPC Channel，二进制帧在 IPC 边界以 Base64 传输。两种异步路径共享有界队列、ACK/背压、取消与生命周期语义；传输选择不暴露给 API 调用方。同步 XHR 只用于确需同步返回的 Node 兼容接口，并在每个方法首次使用时警告。远端页面仍只可使用获得授权的 unary IPC；它们不能打开 IPC Channel。文件、HTTP/HTTPS 与 exec 文本接口各自有更严格的输入/输出上限，见[Bridge 合约](bridge.md)。
 
 资源的显式close/dispose为主，GC只是兜底。WS断线、IPC租约失联或窗口关闭使所属请求失败并清理Native/JS资源，不重放旧任务。Native清理需要Drop守卫或独立监督者；丢弃异步future并不保证执行await后面的代码。没有明确所有权转移时不得用detached选项逃过清理。
 

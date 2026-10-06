@@ -1,5 +1,7 @@
 # Niva 跨系统打包器
 
+> 本文包含带日期的打包实现快照；其中 NodeCompat 等旧称和当时工具包内容不自动代表当前包布局。当前 runtime 资源由统一 [`packages/runtime`](../packages/runtime/README.md) 构建；候选打包验收与平台缺口见 [`docs/release-0.10.0-beta.1.md`](release-0.10.0-beta.1.md)。
+
 > 实现记录，2026-09-24。用户应用打包方式见 [使用说明](packager-usage.md)。MiniBlink 继续暂缓。本文的源码实现、编译检查与真机验收分别记录。
 
 ## 结构

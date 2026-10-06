@@ -14,9 +14,9 @@ const source = readFileSync(file, 'utf8');
 assert.equal(createHash('sha256').update(source).digest('hex'), entry.sha256);
 globalThis.__niva_runtime_config = { injectCommonJs: false, injectEsm: false };
 globalThis.__niva_node_bootstrap = {
-  nivaVersion: 'v0.9.9',
+  nivaVersion: 'v0.10.0-beta.1',
   os: { platform: process.platform, arch: process.arch, homedir: process.env.HOME || '/', tmpdir: process.env.TMPDIR || '/tmp', EOL: process.platform === 'win32' ? '\r\n' : '\n' },
-  process: { version: 'v0.9.9', versions: { niva: '0.9.9' }, argv: process.argv.slice(), env: Object.assign({}, process.env), execPath: process.execPath, pid: process.pid, arch: process.arch, platform: process.platform },
+  process: { version: 'v0.10.0-beta.1', versions: { niva: '0.10.0-beta.1' }, argv: process.argv.slice(), env: Object.assign({}, process.env), execPath: process.execPath, pid: process.pid, arch: process.arch, platform: process.platform },
 };
 await import('../dist/bootstrap.js');
 globalThis.Niva.bridge.callSync = (method, args = []) => {

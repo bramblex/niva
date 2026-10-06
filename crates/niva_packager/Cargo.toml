@@ -1,6 +1,6 @@
 [package]
 name = "niva-packager"
-version = "0.9.9"
+version = "0.10.0-beta.1"
 edition = "2024"
 license = "MIT"
 description = "Cross-host packaging for precompiled Niva runtimes"
