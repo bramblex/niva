@@ -11,14 +11,14 @@ function Arrow() {
 
 const capabilities = [
   {
-    title: '超轻量',
-    description: <>构建的桌面应用最小只有 <strong>3MB</strong>，仅有 Electron 的 <strong>1/10</strong>。Niva 仅依赖系统原生的 Webview，不依赖 Chromium 或者 Node.js，极致的轻量。</>,
+    title: '系统 WebView',
+    description: <>Niva 使用系统 WebView，不把 Chromium 内核或 Node.js 运行时打进应用。完整产物大小因平台、应用资源和构建选项而异。</>,
     image: 'feature-lightweight.webp',
     alt: '蓝色羽毛托起轻薄的桌面应用窗口',
   },
   {
     title: '极易用',
-    description: <>仅使用<strong>前端技术</strong>，不需要学习复杂的 Node.js 和 Electron API 也不需要复杂的配置，即可构建出一个桌面应用。构建<strong>单可执行文件</strong>，无需安装，点击即用。</>,
+    description: <>使用<strong>前端技术</strong>和项目配置即可构建桌面应用。Windows 可输出单个 EXE，macOS 输出标准 <code>.app</code> 应用包；运行时要求按目标平台和产物说明确认。</>,
     image: 'feature-easy.webp',
     alt: '点击网页界面后得到可直接打开的桌面应用',
   },
@@ -30,7 +30,7 @@ const capabilities = [
   },
   {
     title: '跨平台',
-    description: <>同时支持 <strong>Windows</strong>、<strong>macOS</strong>，无需额外的配置，即可构建出跨平台的桌面应用。</>,
+    description: <>提供 <strong>Windows</strong> 与 <strong>macOS</strong> 构建目标，并使用统一项目配置。请在对应设备验证产物；逐平台验收状态见<a href="https://github.com/bramblex/niva/blob/main/docs/release-0.10.0-beta.1.md">候选记录</a>。</>,
     image: 'feature-platforms.webp',
     alt: '同一个应用出现在两种不同的桌面电脑上',
   },

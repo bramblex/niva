@@ -1,11 +1,11 @@
 # Niva Roadmap / 待完善事项
 
-> 更新：2026-09-28。0.10.0-beta.1 候选范围与本轮验收状态见[候选记录](release-0.10.0-beta.1.md)；Windows 历史有限 smoke 见[验证记录](windows-validation-2026-09-23.md)。下方实现状态和平台验收边界分开记录。
+> 更新：2026-10-06。0.10.0-beta.1 候选范围与验收快照见[候选记录](release-0.10.0-beta.1.md)；当前 Windows 源码审阅与修复证据见[盲审记录](windows-blind-review-2026-10-06.md)，Windows 旧版有限 smoke 见[历史验证记录](windows-validation-2026-09-23.md)。下方实现状态和平台验收边界分开记录。
 
 ## 0.10.0-beta.1 候选范围
 
 - 冻结现有 Niva 原生 API、统一 TypeScript runtime、独立可选的 CommonJS/ESM Node 风格模块子集，以及 GUI/CLI 共用的打包核心。
-- 异步调用以 IPC 为稳定通道；符合条件的流式操作可选使用 WebSocket 优化通道。同步 XHR 仅用于同步兼容 API；WebSocket 尚未移除，IPC 二进制帧仍在边界使用 Base64，不宣称零拷贝。
+- 异步 API 创建与控制统一通过 IPC `t:"api_call"`；符合条件的流式操作创建后可用 WebSocket 优化数据传输，或走稳定 IPC 数据通道。同步 XHR 仅用于同步兼容 API；IPC 二进制帧在传输边界使用 Base64，不宣称零拷贝。
 - Node 风格适配器仅承诺当前实现并选择启用的子集，不表示完整 Node.js 兼容；不得把部分 upstream、真实应用或单平台结果外推为全量兼容或跨平台验收。
 - 完整 runtime 主程序硬体积门禁为 macOS 严格小于 3,300,000 bytes、Windows 严格小于 3,500,000 bytes，统计 Native 代码、内嵌 JS、加载器和索引；macOS 3,000,000 bytes 仅为参考目标。build kit、打包后的业务应用和仅有 JS/Native 子样本均使用不同口径。
 - 本版候选准备不等于 v1.0 门禁通过。逐平台及远端 CI 的当前证据只在[候选记录](release-0.10.0-beta.1.md)中登记；以下历史记录不能替代本轮验收。
@@ -58,8 +58,7 @@
 - [ ] **菜单线程安全靠自觉**：muda 句柄是 Rc（thread-bound），`unsafe Send/Sync` + “只在主线程碰菜单”无编译器强制。
 - [x] **安全模型文档化**：`docs/bridge.md` 安全模型 + `docs/security.md`
   全面评估（含信任模型、分级发现、eval 专项）。残留行动转 P0/P1 新条目。
-- [x] **线协议版本**：`WIRE_VERSION` / `Niva.bridgeVersion = 1` 已同步，
-  hello 握手显式校验版本。
+- [x] **线协议版本**：当前 WS hello 和 binary header 使用 `WIRE_VERSION = 2` 并显式校验；公开 runtime `Niva.bridgeVersion = 1` 是另一项兼容标识，不等于 wire version。
 - [ ] **entry 信任分级**：源码已区分打包本地固定协议 origin、显式 debug loopback
   entry 与远端 IPC grant，见 `docs/permission-design.md`；Windows 打包本地页已有限实测，
   v1.0 门禁仍待完整来源/iframe 用例验收。
@@ -78,10 +77,10 @@
 - [x] **签名工具（一站式，证书用户自备）**：devtools 构建成功后按 `sign` 配置自动签名。macOS（codesign deep/runtime + verify，可选 notarytool 公证 + stapler，钥匙串 profile 零秘密）；Windows（signtool + PFX，密码走 env）。秘密永不进 niva.json。
 - [ ] **devtools 自身签名**：用上面这套工具给 devtools 打包签名（需证书）。
 - [ ] **Stdio host bridge 完整验收**：macOS 与 Windows 已运行 Python 宿主往返；Windows 实测 `ready`、坏帧恢复、页面回发和 EOF 正常退出。子窗口拒绝、BrokenPipe 等完整边界仍待验，见 `docs/stdio-host-design.md`。
-- [ ] Node.js 支持、系统通知 Notification 按原 README TODO 排期。MiniBlink 按用户决定暂缓，不进入本轮实现与验收。
+- [ ] 完整 Node.js 运行时兼容和系统通知 Notification 不在当前候选范围；Node 风格 API 子集继续单独验收。MiniBlink 按用户决定暂缓，不进入本轮实现与验收。
 - [x] **文档站源码更新**：已升级到 Docusaurus 3.10.2，首页保留原产品文案，采用 Devtools logo/配色、实际 Devtools 示例项目窗口截图及重做的四张介绍图；API 页按当前 Rust 注册名、初始化脚本与 d.ts 核对，新增 Bridge、权限、流式、stdio 和 NodeCompat 入口。本地 `npm run typecheck` 与 `npm run build` 通过；线上发布与浏览器矩阵不由此项证明。
 - [ ] **测试覆盖**：已有 Rust 单测、本机 WebView 验证和可重复的 [Windows smoke 示例](../examples/windows-smoke/README.md)；CI 落地后仍需把更多关键 e2e 纳入自动门禁。
-- [ ] **首页旧营销文案核对**：保留用户指定的原文案；目前没有同口径证据支持 `Electron 的 1/10`，本轮 x86_64 Niva 裸二进制为 3,175,264 字节（高于 3,000,000 字节参考值）。Windows 包含单个 exe，macOS 交付物是 `.app` 目录；跨主机导出已有独立 packager 和 Devtools 多目标入口，具体验收矩阵见 `docs/cross-platform-packager-plan.md`。这些证据不足以支持把相应说法当作当前所有平台的共同事实。
+- [x] **首页旧营销文案核对**（2026-10-06）：官网已移除缺少同口径依据的 `3MB`、`Electron 的 1/10` 与“所有平台单可执行文件”说法；按当前平台格式与运行时说明表述。
 
 ## P3 —— 体验优化
 

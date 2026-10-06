@@ -10,7 +10,7 @@ Niva.process.stdin.on('data', text => console.log(text));
 
 标准流协议由应用自己定义；EOF仅结束输入，不自动退出UI。Niva框架日志写独立文件，不通过应用stdout/stderr。见[stdio](./stdio)。
 
-子进程功能使用`Niva.child_process`。Node spawn/exec等需要WS提供持久生命周期及流；同步操作走同步XHR，不提供同步IPC。IPC可使用一次性高层扩展：
+子进程功能使用`Niva.child_process`。`spawn`/`exec`等流式操作创建与控制经稳定IPC发送；创建完成后，数据优先使用已就绪的WebSocket优化通道，否则走IPC数据通道。`spawnSync`/`execSync`等需要同步返回的Node兼容方法使用同步XHR。一次性高层文本扩展走异步IPC：
 
 ```js
 const result = await Niva.child_process.execFileText('/path/to/program', ['argument']);

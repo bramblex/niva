@@ -1,13 +1,9 @@
 //! PNG -> 多尺寸 ICO（内存转换）。
 //!
-//! 逻辑从 `crates/icon_creator/src/main.rs` 原样搬入：
-//! 尺寸 `[16, 24, 32, 48, 64, 128, 256]`，`resize_exact(Lanczos3)`，RGBA8。
-//! 区别：原来是 `input.png -> output.ico` 两个文件，这里是
-//! `&[u8] -> Vec<u8>]`，省掉 devtools 那次 `icon_creator.exe` 落盘 +
-//! 子进程调用（`build-windows.ts` 的 `GENERATING_ICON` 整步可删）。
-//!
-//! `icon_creator` 在新链路跑通前保留（旧链路仍在用它），跑通后删除，
-//! 见 `crates/win_packager/README.md` §6。
+//! Shared by `niva-packager` and the low-level `win_packager` CLI. It converts
+//! PNG bytes directly into a multisize ICO without a temporary file or helper
+//! process. The sizes are `[16, 24, 32, 48, 64, 128, 256]`, resized with
+//! Lanczos3 and encoded as RGBA8 PNG payloads.
 
 use anyhow::Result;
 use image::imageops::FilterType;

@@ -18,10 +18,10 @@ Niva 自身的 SecretKeyObject 可以依靠私有存储比较内容；原生 Cry
 
 ## 可复现证据
 
-[诊断脚本](../packages/node-compat/scripts/probe-engine-boundaries.mjs)与[固定 Node 22.14.0 实测结果](node-webview-engine-boundary-evidence.json)。这是公开可观察性与 Node oracle 的对照，不冒称已运行浏览器测试。脚本不读取 Node 的私有 Symbol，也不改变全局原型或 Crypto 接口。
+[诊断脚本](../packages/runtime/scripts/probe-engine-boundaries.mjs)与[固定 Node 22.14.0 实测结果](node-webview-engine-boundary-evidence.json)。这是公开可观察性与 Node oracle 的对照，不冒称已运行浏览器测试。脚本不读取 Node 的私有 Symbol，也不改变全局原型或 Crypto 接口。
 
 ```sh
-node packages/node-compat/scripts/probe-engine-boundaries.mjs
+node packages/runtime/scripts/probe-engine-boundaries.mjs
 ```
 
 这两项属于原文件中的混合断言，不是整个 util/assert 模块都不可实现。公共 API 的行为差异继续修复，无豁免诊断仍单独保存；默认门禁明确记录 2 处豁免，不将其伪报为断言已通过。
@@ -34,4 +34,4 @@ node packages/node-compat/scripts/probe-engine-boundaries.mjs
 
 ## 已采用的口径
 
-[豁免清单](../packages/node-compat/upstream/environment-exclusions.json)固定为两个检查位置；[最新报告](node-compat-upstream-results.json)为 58 个文件适用断言通过、2 处环境跳过。[原始诊断报告](node-upstream-unfiltered-results.json)为 56/58。
+[豁免清单](../packages/runtime/upstream/environment-exclusions.json)固定为两个检查位置；[最新报告](node-compat-upstream-results.json)为 58 个文件适用断言通过、2 处环境跳过。[原始诊断报告](node-upstream-unfiltered-results.json)为 56/58。

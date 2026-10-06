@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # 远端页面权限
 
-远端页面通过原生 IPC 调用 API 时，Niva 按**窗口配置、调用 frame 的来源 URL 和 API 方法名**逐次授权。没有匹配项时拒绝调用。远端页面的 grant 只适用于非流式 unary JSON API；流式 API 和二进制传输不能通过 IPC 授权。
+远端页面通过原生 IPC 调用 API 时，Niva 按**窗口配置、来源 URL/origin 和 API 方法名**逐次授权。没有匹配项时拒绝调用。远端顶层页面的 grant 只适用于非流式 unary JSON API；流式 API 和二进制传输不能通过 grant 授权。
 
 ## 配置
 
@@ -26,7 +26,7 @@ origin 必须是精确的 `http` 或 `https` 来源，包括协议、主机和�
 
 ## 调用时的校验
 
-远端页面没有本地 WebSocket 凭据，也不能加入本地IPC Channel session。macOS IPC 从 WebKit 消息的发送 frame URL 取来源；Windows IPC 从 WebView2 frame 消息取来源，并在回包前检查导航状态。Rust 根据来源 origin、窗口自己的 permissions 和完整 API 名称进行检查，不信任消息体中的 `wid` 或 origin。
+远端页面没有本地 WebSocket 凭据，也不能加入本地IPC Channel session。Native IPC 统一走 Wry 消息处理；Wry 不提供可依赖的真实 Native child-frame ID。同源 iframe 的请求经父页 relay 到顶层 IPC host，并按来源 URL/top-origin、session 与完整 API 名称校验；跨源 iframe fail-closed。Rust 不信任消息体中的 `wid` 或 origin。Windows 上的来源与导航行为仍需目标设备验证。
 
 - 单次IPC请求JSON最多256KiB、响应最多8MiB；高层操作还有body/输出与超时限制，在途IPC采用失联租约。
 - 远端 IPC只支持明确白名单内的一次性JSON操作；仅注册为Unary并不足以放行。`Niva.bridge.stream`、Native同步、二进制帧和持久handler不可用。
@@ -47,4 +47,4 @@ try {
 
 ## 验收边界
 
-这些规则来自当前 Rust handler 和平台 IPC 实现。Windows frame 来源、递归 iframe 处理及导航期间的回包行为尚需在目标 Windows WebView Runtime 上真机确认；代码存在不等同于目标平台验收通过。
+这些规则来自当前 Rust handler 与统一 runtime。嵌套同源 iframe 的顶层 host 路由及跨源祖先拒绝已有 runtime 回归覆盖；Windows WebView Runtime 上的来源、导航、回包和真实 iframe 行为仍需真机确认，单测与 target check 不等于目标平台验收。

@@ -9,7 +9,7 @@
 - 文档： [https://bramblex.github.io/niva/docs/intro](https://bramblex.github.io/niva/docs/intro)
 - 快速上手： [https://bramblex.github.io/niva/docs/tutorial/new-project](https://bramblex.github.io/niva/docs/tutorial/new-project)
 
-当前候选为 **0.10.0-beta.1**，范围和逐平台验收状态见[候选验收记录](docs/release-0.10.0-beta.1.md)。本版提供现有`Niva`原生 API 和统一 TypeScript runtime；CommonJS 与 ESM Node 风格模块均可独立启用，并按现有模块实现能力，不承诺完整 Node.js 兼容。异步调用以 IPC 为稳定通道，流式操作可使用 WebSocket 优化通道；WebSocket 尚未移除，IPC 二进制帧目前仍经 Base64 编码。同步 XHR 仅用于需要同步返回的兼容 API。窗口/文件/进程能力及传输边界见[Bridge 合约](docs/bridge.md)。
+当前候选为 **0.10.0-beta.1**，范围和逐平台验收状态见[候选验收记录](docs/release-0.10.0-beta.1.md)。本版提供现有`Niva`原生 API 和统一 TypeScript runtime；CommonJS 与 ESM Node 风格模块均可独立启用，并按现有模块实现能力，不承诺完整 Node.js 兼容。异步 API 的创建与控制统一走 IPC `api_call`；流式操作创建后可用稳定 IPC 数据通道，已就绪的 WebSocket 只作可选优化。IPC 二进制帧在传输边界使用 Base64。同步 XHR 仅用于需要同步返回的 Node 兼容 API。窗口/文件/进程能力及传输边界见[Bridge 合约](docs/bridge.md)。
 
 ## 从源码构建
 

@@ -15,10 +15,10 @@
           "kind": "bin"
         },
         "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
+          "RUST_BACKTRACE": "1"
         }
       },
-      "args": ["--debug-resource=packages/examples/simple-project", "--debug-devtools=true"],
+      "args": ["--resource=packages/examples/simple-project", "--debug-devtools=true"],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -32,13 +32,13 @@
           "kind": "bin"
         },
         "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
+          "RUST_BACKTRACE": "1"
         }
       },
       "args": [
         "--debug-entry=http://localhost:3000",
-        "--debug-resource=packages/devtools/public",
-        "--debug-config=packages/devtools/niva.json",
+        "--resource=packages/devtools/public",
+        "--config=packages/devtools/niva.json",
         "--debug-devtools=true"
       ],
       "cwd": "${workspaceFolder}"
@@ -54,14 +54,12 @@
           "kind": "bin"
         },
         "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
+          "RUST_BACKTRACE": "1"
         }
       },
       "args": [
-        "--debug-entry=http://localhost:3000",
-        "--debug-resource=packages/devtools/public",
-        "--debug-config=packages/devtools/niva.json",
-        "--debug-devtools=true"
+        "--resource=packages/devtools/build",
+        "--config=packages/devtools/niva.json"
       ],
       "cwd": "${workspaceFolder}"
     },
@@ -76,12 +74,13 @@
           "kind": "bin"
         },
         "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
+          "RUST_BACKTRACE": "1"
         }
       },
       "args": [
-        "--debug-resource=packages/devtools/build",
-        "--debug-config=packages/devtools/niva.json"
+        "--resource=packages/devtools/build",
+        "--config=packages/devtools/niva.json",
+        "--debug-devtools=true"
       ],
       "cwd": "${workspaceFolder}"
     },
@@ -96,12 +95,12 @@
           "kind": "bin"
         },
         "env": {
-          "RUST_BACKTRACE": "-l framework=WebKit"
+          "RUST_BACKTRACE": "1"
         }
       },
       "args": [
-        "--debug-resource=packages/devtools/build",
-        "--debug-config=packages/devtools/niva.json"
+        "--resource=packages/devtools/build",
+        "--config=packages/devtools/niva.json"
       ],
       "cwd": "${workspaceFolder}"
     }

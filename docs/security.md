@@ -15,7 +15,8 @@
   origin；初始化脚本只在顶层文档的当前 origin 精确匹配该值、且路径不在 `__niva_fs`
   下时注入按窗口生成且仅存内存的本地 bridge token。同源页面导航仍满足 origin 条件。WS 握手
   校验精确页面 `Origin`、loopback 服务 `Host`、路径和 token，并将 hello 窗口 ID 绑定到该 token；
-  IPC Channel 在 Rust 侧校验真实 source/frame、token、窗口、session、call 与 channel capability。
+  IPC Channel 在 Rust 侧校验来源 URL/top-origin、token、窗口、session、call 与 channel capability。
+  Wry 不提供本协议可依赖的 Native child-frame ID；同源 iframe 由父页 relay 并按 JS session 路由，跨源或无法访问的祖先 fail-closed。
   IPC发送/ACK走
   平台消息，Native到JS的Channel帧/事件由 `evaluate_script` 投递。二进制完整18-byte wire frame
   通过Base64跨IPC边界，payload不超过16 KiB，并受序号、有界队列、ACK/背压、取消及session lease
@@ -25,7 +26,7 @@
   HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 仅提供 unary 调用，不提供
   Channel、流或二进制，且
   `window.open`、`webview.baseFileSystemUrl` 不允许经 grant 开放。
-- 源码具备 macOS 与 Windows frame 级 IPC 路径；Windows 真机关键流程仍待验证。macOS与
+- 当前实现由顶层 Wry IPC host 接收消息；同源 child 使用父页 relay，不把该 JS 路由称作 Native frame ID。Windows 真机关键流程仍待验证。macOS与
   Windows真实WebView上的完整双bridge、二进制流、背压及断线行为仍须分别做端到端验收，
   源码和单测不代表平台验收完成。
 - 显式开发启动中的本机 Vite 页仍使用精确 loopback HTTP origin。打包模式的普通

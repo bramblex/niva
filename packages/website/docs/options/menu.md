@@ -29,4 +29,4 @@ type MenuItemOption =
 type MenuOptions = MenuItemOption[];
 ```
 
-Windows 当前可显示 `accelerator` 组合键，但窗口菜单尚未接入 `TranslateAcceleratorW`，按键不会因此触发该菜单项。
+Windows 源码已在原生消息钩子中将按键交给目标窗口的菜单 accelerator；该路径尚无本轮 Windows 真机操作记录，不能据 target check 宣称快捷键已在设备验收。

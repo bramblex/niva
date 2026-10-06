@@ -10,7 +10,6 @@
 
 # production
 /build
-/public/__niva_compat/
 
 # misc
 .DS_Store

@@ -6,7 +6,7 @@ const { themes } = require('prism-react-renderer');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Niva',
-  tagline: '轻松构建超轻量级跨平台应用，Niva 让开发变得简单！',
+  tagline: '用前端技术构建桌面应用',
   favicon: 'img/icon.png',
 
   // Set the production url of your site here

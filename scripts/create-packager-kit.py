@@ -27,6 +27,10 @@ def main():
     parser.add_argument('--runtime-dir', type=pathlib.Path, required=True)
     parser.add_argument('--packager', type=pathlib.Path, required=True)
     parser.add_argument('--output', type=pathlib.Path, required=True)
+    parser.add_argument(
+        '--target', choices=TARGETS, action='append', dest='selected_targets',
+        help='Include a target runtime (repeatable; defaults to all supported targets)',
+    )
     args = parser.parse_args()
     if args.output.exists():
         raise SystemExit('Output already exists')
@@ -41,8 +45,14 @@ def main():
         (kit / 'runtimes').mkdir(parents=True)
         runtimes = {}
         runtime_sizes = {}
-        for target, filename in TARGETS.items():
+        selected_targets = args.selected_targets or list(TARGETS)
+        if len(set(selected_targets)) != len(selected_targets):
+            raise SystemExit('--target may not be repeated with the same value')
+        for target in selected_targets:
+            filename = TARGETS[target]
             source = args.runtime_dir / filename
+            if not source.is_file():
+                raise SystemExit(f'Missing {target} runtime artifact: {source}')
             size_bytes = source.stat().st_size
             limit_bytes = RUNTIME_LIMIT_BYTES[target]
             if size_bytes >= limit_bytes:

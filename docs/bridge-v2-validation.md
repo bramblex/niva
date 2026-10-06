@@ -68,3 +68,14 @@
 - Bridge debug binary SHA-256：本节本轮仅报告 smoke 日志路径，未单独记录当前 debug binary hash；不得沿用历史 `0c3775e26df0a06d7af44111d275bf14a1d91f64075ff7800845fddd2f2dd9fc` 作为当前值。
 - macOS bridge-route：历史快照 `39bda818` PASS，`/tmp/niva-bridge-route-smoke/result.json`。
 - 当前快照的 runtime 179/179、Devtools build、types typecheck/consumer/fresh-pack、Rust gates、BFCache GUI suite、Node compatibility 179 checks/17 cases、bridge-route WS/IPC 双 lane 与 macOS ARM64 release size 均通过。远端 CI、Windows 完整 workspace target check/真机、Windows release 体积和其他 release target 仍开放，详见上表。
+
+## 2026-10-06 依赖清理后的 Runtime 快照
+
+本轮清理中，Devtools 移除了未使用的 `pako` 与 `@types/pako` 依赖；bridge 源码、contracts 和 bootstrap 内容未变。lockfile 变化生成了新的 runtime input fingerprint，因此此处单独记录产物身份，不把上节 Windows review 的 Native、macOS GUI 或 release 证据冒充为本次重跑结果。
+
+| 项目 | 依赖清理后证据 | 状态与限制 |
+| --- | --- | --- |
+| Runtime 产物 | fingerprint `f46d3e5c3c180587c8752019c847864d62815b7a598f8679d4e2df63e0d3ca1f`；bootstrap 630,009 bytes，SHA-256 `1497fda13b3e07d24a5297bdd4e5709ced7c19c9c260916988e4993e42b870de`。Runtime 179/179、types 检查与四种 fresh-pack consumer、Devtools build/7 tests 通过。 | lockfile 变化生成新 fingerprint，不表示 bridge 内容变化。 |
+| Rust workspace gates | 冻结后 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`ulimit -n 4096; cargo test --workspace -- --test-threads=1` 均通过；测试 niva 230 passed/2 ignored、niva_packager 27、validation integration 2、win_packager 21，共 280 passed/2 ignored。日志 `/tmp/niva-cleanup-fmt.log`、`-check.log`、`-clippy.log`、`-test.log`。 | macOS 主机结果；Clippy 有 warnings。 |
+| Windows 条件编译 | 冻结后 `niva` 与 `win_packager` 定向 Windows target checks 通过；资源身份策略 4 tests、`win_packager` 21 tests。 | 完整 `cargo check --workspace --target x86_64-pc-windows-msvc` 因本机缺 MSVC C 标准库头文件失败：`bzip2-sys`/`lzma-sys` 找不到 `stdlib.h`。日志 `/tmp/niva-cleanup-windows-workspace-check.log`。Windows 真机与 release 体积仍未验收。 |
+| macOS release runtime | ARM64 `target/release/niva`：3,073,952 bytes，SHA-256 `0dadbfed16f89c8c77224452dc0786d7b7ad2979d18cc5e59b202bf35b771377`。构建日志 `/tmp/niva-cleanup-release.log`。 | 通过 macOS 严格小于 3,300,000 bytes 门槛；高于 3,000,000 bytes 参考目标。 |

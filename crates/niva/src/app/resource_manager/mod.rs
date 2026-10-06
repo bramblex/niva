@@ -1,8 +1,5 @@
 #[cfg(target_os = "windows")]
 mod win_utils;
-#[cfg(all(test, not(target_os = "windows")))]
-#[path = "win_utils_identity.rs"]
-mod win_utils_identity_tests;
 
 pub(crate) mod image_utils;
 

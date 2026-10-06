@@ -1,16 +1,12 @@
 use anyhow::{Ok, Result};
 
-#[path = "win_utils_identity.rs"]
+#[path = "../../../../shared/windows_file_identity.rs"]
 mod file_identity;
 
 use windows::{
     Win32::Foundation::{
         ERROR_RESOURCE_LANG_NOT_FOUND, ERROR_RESOURCE_NAME_NOT_FOUND,
-        ERROR_RESOURCE_TYPE_NOT_FOUND, GetLastError, HANDLE,
-    },
-    Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandle,
-        GetFileInformationByHandleEx,
+        ERROR_RESOURCE_TYPE_NOT_FOUND, GetLastError,
     },
     Win32::System::LibraryLoader::{
         FindResourceW, FreeResource, GetModuleHandleW, LoadResource, LockResource, SizeofResource,
@@ -22,60 +18,7 @@ use windows::{
 const RT_RCDATA: PCWSTR = PCWSTR(10 as *const u16);
 
 pub fn opened_file_matches_path(opened: &std::fs::File, path: &std::path::Path) -> Result<bool> {
-    use std::os::windows::io::AsRawHandle;
-
-    fn file_identity(file: &std::fs::File) -> Result<Option<file_identity::FileIdentity>> {
-        let handle = HANDLE(file.as_raw_handle() as *mut _);
-        let mut extended = FILE_ID_INFO::default();
-        // SAFETY: `extended` is a correctly sized, writable FILE_ID_INFO, and
-        // the caller supplies an open file handle.
-        match unsafe {
-            GetFileInformationByHandleEx(
-                handle,
-                FileIdInfo,
-                (&mut extended as *mut FILE_ID_INFO).cast(),
-                std::mem::size_of::<FILE_ID_INFO>() as u32,
-            )
-        } {
-            std::result::Result::Ok(()) => {
-                if let Some(identity) = file_identity::FileIdentity::extended(
-                    extended.VolumeSerialNumber,
-                    extended.FileId.Identifier,
-                ) {
-                    return Ok(Some(identity));
-                }
-                // FILE_ID_INFORMATION defines an all-zero 128-bit ID as the
-                // marker for filesystems that do not provide 128-bit IDs.
-                // Continue to the validated legacy query below.
-            }
-            Err(error)
-                if file_identity::file_id_info_is_unsupported_hresult(error.code().0 as u32) =>
-            {
-                // FileIdInfo is unavailable on an older OS/filesystem. Only
-                // the explicit unsupported errors above permit the legacy
-                // query; all other errors remain errors and fail closed.
-            }
-            Err(error) => return Err(error.into()),
-        }
-
-        let mut info = BY_HANDLE_FILE_INFORMATION::default();
-        // SAFETY: `info` is a correctly sized, writable output structure and
-        // `handle` remains valid for this call.
-        unsafe { GetFileInformationByHandle(handle, &mut info)? };
-        let file_id = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
-        Ok(file_identity::FileIdentity::legacy(
-            info.dwVolumeSerialNumber,
-            file_id,
-        ))
-    }
-
-    let current = std::fs::File::open(path)?;
-    let (Some(opened_identity), Some(current_identity)) =
-        (file_identity(opened)?, file_identity(&current)?)
-    else {
-        return Ok(false);
-    };
-    Ok(opened_identity.matches(current_identity))
+    file_identity::opened_file_matches_path(opened, path)
 }
 
 pub fn load_resource(name: &str) -> Result<Vec<u8>> {

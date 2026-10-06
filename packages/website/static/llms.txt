@@ -44,11 +44,11 @@ Use the matching `Niva.<namespace>` link below to find methods. Repository docum
 
 ## Optional
 
-- [NodeCompat](https://bramblex.github.io/niva/docs/api/node-compat): Embedded Node-shaped browser modules, enabled by default, with API and platform limits.
+- [NodeCompat](https://bramblex.github.io/niva/docs/api/node-compat): Optional embedded Node-shaped browser modules, disabled by default, with API and platform limits.
 - [NodeCompat HTTP and HTTPS](https://bramblex.github.io/niva/docs/api/http): Node-style HTTP clients and application servers; these are modules, not Niva namespaces.
 - [stdio host bridge](https://bramblex.github.io/niva/docs/api/stdio): Host messaging and protocol limits.
-- [Type declarations](https://github.com/bramblex/niva/blob/main/packages/types/Niva_zh.d.ts): Public TypeScript API signatures.
+- [Type declarations](https://github.com/bramblex/niva/blob/main/packages/types/README.md): Public TypeScript declaration package and consumer modes.
 - [Source code](https://github.com/bramblex/niva): Source of truth for current behavior.
 - [Roadmap](https://github.com/bramblex/niva/blob/main/docs/roadmap.md): Open work and proposed features; not a list of delivered capabilities.
 
-Architecture update: APIs live directly on Niva. injectCommonJs and injectEsm independently opt into Node globals and browser ESM facades. Niva.bridge owns transport; Niva.stream is the Node module. process stdio is main-window-only; there is no --stdio or api.host protocol. See repository architecture-implementation-plan.md for current implementation and evidence boundaries.
+Architecture update: APIs live directly on Niva. injectCommonJs and injectEsm are independent and disabled by default. Async API creation and control use IPC api_call; stream data uses an IPC channel or an optional WebSocket optimization. Synchronous XHR remains only for Node-compatible methods that require synchronous results. Niva.bridge owns transport; Niva.stream is the Node module. process stdio is main-window-only; there is no --stdio or api.host protocol. See the repository bridge contract and release record for current implementation and evidence boundaries.

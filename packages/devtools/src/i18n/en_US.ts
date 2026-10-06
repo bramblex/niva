@@ -111,7 +111,7 @@ export const en_US = {
   ERR_BUILD_FAILED: "The build failed. Check the details below.",
   ERR_SIGN_FAILED: "The app was built, but signing failed. Check the signing configuration.",
   ERR_OPEN_OUTPUT_FAILED: "The app was built, but its output folder could not be opened.",
-  WARNING: "Waring",
+  WARNING: "Warning",
 
   OPEN: "Open",
 
@@ -125,26 +125,4 @@ export const en_US = {
   ICON: "icon",
   CONFIG_FILE_PATH: "Config",
 
-  UNSELECTED_APP_FILE: "No APP selected",
-  CREATING_APP_STRUCTURE: "Creating app directory structure",
-  COPYING_EXECUTABLE_FILE: "Copying executable file",
-  PACKAGING_RESOURCES: "Packaging resources",
-  COMPRESSING_RESOURCES: "Compressing resources",
-  GENERATING_ICON: "Generating icon",
-  GENERATING_INFO_PLIST: "Generating Info.plist configuration file",
-  BUILDING_APP: "Building app",
-  UNSELECTED_EXE_FILE: "File is not selected",
-  PREPARE_BUILD_ENVIRONMENT: "Prepare build environment",
-  BUILD_EXECUTABLE_FILE: "Build executable file",
-  CLEAN_BUILD_ENVIRONMENT: "Clean build environment",
-
-  UNSUPPORTED_OS: "Unsupported operating system",
-  BUILD_SUCCESS: "Build success",
-  BUILD_FAILED: "Build Failed",
-  BUILD_SUCCESS_MESSAGE: "The application has been built successfully.",
-  DEBUG_RESOURCE_NOT_FOUND: "Debug resource directory was not found: {{path}}",
-  SIGNING_APP: "Signing app",
-  SIGN_NO_IDENTITY: "macOS signing identity is not configured (sign.macos.identity)",
-  SIGN_NO_PFX: "Windows certificate file is not configured or missing (sign.windows.pfx)",
-  SIGN_NO_SIGNTOOL: "signtool.exe was not found (install Windows SDK)",
 };

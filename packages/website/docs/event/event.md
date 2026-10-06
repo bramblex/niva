@@ -4,7 +4,7 @@
 
 | 事件 | 数据与边界 |
 | --- | --- |
-| `webview.loaded` | `{ url: string }`；Wry 页面加载完成时发送，仅本地 WebSocket 页面接收。 |
+| `webview.loaded` | `{ url: string }`；受信任的本地页面加载完成后，经稳定 Wry IPC/evaluate_script 投递；不要求 WebSocket。远端页面不接收。 |
 | `webview.newWindowRequested` | `{ url, pageUrl, decision: "denied" }`；`target=_blank` / `window.open` 默认拒绝。 |
 | `webview.downloadStarted` | `{ url, pageUrl, decision: "denied" }`；下载默认拒绝。 |
 | `webview.permissionDenied` | `{ kind, pageUrl, decision: "denied" }`；对 Niva 明确拒绝的 Wry 权限请求发送。 |

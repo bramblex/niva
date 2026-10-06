@@ -1,6 +1,6 @@
 # Bridge调用与授权
 
-> 当前源码实现 API 控制面/纯数据面分离与 WS Wire v2；真实 macOS custom-protocol 和严格 CSP 双 lane smoke 已通过。Windows target check 因 MSVC 头文件缺失未完成，Windows 真机与 CI 仍未验证。准确范围、产物指纹及测试记录见[Bridge v2 验收记录](../../../../docs/bridge-v2-validation.md)和[Bridge 合约](../../../../docs/bridge.md)。
+> 当前源码实现 API 控制面/纯数据面分离与 WS Wire v2；真实 macOS custom-protocol 和严格 CSP 双 lane smoke 已通过。Windows target check 的结果按当前源码快照记录在[候选验收记录](https://github.com/bramblex/niva/blob/main/docs/release-0.10.0-beta.1.md)中，不沿用旧源码检查结果；Windows 真机与远端 CI 仍未验证。Bridge 的准确范围、产物指纹及测试记录见[仓库 Bridge v2 验收记录](https://github.com/bramblex/niva/blob/main/docs/bridge-v2-validation.md)和[仓库 Bridge 合约](https://github.com/bramblex/niva/blob/main/docs/bridge.md)。
 
 低层传输统一位于`Niva.bridge`：
 
@@ -22,4 +22,4 @@ const title = await Niva.bridge.call('window.title', []);
 
 当前实现保留session租约和资源清理；真实 macOS smoke 覆盖了同源 child session reply 和 iframe 后 parent unary。窗口关闭/可观测导航由Native清理；macOS单iframe无可靠销毁通知时按租约确认。JS阻塞或平台节流也可能触发失联错误，不能声称GC/unload必然即时发生。显式close/dispose为主，GC只兜底。Windows与其他未列平台仍须独立验证。
 
-IPC请求JSON最多256KiB，响应最多8MiB（包含文本转义）；专用文本操作还有更小body/输出限制。IPC二进制Channel对完整18-byte wire frame做Base64，payload最多16 KiB，使用严格序号、有界队列、ACK/背压与取消；Base64会产生额外编码开销，不代表零拷贝或性能更快。当前 WS hello 与 binary header wire version 均为2；历史 Wire v1 只见[Bridge 合约的历史快照](../../../../docs/bridge.md)。
+IPC请求JSON最多256KiB，响应最多8MiB（包含文本转义）；专用文本操作还有更小body/输出限制。IPC二进制Channel对完整18-byte wire frame做Base64，payload最多16 KiB，使用严格序号、有界队列、ACK/背压与取消；Base64会产生额外编码开销，不代表零拷贝或性能更快。当前 WS hello 与 binary header wire version 均为2。历史 Wire v1 只作为协议迁移记录保留在仓库 Bridge 合约中。

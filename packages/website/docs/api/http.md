@@ -1,6 +1,6 @@
 # HTTP与HTTPS
 
-`Niva.http`、`Niva.https`实现Node风格请求/响应和服务器接口，其内置模块导出引用同一实现。流式request/get/createServer需要WS与Native TCP/TLS能力；HTTP协议处理在JS，应用服务器与Niva内部bridge服务器各自独立。
+`Niva.http`、`Niva.https`实现Node风格请求/响应和服务器接口，其内置模块导出引用同一实现。流式request/get/createServer需要Native TCP/TLS能力；页面与Native之间的数据流创建后可使用WebSocket优化通道，或走稳定IPC数据通道。HTTP协议处理在JS，应用服务器与Niva内部bridge服务器各自独立。
 
 IPC提供明确的一次性文本扩展：
 

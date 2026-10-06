@@ -1,6 +1,7 @@
-//! CLI：给 devtools `build-windows.ts` 调用的 ResourceHacker 平替。
+//! Low-level CLI for Windows resource smoke fixtures. Product application
+//! builds use `niva-packager`; this binary is not staged by Devtools.
 //!
-//! 高层模式（推荐，一次调用代替备料 + `icon_creator.exe` + ResourceHacker）：
+//! Bundle mode:
 //! ```text
 //! win_packager --exe <template> --save-as <target>
 //!   --resource-dir <build输出目录> --config <niva.json>
@@ -14,7 +15,7 @@
 //!   [--rcdata NAME=FILE]... [--icon icon.ico] ...
 //! ```
 //!
-//! 与旧脚本的对应关系见 `crates/win_packager/README.md`。
+//! See `crates/win_packager/README.md` for the current crate roles.
 
 use std::path::PathBuf;
 

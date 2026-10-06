@@ -75,4 +75,4 @@ interface NivaWindowOptions {
 }
 ```
 
-`permissions` 默认空，即远端页面与跨源 iframe 没有原生 API 权限；可授权的方法及来源匹配规则见[权限说明](/docs/api/permissions)。Windows 菜单快捷键目前只能显示组合键，尚未接入触发所需的原生消息循环。
+`permissions` 默认空，即远端页面与跨源 iframe 没有原生 API 权限；可授权的方法及来源匹配规则见[权限说明](/docs/api/permissions)。Windows 菜单快捷键的消息钩子已实现，但目标设备上的实际触发仍待验证，见[菜单选项](/docs/options/menu)。

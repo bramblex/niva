@@ -1,16 +1,8 @@
-//! Windows exe 后注入打包器：替代 `ResourceHacker.exe` + `icon_creator.exe`。
-//!
-//! 背景见 `crates/win_packager/README.md`，调用对照见
-//! `packages/devtools/src/build-scripts/build-windows.ts`。
-//!
-//! 职责（一期全量）：
-//! - [`bundle`]: 资源目录 + `niva.json` -> `RESOURCE_INDEXES` / `RESOURCE_DATA`
-//!   两段字节（复刻前端 `build-scripts/base.ts`，压缩在 crate 内做）。
-//! - [`icon`]: PNG -> 多尺寸 ICO 内存转换（逻辑从 `icon_creator` 搬入）。
-//! - [`pack`]: 拷贝模板 exe -> Windows 上写 `RCDATA` + 图标 + 版本信息。
-//!
-//! 平台说明：备料（打包/转图标）跨平台可跑，真正写 PE 资源只能在 Windows 上。
-//! 非 Windows 下 [`pack`] 走完备料和拷贝后返回明确错误，见函数文档。
+//! Windows PE resource helpers. The production application packaging path is
+//! `niva-packager`, which uses this crate's ICO and VERSIONINFO encoders. This
+//! crate's standalone CLI remains available for low-level Windows smoke use.
+//! Resource preparation can run on other hosts; [`pack`] writes PE resources
+//! only on Windows.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::{
@@ -20,6 +12,11 @@ use std::{
 };
 
 pub mod bundle;
+#[cfg(any(windows, test))]
+#[path = "../../shared/windows_file_identity.rs"]
+mod file_identity;
+#[cfg(test)]
+mod file_identity_tests;
 pub mod icon;
 pub mod version_info;
 
@@ -123,58 +120,18 @@ fn same_file(left: &Path, right: &Path) -> Result<bool> {
     }
     #[cfg(windows)]
     {
-        use std::{fs::File, os::windows::io::AsRawHandle};
-        use windows::Win32::{
-            Foundation::HANDLE,
-            Storage::FileSystem::{
-                BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandle,
-                GetFileInformationByHandleEx,
-            },
-        };
-
-        fn file_id_128(file: &File) -> Result<(u64, [u8; 16])> {
-            let mut info = FILE_ID_INFO::default();
-            unsafe {
-                GetFileInformationByHandleEx(
-                    HANDLE(file.as_raw_handle() as *mut _),
-                    FileIdInfo,
-                    (&mut info as *mut FILE_ID_INFO).cast(),
-                    std::mem::size_of::<FILE_ID_INFO>() as u32,
-                )
-            }
-            .context("read 128-bit Windows file identity")?;
-            Ok((info.VolumeSerialNumber, info.FileId.Identifier))
-        }
-
-        fn legacy_file_id(file: &File) -> Result<(u32, u64)> {
-            let mut info = BY_HANDLE_FILE_INFORMATION::default();
-            unsafe {
-                GetFileInformationByHandle(HANDLE(file.as_raw_handle() as *mut _), &mut info)
-            }
-            .context("read legacy Windows file identity")?;
-            let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
-            if info.dwVolumeSerialNumber == 0 || index == 0 || index == u64::MAX {
-                bail!("legacy Windows file identity is invalid");
-            }
-            Ok((info.dwVolumeSerialNumber, index))
-        }
+        use std::fs::File;
 
         let left_file =
             File::open(left).with_context(|| format!("open file {}", left.display()))?;
         let right_file =
             File::open(right).with_context(|| format!("open file {}", right.display()))?;
-        if let (Ok(left_id), Ok(right_id)) = (file_id_128(&left_file), file_id_128(&right_file)) {
-            let valid = |(volume, id): &(u64, [u8; 16])| *volume != 0 && *id != [0; 16];
-            if valid(&left_id) && valid(&right_id) {
-                return Ok(left_id == right_id);
-            }
-        }
-
-        // Some filesystems do not implement FileIdInfo. Use the older pair
-        // only when both results contain non-sentinel identifiers.
-        let left_id = legacy_file_id(&left_file).context("cannot determine input file identity")?;
-        let right_id =
-            legacy_file_id(&right_file).context("cannot determine output file identity")?;
+        let left_id = file_identity::from_file(&left_file)
+            .context("cannot determine input file identity")?
+            .context("input file identity is unknown")?;
+        let right_id = file_identity::from_file(&right_file)
+            .context("cannot determine output file identity")?
+            .context("output file identity is unknown")?;
         Ok(left_id == right_id)
     }
     #[cfg(not(any(unix, windows)))]
@@ -191,36 +148,21 @@ pub fn opened_file_matches_path(
     file: &std::fs::File,
     path: &std::path::Path,
 ) -> anyhow::Result<bool> {
-    let current = std::fs::File::open(path)?;
     #[cfg(windows)]
     {
-        use std::os::windows::io::AsRawHandle;
-        use windows::{
-            Win32::Foundation::HANDLE,
-            Win32::Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
-        };
-        fn info(file: &std::fs::File) -> anyhow::Result<BY_HANDLE_FILE_INFORMATION> {
-            let mut info = BY_HANDLE_FILE_INFORMATION::default();
-            unsafe {
-                GetFileInformationByHandle(HANDLE(file.as_raw_handle() as *mut _), &mut info)?;
-            }
-            Ok(info)
-        }
-        let opened = info(file)?;
-        let current = info(&current)?;
-        return Ok(opened.dwVolumeSerialNumber == current.dwVolumeSerialNumber
-            && opened.nFileIndexHigh == current.nFileIndexHigh
-            && opened.nFileIndexLow == current.nFileIndexLow);
+        return file_identity::opened_file_matches_path(file, path);
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
+        let current = std::fs::File::open(path)?;
         let opened = file.metadata()?;
         let current = current.metadata()?;
         Ok(opened.dev() == current.dev() && opened.ino() == current.ino())
     }
     #[cfg(not(any(unix, windows)))]
     {
+        let current = std::fs::File::open(path)?;
         let opened = file.metadata()?;
         let current = current.metadata()?;
         Ok(opened.len() == current.len() && opened.modified().ok() == current.modified().ok())
@@ -235,8 +177,7 @@ pub struct RcDataEntry {
     pub file: PathBuf,
 }
 
-/// 图标替换项（低层模式）：`ico_file` 是现成的多尺寸 `.ico`
-///（旧链路 `icon_creator` 的产物）。
+/// 图标替换项（低层模式）：`ico_file` 是现成的多尺寸 `.ico` 文件。
 #[derive(Debug, Clone)]
 pub struct IconEntry {
     pub ico_file: PathBuf,
@@ -245,10 +186,9 @@ pub struct IconEntry {
 
 /// 一次打包请求。
 ///
-/// 推荐高层模式：`resource_dir` + `config_file` + 可选 `icon_png`，
-/// 备料全在 crate 内完成，devtools 只需调一次，不再需要
-/// `icon_creator.exe` 落盘和前端 `pako` 压缩。
-/// 低层模式（`rcdata` / `icon`）保留，用于调试和兼容旧备料。
+/// Bundle mode: `resource_dir` + `config_file` + optional `icon_png`.
+/// Low-level `rcdata` / `icon` inputs remain available for smoke fixtures and
+/// callers with prebuilt resource data.
 #[derive(Debug, Clone)]
 pub struct PackRequest {
     /// 模板 exe（即 `process.currentExe()`）。

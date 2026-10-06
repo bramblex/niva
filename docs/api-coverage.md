@@ -1,8 +1,8 @@
-# Window / Webview API 覆盖审计（2026-09-23，以当前源码和锁定版本为准）
+# Window / Webview API 覆盖审计（2026-09-23 源码快照）
 
 > 基线：`Cargo.lock` 锁定的 `tao 0.37.0` / `wry 0.57.0`。
 > 方法：registry 源码 `pub fn` 全枚举，对 `window.*` / `windowExtra.*` /
-> `webview.*` 与 `NivaWindowOptions` 逐项打勾。结论：tao 侧约 95%，wry 侧薄。
+> `webview.*` 与 `NivaWindowOptions` 逐项打勾。结论：tao 侧约 95%，wry 侧薄。本文保留该日的源码枚举与平台记录；后续实现变化见[Windows 盲审记录](windows-blind-review-2026-10-06.md)和[当前路线图](roadmap.md)。
 
 ## 1. tao Window（运行时 API）
 
@@ -49,9 +49,9 @@ Windows WebView2 的 Wry 0.57 中 `open_devtools()` 可以打开开发工具，`
 | `cookies()` / `cookiesForUrl(url)` / `setCookie(cookie)` / `deleteCookie(cookie)` | 读操作返回 Set-Cookie 格式字符串数组；写入和删除接收 Set-Cookie 格式字符串。删除时传回含匹配 `name`、`domain`、`path` 的 cookie。Cookie 存储由 Wry WebContext 共享，改动可能影响同一应用的其他窗口；`cookiesForUrl` 的筛选遵循平台 Wry 实现。macOS Wry 0.57 对 IPv4 字面地址可能筛不出同域 Cookie，可用 `cookies()` 读取完整列表或使用 `localhost` 地址。Android 上 Wry 的 `cookies()` 返回空数组，`setCookie`、`deleteCookie` 返回不支持错误。 |
 | `clearAllBrowsingData()` | 请求 Wry 清理底层 WebView 数据存储中的全部浏览数据；同一存储上下文中的其他窗口可能同时受影响。Windows 的 Wry 调用会异步请求清理，因此 Promise 解析表示请求已提交，不代表底层清理已完成。 |
 | `with_document_title_changed_handler` | 文档标题变化后更新对应原生窗口标题。 |
-| `with_on_page_load_handler` | Wry 报告 `Finished` 时发送 `webview.loaded`，payload 为 `{ url }`，仅本地 WebSocket 页面可接收。它代表 WebView 加载回调完成，不保证 HTTP 页面成功。 |
-| `with_new_window_req_handler` | `target=_blank` / `window.open` 请求一律返回 `Deny`，不创建新原生窗口；发送 `webview.newWindowRequested`，其中 `url` 是目标地址。Wry 回调不提供发起页 URL；事件中的 `pageUrl` 是事件循环投递时读到的顶层 WebView URL，不能标识发起请求的 iframe。事件仅本地 WebSocket 页面可接收。 |
-| `with_download_started_handler` | 一律返回 `false`，拒绝开始下载且不写入文件；发送 `webview.downloadStarted`，其中 `url` 是下载资源地址。`pageUrl` 是事件循环投递时读到的顶层 WebView URL，不一定是发起下载的 iframe。macOS/Windows 使用 Wry 0.57 对应平台下载回调。 |
+| `with_on_page_load_handler` | Wry 报告 `Finished` 时发送 `webview.loaded`，payload 为 `{ url }`，仅受信任的本地页面可接收，通过稳定 Wry IPC/evaluate_script 投递，不要求 WebSocket。它代表 WebView 加载回调完成，不保证 HTTP 页面成功。 |
+| `with_new_window_req_handler` | `target=_blank` / `window.open` 请求一律返回 `Deny`，不创建新原生窗口；发送 `webview.newWindowRequested`，其中 `url` 是目标地址。Wry 回调不提供发起页 URL；事件中的 `pageUrl` 是事件循环投递时读到的顶层 WebView URL，不能标识发起请求的 iframe。事件仅受信任的本地页面可接收，通过稳定 Wry IPC/evaluate_script 投递。 |
+| `with_download_started_handler` | 一律返回 `false`，拒绝开始下载且不写入文件；发送 `webview.downloadStarted`，其中 `url` 是下载资源地址。`pageUrl` 是事件循环投递时读到的顶层 WebView URL，不一定是发起下载的 iframe。macOS/Windows 使用 Wry 0.57 对应平台下载回调；事件经稳定 Wry IPC/evaluate_script 投递给受信任的本地页面。 |
 | `with_permission_handler` | 对 `camera`、`geolocation`、`microphone`、`display-capture` 和 `other` 返回 `Deny`，并发送 `webview.permissionDenied`；其余权限返回 Wry `Default`，保留平台/浏览器默认行为（可能出现系统权限流程）。Wry 权限回调只有权限种类，没有请求来源 URL；事件的 `pageUrl` 是事件循环投递时读取的顶层页面 URL，不是来源授权依据。Wry 文档说明已持久化的站点权限可能绕过 handler。**macOS 的 Wry 0.57 未实现 geolocation 权限回调**，因此此处无法拦截或报告 macOS 定位请求；Windows 的 Wry handler 支持 geolocation。 |
 
 尚未实现且不在本次范围：`with_user_agent`、`with_proxy_config`、`with_incognito` 和手势缩放。UA 仍遵循 `node-compat-design.md` §7.5 的决策：不做来源标记；若后续支持，只考虑追加模板。
