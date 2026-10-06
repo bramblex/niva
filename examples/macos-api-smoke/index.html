@@ -21,9 +21,30 @@
         const os = require("node:os");
         const process = require("node:process");
         const childProcess = require("node:child_process");
-        const freshNavigationReloadKey = "niva-macos-smoke-fresh-navigation-reload";
         const covered = [];
         let dialogHeartbeatTimer = null;
+        const processModule = require("node:process");
+        const pathModule = require("node:path");
+        const fsPromiseModule = require("node:fs/promises");
+        const processEsmModulePromise = import("node:process");
+        const bootIdentity = Object.freeze({
+          nonce: Niva.runtimeConfig.nonce,
+          realm: Object.freeze({}),
+          niva: window.Niva,
+          runtimeConfig: Niva.runtimeConfig,
+          require,
+          process,
+          processModule,
+          stdin: process.stdin,
+          stdout: process.stdout,
+          stderr: process.stderr,
+          path: pathModule,
+          fsPromises: fsPromiseModule,
+          fixture: window.NivaFixture,
+          sessionId: Niva.bridge.sessionId,
+          processEsmModulePromise,
+        });
+        window.__nivaMacApiSmokeBootIdentity = bootIdentity;
 
         function assert(condition, message) {
           if (!condition) throw new Error(message);
@@ -70,6 +91,7 @@
               method: "POST",
               mode: "no-cors",
               cache: "no-store",
+              keepalive: true,
               body: JSON.stringify({ name, data }),
             });
           } catch (_) {}
@@ -79,6 +101,10 @@
           const result = {};
           const win = Niva.window;
           const webview = Niva.webview;
+
+          const processEsmModule = await processEsmModulePromise;
+          assert(typeof bootIdentity.nonce === "string" && bootIdentity.nonce.length > 0, "runtime bootstrap must expose its CSP nonce");
+          assert(processEsmModule.default === process, "process ESM module must share the CommonJS process object");
 
           // Monitor APIs: assert populated native geometry and point lookup.
           const monitors = await Niva.monitor.list();
@@ -303,6 +329,68 @@
           await Niva.webview.reload();
         }
 
+        async function reportBfCacheRestoration(event) {
+          if (!event.persisted) return;
+          function outputState(stream) {
+            const state = stream?._writableState;
+            return state ? {
+              destroyed: stream.destroyed, closed: state.closed, closeEmitted: state.closeEmitted,
+              errored: state.errored ? { code: state.errored.code, message: String(state.errored) } : null,
+              errorEmitted: state.errorEmitted, pendingcb: state.pendingcb,
+              writing: state.writing, writecbIsNull: state.writecb === null,
+              length: state.length, bufferedLength: state.buffered?.length, bufferedIndex: state.bufferedIndex,
+              ended: state.ended, ending: state.ending, finished: state.finished,
+            } : null;
+          }
+          try {
+            const initialEsmModule = await bootIdentity.processEsmModulePromise;
+            const currentEsmModule = await import("node:process");
+            const sessionId = Niva.bridge.sessionId;
+            const data = {
+              persisted: event.persisted,
+              url: await Niva.webview.url(),
+              canGoForward: await Niva.webview.canGoForward(),
+              noncePreserved: Niva.runtimeConfig === bootIdentity.runtimeConfig
+                && typeof bootIdentity.nonce === "string"
+                && bootIdentity.nonce.length > 0
+                && Niva.runtimeConfig.nonce === bootIdentity.nonce,
+              realmPreserved: window.__nivaMacApiSmokeBootIdentity === bootIdentity
+                && bootIdentity.realm === window.__nivaMacApiSmokeBootIdentity.realm,
+              moduleIdentityPreserved: window.Niva === bootIdentity.niva
+                && window.require === bootIdentity.require
+                && require("node:process") === bootIdentity.processModule
+                && require("node:path") === bootIdentity.path
+                && require("node:fs/promises") === bootIdentity.fsPromises
+                && currentEsmModule === initialEsmModule
+                && currentEsmModule.default === bootIdentity.process,
+              stdinIdentityPreserved: process.stdin === bootIdentity.stdin && !process.stdin.destroyed,
+              stdoutIdentityPreserved: process.stdout === bootIdentity.stdout && process.stdout.writable,
+              stderrIdentityPreserved: process.stderr === bootIdentity.stderr && process.stderr.writable,
+              previousSessionId: bootIdentity.sessionId,
+              sessionId,
+              sessionIdRotated: typeof sessionId === "string" && sessionId !== bootIdentity.sessionId,
+              processIsNivaProcess: process === Niva.process,
+              stdoutState: outputState(process.stdout),
+              stderrState: outputState(process.stderr),
+            };
+            data.ok = data.persisted && data.noncePreserved && data.realmPreserved
+              && data.moduleIdentityPreserved && data.stdinIdentityPreserved
+              && data.stdoutIdentityPreserved && data.stderrIdentityPreserved && data.sessionIdRotated;
+            void reportNavigationProbe("main-bfcache-restored", data);
+            if (!data.ok) {
+              await send("main-restored-error", { phase: "identity", data });
+              return;
+            }
+            await send("main-restored", data);
+          } catch (error) {
+            const data = { phase: "restored-api", persisted: event.persisted, message: String(error) };
+            void reportNavigationProbe("main-bfcache-restore-error", data);
+            try {
+              await send("main-restored-error", data);
+            } catch (_) {}
+          }
+        }
+
         async function runDialogs(data) {
           const { method, startDir } = data;
           await send("dialog-started", { method });
@@ -367,8 +455,16 @@
             } else if (data.command === "webview-back") {
               await Niva.webview.goBack();
             } else if (data.command === "webview-forward") {
-              equal(await Niva.webview.canGoForward(), true, "webview.canGoForward after back navigation");
+              const canGoForward = await Niva.webview.canGoForward();
+              void reportNavigationProbe("main-forward-can-go-forward", { canGoForward });
+              equal(canGoForward, true, "webview.canGoForward after back navigation");
               await Niva.webview.goForward();
+              void reportNavigationProbe("main-forward-call-resolved", { canGoForward });
+            } else if (data.command === "bfcache-stdin-probe") {
+              await send("bfcache-stdin-restored", {
+                stdinIdentityPreserved: process.stdin === bootIdentity.stdin && !process.stdin.destroyed,
+                sessionId: Niva.bridge.sessionId,
+              });
             } else if (data.command === "dialog") await runDialogs(data);
             else if (data.command === "extended-automatic") await runExtendedAutomatic(data);
             else if (data.command === "echo") await send("host-echo-result", data);
@@ -389,11 +485,8 @@
 
         // clearAllBrowsingData intentionally clears sessionStorage in the
         // extended WebView cases; window.name is a second boot marker.
-        const freshNavigationReload = sessionStorage.getItem(freshNavigationReloadKey) === "yes";
-        if (freshNavigationReload) sessionStorage.removeItem(freshNavigationReloadKey);
         const mainBootWasSeen = window.name === "niva-macos-smoke-booted"
-          || sessionStorage.getItem("niva-macos-smoke-booted") === "yes"
-          || freshNavigationReload;
+          || sessionStorage.getItem("niva-macos-smoke-booted") === "yes";
         window.name = "niva-macos-smoke-booted";
         sessionStorage.setItem("niva-macos-smoke-booted", "yes");
         NivaFixture.ready("macos-api", { url: location.href }).then(() => {
@@ -406,7 +499,7 @@
               const data = {
                 url,
                 canGoForward: await Niva.webview.canGoForward(),
-                freshReload: freshNavigationReload,
+                sessionId: Niva.bridge.sessionId,
               };
               await reportNavigationProbe("main-reload-api-ok", data);
               phase = "fixture-stdio";
@@ -435,22 +528,7 @@
               href: location.href,
             });
           }
-          if (event.persisted) {
-            setTimeout(async () => {
-              const data = {
-                persisted: true,
-                href: location.href,
-                reason: "the Native page session expires on pagehide",
-                action: "reload the current history entry for a fresh session",
-              };
-              await Promise.race([
-                reportNavigationProbe("main-bfcache-fresh-reload", data),
-                new Promise(resolve => setTimeout(resolve, 500)),
-              ]);
-              sessionStorage.setItem(freshNavigationReloadKey, "yes");
-              window.location.reload();
-            }, 250);
-          }
+          if (event.persisted) setTimeout(() => void reportBfCacheRestoration(event), 0);
         });
       })();
     </script>

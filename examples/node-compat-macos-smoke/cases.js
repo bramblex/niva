@@ -383,27 +383,47 @@
     var requestUrl = root.process.env.NIVA_SMOKE_HTTP_URL;
     assert(requestUrl && requestUrl.startsWith("http://127.0.0.1:"), "isolated HTTP fixture URL");
     var http = env.http;
-    function collect(request) {
+    function withPhase(error, phase) {
+      var wrapped = new Error(phase + ": " + (error && error.message || String(error)));
+      if (error && error.code !== undefined) wrapped.code = error.code;
+      wrapped.cause = error;
+      return wrapped;
+    }
+    function collect(request, label) {
+      var phase = label + " waiting for response head";
       return new Promise(function (resolve, reject) {
-        request.once("error", reject);
+        request.once("error", function (error) { reject(withPhase(error, phase)); });
         request.once("response", function (message) {
+          phase = label + " response head";
           var chunks = [];
-          equal(message.setEncoding("utf8"), message, "IncomingMessage.setEncoding");
-          message.on("data", function (chunk) { chunks.push(chunk); });
-          message.once("error", reject);
-          message.once("end", function () { resolve({message: message, text: chunks.join("")}); });
+          try {
+            equal(message.setEncoding("utf8"), message, label + " IncomingMessage.setEncoding");
+          }
+          catch (error) {
+            reject(withPhase(error, phase));
+            return;
+          }
+          message.on("data", function (chunk) {
+            if (chunks.length === 0) phase = label + " first response data";
+            chunks.push(chunk);
+          });
+          message.once("error", function (error) { reject(withPhase(error, phase)); });
+          message.once("end", function () {
+            phase = label + " response end";
+            resolve({message: message, text: chunks.join("")});
+          });
         });
       });
     }
-    var getResponse = await collect(http.get(requestUrl));
+    var getResponse = await collect(http.get(requestUrl), "plain GET");
     equal(getResponse.message.statusCode, 200, "http.get status");
     assert(getResponse.message.headers["content-length"], "IncomingMessage.headers");
     equal(getResponse.text, "NodeCompat macOS integration smoke", "IncomingMessage data/end");
     var parallelUrl = root.process.env.NIVA_SMOKE_HTTP_PARALLEL_URL;
     assert(parallelUrl && parallelUrl.startsWith("http://127.0.0.1:"), "parallel HTTP fixture URL");
     var concurrentResponses = await Promise.all([
-      collect(http.get(parallelUrl + "?id=first")),
-      collect(http.get(parallelUrl + "?id=second")),
+      collect(http.get(parallelUrl + "?id=first"), "barrier GET first"),
+      collect(http.get(parallelUrl + "?id=second"), "barrier GET second"),
     ]);
     for (var i = 0; i < concurrentResponses.length; i++) {
       var expectedId = i === 0 ? "first" : "second";
@@ -413,6 +433,7 @@
       equal(response.text, "parallel response " + expectedId + ": both requests arrived", "independent concurrent HTTP response body " + expectedId);
     }
     var request = http.request(requestUrl, {method: "POST", headers: {"x-niva-smoke": "first", "content-length": "8"}});
+    var postPhase = "POST request setup";
     equal(request.method, "POST", "ClientRequest method");
     request.setHeader("x-niva-smoke", "second");
     equal(request.getHeader("X-Niva-Smoke"), "second", "ClientRequest.getHeader");
@@ -421,17 +442,32 @@
     request.removeHeader("x-niva-smoke");
     equal(request.hasHeader("x-niva-smoke"), false, "ClientRequest.removeHeader");
     var finished = new Promise(function (resolve, reject) {
-      request.once("error", reject);
+      request.once("error", function (error) { reject(withPhase(error, postPhase)); });
       request.once("response", function (message) {
-        equal(message.statusCode, 201, "POST status");
+        postPhase = "POST response head";
+        try {
+          equal(message.statusCode, 201, "POST status");
+        }
+        catch (error) {
+          reject(withPhase(error, postPhase));
+          return;
+        }
         var chunks = [];
-        var sink = new env.stream.Writable({write: function (chunk, encoding, callback) { chunks.push(chunk); callback(); }});
-        sink.once("error", reject);
+        var sink = new env.stream.Writable({write: function (chunk, encoding, callback) {
+          if (chunks.length === 0) postPhase = "POST first response data";
+          chunks.push(chunk);
+          callback();
+        }});
+        sink.once("error", function (error) { reject(withPhase(error, postPhase)); });
+        message.once("error", function (error) { reject(withPhase(error, postPhase)); });
+        message.once("end", function () { postPhase = "POST response end"; });
         sink.once("finish", function () { resolve(env.Buffer.concat(chunks).toString()); });
         message.pipe(sink);
       });
     });
+    postPhase = "POST request body write";
     request.write("buffered");
+    postPhase = "POST request END";
     request.end();
     equal(await finished, "POST accepted", "IncomingMessage.pipe and POST bytes");
   });

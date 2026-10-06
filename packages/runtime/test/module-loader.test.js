@@ -15,7 +15,7 @@ const fixtureFiles = new Map([
   ["/app/throw.cjs", "throw new Error('source path fixture');"],
 ]);
 
-function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", href, sourceOrigin, serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply, syncBlock, failPagehideOnce = false, captureBootstrapError = false } = {}) {
+function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, ipcAttachReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", href, sourceOrigin, serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply, syncBlock, failPagehideOnce = false, captureBootstrapError = false } = {}) {
   const requests = [];
   const importMaps = [];
   const sockets = [];
@@ -57,8 +57,9 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
     const request = JSON.parse(text);
     const requestRecord = { transport: "ipc", ...request };
     requests.push(requestRecord);
+    if (request.t === "session_close") return;
     const handled = request.t === "channelAttach"
-      ? { t: "channelAttached", id: request.id, accepted: true }
+      ? (ipcAttachReply ? ipcAttachReply(request) : { t: "channelAttached", id: request.id, accepted: true })
       : ipcHandler(request);
     Promise.resolve(handled).then((value) => {
       const response = ipcResponse(request, value);
@@ -284,6 +285,543 @@ test("failed page initialization stays retryable until the bootstrap reaches com
   assert.equal(context.Niva.__runtimeBootstrap, true);
   assert.equal(pageListeners.get("pagehide")?.length, 1,
     "a retry after partial initialization must install the remaining lifecycle hook");
+});
+
+test("persisted BFCache restore starts a fresh IPC session and resumes the cached process stdin", async () => {
+  let releaseStaleCall;
+  const { context, requests, pageListeners, importMaps } = bootPage({
+    injectCommonJs: true,
+    injectEsm: true,
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "stale.once") {
+        return new Promise((resolve) => { releaseStaleCall = () => resolve({ t: "result", id: request.id, code: 0, data: "late" }); });
+      }
+      if (request.t === "api_call" && request.method === "process.stdin") {
+        return { t: "channelOpened", id: request.id, capability: `stdin-${request.sessionId}` };
+      }
+      if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
+      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: `ok:${request.method}` };
+    },
+  });
+  const processObject = context.Niva.process;
+  const stdin = processObject.stdin;
+  const cachedCjs = context.require("./cycle-a.cjs");
+  let ordinaryResourceInvalidated;
+  context.Niva.__runtime.registerResource({
+    __nivaInvalidate(error) { ordinaryResourceInvalidated = error; },
+  });
+  const initialImports = importMaps.length;
+  const oldSessionId = context.Niva.bridge.sessionId;
+  const stale = context.Niva.bridge.call("stale.once", []).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  const staleRequest = requests.find((request) => request.t === "api_call" && request.method === "stale.once");
+  assert.ok(staleRequest);
+  assert.equal(staleRequest.sessionId, oldSessionId);
+  assert.equal(typeof releaseStaleCall, "function");
+
+  const chunks = [];
+  stdin.on("data", (chunk) => chunks.push(...chunk));
+  stdin.resume();
+  stdin.read(0);
+  await new Promise((resolve) => setImmediate(resolve));
+  const oldInput = requests.find((request) => request.t === "api_call" && request.method === "process.stdin");
+  assert.ok(oldInput, JSON.stringify(requests.map(({ t, method, id, sessionId }) => ({ t, method, id, sessionId }))));
+  assert.equal(oldInput.sessionId, oldSessionId);
+
+  function deliverInputFrame(session, id, seq, value) {
+    const frame = Buffer.alloc(19);
+    frame[0] = 2;
+    frame.writeUInt32BE(id, 6);
+    frame.writeUInt32BE(seq, 14);
+    frame[18] = value;
+    return context.__niva_native_frame({
+      sessionId: session,
+      id,
+      seq,
+      frame: { t: "binary", data: frame.toString("base64") },
+    });
+  }
+  assert.equal(deliverInputFrame(oldSessionId, oldInput.id, 1, 17), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(chunks, [17]);
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  const staleOutcome = await stale;
+  assert.equal(staleOutcome.error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  assert.ok(requests.some((request) => request.t === "session_close" && request.sessionId === oldSessionId));
+  assert.equal(requests.find((request) => request.t === "session_close" && request.sessionId === oldSessionId).rid, undefined,
+    "session retirement is a one-way lifecycle message, not an API call");
+  assert.equal(ordinaryResourceInvalidated?.code, "ERR_NIVA_SESSION_EXPIRED",
+    "ordinary handles are invalidated rather than revived with the BFCache document");
+  assert.equal(stdin.destroyed, false, "BFCache suspension keeps the canonical Readable alive");
+  assert.equal(deliverInputFrame(oldSessionId, oldInput.id, 2, 18), false, "old-session frames are rejected while suspended");
+
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const newSessionId = context.Niva.bridge.sessionId;
+  assert.notEqual(newSessionId, oldSessionId);
+  assert.strictEqual(context.Niva.process, processObject);
+  assert.strictEqual(context.Niva.process.stdin, stdin);
+  assert.strictEqual(context.require("./cycle-a.cjs"), cachedCjs, "CJS instances survive the restored document");
+  assert.equal(importMaps.length, initialImports, "restore does not reinstall or replace the ESM import map");
+
+  const freshResult = await context.Niva.bridge.call("after.restore", []);
+  assert.equal(freshResult, "ok:after.restore");
+  assert.equal(context.Niva.path.resolve("after-restore"), "/app/after-restore",
+    "Node-compatible relative path resolution still uses synchronous XHR after restore");
+  assert.equal(requests.at(-1).method, "process.currentDir");
+  assert.equal(requests.at(-1).async, false);
+  const freshRequest = requests.find((request) => request.t === "api_call" && request.method === "after.restore");
+  assert.equal(freshRequest.sessionId, newSessionId);
+  releaseStaleCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  const staleRequestRecord = requests.find((request) => request.t === "api_call" && request.method === "stale.once");
+  assert.equal(staleRequestRecord.replyAccepted, false, "a late old-session reply cannot settle through the new session");
+
+  await new Promise((resolve) => setImmediate(resolve));
+  const freshInput = requests.find((request) => request.t === "api_call" && request.method === "process.stdin" && request.sessionId === newSessionId);
+  assert.ok(freshInput, "the existing stdin listener causes a new Native input stream to open");
+  assert.notEqual(freshInput.id, oldInput.id);
+  assert.equal(deliverInputFrame(oldSessionId, oldInput.id, 2, 19), false, "retired session frames stay isolated after restore");
+  assert.equal(deliverInputFrame(newSessionId, freshInput.id, 1, 20), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(chunks, [17, 20], "the original listener receives data from the replacement stream once");
+});
+
+test("persisted BFCache restore revives canonical stdout and stderr after old-session writes fail", async () => {
+  const pendingWrites = new Map();
+  const { context, requests, pageListeners } = bootPage({
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.write") {
+        const [channel, encoded] = request.args;
+        const text = Buffer.from(encoded, "base64").toString();
+        if (text.startsWith("restored ")) return { t: "result", id: request.id, code: 0, data: null };
+        return new Promise((resolve) => {
+          pendingWrites.set(`${channel}:${text}`, () => resolve({ t: "result", id: request.id, code: 0, data: null }));
+        });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: null };
+    },
+  });
+  const processObject = context.Niva.process;
+  const stdout = processObject.stdout;
+  const stderr = processObject.stderr;
+  const oldSessionId = context.Niva.bridge.sessionId;
+  const callbackResults = [];
+  const stdoutIdentity = stdout;
+  const stderrIdentity = stderr;
+
+  stdout.write("old stdout", (error) => callbackResults.push({ channel: "stdout", error }));
+  stderr.write("old stderr");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual([...pendingWrites.keys()].sort(), ["stderr:old stderr", "stdout:old stdout"]);
+  const stdoutClosed = new Promise((resolve) => stdout.once("close", resolve));
+  const stderrClosed = new Promise((resolve) => stderr.once("close", resolve));
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const newSessionId = context.Niva.bridge.sessionId;
+  assert.notEqual(newSessionId, oldSessionId);
+  await Promise.all([stdoutClosed, stderrClosed]);
+  assert.equal(callbackResults.length, 1, "the suspended user callback settles once");
+  assert.deepEqual(callbackResults.map(({ channel, error }) => [channel, error?.code]).sort(), [
+    ["stdout", "ERR_NIVA_SESSION_EXPIRED"],
+  ]);
+  assert.equal(stdout.destroyed, false, "the expected session error is internally handled until close drains");
+  assert.equal(stderr.destroyed, false);
+  assert.strictEqual(processObject.stdout, stdoutIdentity);
+  assert.strictEqual(processObject.stderr, stderrIdentity);
+
+  const freshWrites = [
+    new Promise((resolve, reject) => stdout.write("restored stdout", (error) => error ? reject(error) : resolve())),
+    new Promise((resolve, reject) => stderr.write("restored stderr", (error) => error ? reject(error) : resolve())),
+  ];
+  await Promise.all(freshWrites);
+  const outputCalls = requests.filter((request) => request.t === "api_call" && request.method === "process.write");
+  assert.deepEqual(outputCalls.map((request) => ({
+    sessionId: request.sessionId,
+    channel: request.args[0],
+    text: Buffer.from(request.args[1], "base64").toString(),
+  })), [
+    { sessionId: oldSessionId, channel: "stdout", text: "old stdout" },
+    { sessionId: oldSessionId, channel: "stderr", text: "old stderr" },
+    { sessionId: newSessionId, channel: "stdout", text: "restored stdout" },
+    { sessionId: newSessionId, channel: "stderr", text: "restored stderr" },
+  ], "old writes are not replayed and each fresh write is sent exactly once on the new session");
+
+  pendingWrites.get("stdout:old stdout")();
+  pendingWrites.get("stderr:old stderr")();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(outputCalls.slice(0, 2).every((request) => request.replyAccepted === false),
+    "late replies from retired writes cannot settle through the restored session");
+});
+
+test("BFCache stdio recovery retries after a Promise catch writes to the already-destroyed stream", async () => {
+  let releaseOldWrite;
+  const { context, requests, pageListeners } = bootPage({
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.write") {
+        const text = Buffer.from(request.args[1], "base64").toString();
+        if (text === "restored after promise catch") return { t: "result", id: request.id, code: 0, data: null };
+        return new Promise((resolve) => {
+          releaseOldWrite = () => resolve({ t: "result", id: request.id, code: 0, data: null });
+        });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: null };
+    },
+  });
+  const stdout = context.Niva.process.stdout;
+  const oldSessionId = context.Niva.bridge.sessionId;
+  let closeObserved = false;
+  stdout.once("close", () => { closeObserved = true; });
+
+  const firstWrite = new Promise((resolve, reject) => {
+    stdout.write("write before suspend", (error) => error ? reject(error) : resolve());
+  });
+  const handledWriteFailure = firstWrite.catch((error) => {
+    assert.equal(error?.code, "ERR_NIVA_SESSION_EXPIRED");
+    return new Promise((resolve) => {
+      // This mirrors an application reporting a failed write from a Promise catch.
+      // The catch runs after onwriteError has destroyed the Writable, while its
+      // close notification can be queued ahead of this write's callback.
+      stdout.write("write from promise catch", (writeError) => {
+        resolve({ writeError, closeObserved });
+      });
+    });
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  const oldRequest = requests.find((request) => request.t === "api_call" && request.method === "process.write");
+  assert.ok(oldRequest);
+  assert.equal(oldRequest.sessionId, oldSessionId);
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+
+  const { writeError, closeObserved: wasClosedBeforeRetry } = await handledWriteFailure;
+  assert.equal(writeError?.code, "ERR_STREAM_DESTROYED");
+  assert.equal(wasClosedBeforeRetry, true, "the post-destroy write callback settles after close was emitted");
+  assert.equal(stdout.destroyed, false, "the final tracked callback retries recovery after the earlier close check");
+
+  const newSessionId = context.Niva.bridge.sessionId;
+  await new Promise((resolve, reject) => {
+    stdout.write("restored after promise catch", (error) => error ? reject(error) : resolve());
+  });
+  const outputCalls = requests.filter((request) => request.t === "api_call" && request.method === "process.write");
+  assert.deepEqual(outputCalls.map((request) => ({
+    sessionId: request.sessionId,
+    text: Buffer.from(request.args[1], "base64").toString(),
+  })), [
+    { sessionId: oldSessionId, text: "write before suspend" },
+    { sessionId: newSessionId, text: "restored after promise catch" },
+  ], "the rejected post-destroy write and any old-session write are never replayed");
+  releaseOldWrite();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(oldRequest.replyAccepted, false, "a late old-session reply stays detached from the restored stream");
+});
+
+test("buffered stdio writes fail once on BFCache retirement without replay", async () => {
+  let releaseOldWrite;
+  const { context, requests, pageListeners } = bootPage({
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.write") {
+        const text = Buffer.from(request.args[1], "base64").toString();
+        if (text.startsWith("restored ")) return { t: "result", id: request.id, code: 0, data: null };
+        return new Promise((resolve) => { releaseOldWrite = () => resolve({ t: "result", id: request.id, code: 0, data: null }); });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: null };
+    },
+  });
+  const stdout = context.Niva.process.stdout;
+  const oldSessionId = context.Niva.bridge.sessionId;
+  const callbacks = [];
+  stdout.write("active old write", (error) => callbacks.push({ text: "active", error }));
+  stdout.write("buffered old write", (error) => callbacks.push({ text: "buffered", error }));
+  stdout.write("buffered old write without callback");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "process.write").length, 1);
+  const closed = new Promise((resolve) => stdout.once("close", resolve));
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const newSessionId = context.Niva.bridge.sessionId;
+  await closed;
+  assert.deepEqual(callbacks.map(({ text, error }) => [text, error?.code]).sort(), [
+    ["active", "ERR_NIVA_SESSION_EXPIRED"],
+    ["buffered", "ERR_NIVA_SESSION_EXPIRED"],
+  ]);
+  assert.equal(stdout.destroyed, false, "all buffered callbacks, including the implicit callback, have drained");
+  await new Promise((resolve, reject) => stdout.write("restored output", (error) => error ? reject(error) : resolve()));
+  let endError;
+  await new Promise((resolve) => stdout.end((error) => { endError = error; resolve(); }));
+  assert.equal(endError, undefined);
+  assert.equal(stdout.writableFinished, true, "normal end accounting works after the pinned pendingcb repair");
+  const outputCalls = requests.filter((request) => request.t === "api_call" && request.method === "process.write");
+  assert.deepEqual(outputCalls.map((request) => ({
+    sessionId: request.sessionId,
+    text: Buffer.from(request.args[1], "base64").toString(),
+  })), [
+    { sessionId: oldSessionId, text: "active old write" },
+    { sessionId: newSessionId, text: "restored output" },
+  ], "buffered old writes are never sent or replayed; only the fresh-session write is sent");
+  releaseOldWrite();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(outputCalls[0].replyAccepted, false, "a late old-session response remains isolated");
+});
+
+test("BFCache stdio recovery excludes explicit destroy and ordinary write errors", async () => {
+  let releaseOldWrite;
+  const { context, requests, pageListeners } = bootPage({
+    fakeTimers: true,
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.write" && request.args[0] === "stdout") {
+        return new Promise((resolve) => { releaseOldWrite = () => resolve({ t: "result", id: request.id, code: 0, data: null }); });
+      }
+      if (request.t === "api_call" && request.method === "process.write" && request.args[0] === "stderr") {
+        return { t: "result", id: request.id, code: 1, message: "disk write failed" };
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: null };
+    },
+  });
+  const stdout = context.Niva.process.stdout;
+  const stderr = context.Niva.process.stderr;
+  let stdoutCallbackError;
+  let stderrCallbackError;
+  stdout.write("destroy in callback", (error) => {
+    stdoutCallbackError = error;
+    stdout.destroy(error);
+  });
+  stderr.on("error", () => stderr.destroy());
+  stderr.write("ordinary failure", (error) => { stderrCallbackError = error; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof releaseOldWrite, "function");
+  assert.equal(stderr.destroyed, true, "an ordinary process.write error remains fatal to that Writable");
+  assert.notEqual(stderrCallbackError?.code, "ERR_NIVA_SESSION_EXPIRED");
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stdoutCallbackError?.code, "ERR_NIVA_SESSION_EXPIRED");
+  assert.equal(stdout.destroyed, true, "an explicit destroy from the failed write callback is never undone");
+  assert.equal(stderr.destroyed, true, "ordinary write failure is not reclassified by a later BFCache restore");
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "process.write").length, 2,
+    "neither failed stream is revived by replaying a write");
+
+  releaseOldWrite();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "process.write").length, 2);
+});
+
+test("BFCache stdio recovery does not undo an explicit end", async () => {
+  let releaseOldWrite;
+  const { context, requests, pageListeners } = bootPage({
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "process.write") {
+        return new Promise((resolve) => { releaseOldWrite = () => resolve({ t: "result", id: request.id, code: 0, data: null }); });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: null };
+    },
+  });
+  const stdout = context.Niva.process.stdout;
+  let writeError;
+  let endError;
+  stdout.write("pending before end", (error) => { writeError = error; });
+  stdout.end((error) => { endError = error; });
+  await new Promise((resolve) => setImmediate(resolve));
+  const closed = new Promise((resolve) => stdout.once("close", resolve));
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  await closed;
+
+  assert.equal(writeError?.code, "ERR_NIVA_SESSION_EXPIRED");
+  assert.equal(endError?.code, "ERR_NIVA_SESSION_EXPIRED");
+  assert.equal(stdout.writableEnded, true);
+  assert.equal(stdout.destroyed, true, "_undestroy must not make an intentionally ended output writable again");
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "process.write").length, 1);
+  releaseOldWrite();
+});
+
+test("same-origin iframe BFCache restore replaces its frame route and ignores old replies", async () => {
+  let releaseStaleCall;
+  const parent = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    ipcReply(request) {
+      if (request.t === "api_call" && request.method === "child.stale") {
+        return new Promise((resolve) => { releaseStaleCall = () => resolve({ t: "result", id: request.id, code: 0, data: "late child" }); });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: `ok:${request.method}` };
+    },
+  });
+  const child = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    iframeParent: parent,
+  });
+  // vm contexts do not supply a WindowProxy-backed frames collection, so set
+  // the exact same-origin child object used by the runtime's route check.
+  parent.context.frames = [child.context];
+  const frameRouteActions = [];
+  const registerFrameSession = parent.context.__niva_register_frame_session;
+  parent.context.__niva_register_frame_session = function (session, frame, action) {
+    const result = registerFrameSession(session, frame, action);
+    frameRouteActions.push({ session, frame, action, result });
+    return result;
+  };
+  const oldSessionId = child.context.Niva.bridge.sessionId;
+  const stale = child.context.Niva.bridge.call("child.stale", []).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof releaseStaleCall, "function");
+  assert.ok(parent.requests.some((request) => request.t === "api_call" && request.sessionId === oldSessionId));
+
+  for (const listener of parent.pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of child.pageListeners.get("pagehide") || []) listener({ persisted: true });
+  assert.equal((await stale).error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  for (const listener of parent.pageListeners.get("pageshow") || []) listener({ persisted: true });
+  for (const listener of child.pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const newSessionId = child.context.Niva.bridge.sessionId;
+  assert.ok(frameRouteActions.some((route) => route.session === oldSessionId && route.action === "unregister"));
+  assert.ok(frameRouteActions.some((route) => route.session === newSessionId && route.action === "register"));
+  assert.notEqual(newSessionId, oldSessionId);
+  // The VM does not preserve WindowProxy identity in `frames`; mirror the
+  // browser's same-origin route registration after observing the child's
+  // restored-session announce.
+  assert.equal(registerFrameSession(newSessionId, child.context, "register"), true);
+
+  releaseStaleCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  const oldRequest = parent.requests.find((request) => request.t === "api_call" && request.method === "child.stale");
+  assert.equal(oldRequest.replyAccepted, false, "the parent has no route for a retired iframe session");
+  const childResultPromise = child.context.Niva.bridge.call("child.afterRestore", []);
+  await new Promise((resolve) => setImmediate(resolve));
+  const childResult = await childResultPromise;
+  assert.equal(childResult, "ok:child.afterRestore");
+  const restoredRequest = parent.requests.find((request) => request.t === "api_call" && request.method === "child.afterRestore");
+  assert.equal(restoredRequest.sessionId, newSessionId);
+  assert.equal(restoredRequest.replyAccepted, true, "the iframe registers a fresh same-origin route before new IPC replies");
+  assert.ok(parent.requests.some((request) => request.t === "session_close" && request.sessionId === oldSessionId));
+});
+
+test("retired stream API tickets cannot start an attachment after BFCache restore", async () => {
+  let releaseTicket;
+  const { context, requests, pageListeners } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    ipcReply(request) {
+      if (request.t === "api_call") {
+        return new Promise((resolve) => {
+          releaseTicket = () => resolve({ t: "channelOpened", id: request.id, capability: "retired-ticket" });
+        });
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "channelCancelled", id: request.id, accepted: true };
+    },
+  });
+  const oldSession = context.Niva.bridge.sessionId;
+  const stream = context.Niva.bridge.stream("stream.ticketLate", []);
+  const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const openRequest = requests.find((request) => request.t === "api_call" && request.method === "stream.ticketLate");
+  assert.ok(openRequest);
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  assert.equal((await settled).error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const freshSession = context.Niva.bridge.sessionId;
+  assert.notEqual(freshSession, oldSession);
+  releaseTicket();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(openRequest.replyAccepted, false, "the old session cannot accept the delayed ticket reply");
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "stream.ticketLate").length, 1,
+    "restore never replays an API call that may have had side effects");
+  assert.equal(requests.some((request) => request.t === "channelAttach" && request.id === openRequest.id), false,
+    "a ticket arriving after retirement cannot attach or begin data delivery");
+});
+
+test("retired IPC attach acknowledgements cannot open a channel in the restored session", async () => {
+  let releaseAttach;
+  const { context, requests, pageListeners } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    ipcReply(request) {
+      if (request.t === "api_call") return { t: "channelOpened", id: request.id, capability: "retired-attach" };
+      if (request.t === "channelCancel") return { t: "channelCancelled", id: request.id, accepted: true };
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0 };
+    },
+    ipcAttachReply(request) {
+      return new Promise((resolve) => {
+        releaseAttach = () => resolve({ t: "channelAttached", id: request.id, accepted: true });
+      });
+    },
+  });
+  const oldSession = context.Niva.bridge.sessionId;
+  const stream = context.Niva.bridge.stream("stream.attachLate", []);
+  const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const attachRequest = requests.find((request) => request.t === "channelAttach");
+  assert.ok(attachRequest);
+
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  assert.equal((await settled).error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  const freshSession = context.Niva.bridge.sessionId;
+  assert.notEqual(freshSession, oldSession);
+  releaseAttach();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(attachRequest.replyAccepted, false, "the attach response belongs to the retired session");
+  assert.equal(requests.filter((request) => request.t === "api_call" && request.method === "stream.attachLate").length, 1);
+  assert.equal(context.__niva_native_frame({
+    sessionId: oldSession,
+    id: attachRequest.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "event", id: attachRequest.id, name: "should.not.open", data: {} }) },
+  }), false, "late data cannot enter the new session through the old call id");
+});
+
+test("lease expiry cannot be revived by a later persisted pagehide/pageshow pair", async () => {
+  const { context, pageListeners } = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    ipcReply(request) {
+      if (request.t === "heartbeat") return { t: "heartbeatError", sessionId: request.sessionId, code: "ERR_NIVA_SESSION_EXPIRED", message: "lease ended" };
+      return new Promise(() => {});
+    },
+  });
+  const pendingCall = context.Niva.bridge.call("never.reply", []).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  const outcome = await pendingCall;
+  assert.equal(outcome.error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  const expiredSession = context.Niva.bridge.sessionId;
+  for (const listener of pageListeners.get("pagehide") || []) listener({ persisted: true });
+  for (const listener of pageListeners.get("pageshow") || []) listener({ persisted: true });
+  assert.equal(context.Niva.bridge.sessionId, expiredSession);
+  await assert.rejects(context.Niva.bridge.call("must.stay.closed", []), { code: "ERR_NIVA_SESSION_EXPIRED" });
 });
 
 test("constants builtin aliases fs.constants and exposes host open flags", () => {

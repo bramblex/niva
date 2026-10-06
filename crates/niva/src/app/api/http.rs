@@ -529,7 +529,9 @@ fn execute_stream_request(
         if socket.is_cancelled() {
             bail!("ECANCELED: HTTP response stream cancelled");
         }
-        let amount = reader.read(&mut buffer).map_err(map_http_io_error)?;
+        let amount = reader
+            .read(&mut buffer)
+            .map_err(|error| map_http_io_error(http_io_error(error, "HTTP response body read")))?;
         if amount == 0 {
             break;
         }
@@ -955,6 +957,43 @@ impl std::fmt::Debug for AbortableTcpTransport {
     }
 }
 
+impl AbortableTcpTransport {
+    fn await_input_with_timeout_setter(
+        &mut self,
+        timeout: NextTimeout,
+        set_timeout: impl FnOnce(&TcpStream, Option<Duration>) -> io::Result<()>,
+    ) -> std::result::Result<bool, UreqError> {
+        let read_timeout = timeout.not_zero().map(|duration| *duration);
+        update_socket_read_timeout(
+            &self.stream,
+            read_timeout,
+            &mut self.previous_read_timeout,
+            set_timeout,
+        )
+        .map_err(|error| {
+            UreqError::from(http_io_error(
+                error,
+                format!("HTTP response transport set_read_timeout({read_timeout:?})"),
+            ))
+        })?;
+        let result = {
+            let target = self.buffers.input_append_buf();
+            self.stream.read(target)
+        };
+        let amount = match result {
+            Ok(amount) => amount,
+            Err(error) if error.kind() == io::ErrorKind::TimedOut => {
+                return Err(UreqError::Timeout(timeout.reason));
+            }
+            Err(error) => {
+                return Err(http_io_error(error, "HTTP response transport socket read").into());
+            }
+        };
+        self.buffers.input_appended(amount);
+        Ok(amount > 0)
+    }
+}
+
 impl Transport for AbortableTcpTransport {
     fn buffers(&mut self) -> &mut dyn Buffers {
         &mut self.buffers
@@ -982,25 +1021,7 @@ impl Transport for AbortableTcpTransport {
     }
 
     fn await_input(&mut self, timeout: NextTimeout) -> std::result::Result<bool, UreqError> {
-        update_socket_timeout(
-            &self.stream,
-            timeout,
-            &mut self.previous_read_timeout,
-            TcpStream::set_read_timeout,
-        )?;
-        let result = {
-            let target = self.buffers.input_append_buf();
-            self.stream.read(target)
-        };
-        let amount = match result {
-            Ok(amount) => amount,
-            Err(error) if error.kind() == io::ErrorKind::TimedOut => {
-                return Err(UreqError::Timeout(timeout.reason));
-            }
-            Err(error) => return Err(error.into()),
-        };
-        self.buffers.input_appended(amount);
-        Ok(amount > 0)
+        self.await_input_with_timeout_setter(timeout, TcpStream::set_read_timeout)
     }
 
     fn is_open(&mut self) -> bool {
@@ -1145,6 +1166,35 @@ fn capture_tls_io_error(error: io::Error, captured: &Mutex<Option<UreqError>>) -
     io::Error::other("underlying HTTP transport error was captured")
 }
 
+#[derive(Debug)]
+struct HttpIoContext {
+    operation: String,
+    source: io::Error,
+}
+
+impl std::fmt::Display for HttpIoContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.operation, self.source)
+    }
+}
+
+impl std::error::Error for HttpIoContext {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+fn http_io_error(error: io::Error, operation: impl Into<String>) -> io::Error {
+    let kind = error.kind();
+    io::Error::new(
+        kind,
+        HttpIoContext {
+            operation: operation.into(),
+            source: error,
+        },
+    )
+}
+
 fn take_captured_tls_error(
     captured: &Mutex<Option<UreqError>>,
 ) -> std::result::Result<Option<UreqError>, UreqError> {
@@ -1228,14 +1278,88 @@ fn update_socket_timeout(
     Ok(())
 }
 
+/// Read timeouts can no longer be changed on a terminal TCP socket on some
+/// platforms. If that happens, only bypass the failed timeout update when a
+/// non-consuming readiness probe proves that `read` can complete immediately.
+/// A WouldBlock result keeps the original setter error, so this never turns
+/// an invalid timeout into an unbounded blocking read.
+fn update_socket_read_timeout(
+    stream: &TcpStream,
+    current: Option<Duration>,
+    previous: &mut Option<Duration>,
+    set_timeout: impl FnOnce(&TcpStream, Option<Duration>) -> io::Result<()>,
+) -> io::Result<()> {
+    if current == *previous {
+        return Ok(());
+    }
+    match set_timeout(stream, current) {
+        Ok(()) => {
+            *previous = current;
+            Ok(())
+        }
+        Err(setter_error) if setter_error.kind() == io::ErrorKind::InvalidInput => {
+            match socket_read_is_ready(stream) {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(setter_error),
+                Err(probe_error) => Err(io::Error::new(
+                    setter_error.kind(),
+                    ReadTimeoutProbeError {
+                        setter: setter_error,
+                        probe: probe_error,
+                    },
+                )),
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Check for bytes or EOF without consuming input. The stream has one reader;
+/// its cloned SocketControl handle can only shut it down, not read from it.
+fn socket_read_is_ready(stream: &TcpStream) -> io::Result<bool> {
+    stream.set_nonblocking(true)?;
+    let mut peek = [0u8; 1];
+    let probe = stream.peek(&mut peek);
+    let restore = stream.set_nonblocking(false);
+    restore?;
+    match probe {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[derive(Debug)]
+struct ReadTimeoutProbeError {
+    setter: io::Error,
+    probe: io::Error,
+}
+
+impl std::fmt::Display for ReadTimeoutProbeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "read-timeout setter failed ({}); socket readiness probe failed ({})",
+            self.setter, self.probe
+        )
+    }
+}
+
+impl std::error::Error for ReadTimeoutProbeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.setter)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{
-        io::{BufRead, BufReader, Read},
-        net::TcpListener,
+        io::{BufRead, BufReader, Read, Write},
+        net::{Shutdown, TcpListener, TcpStream},
         process::Command,
         sync::atomic::AtomicUsize,
+        sync::mpsc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -1918,5 +2042,171 @@ mod tests {
         let _ = server.join();
         assert!(result.is_err());
         assert!(elapsed < Duration::from_secs(2));
+    }
+
+    fn test_timeout(seconds: u64) -> NextTimeout {
+        NextTimeout {
+            after: ureq::unversioned::transport::time::Duration::from_secs(seconds),
+            reason: ureq::Timeout::RecvBody,
+        }
+    }
+
+    fn test_transport(stream: TcpStream) -> AbortableTcpTransport {
+        AbortableTcpTransport {
+            stream,
+            buffers: LazyBuffers::new(4096, 4096),
+            socket: Arc::new(SocketControl::default()),
+            previous_read_timeout: None,
+            previous_write_timeout: None,
+        }
+    }
+
+    fn invalid_timeout_setter(_: &TcpStream, _: Option<Duration>) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::InvalidInput))
+    }
+
+    #[test]
+    fn read_timeout_setter_einval_drains_split_response_after_peer_fin() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release_body, body_released) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n")
+                .unwrap();
+            body_released.recv().unwrap();
+            stream.write_all(b"body").unwrap();
+            stream.shutdown(Shutdown::Write).unwrap();
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut transport = test_transport(stream);
+
+        assert!(
+            transport
+                .await_input_with_timeout_setter(test_timeout(3), |_, _| Ok(()))
+                .unwrap()
+        );
+        let headers = transport.buffers.input();
+        assert!(headers.starts_with(b"HTTP/1.1 200 OK\r\n"));
+        transport.buffers.input_consume(headers.len());
+
+        release_body.send(()).unwrap();
+        server.join().unwrap();
+        assert!(
+            transport
+                .await_input_with_timeout_setter(test_timeout(10), invalid_timeout_setter)
+                .unwrap()
+        );
+        assert_eq!(transport.buffers.input(), b"body");
+        transport.buffers.input_consume(4);
+
+        assert!(
+            !transport
+                .await_input_with_timeout_setter(test_timeout(10), invalid_timeout_setter)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn read_timeout_setter_would_block_preserves_error_and_restores_blocking_mode() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release_data, data_released) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            data_released.recv().unwrap();
+            stream.write_all(b"x").unwrap();
+        });
+        let mut stream = TcpStream::connect(address).unwrap();
+        let mut previous = Some(Duration::from_secs(3));
+        let error = update_socket_read_timeout(
+            &stream,
+            Some(Duration::from_secs(10)),
+            &mut previous,
+            invalid_timeout_setter,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(previous, Some(Duration::from_secs(3)));
+
+        stream
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .unwrap();
+        let (read_started, started_read) = mpsc::channel();
+        let (read_result, result_read) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let mut byte = [0u8; 1];
+            read_started.send(()).unwrap();
+            read_result
+                .send(stream.read(&mut byte).map(|amount| (amount, byte)))
+                .unwrap();
+        });
+        started_read.recv().unwrap();
+        assert!(matches!(
+            result_read.recv_timeout(Duration::from_millis(30)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        release_data.send(()).unwrap();
+        let (amount, byte) = result_read
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap();
+        assert_eq!(amount, 1);
+        assert_eq!(byte, [b'x']);
+        reader.join().unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn non_invalid_timeout_setter_error_does_not_use_readiness_fallback() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(b"ready").unwrap();
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut previous = Some(Duration::from_secs(3));
+        let error = update_socket_read_timeout(
+            &stream,
+            Some(Duration::from_secs(10)),
+            &mut previous,
+            |_, _| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(previous, Some(Duration::from_secs(3)));
+        let mut bytes = [0u8; 5];
+        assert_eq!(stream.try_clone().unwrap().read(&mut bytes).unwrap(), 5);
+        assert_eq!(&bytes, b"ready");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http_socket_error_context_preserves_the_operation_and_underlying_os_error() {
+        let source_error = io::Error::new(io::ErrorKind::InvalidInput, "underlying socket error");
+        let source_text = source_error.to_string();
+        let wrapped = http_io_error(source_error, "HTTP response transport socket read");
+        assert_eq!(wrapped.kind(), io::ErrorKind::InvalidInput);
+        assert!(
+            wrapped
+                .to_string()
+                .contains("HTTP response transport socket read")
+        );
+        assert!(wrapped.to_string().contains(&source_text));
+        let original = wrapped
+            .get_ref()
+            .and_then(|context| context.source())
+            .and_then(|source| source.downcast_ref::<io::Error>())
+            .expect("the wrapped OS error remains available in the source chain");
+        assert_eq!(original.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(original.to_string(), source_text);
+        let mapped = map_http_io_error(wrapped);
+        assert!(
+            mapped
+                .to_string()
+                .contains("HTTP response transport socket read")
+        );
     }
 }

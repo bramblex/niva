@@ -680,14 +680,14 @@ fn write_stdio(_app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest)
 async fn read_stdin(ctx: CallContext, _request: ApiRequest) -> Result<()> {
     anyhow::ensure!(ctx.window.id == 0, "process stdio is main-window-only");
     let owner = (ctx.window.id, ctx.connection_id, ctx.id);
+    let cancel_rx = ctx.cancel_rx.clone();
     #[cfg(unix)]
     {
         crate::blocking!({
-            use std::io::Read;
-            let _owner = StdinReaderRegistration::acquire(owner)?;
-            let mut stdin = std::io::stdin().lock();
+            let registry = stdin_reader_registry();
+            let _owner = registry.acquire(owner, cancel_rx.clone())?;
             let mut buffer = [0; 65536];
-            while !ctx.is_cancelled() {
+            while !cancel_rx.is_closed() {
                 let mut poll = libc::pollfd {
                     fd: libc::STDIN_FILENO,
                     events: libc::POLLIN,
@@ -696,12 +696,19 @@ async fn read_stdin(ctx: CallContext, _request: ApiRequest) -> Result<()> {
                 // SAFETY: one initialized pollfd lives for the duration of the call.
                 let ready = unsafe { libc::poll(&mut poll, 1, 100) };
                 if ready < 0 {
+                    if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
                     return Err(std::io::Error::last_os_error().into());
                 }
                 if ready == 0 {
                     continue;
                 }
-                let size = stdin.read(&mut buffer)?;
+                let Some(size) =
+                    registry.read_if_active(owner, &cancel_rx, libc::STDIN_FILENO, &mut buffer)?
+                else {
+                    break;
+                };
                 if size == 0 {
                     ctx.chunk(&[], true);
                     ctx.respond(Ok(Value::Null));
@@ -726,36 +733,214 @@ async fn read_stdin(ctx: CallContext, _request: ApiRequest) -> Result<()> {
 
 type StdinReaderKey = (u8, u64, u64);
 
-fn stdin_reader_owner() -> &'static std::sync::Mutex<Option<StdinReaderKey>> {
-    static OWNER: std::sync::OnceLock<std::sync::Mutex<Option<StdinReaderKey>>> =
-        std::sync::OnceLock::new();
-    OWNER.get_or_init(|| std::sync::Mutex::new(None))
+#[derive(Default)]
+struct StdinReaderState {
+    active: Option<StdinReaderEntry>,
+    waiters: std::collections::HashSet<StdinReaderKey>,
+    cancelled_waiters: std::collections::HashSet<StdinReaderKey>,
 }
 
-struct StdinReaderRegistration(StdinReaderKey);
+struct StdinReaderEntry {
+    owner: StdinReaderKey,
+    cancel_rx: async_channel::Receiver<()>,
+    cancelled: bool,
+}
 
-impl StdinReaderRegistration {
-    fn acquire(owner: StdinReaderKey) -> Result<Self> {
-        let mut active = stdin_reader_owner()
+#[derive(Default)]
+struct StdinReaderRegistry {
+    state: std::sync::Mutex<StdinReaderState>,
+    changed: std::sync::Condvar,
+}
+
+fn stdin_reader_registry() -> Arc<StdinReaderRegistry> {
+    static REGISTRY: std::sync::OnceLock<Arc<StdinReaderRegistry>> = std::sync::OnceLock::new();
+    Arc::clone(REGISTRY.get_or_init(|| Arc::new(StdinReaderRegistry::default())))
+}
+
+impl StdinReaderRegistry {
+    fn acquire(
+        self: &Arc<Self>,
+        owner: StdinReaderKey,
+        cancel_rx: async_channel::Receiver<()>,
+    ) -> Result<StdinReaderRegistration> {
+        self.acquire_with_wait_hook(owner, cancel_rx, || {})
+    }
+
+    fn acquire_with_wait_hook(
+        self: &Arc<Self>,
+        owner: StdinReaderKey,
+        cancel_rx: async_channel::Receiver<()>,
+        mut on_wait: impl FnMut(),
+    ) -> Result<StdinReaderRegistration> {
+        let mut state = self
+            .state
             .lock()
             .map_err(|_| anyhow::anyhow!("stdin reader registry poisoned"))?;
-        anyhow::ensure!(
-            active.is_none(),
-            "EBUSY: process.stdin already has an active reader"
-        );
-        *active = Some(owner);
-        Ok(Self(owner))
+        let mut waiting = false;
+
+        loop {
+            let cancelled_by_owner = state.cancelled_waiters.remove(&owner);
+            if cancel_rx.is_closed() || cancelled_by_owner {
+                state.waiters.remove(&owner);
+                drop(state);
+                self.changed.notify_all();
+                anyhow::bail!("ECANCELED: process.stdin call was cancelled");
+            }
+
+            if let Some(active) = state.active.as_mut()
+                && active.cancel_rx.is_closed()
+            {
+                active.cancelled = true;
+            }
+
+            match state.active.as_ref() {
+                None => {
+                    state.waiters.remove(&owner);
+                    state.cancelled_waiters.remove(&owner);
+                    state.active = Some(StdinReaderEntry {
+                        owner,
+                        cancel_rx,
+                        cancelled: false,
+                    });
+                    return Ok(StdinReaderRegistration {
+                        registry: Arc::clone(self),
+                        owner,
+                    });
+                }
+                Some(active) if !active.cancelled => {
+                    state.waiters.remove(&owner);
+                    anyhow::bail!("EBUSY: process.stdin already has an active reader");
+                }
+                Some(_) => {
+                    if !waiting {
+                        state.waiters.insert(owner);
+                        waiting = true;
+                        on_wait();
+                    }
+                    state = self
+                        .changed
+                        .wait(state)
+                        .map_err(|_| anyhow::anyhow!("stdin reader registry poisoned"))?;
+                }
+            }
+        }
     }
+
+    /// Serialize cancellation with the final cancellation check and fd read.
+    /// Once this returns, a cancelled reader cannot consume bytes written later.
+    #[cfg(unix)]
+    fn read_if_active(
+        &self,
+        owner: StdinReaderKey,
+        cancel_rx: &async_channel::Receiver<()>,
+        fd: libc::c_int,
+        buffer: &mut [u8],
+    ) -> std::io::Result<Option<usize>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| std::io::Error::other("stdin reader registry poisoned"))?;
+        let Some(active) = state.active.as_mut().filter(|active| active.owner == owner) else {
+            return std::result::Result::Ok(None);
+        };
+        if active.cancelled || active.cancel_rx.is_closed() || cancel_rx.is_closed() {
+            active.cancelled = true;
+            return std::result::Result::Ok(None);
+        }
+
+        // SAFETY: `read` receives a valid fd and writable buffer. The active
+        // registration and this mutex serialize Niva stdin readers and their
+        // cancellation callbacks across the poll-to-read boundary.
+        let size = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
+        if size < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        std::result::Result::Ok(Some(size as usize))
+    }
+
+    fn cancel_call(&self, owner: StdinReaderKey) {
+        let std::result::Result::Ok(mut state) = self.state.lock() else {
+            self.changed.notify_all();
+            return;
+        };
+        if let Some(active) = state.active.as_mut()
+            && active.owner == owner
+        {
+            active.cancelled = true;
+        }
+        if state.waiters.contains(&owner) {
+            state.cancelled_waiters.insert(owner);
+        }
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    fn cancel_owner(&self, window_id: u8, owner_id: u64) {
+        let std::result::Result::Ok(mut state) = self.state.lock() else {
+            self.changed.notify_all();
+            return;
+        };
+        if let Some(active) = state.active.as_mut()
+            && active.owner.0 == window_id
+            && active.owner.1 == owner_id
+        {
+            active.cancelled = true;
+        }
+        let cancelled = state
+            .waiters
+            .iter()
+            .filter(|(window, owner, _)| *window == window_id && *owner == owner_id)
+            .copied()
+            .collect::<Vec<_>>();
+        state.cancelled_waiters.extend(cancelled);
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    fn cancel_window(&self, window_id: u8) {
+        let std::result::Result::Ok(mut state) = self.state.lock() else {
+            self.changed.notify_all();
+            return;
+        };
+        if let Some(active) = state.active.as_mut()
+            && active.owner.0 == window_id
+        {
+            active.cancelled = true;
+        }
+        let cancelled = state
+            .waiters
+            .iter()
+            .filter(|(window, _, _)| *window == window_id)
+            .copied()
+            .collect::<Vec<_>>();
+        state.cancelled_waiters.extend(cancelled);
+        drop(state);
+        self.changed.notify_all();
+    }
+}
+
+struct StdinReaderRegistration {
+    registry: Arc<StdinReaderRegistry>,
+    owner: StdinReaderKey,
 }
 
 impl Drop for StdinReaderRegistration {
     fn drop(&mut self) {
-        if let std::result::Result::Ok(mut active) = stdin_reader_owner().lock()
-            && *active == Some(self.0)
+        if let std::result::Result::Ok(mut state) = self.registry.state.lock()
+            && state
+                .active
+                .as_ref()
+                .is_some_and(|active| active.owner == self.owner)
         {
-            *active = None;
+            state.active = None;
+            drop(state);
+            self.registry.changed.notify_all();
         }
     }
+}
+
+pub(crate) fn cancel_stdin_call(window_id: u8, owner_id: u64, call_id: u64) {
+    stdin_reader_registry().cancel_call((window_id, owner_id, call_id));
 }
 
 #[cfg(windows)]
@@ -769,7 +954,9 @@ fn read_stdin_windows(ctx: CallContext, owner: StdinReaderKey) -> Result<()> {
         },
     };
 
-    let _owner = StdinReaderRegistration::acquire(owner)?;
+    let cancel_rx = ctx.cancel_rx.clone();
+    let registry = stdin_reader_registry();
+    let _owner = registry.acquire(owner, cancel_rx)?;
     let (thread_id_tx, thread_id_rx) = async_channel::bounded(1);
     let reader_ctx = ctx.clone();
     let reader = std::thread::Builder::new()
@@ -1268,6 +1455,7 @@ fn cancel_processes_matching(mut matches: impl FnMut(&ProcessCallOwner) -> bool)
 }
 
 pub(crate) fn cancel_bridge_child(window_id: u8, owner_id: u64, call_id: u64) {
+    cancel_stdin_call(window_id, owner_id, call_id);
     cancel_processes_matching(|owner| {
         matches!(owner, ProcessCallOwner::BridgeSession { window_id: wid, owner_id: candidate, call_id: id }
             if *wid == window_id && *candidate == owner_id && *id == call_id)
@@ -1275,6 +1463,7 @@ pub(crate) fn cancel_bridge_child(window_id: u8, owner_id: u64, call_id: u64) {
 }
 
 pub(crate) fn cancel_bridge_session(window_id: u8, owner_id: u64) {
+    stdin_reader_registry().cancel_owner(window_id, owner_id);
     cancel_processes_matching(|owner| {
         matches!(owner, ProcessCallOwner::BridgeSession { window_id: wid, owner_id: candidate, .. }
             if *wid == window_id && *candidate == owner_id)
@@ -1282,6 +1471,7 @@ pub(crate) fn cancel_bridge_session(window_id: u8, owner_id: u64) {
 }
 
 pub(crate) fn cancel_window_children(window_id: u8) {
+    stdin_reader_registry().cancel_window(window_id);
     cancel_processes_matching(|owner| match owner {
         ProcessCallOwner::BridgeSession { window_id: wid, .. }
         | ProcessCallOwner::Synchronous { window_id: wid, .. }
@@ -1358,6 +1548,7 @@ pub(crate) fn cancel_ipc_frame(window_id: u8, frame_id: u64, generation: u64) {
 }
 
 pub(crate) fn cancel_ipc_window(window_id: u8) {
+    stdin_reader_registry().cancel_window(window_id);
     cancel_processes_matching(
         |owner| matches!(owner, ProcessCallOwner::Ipc { window_id: wid, .. } if *wid == window_id),
     );
@@ -1483,12 +1674,182 @@ mod tests {
         assert_eq!(package_version(), env!("CARGO_PKG_VERSION"));
     }
 
+    fn cancellation_channel() -> (async_channel::Sender<()>, async_channel::Receiver<()>) {
+        async_channel::bounded(1)
+    }
+
     #[test]
-    fn stdin_reader_registration_allows_only_one_owner_and_releases_on_drop() {
-        let first = StdinReaderRegistration::acquire((254, u64::MAX, u64::MAX)).unwrap();
-        assert!(StdinReaderRegistration::acquire((254, u64::MAX, u64::MAX - 1)).is_err());
+    fn stdin_reader_registration_keeps_live_conflicts_busy() {
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let (_first_cancel, first_rx) = cancellation_channel();
+        let first = registry
+            .acquire((254, u64::MAX, u64::MAX), first_rx)
+            .unwrap();
+        let (_second_cancel, second_rx) = cancellation_channel();
+
+        let error = match registry.acquire((254, u64::MAX, u64::MAX - 1), second_rx) {
+            std::result::Result::Ok(registration) => {
+                drop(registration);
+                panic!("a live stdin reader conflict must fail with EBUSY");
+            }
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("EBUSY"));
         drop(first);
-        assert!(StdinReaderRegistration::acquire((254, u64::MAX, u64::MAX - 1)).is_ok());
+    }
+
+    #[test]
+    fn cancelled_stdin_reader_releases_waiting_reregistration() {
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let owner = (254, 101, 201);
+        let next_owner = (254, 101, 202);
+        let (_old_cancel, old_rx) = cancellation_channel();
+        let old = registry.acquire(owner, old_rx).unwrap();
+        registry.cancel_call(owner);
+
+        let (waiting_tx, waiting_rx) = async_channel::bounded(1);
+        let (_new_cancel, new_rx) = cancellation_channel();
+        let next_registry = Arc::clone(&registry);
+        let waiter = std::thread::spawn(move || {
+            next_registry.acquire_with_wait_hook(next_owner, new_rx, || {
+                waiting_tx.send_blocking(()).unwrap();
+            })
+        });
+        waiting_rx.recv_blocking().unwrap();
+
+        drop(old);
+        let next = waiter.join().unwrap().unwrap();
+        drop(next);
+    }
+
+    #[test]
+    fn cancelling_a_waiting_stdin_reader_wakes_it() {
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let old_owner = (254, 102, 301);
+        let waiter_owner = (254, 102, 302);
+        let (_old_cancel, old_rx) = cancellation_channel();
+        let old = registry.acquire(old_owner, old_rx).unwrap();
+        registry.cancel_call(old_owner);
+
+        let (waiting_tx, waiting_rx) = async_channel::bounded(1);
+        let (waiter_cancel_tx, waiter_cancel_rx) = cancellation_channel();
+        let waiter_registry = Arc::clone(&registry);
+        let waiter = std::thread::spawn(move || {
+            waiter_registry.acquire_with_wait_hook(waiter_owner, waiter_cancel_rx, || {
+                waiting_tx.send_blocking(()).unwrap();
+            })
+        });
+        waiting_rx.recv_blocking().unwrap();
+
+        // The registry notification precedes the call's cancellation channel
+        // closing, as it does in the native API cancellation path.
+        registry.cancel_call(waiter_owner);
+        waiter_cancel_tx.close();
+        let error = match waiter.join().unwrap() {
+            std::result::Result::Ok(registration) => {
+                drop(registration);
+                panic!("a cancelled stdin waiter must not acquire the reader");
+            }
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("ECANCELED"));
+        drop(old);
+    }
+
+    #[cfg(unix)]
+    fn unix_pipe() -> (std::fs::File, std::fs::File) {
+        use std::os::fd::FromRawFd;
+
+        let mut fds = [-1; 2];
+        // SAFETY: `pipe` initializes both descriptors on success; ownership is
+        // transferred to File immediately below.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        unsafe {
+            (
+                std::fs::File::from_raw_fd(fds[0]),
+                std::fs::File::from_raw_fd(fds[1]),
+            )
+        }
+    }
+
+    #[cfg(unix)]
+    fn wait_until_readable(fd: libc::c_int) -> std::io::Result<()> {
+        let mut poll = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        loop {
+            // SAFETY: the initialized pollfd remains valid for this call.
+            let result = unsafe { libc::poll(&mut poll, 1, -1) };
+            if result > 0 {
+                return std::result::Result::Ok(());
+            }
+            if result < 0
+                && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancelled_reader_does_not_consume_input_after_poll_and_new_reader_gets_it() {
+        use std::io::Write;
+        use std::os::fd::AsRawFd;
+
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let owner = (254, 103, 401);
+        let next_owner = (254, 103, 402);
+        let (old_cancel_tx, old_cancel_rx) = cancellation_channel();
+        let old = registry.acquire(owner, old_cancel_rx.clone()).unwrap();
+        let (reader, mut writer) = unix_pipe();
+        let observer = reader.try_clone().unwrap();
+        writer.write_all(b"new-command").unwrap();
+
+        let (polled_tx, polled_rx) = async_channel::bounded(1);
+        let (resume_tx, resume_rx) = async_channel::bounded(1);
+        let reader_registry = Arc::clone(&registry);
+        let worker = std::thread::spawn(move || {
+            wait_until_readable(reader.as_raw_fd()).unwrap();
+            polled_tx.send_blocking(()).unwrap();
+            resume_rx.recv_blocking().unwrap();
+            let mut buffer = [0; 64];
+            let result = reader_registry.read_if_active(
+                owner,
+                &old_cancel_rx,
+                reader.as_raw_fd(),
+                &mut buffer,
+            );
+            drop(old);
+            result.map(|read| read.map(|size| buffer[..size].to_vec()))
+        });
+
+        // The command is already readable when the old reader polls. Cancel
+        // it before its synchronized read step to reproduce the lost-input
+        // race; the replacement reader must still receive the queued bytes.
+        polled_rx.recv_blocking().unwrap();
+        registry.cancel_call(owner);
+        old_cancel_tx.close();
+        resume_tx.send_blocking(()).unwrap();
+
+        let old_read = worker.join().unwrap().unwrap();
+        assert!(
+            old_read.is_none(),
+            "cancelled reader must skip its stale poll"
+        );
+
+        let (_new_cancel, new_rx) = cancellation_channel();
+        let new_reader = registry.acquire(next_owner, new_rx.clone()).unwrap();
+        wait_until_readable(observer.as_raw_fd()).unwrap();
+        let mut buffer = [0; 64];
+        let size = registry
+            .read_if_active(next_owner, &new_rx, observer.as_raw_fd(), &mut buffer)
+            .unwrap()
+            .unwrap();
+        assert_eq!(&buffer[..size], b"new-command");
+        drop(new_reader);
     }
 
     #[test]

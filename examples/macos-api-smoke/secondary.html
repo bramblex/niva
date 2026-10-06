@@ -26,6 +26,7 @@
               method: "POST",
               headers: { "Content-Type": "application/json" },
               cache: "no-store",
+              keepalive: true,
               body: JSON.stringify({
                 name: "secondary-pageshow",
                 data: { persisted, href: location.href },

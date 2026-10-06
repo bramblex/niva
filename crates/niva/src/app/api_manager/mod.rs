@@ -197,6 +197,11 @@ type IpcApiHandler = Arc<dyn Fn(IpcCallContext, ApiRequest) -> IpcApiFuture + Se
     deny_unknown_fields
 )]
 enum IpcMessage {
+    #[serde(rename = "session_close")]
+    SessionClose {
+        session_id: String,
+        token: Option<String>,
+    },
     #[serde(rename = "api_call")]
     ApiCall {
         rid: u64,
@@ -464,6 +469,7 @@ struct ActiveCall {
     inbound_tx: async_channel::Sender<InboundChunk>,
     outbound: CallOutput,
     lifecycle: Arc<CallLifecycle>,
+    ipc_session: Option<IpcSessionKey>,
 }
 
 type CallKey = (u8, u64, u64);
@@ -1053,6 +1059,7 @@ fn same_origin_ipc_source(frame: &IpcFrameSource) -> Result<String> {
 
 async fn monitor_ipc_call(
     sessions: Arc<Mutex<IpcSessions>>,
+    active: Arc<Mutex<ActiveCalls>>,
     key: IpcSessionKey,
     call_id: u64,
     cancel_rx: async_channel::Receiver<()>,
@@ -1106,6 +1113,11 @@ async fn monitor_ipc_call(
                     key.frame_id,
                     key.generation,
                 );
+                // A heartbeat monitor can expire the whole session while a
+                // stream call (including process.stdin) is still active.
+                // Remove exact-key active calls and run their native cancel
+                // hooks before closing any session sender.
+                cancel_ipc_active_session_calls(&active, &key);
                 for sender in senders {
                     sender.close();
                 }
@@ -1121,19 +1133,17 @@ async fn monitor_ipc_channel_session(
     channels: Arc<Mutex<HashMap<IpcChannelKey, IpcChannelCall>>>,
     key: IpcSessionKey,
     call_id: u64,
-    connection_id: u64,
 ) {
     loop {
         smol::Timer::after(IPC_SESSION_CHECK_INTERVAL).await;
+        let mut expired_senders = Vec::new();
         let expired = match sessions.lock() {
             Ok(sessions) if !sessions.active_call(&key, call_id) => false,
             Ok(mut sessions) => match sessions.expire_if_stale(&key, Instant::now()) {
                 Ok(false) => continue,
                 Ok(true) => true,
                 Err(senders) => {
-                    for sender in senders {
-                        sender.close();
-                    }
+                    expired_senders = senders;
                     true
                 }
             },
@@ -1157,29 +1167,9 @@ async fn monitor_ipc_channel_session(
             key.frame_id,
             key.generation,
         );
-        let calls = {
-            let Ok(mut active) = active.lock() else {
-                cleanup_ipc_channel_session_resources(&channels, &key);
-                return;
-            };
-            let keys = active
-                .keys()
-                .copied()
-                .filter(|(window_id, owner_id, _)| {
-                    *window_id == key.window_id && *owner_id == connection_id
-                })
-                .collect::<Vec<_>>();
-            keys.into_iter()
-                .filter_map(|active_key| {
-                    let call = active.remove(&active_key)?;
-                    call.lifecycle.cancel();
-                    Some((active_key.2, call))
-                })
-                .collect::<Vec<_>>()
-        };
-        for (id, call) in calls {
-            crate::app::api::cancel_process_call(key.window_id, connection_id, id);
-            cancel_active_call(call);
+        cancel_ipc_active_session_calls(&active, &key);
+        for sender in expired_senders {
+            sender.close();
         }
         cleanup_ipc_channel_session_resources(&channels, &key);
         return;
@@ -1196,19 +1186,20 @@ fn cleanup_ipc_channel_resources(
 }
 
 fn cancel_ipc_channel_call(
-    app: &Arc<NivaApp>,
+    api: &ApiManager,
     sessions: &Mutex<IpcSessions>,
     channels: &Mutex<HashMap<IpcChannelKey, IpcChannelCall>>,
     key: &IpcChannelKey,
-    connection_id: u64,
 ) {
-    if let Ok(mut sessions) = sessions.lock()
-        && let Some(sender) = sessions.cancel_call(&key.session, key.call_id)
+    let sender = sessions
+        .lock()
+        .ok()
+        .and_then(|mut sessions| sessions.cancel_call(&key.session, key.call_id));
+    if !api.cancel_ipc_active_call(&key.session, key.call_id)
+        && let Some(sender) = sender
     {
         sender.close();
     }
-    app.api()
-        .cancel_call(key.session.window_id, connection_id, key.call_id);
     cleanup_ipc_channel_resources(channels, key);
 }
 
@@ -1440,6 +1431,19 @@ impl IpcSessions {
         sender
     }
 
+    fn retire(&mut self, key: &IpcSessionKey) -> Vec<(u64, async_channel::Sender<()>)> {
+        let calls = self
+            .active
+            .remove(key)
+            .map(|session| session.calls.into_iter().collect())
+            .unwrap_or_default();
+        // Tombstone even an idle key so a delayed api_call cannot revive a
+        // session after pagehide. Repeated closes are idempotent; new unknown
+        // ids consume the existing bounded per-window tombstone budget.
+        self.remember_expired(key.clone());
+        calls
+    }
+
     fn expire_if_stale(
         &mut self,
         key: &IpcSessionKey,
@@ -1532,6 +1536,71 @@ fn notify_duplicate_active_id(tx: &mpsc::Sender<WsOut>, seq: u64, request_id: u6
 fn cancel_active_call(call: ActiveCall) {
     call.lifecycle.cancel();
     call.cancel_tx.close();
+}
+
+fn cancel_ipc_active_call(
+    active: &Mutex<ActiveCalls>,
+    session: &IpcSessionKey,
+    call_id: u64,
+) -> bool {
+    let owner_id = session_owner_id(session.window_id, &session.session_id);
+    let active_key = (session.window_id, owner_id, call_id);
+    let call = {
+        let mut active = match active.lock() {
+            Ok(active) => active,
+            Err(_) => return false,
+        };
+        if !active
+            .get(&active_key)
+            .is_some_and(|call| call.ipc_session.as_ref() == Some(session))
+        {
+            return false;
+        }
+        let call = active.remove(&active_key);
+        if let Some(call) = &call {
+            call.lifecycle.cancel();
+        }
+        call
+    };
+    let Some(call) = call else {
+        return false;
+    };
+
+    crate::app::api::cancel_ipc_process_call(
+        session.window_id,
+        &session.source_origin,
+        &session.session_id,
+        session.frame_id,
+        session.generation,
+        call_id,
+    );
+    // This wakes resources such as process.stdin registered under the stable
+    // owner/call pair. It is safe only after the full-key check and atomic
+    // active-call removal above.
+    crate::app::api::cancel_process_call(session.window_id, owner_id, call_id);
+    cancel_active_call(call);
+    true
+}
+
+fn cancel_ipc_active_session_calls(active: &Mutex<ActiveCalls>, session: &IpcSessionKey) {
+    let owner_id = session_owner_id(session.window_id, &session.session_id);
+    let call_ids = active
+        .lock()
+        .map(|active| {
+            active
+                .iter()
+                .filter_map(|(key, call)| {
+                    (key.0 == session.window_id
+                        && key.1 == owner_id
+                        && call.ipc_session.as_ref() == Some(session))
+                    .then_some(key.2)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for call_id in call_ids {
+        cancel_ipc_active_call(active, session, call_id);
+    }
 }
 
 fn reserve_active_call(active: &mut ActiveCalls, key: CallKey, call: ActiveCall) -> bool {
@@ -2044,6 +2113,7 @@ impl ApiManager {
         }
         let message: IpcMessage = serde_json::from_str(raw_body)?;
         let (session_id, rid) = match &message {
+            IpcMessage::SessionClose { session_id, .. } => (session_id.clone(), None),
             IpcMessage::ApiCall {
                 session_id, rid, ..
             }
@@ -2065,6 +2135,16 @@ impl ApiManager {
         };
         let source_origin = same_origin_ipc_source(&frame)?;
         let response = match message {
+            IpcMessage::SessionClose { session_id, token } => self
+                .ipc_session_close(window_id, frame, &session_id, token.as_deref())
+                .map(|accepted| {
+                    json!({
+                        "t":"sessionClosed",
+                        "sessionId":session_id,
+                        "accepted":accepted,
+                    })
+                    .to_string()
+                }),
             IpcMessage::Heartbeat {
                 rid,
                 session_id,
@@ -2241,6 +2321,58 @@ impl ApiManager {
         Ok(serde_json::to_string(&response)?)
     }
 
+    fn ipc_session_close(
+        &self,
+        window_id: u8,
+        frame: IpcFrameSource,
+        session_id: &str,
+        token: Option<&str>,
+    ) -> Result<bool> {
+        validate_session_id(session_id)?;
+        let source_origin = same_origin_ipc_source(&frame)?;
+        let app = self
+            .app
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow!("API manager not ready"))?;
+        let window = app.window()?.get_window(window_id)?;
+        let authorized_origin = authorize_ipc_source(&window, &frame.source_url, token, None)?;
+        anyhow::ensure!(
+            authorized_origin == source_origin,
+            "IPC source origin changed during session close"
+        );
+        let key = IpcSessionKey {
+            window_id,
+            source_origin: source_origin.clone(),
+            session_id: session_id.to_owned(),
+            frame_id: frame.frame_id,
+            generation: frame.generation,
+            is_main_frame: frame.is_main_frame,
+        };
+        let calls = self
+            .ipc_sessions
+            .lock()
+            .map_err(|_| anyhow!("IPC session table poisoned"))?
+            .retire(&key);
+        for (call_id, sender) in calls {
+            if !self.cancel_ipc_active_call(&key, call_id) {
+                sender.close();
+            }
+        }
+        self.cancel_ipc_channel_sessions(|channel| channel == &key);
+        crate::app::api::cancel_ipc_process_session(
+            window_id,
+            &source_origin,
+            session_id,
+            frame.frame_id,
+            frame.generation,
+        );
+        if trusted_local_ipc_source(&window, &source_origin, token) {
+            self.cancel_sync_session(window_id, session_id);
+        }
+        Ok(true)
+    }
+
     async fn ipc_call(
         &self,
         window_id: u8,
@@ -2375,7 +2507,13 @@ impl ApiManager {
             cancel_rx: cancel_rx.clone(),
         };
         let work = handler(context, request.clone());
-        let monitor = monitor_ipc_call(self.ipc_sessions.clone(), key.clone(), id, cancel_rx);
+        let monitor = monitor_ipc_call(
+            self.ipc_sessions.clone(),
+            self.active.clone(),
+            key.clone(),
+            id,
+            cancel_rx,
+        );
         let outcome =
             smol::future::or(async move { IpcRunOutcome::Finished(work.await) }, monitor).await;
 
@@ -2536,6 +2674,7 @@ impl ApiManager {
             CallOutput::Channel(outbound_tx),
             request,
             channels,
+            Some(key.clone()),
         );
         if !queued {
             self.remove_ipc_channel(&channel_key);
@@ -2567,7 +2706,6 @@ impl ApiManager {
                 monitor_channels,
                 monitor_key,
                 id,
-                session_connection_id,
             )
             .await;
         })
@@ -2588,11 +2726,10 @@ impl ApiManager {
                     Ok(transport) => transport,
                     Err(_) => {
                         cancel_ipc_channel_call(
-                            &push_app,
+                            &push_app.api(),
                             &push_sessions,
                             &push_channels,
                             &push_key,
-                            session_connection_id,
                         );
                         return;
                     }
@@ -2628,11 +2765,10 @@ impl ApiManager {
                     };
                     if !sent {
                         cancel_ipc_channel_call(
-                            &push_app,
+                            &push_app.api(),
                             &push_sessions,
                             &push_channels,
                             &push_key,
-                            session_connection_id,
                         );
                         return;
                     }
@@ -2645,11 +2781,10 @@ impl ApiManager {
                     ));
                     if ack != Some(channel_seq) {
                         cancel_ipc_channel_call(
-                            &push_app,
+                            &push_app.api(),
                             &push_sessions,
                             &push_channels,
                             &push_key,
-                            session_connection_id,
                         );
                         return;
                     }
@@ -2662,21 +2797,14 @@ impl ApiManager {
                     }
                     channel_seq = channel_seq.saturating_add(1);
                 }
-                cancel_ipc_channel_call(
-                    &push_app,
-                    &push_sessions,
-                    &push_channels,
-                    &push_key,
-                    session_connection_id,
-                );
+                cancel_ipc_channel_call(&push_app.api(), &push_sessions, &push_channels, &push_key);
             });
         if let Err(error) = pump_result {
             cancel_ipc_channel_call(
-                &app,
+                &app.api(),
                 &self.ipc_sessions,
                 &self.ipc_channels,
                 &channel_key,
-                session_connection_id,
             );
             return Ok(with_rid(
                 ServerMsg::result(
@@ -3088,13 +3216,12 @@ impl ApiManager {
                 ));
             }
         };
-        let connection_id = self
+        let is_active = self
             .ipc_channels
             .lock()
             .map_err(|_| anyhow!("IPC channel table poisoned"))?
-            .get(&key)
-            .map(|channel| channel.connection_id);
-        let Some(connection_id) = connection_id else {
+            .contains_key(&key);
+        if !is_active {
             return Ok(channel_error(
                 rid,
                 call_id,
@@ -3103,12 +3230,16 @@ impl ApiManager {
                 false,
             ));
         };
-        if let Ok(mut sessions) = self.ipc_sessions.lock()
-            && let Some(sender) = sessions.cancel_call(&key.session, call_id)
+        let sender = self
+            .ipc_sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.cancel_call(&key.session, call_id));
+        if !self.cancel_ipc_active_call(&key.session, call_id)
+            && let Some(sender) = sender
         {
             sender.close();
         }
-        self.cancel_call(window_id, connection_id, call_id);
         self.remove_ipc_channel(&key);
         Ok(serde_json::to_string(&json!({
             "t":"channelCancelled","rid":rid,"id":call_id,"accepted":true
@@ -3123,12 +3254,21 @@ impl ApiManager {
                 channels
                     .iter()
                     .filter(|(key, _)| matches(&key.session))
-                    .map(|(key, channel)| (key.clone(), channel.connection_id))
+                    .map(|(key, _)| key.clone())
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        for (key, connection_id) in selected {
-            self.cancel_call(key.session.window_id, connection_id, key.call_id);
+        for key in selected {
+            let sender = self
+                .ipc_sessions
+                .lock()
+                .ok()
+                .and_then(|mut sessions| sessions.cancel_call(&key.session, key.call_id));
+            if !self.cancel_ipc_active_call(&key.session, key.call_id)
+                && let Some(sender) = sender
+            {
+                sender.close();
+            }
             self.remove_ipc_channel(&key);
         }
     }
@@ -3163,15 +3303,18 @@ impl ApiManager {
             ),
             Err(_) => return,
         };
+        // Channel cancellation invokes the full-key process.stdin hook while
+        // each stream sender is still open. Only then close remaining unary
+        // senders retired with the frame.
+        self.cancel_ipc_channel_sessions(|key| {
+            key.window_id == window_id && key.frame_id == frame_id && key.generation == generation
+        });
         for sender in senders {
             sender.close();
         }
         for session_id in &affected_sessions {
             self.cancel_sync_session(window_id, session_id);
         }
-        self.cancel_ipc_channel_sessions(|key| {
-            key.window_id == window_id && key.frame_id == frame_id && key.generation == generation
-        });
         let ws_owners = self
             .ws_sessions
             .lock()
@@ -3206,10 +3349,10 @@ impl ApiManager {
             .lock()
             .map(|mut sessions| sessions.cancel_matching(|key| key.window_id == window_id, true))
             .unwrap_or_default();
+        self.cancel_ipc_channel_sessions(|key| key.window_id == window_id);
         for sender in senders {
             sender.close();
         }
-        self.cancel_ipc_channel_sessions(|key| key.window_id == window_id);
         let ws_owners = self
             .ws_sessions
             .lock()
@@ -3235,10 +3378,10 @@ impl ApiManager {
             Ok(mut sessions) => sessions.close_window(window_id),
             Err(_) => return,
         };
+        self.cancel_ipc_channel_sessions(|key| key.window_id == window_id);
         for sender in senders {
             sender.close();
         }
-        self.cancel_ipc_channel_sessions(|key| key.window_id == window_id);
     }
 
     fn cancel_sync_window(&self, window_id: u8) {
@@ -3689,14 +3832,13 @@ impl ApiManager {
                 ));
             }
             Err(WsAttachDeliveryError::ConfirmationUnavailable(error)) => {
-                let owner_id = channel.connection_id;
                 // The pump has been released and the ticket is pinned. If the
                 // success reply cannot be queued, consume the ticket and cancel
                 // the call after dropping the channel lock; it must not be
                 // rebound to IPC on a later attach attempt.
                 channels.remove(&key);
                 drop(channels);
-                self.cancel_call(window_id, owner_id, call_id);
+                self.cancel_ipc_active_call(&key.session, call_id);
                 return Err(("ERR_NIVA_CHANNEL_CLOSED", error));
             }
         }
@@ -3761,20 +3903,17 @@ impl ApiManager {
         let Some(key) = self.ws_channel_key(window_id, connection_id, session_id, call_id) else {
             return;
         };
-        if let Ok(mut sessions) = self.ipc_sessions.lock()
-            && let Some(sender) = sessions.cancel_call(&key.session, call_id)
+        let sender = self
+            .ipc_sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.cancel_call(&key.session, call_id));
+        if !self.cancel_ipc_active_call(&key.session, call_id)
+            && let Some(sender) = sender
         {
             sender.close();
         }
-        let owner_id = self
-            .ipc_channels
-            .lock()
-            .ok()
-            .and_then(|channels| channels.get(&key).map(|channel| channel.connection_id));
-        if let Some(owner_id) = owner_id {
-            self.cancel_call(window_id, owner_id, call_id);
-            self.remove_ipc_channel(&key);
-        }
+        self.remove_ipc_channel(&key);
     }
 
     pub fn bind_ws_session(&self, window_id: u8, connection_id: u64, session_id: &str) -> bool {
@@ -3890,6 +4029,13 @@ impl ApiManager {
         }
     }
 
+    /// Cancel an IPC-owned call only when its complete native session key
+    /// matches. IPC owner ids intentionally remain stable per session id, so
+    /// they cannot authorize cross-origin cancellation on their own.
+    fn cancel_ipc_active_call(&self, session: &IpcSessionKey, call_id: u64) -> bool {
+        cancel_ipc_active_call(&self.active, session, call_id)
+    }
+
     fn cancel_owner_connection(&self, window_id: u8, owner_id: u64) {
         crate::app::api::cancel_process_connection(window_id, owner_id);
         let calls = {
@@ -3930,13 +4076,17 @@ impl ApiManager {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        for (key, owner_id) in attached {
-            if let Ok(mut sessions) = self.ipc_sessions.lock()
-                && let Some(sender) = sessions.cancel_call(&key.session, key.call_id)
+        for (key, _owner_id) in attached {
+            let sender = self
+                .ipc_sessions
+                .lock()
+                .ok()
+                .and_then(|mut sessions| sessions.cancel_call(&key.session, key.call_id));
+            if !self.cancel_ipc_active_call(&key.session, key.call_id)
+                && let Some(sender) = sender
             {
                 sender.close();
             }
-            self.cancel_call(window_id, owner_id, key.call_id);
             self.remove_ipc_channel(&key);
         }
         self.cancel_owner_connection(window_id, connection_id);
@@ -3976,6 +4126,7 @@ impl ApiManager {
         outbound: CallOutput,
         request: ApiRequest,
         channels: DispatchChannels,
+        ipc_session: Option<IpcSessionKey>,
     ) -> bool {
         let DispatchChannels {
             cancel_tx,
@@ -3995,6 +4146,7 @@ impl ApiManager {
                     inbound_tx,
                     outbound: outbound.clone(),
                     lifecycle: lifecycle.clone(),
+                    ipc_session,
                 },
             ),
             Err(err) => {
@@ -4354,6 +4506,7 @@ mod lifecycle_tests {
             outbound: CallOutput::WebSocket(ws_tx),
             cancel_tx,
             inbound_tx,
+            ipc_session: None,
         }
     }
 
@@ -4675,6 +4828,28 @@ mod ipc_tests {
 
     #[test]
     fn ipc_messages_accept_api_calls_and_channel_controls() {
+        let close: IpcMessage = serde_json::from_str(
+            r#"{"t":"session_close","sessionId":"0123456789abcdef0123456789abcdef","token":"window-token"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            close,
+            IpcMessage::SessionClose { session_id, .. }
+                if session_id == "0123456789abcdef0123456789abcdef"
+        ));
+        assert!(
+            serde_json::from_str::<IpcMessage>(
+                r#"{"t":"sessionClose","sessionId":"0123456789abcdef0123456789abcdef"}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<IpcMessage>(
+                r#"{"t":"session_close","rid":1,"sessionId":"0123456789abcdef0123456789abcdef"}"#
+            )
+            .is_err()
+        );
+
         let call: IpcMessage = serde_json::from_str(
             r#"{"t":"api_call","rid":70,"id":7,"method":"http.requestText","args":[{}],"sessionId":"0123456789abcdef0123456789abcdef","token":"window-token"}"#,
         )
@@ -5181,6 +5356,16 @@ mod ipc_tests {
             )
             .unwrap()
         );
+        assert!(
+            authorize_ipc_source_origin(
+                Some(trusted_origin),
+                "window-token",
+                "https://remote.example",
+                None,
+                false,
+            )
+            .is_err()
+        );
         assert!(may_open_channel_stream(true));
         assert!(!may_open_channel_stream(false));
         assert!(ipc_unary_method_allowed(true, "module.resolve"));
@@ -5231,6 +5416,167 @@ mod ipc_tests {
                 )
                 .unwrap(),
             owner_id
+        );
+    }
+
+    #[test]
+    fn closing_colliding_remote_ipc_key_does_not_cancel_trusted_call_or_channel() {
+        let options: NivaOptions = serde_json::from_value(json!({
+            "name": "session-close-isolation-test",
+            "uuid": "a51c1728-d174-42d4-8f57-7d296c966b51"
+        }))
+        .unwrap();
+        let manager = ApiManager::new(&options);
+        let window_id = 5;
+        let session_id = "0123456789abcdef0123456789abcdef";
+        let call_id = 31;
+        let owner_id = session_owner_id(window_id, session_id);
+        let trusted = IpcSessionKey {
+            window_id,
+            source_origin: "niva-a51c1728d17442d48f577d296c966b51://app".into(),
+            session_id: session_id.into(),
+            frame_id: 0,
+            generation: 0,
+            is_main_frame: true,
+        };
+        let remote = IpcSessionKey {
+            source_origin: "https://granted.example".into(),
+            ..trusted.clone()
+        };
+
+        let (trusted_cancel_tx, trusted_cancel_rx) = async_channel::bounded(1);
+        let (remote_cancel_tx, remote_cancel_rx) = async_channel::bounded(1);
+        {
+            let mut sessions = manager.ipc_sessions.lock().unwrap();
+            sessions
+                .reserve(
+                    trusted.clone(),
+                    call_id,
+                    trusted_cancel_tx,
+                    owner_id,
+                    Instant::now(),
+                )
+                .unwrap();
+            sessions
+                .reserve(
+                    remote.clone(),
+                    call_id,
+                    remote_cancel_tx,
+                    owner_id,
+                    Instant::now(),
+                )
+                .unwrap();
+        }
+
+        // The active-call key deliberately collides: both origins chose the
+        // same session and call ids. Its full IPC key identifies the trusted
+        // owner and must be checked before the stable owner id is cancelled.
+        let (inbound_tx, _) = async_channel::bounded(1);
+        let (outbound_tx, _) = mpsc::sync_channel(1);
+        let trusted_lifecycle = Arc::new(CallLifecycle::new());
+        manager.active.lock().unwrap().insert(
+            (window_id, owner_id, call_id),
+            ActiveCall {
+                cancel_tx: async_channel::bounded(1).0,
+                inbound_tx,
+                outbound: CallOutput::Channel(outbound_tx),
+                lifecycle: trusted_lifecycle.clone(),
+                ipc_session: Some(trusted.clone()),
+            },
+        );
+
+        let channel = || {
+            let (attach_tx, _) = async_channel::bounded(1);
+            let (http_response_ack_tx, _) = async_channel::bounded(1);
+            let (output_ack_tx, _) = async_channel::bounded(1);
+            IpcChannelCall {
+                method: "process.stdin".into(),
+                capability: "test-capability".into(),
+                connection_id: owner_id,
+                transport: None,
+                attach_tx,
+                next_upload_seq: 1,
+                upload_ended: false,
+                next_http_response_ack_seq: 1,
+                http_response_ack_tx,
+                awaiting_output_seq: None,
+                output_ack_tx,
+            }
+        };
+        let trusted_channel = IpcChannelKey {
+            session: trusted.clone(),
+            call_id,
+        };
+        let remote_channel = IpcChannelKey {
+            session: remote.clone(),
+            call_id,
+        };
+        manager.ipc_channels.lock().unwrap().extend([
+            (trusted_channel.clone(), channel()),
+            (remote_channel.clone(), channel()),
+        ]);
+
+        let retired = manager.ipc_sessions.lock().unwrap().retire(&remote);
+        assert_eq!(retired.len(), 1);
+        for (retired_call_id, sender) in retired {
+            if !manager.cancel_ipc_active_call(&remote, retired_call_id) {
+                sender.close();
+            }
+        }
+        let expired_count = manager.ipc_sessions.lock().unwrap().expired_per_window[&window_id];
+        assert!(
+            manager
+                .ipc_sessions
+                .lock()
+                .unwrap()
+                .retire(&remote)
+                .is_empty()
+        );
+        assert_eq!(
+            manager.ipc_sessions.lock().unwrap().expired_per_window[&window_id],
+            expired_count
+        );
+        let (late_tx, _) = async_channel::bounded(1);
+        assert_eq!(
+            manager.ipc_sessions.lock().unwrap().reserve(
+                remote.clone(),
+                call_id + 1,
+                late_tx,
+                owner_id,
+                Instant::now(),
+            ),
+            Err(IpcSessionError::Expired)
+        );
+        manager.cancel_ipc_channel_sessions(|key| key == &remote);
+
+        assert!(remote_cancel_rx.is_closed());
+        assert!(!trusted_cancel_rx.is_closed());
+        assert!(!trusted_lifecycle.is_terminal());
+        assert!(
+            manager
+                .active
+                .lock()
+                .unwrap()
+                .contains_key(&(window_id, owner_id, call_id))
+        );
+        let channels = manager.ipc_channels.lock().unwrap();
+        assert!(channels.contains_key(&trusted_channel));
+        assert!(!channels.contains_key(&remote_channel));
+
+        // A fresh runtime session from the same authorized origin can start
+        // after the retired key is tombstoned.
+        let fresh = IpcSessionKey {
+            session_id: "abcdef0123456789abcdef0123456789".into(),
+            ..remote.clone()
+        };
+        let (fresh_tx, _) = async_channel::bounded(1);
+        assert!(
+            manager
+                .ipc_sessions
+                .lock()
+                .unwrap()
+                .reserve(fresh, call_id, fresh_tx, owner_id, Instant::now())
+                .is_ok()
         );
     }
 
@@ -5313,6 +5659,7 @@ mod ipc_tests {
                 inbound_tx,
                 outbound: CallOutput::WebSocket(outbound_tx),
                 lifecycle: Arc::new(CallLifecycle::new()),
+                ipc_session: Some(key.session.clone()),
             },
         );
         let (ack_tx, _ack_rx) = async_channel::bounded(1);
@@ -5373,6 +5720,7 @@ mod ipc_tests {
                 outbound: CallOutput::WebSocket(out_tx),
                 cancel_tx,
                 inbound_tx: inbound_tx.clone(),
+                ipc_session: None,
             },
         )]));
 
@@ -5494,6 +5842,7 @@ mod ipc_tests {
                 inbound_tx,
                 outbound: CallOutput::Channel(outbound_tx),
                 lifecycle: lifecycle.clone(),
+                ipc_session: Some(session.clone()),
             },
         )]));
 
@@ -5788,6 +6137,7 @@ mod ipc_tests {
                 outbound: CallOutput::Channel(attached_out_tx),
                 cancel_tx: attached_cancel_tx.clone(),
                 inbound_tx: attached_inbound_tx,
+                ipc_session: Some(ipc_key.clone()),
             },
         );
         manager.active.lock().unwrap().insert(
@@ -5797,6 +6147,7 @@ mod ipc_tests {
                 outbound: CallOutput::Channel(fallback_out_tx),
                 cancel_tx: fallback_cancel_tx.clone(),
                 inbound_tx: fallback_inbound_tx,
+                ipc_session: Some(ipc_key.clone()),
             },
         );
         manager

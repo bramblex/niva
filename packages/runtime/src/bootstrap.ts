@@ -30,6 +30,8 @@ type StreamRoute = { transport: "ipc" } | { transport: "ws"; socket: WebSocket }
 
 type Pending = {
   id: number;
+  sessionId: string;
+  epoch: number;
   transport: "ws" | "ipc";
   route: StreamRoute;
   resolve?: (value: any) => void;
@@ -64,6 +66,7 @@ type IpcRequest = {
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   sessionId: string;
+  epoch: number;
   sourceOrigin: string;
 };
 
@@ -83,7 +86,8 @@ type IpcRequest = {
     && root.__niva_window_id !== undefined && root.__niva_window_id !== null;
   const sourceOrigin = pageSourceOrigin(root);
   const canIpc = !!sourceOrigin && isSupportedFrame(root) && !!ipcHost(root);
-  const sessionId = makeSessionId(root);
+  let sessionId = makeSessionId(root);
+  let sessionEpoch = 0;
   let nextId = 0;
   let nextRid = 0;
   let socket: WebSocket | null = null;
@@ -91,6 +95,7 @@ type IpcRequest = {
   let heartbeatPending = false;
   let lastHeartbeatAck = 0;
   let sessionExpired = false;
+  let bfcacheSuspended = false;
   let socketOpen = false;
   const pending: Record<string, Pending> = Object.create(null);
   const ipcRequests = new Map<string, IpcRequest>();
@@ -224,9 +229,36 @@ type IpcRequest = {
     return true;
   }
 
-  function expireSession(error = nivaError("Niva IPC session lease expired", "ERR_NIVA_SESSION_EXPIRED")) {
-    if (sessionExpired) return;
+  function postSessionClose(retiringSessionId: string) {
+    if (!canIpc || !retiringSessionId) return false;
+    try {
+      return postIpc(JSON.stringify({
+        t: "session_close",
+        sessionId: retiringSessionId,
+        ...(local ? { token: root.__niva_token } : {}),
+      }));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function closeSocketForSession() {
+    const owner = socket;
+    socket = null;
+    socketOpen = false;
+    if (!owner) return;
+    try {
+      if (owner.readyState < 2) owner.close();
+    } catch (_) { /* the old session is already detached locally */ }
+  }
+
+  function expireSession(
+    error = nivaError("Niva IPC session lease expired", "ERR_NIVA_SESSION_EXPIRED"),
+    options: { retireNative?: boolean; preserveProcessStdio?: boolean } = {},
+  ) {
+    if (sessionExpired) return false;
     for (const entry of Object.values(pending)) sendNativeCancel(entry);
+    if (options.retireNative) postSessionClose(sessionId);
     sessionExpired = true;
     rejectAll(pending, error);
     for (const [rid, request] of ipcRequests) {
@@ -235,9 +267,17 @@ type IpcRequest = {
       ipcRequests.delete(rid);
     }
     ipcActiveCalls.clear();
-    invalidateResources(error);
+    if (options.preserveProcessStdio) {
+      suspendResources(error);
+      modules.process?.__nivaSuspendSession?.(error);
+    } else {
+      invalidateResources(error);
+    }
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
     heartbeatTimer = null;
+    heartbeatPending = false;
+    closeSocketForSession();
+    return true;
   }
 
   function updateHeartbeat() {
@@ -268,9 +308,12 @@ type IpcRequest = {
     heartbeatTimer = null;
     if (ipcActiveCalls.size === 0 || sessionExpired) return;
     if (!canIpc) return expireSession(nivaError("Niva IPC transport is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
+    const heartbeatSessionId = sessionId;
+    const heartbeatEpoch = sessionEpoch;
     heartbeatPending = true;
-    sendIpcRequest({ t: "heartbeat", sessionId, ...(local ? { token: root.__niva_token } : {}) }, 5000)
+    sendIpcRequest({ t: "heartbeat", sessionId: heartbeatSessionId, ...(local ? { token: root.__niva_token } : {}) }, 5000)
       .then((message) => {
+        if (sessionId !== heartbeatSessionId || sessionEpoch !== heartbeatEpoch || sessionExpired) return;
         if (message.t === "heartbeatError") throw nivaError(message.message || "Niva IPC session expired", message.code || "ERR_NIVA_SESSION_EXPIRED");
         if (message.t !== "heartbeatAck") throw nivaError("Invalid Niva IPC heartbeat response", "ERR_NIVA_IPC_RESPONSE");
         lastHeartbeatAck = Date.now();
@@ -278,6 +321,7 @@ type IpcRequest = {
         updateHeartbeat();
       })
       .catch((error) => {
+        if (sessionId !== heartbeatSessionId || sessionEpoch !== heartbeatEpoch || sessionExpired) return;
         heartbeatPending = false;
         if (ipcActiveCalls.size) expireSession(nivaError(String(error), "ERR_NIVA_SESSION_EXPIRED"));
       });
@@ -320,7 +364,8 @@ type IpcRequest = {
     if (!currentOriginMatches(root, envelope.sourceOrigin)) return false;
     if (envelope.sessionId === sessionId) {
       const request = ipcRequests.get(String(envelope.rid));
-      if (!request || request.sessionId !== envelope.sessionId || request.sourceOrigin !== envelope.sourceOrigin) return false;
+      if (!request || request.sessionId !== envelope.sessionId || request.epoch !== sessionEpoch
+        || request.sourceOrigin !== envelope.sourceOrigin) return false;
       handleIpcMessage({ ...envelope.response, rid: envelope.rid });
       return true;
     }
@@ -376,6 +421,8 @@ type IpcRequest = {
     if (!canIpc) return Promise.reject(nivaError("Niva IPC transport is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
     const expectedOrigin = pageSourceOrigin(root);
     if (!expectedOrigin) return Promise.reject(nivaError("Niva IPC source origin is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
+    const requestSessionId = sessionId;
+    const requestEpoch = sessionEpoch;
     const rid = nextRequestId();
     const ridKey = String(rid);
     const text = JSON.stringify({ ...payload, rid });
@@ -387,7 +434,7 @@ type IpcRequest = {
         ipcRequests.delete(ridKey);
         reject(nivaError("Niva IPC reply timed out", "ETIMEDOUT"));
       }, timeoutMs);
-      ipcRequests.set(ridKey, { resolve, reject, timer, sessionId, sourceOrigin: expectedOrigin });
+      ipcRequests.set(ridKey, { resolve, reject, timer, sessionId: requestSessionId, epoch: requestEpoch, sourceOrigin: expectedOrigin });
       try {
         if (!postIpc(text)) throw nivaError("Niva IPC is unavailable", "ERR_NIVA_IPC_UNAVAILABLE");
       } catch (error) {
@@ -479,6 +526,7 @@ type IpcRequest = {
     if (!message || typeof message !== "object") return;
     const id = Number(message.id);
     const entry = pending[String(id)];
+    if (entry && (entry.sessionId !== sessionId || entry.epoch !== sessionEpoch)) return;
     if (message.t === "attached") {
       if (message.sessionId !== sessionId || !entry || entry.route.transport !== "ws"
         || entry.route.socket !== owner || entry.attachState !== "ws-pending") return;
@@ -520,7 +568,8 @@ type IpcRequest = {
   }
 
   function startIpcAttach(id: number, entry: Pending) {
-    if (!entry.active || !entry.ticketReady || !entry.capability || sessionExpired) return;
+    if (!entry.active || !entry.ticketReady || !entry.capability || sessionExpired
+      || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch) return;
     entry.route = { transport: "ipc" };
     entry.transport = "ipc";
     entry.attachState = "ipc-pending";
@@ -528,10 +577,11 @@ type IpcRequest = {
     sendIpcRequest({
       t: "channelAttach",
       id,
-      sessionId,
+      sessionId: entry.sessionId,
       token: root.__niva_token,
       capability: entry.capability,
     }, 15000).then((message) => {
+      if (!entry.active || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch || sessionExpired) return;
       if (message.t === "channelError") throw nivaError(message.message || "Niva IPC channel attach failed", message.code || "ERR_NIVA_CHANNEL_ATTACH");
       if (message.t !== "channelAttached" || message.id !== id || message.accepted !== true) {
         throw nivaError("Invalid Niva IPC channel attach response", "ERR_NIVA_IPC_RESPONSE");
@@ -549,7 +599,8 @@ type IpcRequest = {
   }
 
   function startWsAttach(id: number, entry: Pending, owner: WebSocket) {
-    if (!entry.active || !entry.ticketReady || !entry.capability || sessionExpired) return;
+    if (!entry.active || !entry.ticketReady || !entry.capability || sessionExpired
+      || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch) return;
     if (!socketIsReady(owner)) {
       startIpcAttach(id, entry);
       return;
@@ -564,7 +615,7 @@ type IpcRequest = {
       failChannel(id, entry, nivaError("Niva WebSocket channel attach timed out", "ETIMEDOUT"));
     }, 15000);
     try {
-      owner.send(JSON.stringify({ t: "attach", id, sessionId, capability: entry.capability }));
+      owner.send(JSON.stringify({ t: "attach", id, sessionId: entry.sessionId, capability: entry.capability }));
     } catch (error) {
       failChannel(id, entry, error);
     }
@@ -599,7 +650,8 @@ type IpcRequest = {
           const id = view.getUint32(2) * 0x100000000 + view.getUint32(6);
           const seq = view.getUint32(10) * 0x100000000 + view.getUint32(14);
           const entry = pending[String(id)];
-          if (!entry || entry.route.transport !== "ws" || entry.route.socket !== connecting
+          if (!entry || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch
+            || entry.route.transport !== "ws" || entry.route.socket !== connecting
             || entry.attachState !== "attached") return;
           frameInCurrentRealm({ id, seq, frame: { t: "binary", data: buffer } }, "ws");
         }
@@ -626,6 +678,8 @@ type IpcRequest = {
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
     const entry: Pending = {
       id,
+      sessionId,
+      epoch: sessionEpoch,
       transport: "ipc",
       route: { transport: "ipc" },
       active: true,
@@ -668,13 +722,14 @@ type IpcRequest = {
   }
 
   function dispatchStreamCall(id: number, method: string, args: any[], entry: Pending) {
-    if (!entry.active || sessionExpired) return;
+    if (!entry.active || sessionExpired || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch) return;
     if (!canIpc) {
       finish(pending, id, false, nivaError("Niva IPC transport is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
       return;
     }
     beginIpcCall(id);
-    sendIpcRequest({ t: "api_call", id, method, args, sessionId, token: root.__niva_token }).then((message) => {
+    sendIpcRequest({ t: "api_call", id, method, args, sessionId: entry.sessionId, token: root.__niva_token }).then((message) => {
+      if (!entry.active || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch || sessionExpired) return;
       if (message.id !== id) throw nivaError("Mismatched Niva IPC stream id", "ERR_NIVA_IPC_RESPONSE");
       if (message.t === "channelOpened") {
         if (typeof message.capability !== "string" || !message.capability) throw nivaError("Invalid Niva IPC channel capability", "ERR_NIVA_IPC_RESPONSE");
@@ -723,9 +778,14 @@ type IpcRequest = {
 
   function sendIpcCall(id: number, method: string, args: any[]): Promise<any> {
     if (!canIpc) return Promise.reject(nivaError("Niva IPC transport is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
+    const callSessionId = sessionId;
+    const callEpoch = sessionEpoch;
     beginIpcCall(id);
-    return sendIpcRequest({ t: "api_call", id, method, args, sessionId, ...(local ? { token: root.__niva_token } : {}) })
+    return sendIpcRequest({ t: "api_call", id, method, args, sessionId: callSessionId, ...(local ? { token: root.__niva_token } : {}) })
       .then((message) => {
+        if (sessionId !== callSessionId || sessionEpoch !== callEpoch || sessionExpired) {
+          throw nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED");
+        }
         if (message.id !== id || message.t !== "result") throw nivaError("Invalid Niva IPC call response", "ERR_NIVA_IPC_RESPONSE");
         if (message.code === 0) return message.data;
         throw message;
@@ -919,6 +979,7 @@ type IpcRequest = {
     const seq = Number(message.seq);
     const entry = pending[String(id)];
     if (!Number.isSafeInteger(id) || !Number.isSafeInteger(seq) || seq < 1 || !entry
+      || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch
       || entry.transport !== transport || !entry.active) return false;
     if (seq !== (entry.seqIn || 0) + 1) {
       failChannel(id, entry, nivaError("Niva IPC channel frame is out of sequence", "ERR_NIVA_CHANNEL_SEQUENCE"));
@@ -1048,7 +1109,7 @@ type IpcRequest = {
 
   root.__niva_native_frame = function (message: any) {
     if (!message || typeof message !== "object" || typeof message.sessionId !== "string" || !message.frame) return false;
-    if (message.sessionId === sessionId) return frameInCurrentRealm(message);
+    if (!sessionExpired && message.sessionId === sessionId) return frameInCurrentRealm(message);
     return forwardNativeFrame(message);
   };
 
@@ -1056,11 +1117,12 @@ type IpcRequest = {
 
   function sendNativeCancel(entry: Pending) {
     if (entry.cancelSent) return;
+    if (!entry.active || entry.sessionId !== sessionId || entry.epoch !== sessionEpoch) return;
     if (entry.route.transport === "ws") {
       const owner = entry.route.socket;
       if (!socketIsReady(owner)) return;
       try {
-        owner.send(JSON.stringify({ t: "cancel", id: entry.id, sessionId }));
+        owner.send(JSON.stringify({ t: "cancel", id: entry.id, sessionId: entry.sessionId }));
         entry.cancelSent = true;
       }
       catch (_) { /* the local promise still settles */ }
@@ -1070,7 +1132,7 @@ type IpcRequest = {
     const id = entry.id;
     if (!Number.isSafeInteger(id)) return;
     entry.cancelSent = true;
-    sendIpcRequest({ t: "channelCancel", id, sessionId, token: root.__niva_token, capability: entry.capability }, 10000)
+    sendIpcRequest({ t: "channelCancel", id, sessionId: entry.sessionId, token: root.__niva_token, capability: entry.capability }, 10000)
       .then((message) => {
         if (message.t !== "channelCancelled" || message.id !== id || message.accepted !== true) throw nivaError("Invalid Niva channel cancel acknowledgement", "ERR_NIVA_IPC_RESPONSE");
       })
@@ -1157,8 +1219,8 @@ type IpcRequest = {
     stream: streamCall,
     streamSend,
     isTrustedLocal,
-    sessionId,
   };
+  Object.defineProperty(bridgeApi, "sessionId", { enumerable: true, get: () => sessionId });
   Object.defineProperty(bridgeApi, Symbol.for("niva.internal.bridge.streamRelated"), {
     value: relatedStreamCall,
   });
@@ -1323,15 +1385,69 @@ type IpcRequest = {
       try { resource.__nivaInvalidate?.(error); } catch (_) { /* continue invalidating sibling resources */ }
     }
   }
+  function suspendResources(error: Error) {
+    const records = Array.from(resourceOwners.values());
+    resourceOwners.clear();
+    for (const record of records) {
+      resourceFinalizer?.unregister(record.unregisterToken);
+      const resource = record.ref?.deref() || record.fallback;
+      if (!resource) continue;
+      try {
+        if (typeof resource.__nivaSuspend === "function") resource.__nivaSuspend(error);
+        else resource.__nivaInvalidate?.(error);
+      } catch (_) { /* continue suspending or invalidating sibling resources */ }
+    }
+  }
   runtime.registerResource = registerResource;
   runtime.invalidateResources = invalidateResources;
   runtime.cancelStream = cancelStream;
   Niva.__runtime = Object.freeze({ registerResource, isMainProcess: mainProcessAvailable });
 
-  root.addEventListener?.("pagehide", () => {
+  function handlePageHide(event: any) {
     announceFrameSession("unregister");
-    expireSession(nivaError("Niva page session ended", "ERR_NIVA_SESSION_EXPIRED"));
-  }, { once: true });
+    frameRoutes.clear();
+    if (sessionExpired) {
+      bfcacheSuspended = false;
+      return;
+    }
+    const preserveProcessStdio = event?.persisted === true;
+    bfcacheSuspended = preserveProcessStdio;
+    const ended = expireSession(
+      nivaError("Niva page session ended", "ERR_NIVA_SESSION_EXPIRED"),
+      { retireNative: true, preserveProcessStdio },
+    );
+    if (!ended) bfcacheSuspended = false;
+  }
+
+  function handlePageShow(event: any) {
+    if (!bfcacheSuspended) return;
+    if (event?.persisted !== true || !sessionExpired) {
+      bfcacheSuspended = false;
+      return;
+    }
+    const restoredOrigin = pageSourceOrigin(root);
+    if (!restoredOrigin || restoredOrigin !== sourceOrigin || !isSupportedFrame(root) || !ipcHost(root)) {
+      bfcacheSuspended = false;
+      return;
+    }
+
+    sessionId = makeSessionId(root);
+    sessionEpoch += 1;
+    sessionExpired = false;
+    heartbeatPending = false;
+    lastHeartbeatAck = 0;
+    ipcActiveCalls.clear();
+    streamTransports.clear();
+    queuedFrames = 0;
+    queuedBytes = 0;
+    bfcacheSuspended = false;
+    announceFrameSession("register");
+    if (local) connectSocket();
+    modules.process?.__nivaResumeSession?.();
+  }
+
+  root.addEventListener?.("pagehide", handlePageHide);
+  root.addEventListener?.("pageshow", handlePageShow);
   if (local) connectSocket();
   Niva.__runtimeBootstrap = true;
 

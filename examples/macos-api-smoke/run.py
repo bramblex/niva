@@ -582,6 +582,47 @@ def expect_message_data(harness: Harness, name: str, timeout: float = 20) -> dic
     return data
 
 
+def expect_bfcache_restoration(
+    harness: Harness,
+    expected_initial_url: str,
+    label: str,
+) -> dict:
+    frame = harness.wait_one_of({"main-restored", "main-reloaded"}, timeout=15)
+    if frame.get("name") != "main-restored":
+        raise SmokeError(
+            f"{label} did not restore the cached main-page Realm; observed a fresh document instead: {frame.get('data')!r}"
+        )
+    data = frame.get("data")
+    if not isinstance(data, dict):
+        raise SmokeError(f"{label} BFCache result was malformed: {frame!r}")
+    required = (
+        "noncePreserved",
+        "realmPreserved",
+        "moduleIdentityPreserved",
+        "stdinIdentityPreserved",
+        "stdoutIdentityPreserved",
+        "stderrIdentityPreserved",
+        "sessionIdRotated",
+    )
+    failed = [name for name in required if data.get(name) is not True]
+    if data.get("persisted") is not True or failed:
+        raise SmokeError(f"{label} BFCache restore did not preserve the runtime contract: failed={failed}, data={data!r}")
+    if data.get("url") != expected_initial_url or data.get("canGoForward") is not True:
+        raise SmokeError(f"{label} BFCache restore has the wrong history state: {data!r}")
+    previous = data.get("previousSessionId")
+    current = data.get("sessionId")
+    if not isinstance(previous, str) or not isinstance(current, str) or previous == current:
+        raise SmokeError(f"{label} BFCache restore did not rotate the IPC session id: {data!r}")
+    return data
+
+
+def verify_restored_stdin(harness: Harness, expected_session_id: str, label: str) -> None:
+    harness.send("smoke-command", {"command": "bfcache-stdin-probe"})
+    result = expect_message_data(harness, "bfcache-stdin-restored", timeout=20)
+    if result.get("stdinIdentityPreserved") is not True or result.get("sessionId") != expected_session_id:
+        raise SmokeError(f"{label} process.stdin did not resume in the restored session: {result!r}")
+
+
 def run_clipboard(harness: Harness, guard: ClipboardGuard, cases: dict[str, str]) -> str:
     before = guard.capture_before()
     text_before = before.get("plainText")
@@ -659,23 +700,16 @@ def run_webview_history(
     register_case(cases, "webview.loadUrl", "loads the isolated secondary page and creates back history")
 
     navigation_server.send_command("webview-back")
-    print("WEBVIEW HISTORY: waiting for a fresh main-page document after secondary goBack", flush=True)
-    main_state = expect_message_data(harness, "main-reloaded", timeout=15)
-    if main_state.get("url") != expected_initial_url or main_state.get("canGoForward") is not True:
-        raise SmokeError(f"back navigation has the wrong main-page state: {main_state!r}")
-    fresh_reload = main_state.get("freshReload") is True
-    if fresh_reload:
-        print(
-            "WEBVIEW HISTORY: BFCache page was reloaded for a fresh Native session; "
-            "BFCache session restoration is not claimed",
-            flush=True,
-        )
-    else:
-        print("WEBVIEW HISTORY: back reached a newly loaded main-page document", flush=True)
-    go_back_assertion = "returns to the main page and exposes forward history"
-    if fresh_reload:
-        go_back_assertion += "; reloads the BFCache-restored document after its Native page session expires (BFCache session restoration is not validated)"
-    register_case(cases, "webview.goBack", go_back_assertion)
+    print("WEBVIEW HISTORY: waiting for the cached main-page Realm after secondary goBack", flush=True)
+    restored = expect_bfcache_restoration(harness, expected_initial_url, "first back")
+    verify_restored_stdin(harness, restored["sessionId"], "first back")
+    print("WEBVIEW HISTORY: back restored the cached Realm with a fresh session and the same process.stdin", flush=True)
+    register_case(
+        cases,
+        "webview.goBack",
+        "restores the cached main-page Realm, rotates its IPC session, preserves module/stdin identity, and exposes forward history",
+    )
+    cases["fixture.processStream"] += "; resumes the same process.stdin Readable after BFCache restoration and receives a new command"
     cases["webview.canGoBack"] += "; reports back history on the secondary document"
     cases["webview.canGoForward"] += "; reports forward history after navigating back"
 
@@ -684,6 +718,8 @@ def run_webview_history(
     reloaded = expect_message_data(harness, "main-reloaded", timeout=15)
     if reloaded.get("url") != expected_initial_url or reloaded.get("canGoForward") is not True:
         raise SmokeError(f"webview.reload did not retain the current history state: {reloaded!r}")
+    if not isinstance(reloaded.get("sessionId"), str) or reloaded["sessionId"] == restored["sessionId"]:
+        raise SmokeError(f"webview.reload did not initialize a fresh page session: {reloaded!r}")
     register_case(cases, "webview.reload", "reloads the same local document while retaining forward history")
 
     print("WEBVIEW HISTORY: asking the packaged page to go forward", flush=True)
@@ -698,15 +734,9 @@ def run_webview_history(
     # main page. Return there after validating forward navigation.
     print("WEBVIEW HISTORY: asking secondary page to go back a second time", flush=True)
     navigation_server.send_command("webview-back")
-    final_main = expect_message_data(harness, "main-reloaded", timeout=15)
-    if final_main.get("url") != expected_initial_url:
-        raise SmokeError(f"navigation did not return to the command page: {final_main!r}")
-    print(
-        "WEBVIEW HISTORY: final back used a fresh-document reload"
-        if final_main.get("freshReload") is True
-        else "WEBVIEW HISTORY: final back reached a newly loaded main-page document",
-        flush=True,
-    )
+    final_main = expect_bfcache_restoration(harness, expected_initial_url, "final back")
+    verify_restored_stdin(harness, final_main["sessionId"], "final back")
+    print("WEBVIEW HISTORY: final back restored the cached main-page Realm", flush=True)
 
 
 def dismiss_native_dialog(method: str) -> None:

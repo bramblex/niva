@@ -10,6 +10,21 @@
   var decoder = new TextDecoder("utf-8");
   var input = "";
 
+  function probeForwardCommandReceived() {
+    var origin = root.__nivaMacApiSmokeNavigationOrigin;
+    if (!origin || root.__nivaMacApiSmokeForwardProbeSent) return;
+    root.__nivaMacApiSmokeForwardProbeSent = true;
+    try {
+      void fetch(origin + "/probe", {
+        method: "POST",
+        mode: "no-cors",
+        cache: "no-store",
+        keepalive: true,
+        body: JSON.stringify({ name: "fixture-stdin-forward-command", data: { command: "webview-forward" } }),
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   function write(frame) {
     return new Promise(function (resolve, reject) {
       process.stdout.write(JSON.stringify(Object.assign({
@@ -31,6 +46,9 @@
       return;
     }
     if (!frame || frame.protocol !== "niva-fixture" || frame.version !== 1 || frame.event !== "command" || typeof frame.name !== "string") return;
+    if (frame.name === "smoke-command" && frame.data && frame.data.command === "webview-forward") {
+      probeForwardCommandReceived();
+    }
     (listeners[frame.name] || []).slice().forEach(function (handler) {
       Promise.resolve().then(function () { return handler(frame.data); }).catch(function (error) {
         void write({ event: "message", name: "fixture-error", data: { command: frame.name, message: String(error && error.stack || error) } });

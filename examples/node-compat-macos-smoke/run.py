@@ -236,6 +236,14 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
     http_fixture, http_fixture_state = start_http_fixture_server()
     threading.Thread(target=http_fixture.serve_forever, daemon=True).start()
 
+    def http_fixture_snapshot() -> dict[str, Any]:
+        return {
+            "parallelRequestIds": sorted(http_fixture_state["parallel_ids"]),
+            "parallelFailed": http_fixture_state["parallel_failed"],
+            "parallelReleased": http_fixture_state["parallel_released"],
+            "parallelSuccessfulResponses": http_fixture_state["parallel_responses"],
+        }
+
     try:
         home = root / "home"
         tmp = root / "tmp"
@@ -322,6 +330,7 @@ def run(binary: Path, timeout: float, keep_workdir: bool) -> int:
     except BaseException as error:
         (root / "result.json").write_text(json.dumps({
             "ok": False, "engine": "niva-webview", "error": str(error),
+            "parallelHttpFixture": http_fixture_snapshot(),
             "nativeBinarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         }, indent=2) + "\n")
         if process is not None and process.poll() is None:
