@@ -6,12 +6,31 @@ const fileText: Promise<string> = Niva.fs.promises.readFile("notes.txt", "utf8")
 const fileMetadata: Promise<NivaFileStats> = Niva.fs.promises.stat("notes.txt");
 const childText: Promise<NivaExecTextResult> = Niva.child_process.execFileText("node", ["-v"]);
 const httpText: Promise<NivaHttpTextResult> = Niva.https.requestText({ url: "https://example.com" });
+const httpTextHeaders = Niva.http.requestText({
+  url: "http://example.com",
+  headers: { authorization: "Bearer token" },
+});
+const httpsTextHeaders = Niva.https.requestText({
+  url: "https://example.com",
+  headers: { authorization: "Bearer token" },
+});
+// @ts-expect-error requestText maps headers to a Rust string map
+Niva.http.requestText({ url: "http://example.com", headers: { "set-cookie": ["a=1", "b=2"] } });
+// @ts-expect-error requestText maps headers to a Rust string map
+Niva.https.requestText({ url: "https://example.com", headers: { "set-cookie": ["a=1", "b=2"] } });
 const httpClient = Niva.http.get("http://example.com", response => {
   const status: number | undefined = response.statusCode;
   response.on("data", chunk => { void chunk; });
   void status;
 });
 const httpsClient: ReturnType<NivaHttp["request"]> = Niva.https.request("https://example.com");
+const standardHttpClient = Niva.http.request("http://example.com", {
+  headers: { "set-cookie": ["a=1", "b=2"] },
+});
+const standardHttpsClient = Niva.https.request("https://example.com", {
+  headers: { "set-cookie": ["a=1", "b=2"] },
+});
+Niva.process.exitCode = 0;
 const compatVersion: "22.14.0" = Niva.process.versions.nodeCompat;
 const streamConstructor: NivaPageStream = Niva.stream;
 const moduleConstructor: NivaModule = Niva.module;
@@ -23,8 +42,12 @@ void fileText;
 void fileMetadata;
 void childText;
 void httpText;
+void httpTextHeaders;
+void httpsTextHeaders;
 void httpClient;
 void httpsClient;
+void standardHttpClient;
+void standardHttpsClient;
 void compatVersion;
 void streamConstructor;
 void moduleConstructor;
@@ -42,7 +65,21 @@ import type {
   NivaFs,
   NivaHttpTextResult,
   NivaHttp,
+  NivaHttpTextOptions,
   NivaModule,
   NivaOsInfo,
+  NivaProcess,
 } from "../../runtime/src/contracts";
 import type { NivaStream as NivaPageStream } from "@niva/types/contracts";
+
+const sourceHttpTextOptions: NivaHttpTextOptions = {
+  url: "http://example.com",
+  headers: { authorization: "Bearer token" },
+};
+const sourceInvalidHttpTextOptions: NivaHttpTextOptions = {
+  url: "http://example.com",
+  // @ts-expect-error the Native string map cannot represent repeated header values
+  headers: { "set-cookie": ["a=1", "b=2"] },
+};
+const sourceProcess = { exitCode: 0 } as Pick<NivaProcess, "exitCode">;
+sourceProcess.exitCode = 0;

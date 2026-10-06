@@ -26,6 +26,10 @@
   HTTP(S) origin 与 API 方法规则；未授权默认拒绝。远端 IPC 仅提供 unary 调用，不提供
   Channel、流或二进制，且
   `window.open`、`webview.baseFileSystemUrl` 不允许经 grant 开放。
+- 高影响 grant 必须只授予完全可信的页面：`fs.*`/`fs.node` 可执行文件系统操作，受
+  Native 操作白名单限制但不按目录授予隔离；`process.execText` 与
+  `process.execFileText` 可运行本机命令。方法级 grant 不是路径或命令沙箱，页面及其
+  可执行脚本应按拥有这些原生能力处理。
 - 当前实现由顶层 Wry IPC host 接收消息；同源 child 使用父页 relay，不把该 JS 路由称作 Native frame ID。Windows 真机关键流程仍待验证。macOS与
   Windows真实WebView上的完整双bridge、二进制流、背压及断线行为仍须分别做端到端验收，
   源码和单测不代表平台验收完成。

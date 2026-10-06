@@ -30,7 +30,9 @@ Windows 使用 `niva-packager.exe`。目标参数可以重复传入。`--resourc
 
 两种布局使用同一配置和资源校验流程。外置标记是 Windows EXE 的 RCDATA `RESOURCE_MODE=external`，macOS 为 `Contents/Resources/RESOURCE_MODE` 文件；缺少标记表示 embedded，标记错误或对应目录缺失会启动失败，不回退到另一布局。基础 Niva API 始终可用；`injectCommonJs` 与 `injectEsm` 控制额外 Node 风格入口，默认关闭。运行时 JavaScript 资产由选定 runtime 提供，资源目录不得包含保留前缀 `__niva_runtime/`。Packager 原样保留这些注入设置，不要求应用资源目录另附 JS runtime。
 
-Packager 要求 build kit 含 `LICENSE`、`THIRD_PARTY.txt` 和 `licenses/`。这些材料随业务资源放在 `META-INF/niva/`，embedded EXE 可经应用资源 URL 读取；外置 ZIP 则能直接在 `resources/` 或 `Contents/Resources/app/` 找到。项目资源不得占用 `META-INF/niva/`。
+Packager 要求 build kit 含 `LICENSE`、`THIRD_PARTY.txt` 和非空 `licenses/`。`THIRD_PARTY.txt` 为 Cargo metadata 中收集到的直接/传递依赖记录 SPDX license 声明与 crates.io 对应版本的下载 URL；构建脚本会在上游 crate 目录存在时复制名称以 `LICENSE`、`COPYING` 或 `NOTICE` 开头的原始文件。当前 kit checker 验证 Niva `LICENSE`、第三方声明、runtime notices、校验和与产物，不保证每项第三方声明都附带原始 license 文本。本轮尚未完成所有依赖的原文材料闭包和逐项许可验收，不能把生成了 `licenses/` 目录视为完整许可材料。
+
+打包应用会在 `META-INF/niva/` 携带 kit 中实际收集到的这些材料；embedded EXE 可经应用资源 URL 读取，外置 ZIP 则能在 `resources/` 或 `Contents/Resources/app/` 找到。项目资源不得占用 `META-INF/niva/`。
 
 标准输出最后一行为 JSON：`results` 数组包含每个目标的 `target`、`resourceLayout`、`status`、成功时的 `path`、`sha256`、`signature`、`runtimeVersion`，失败时的 `error`。任一目标失败返回退出码 1，其他已成功目标保留。输入预检失败返回空 `results` 与顶层 `error`。
 

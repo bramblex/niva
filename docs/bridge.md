@@ -119,7 +119,7 @@ S -> C {t:"result",id,code,message,data}
 S -> C {t:"event",id?,seq,name,data}
 ```
 
-`id`按连接隔离，活动ID不可重复覆盖。每个新流在创建时选择已建立的WS或稳定IPC Channel；由该流创建的文件句柄、socket、子进程等资源在生命周期内沿用同一bridge，不能在后续控制调用时换owner。WS连接丢失时该连接拥有的资源明确失败，不跨bridge重放或迁移。重复ID的协议错误作为无call id的`bridge.protocolError`事件报告，不能冒充原请求的终局。终局只有一次；超时/取消后的迟到结果不得完成新的调用。
+本段 `id`与资源连接路由仅描述旧 Wire v1 的历史快照。当前资源 owner 是创建时的 `(window_id, IPC session)`；WS 与 IPC Channel 是可选的数据传输通道，不构成资源 owner。资源后续控制仍校验原窗口和 IPC session，数据通道断开只影响该通道承载的传输，不会改变资源 owner，也不会自动把已提交操作迁移或重放到另一通道。重复ID、迟到终局等行为仍按各自快照中的协议语境理解。
 
 常用code：0成功、-1执行错误、-2超时、-3容量/流入站拒绝、-4权限或通道拒绝。`seq`用于流事件/分片顺序，result不占流序号。入站队列满不能静默丢块，应终止对应调用。
 

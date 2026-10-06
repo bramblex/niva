@@ -215,7 +215,7 @@ export type NivaHttps = Pick<typeof import("node:https"), "request" | "get" | "c
 export interface NivaHttpTextOptions {
     url: string | URL;
     method?: string;
-    headers?: Record<string, string | string[]>;
+    headers?: Record<string, string>;
     body?: string;
     timeout?: number;
     maxResponseBytes?: number;
@@ -251,7 +251,7 @@ export type NivaProcess = Partial<Omit<Pick<NodeJS.Process, "arch" | "argv" | "a
         readonly nodeCompat: "22.14.0";
         readonly niva: string;
     };
-    readonly exitCode: number;
+    exitCode: number;
     hrtime: ((previous?: [number, number]) => [number, number]) & {
         bigint(): bigint;
     };

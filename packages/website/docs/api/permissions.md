@@ -24,6 +24,8 @@ sidebar_position: 2
 
 origin 必须是精确的 `http` 或 `https` 来源，包括协议、主机和端口；不能包含路径、query、fragment 或用户信息。不同子域或端口要分别配置。方法规则可以是完整的 `namespace.method`，也可以是 `namespace.*`。不存在 origin 通配符。
 
+请只为完全可信的远端页面授予高影响方法。`fs.*`（尤其 `fs.node`）可执行文件系统操作；它受 Native 支持的操作范围约束，但 grant 不按目录隔离。`process.execText` 和 `process.execFileText` 可以运行本机命令。网页脚本供应链若被攻破，这些权限可能转化为本机文件修改或命令执行能力。
+
 ## 调用时的校验
 
 远端页面没有本地 WebSocket 凭据，也不能加入本地IPC Channel session。Native IPC 统一走 Wry 消息处理；Wry 不提供可依赖的真实 Native child-frame ID。同源 iframe 的请求经父页 relay 到顶层 IPC host，并按来源 URL/top-origin、session 与完整 API 名称校验；跨源 iframe fail-closed。Rust 不信任消息体中的 `wid` 或 origin。Windows 上的来源与导航行为仍需目标设备验证。

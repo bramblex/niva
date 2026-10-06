@@ -655,7 +655,7 @@ impl Write for LimitedJsonWriter {
 
 const IPC_SESSION_LEASE: Duration = Duration::from_secs(3);
 const IPC_SESSION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
-const MAX_EXPIRED_IPC_SESSIONS_PER_WINDOW: usize = 4096;
+const MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN: usize = 4096;
 const MAX_IPC_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_IPC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_IPC_CALL_DURATION: Duration = Duration::from_secs(35);
@@ -1229,6 +1229,21 @@ struct IpcSessionKey {
     is_main_frame: bool,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct IpcSessionDomain {
+    window_id: u8,
+    source_origin: String,
+}
+
+impl IpcSessionKey {
+    fn domain(&self) -> IpcSessionDomain {
+        IpcSessionDomain {
+            window_id: self.window_id,
+            source_origin: self.source_origin.clone(),
+        }
+    }
+}
+
 struct ActiveIpcSession {
     last_heartbeat: Instant,
     connection_id: u64,
@@ -1331,8 +1346,8 @@ const CHANNEL_FRAME_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 struct IpcSessions {
     active: HashMap<IpcSessionKey, ActiveIpcSession>,
     expired: HashSet<IpcSessionKey>,
-    expired_per_window: HashMap<u8, usize>,
-    blocked_windows: HashSet<u8>,
+    expired_per_domain: HashMap<IpcSessionDomain, usize>,
+    blocked_domains: HashSet<IpcSessionDomain>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1357,7 +1372,7 @@ impl IpcSessions {
         connection_id: u64,
         now: Instant,
     ) -> std::result::Result<u64, IpcSessionError> {
-        if self.blocked_windows.contains(&key.window_id) || self.expired.contains(&key) {
+        if self.blocked_domains.contains(&key.domain()) || self.expired.contains(&key) {
             return Err(IpcSessionError::Expired);
         }
         let session = self.active.entry(key).or_insert_with(|| ActiveIpcSession {
@@ -1374,6 +1389,9 @@ impl IpcSessions {
     }
 
     fn touch_call(&mut self, key: &IpcSessionKey, call_id: u64, now: Instant) -> bool {
+        if self.blocked_domains.contains(&key.domain()) || self.expired.contains(key) {
+            return false;
+        }
         let Some(session) = self.active.get_mut(key) else {
             return false;
         };
@@ -1391,7 +1409,7 @@ impl IpcSessions {
     }
 
     fn heartbeat(&mut self, key: &IpcSessionKey, now: Instant) -> IpcHeartbeat {
-        if self.blocked_windows.contains(&key.window_id) || self.expired.contains(key) {
+        if self.blocked_domains.contains(&key.domain()) || self.expired.contains(key) {
             return IpcHeartbeat::Expired;
         }
         if let Some(session) = self.active.get_mut(key) {
@@ -1439,7 +1457,7 @@ impl IpcSessions {
             .unwrap_or_default();
         // Tombstone even an idle key so a delayed api_call cannot revive a
         // session after pagehide. Repeated closes are idempotent; new unknown
-        // ids consume the existing bounded per-window tombstone budget.
+        // ids consume the bounded per-window/per-origin tombstone budget.
         self.remember_expired(key.clone());
         calls
     }
@@ -1449,8 +1467,15 @@ impl IpcSessions {
         key: &IpcSessionKey,
         now: Instant,
     ) -> std::result::Result<bool, Vec<async_channel::Sender<()>>> {
+        if self.blocked_domains.contains(&key.domain()) {
+            if let Some(session) = self.active.remove(key) {
+                self.remember_expired(key.clone());
+                return Err(session.calls.into_values().collect());
+            }
+            return Ok(self.expired.contains(key) || self.blocked_domains.contains(&key.domain()));
+        }
         let Some(session) = self.active.get(key) else {
-            return Ok(self.expired.contains(key) || self.blocked_windows.contains(&key.window_id));
+            return Ok(self.expired.contains(key));
         };
         if now.saturating_duration_since(session.last_heartbeat) < IPC_SESSION_LEASE {
             return Ok(false);
@@ -1487,11 +1512,14 @@ impl IpcSessions {
         if self.expired.contains(&key) {
             return;
         }
-        let count = self.expired_per_window.entry(key.window_id).or_default();
-        if *count >= MAX_EXPIRED_IPC_SESSIONS_PER_WINDOW {
+        let domain = key.domain();
+        let count = self.expired_per_domain.entry(domain.clone()).or_default();
+        if *count >= MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN {
             // Preserve the no-revival guarantee without unbounded tombstones.
-            // This window stays fail-closed until it is closed.
-            self.blocked_windows.insert(key.window_id);
+            // This exact origin in the window stays fail-closed until it is
+            // closed, without letting one granted origin exhaust another's
+            // bounded tombstone budget.
+            self.blocked_domains.insert(domain);
             return;
         }
         *count += 1;
@@ -1501,8 +1529,10 @@ impl IpcSessions {
     fn close_window(&mut self, window_id: u8) -> Vec<async_channel::Sender<()>> {
         let cancellations = self.cancel_matching(|key| key.window_id == window_id, false);
         self.expired.retain(|key| key.window_id != window_id);
-        self.expired_per_window.remove(&window_id);
-        self.blocked_windows.remove(&window_id);
+        self.expired_per_domain
+            .retain(|domain, _| domain.window_id != window_id);
+        self.blocked_domains
+            .retain(|domain| domain.window_id != window_id);
         cancellations
     }
 }
@@ -5523,7 +5553,8 @@ mod ipc_tests {
                 sender.close();
             }
         }
-        let expired_count = manager.ipc_sessions.lock().unwrap().expired_per_window[&window_id];
+        let remote_domain = remote.domain();
+        let expired_count = manager.ipc_sessions.lock().unwrap().expired_per_domain[&remote_domain];
         assert!(
             manager
                 .ipc_sessions
@@ -5533,7 +5564,7 @@ mod ipc_tests {
                 .is_empty()
         );
         assert_eq!(
-            manager.ipc_sessions.lock().unwrap().expired_per_window[&window_id],
+            manager.ipc_sessions.lock().unwrap().expired_per_domain[&remote_domain],
             expired_count
         );
         let (late_tx, _) = async_channel::bounded(1);
@@ -6307,6 +6338,151 @@ mod ipc_tests {
             Err(IpcSessionError::Expired)
         );
         assert!(!sibling_rx.is_closed());
+    }
+
+    #[test]
+    fn unknown_session_close_budget_is_isolated_by_window_and_origin() {
+        let now = Instant::now();
+        let mut sessions = IpcSessions::default();
+        let remote = |session_id: String| IpcSessionKey {
+            window_id: 7,
+            source_origin: "https://granted.example".into(),
+            session_id,
+            frame_id: 0,
+            generation: 0,
+            is_main_frame: true,
+        };
+        let local = IpcSessionKey {
+            source_origin: "niva-test://app".into(),
+            ..remote("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into())
+        };
+        let other_origin = IpcSessionKey {
+            source_origin: "https://other-grant.example".into(),
+            ..remote("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into())
+        };
+        let other_window = IpcSessionKey {
+            window_id: 8,
+            ..remote("cccccccccccccccccccccccccccccccc".into())
+        };
+
+        let (remote_call_tx, remote_call_rx) = async_channel::bounded(1);
+        sessions
+            .reserve(
+                remote("dddddddddddddddddddddddddddddddd".into()),
+                1,
+                remote_call_tx,
+                1,
+                now,
+            )
+            .unwrap();
+        let active_remote = remote("dddddddddddddddddddddddddddddddd".into());
+
+        for index in 0..MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN {
+            let key = remote(format!("{index:032x}"));
+            sessions.retire(&key);
+        }
+        let overflow = remote(format!("{:032x}", MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN));
+        sessions.retire(&overflow);
+
+        let remote_domain = overflow.domain();
+        assert!(sessions.blocked_domains.contains(&remote_domain));
+        assert_eq!(
+            sessions.expired_per_domain[&remote_domain],
+            MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN
+        );
+        assert!(!sessions.expired.contains(&overflow));
+        assert_eq!(
+            sessions.heartbeat(&active_remote, now),
+            IpcHeartbeat::Expired
+        );
+        assert!(!sessions.touch_call(&active_remote, 1, now));
+        let cancelled = sessions.expire_if_stale(&active_remote, now).unwrap_err();
+        assert_eq!(cancelled.len(), 1);
+        cancelled[0].close();
+        assert!(remote_call_rx.is_closed());
+        let (late_tx, _) = async_channel::bounded(1);
+        assert_eq!(
+            sessions.reserve(overflow.clone(), 2, late_tx, 2, now),
+            Err(IpcSessionError::Expired)
+        );
+
+        for key in [&local, &other_origin, &other_window] {
+            let (cancel_tx, _) = async_channel::bounded(1);
+            assert!(sessions.reserve(key.clone(), 3, cancel_tx, 3, now).is_ok());
+        }
+        assert!(!sessions.blocked_domains.contains(&local.domain()));
+        assert!(!sessions.blocked_domains.contains(&other_origin.domain()));
+        assert!(!sessions.blocked_domains.contains(&other_window.domain()));
+
+        let cancellations = sessions.close_window(7);
+        assert_eq!(cancellations.len(), 2);
+        assert!(sessions.active.keys().all(|key| key.window_id != 7));
+        assert!(sessions.expired.iter().all(|key| key.window_id != 7));
+        assert!(
+            sessions
+                .expired_per_domain
+                .keys()
+                .all(|domain| domain.window_id != 7)
+        );
+        assert!(
+            sessions
+                .blocked_domains
+                .iter()
+                .all(|domain| domain.window_id != 7)
+        );
+        assert!(sessions.active.contains_key(&other_window));
+
+        let (after_close_tx, _) = async_channel::bounded(1);
+        assert!(
+            sessions
+                .reserve(overflow, 4, after_close_tx, 4, now)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn lease_expiration_budget_blocks_only_its_origin_and_never_revives_sessions() {
+        let now = Instant::now();
+        let mut sessions = IpcSessions::default();
+        let remote = |session_id: String| IpcSessionKey {
+            window_id: 9,
+            source_origin: "https://granted.example".into(),
+            session_id,
+            frame_id: 0,
+            generation: 0,
+            is_main_frame: true,
+        };
+
+        let first = remote("00000000000000000000000000000000".into());
+        for index in 0..=MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN {
+            let key = remote(format!("{index:032x}"));
+            let (cancel_tx, _) = async_channel::bounded(1);
+            sessions.reserve(key.clone(), 1, cancel_tx, 1, now).unwrap();
+            let result =
+                sessions.expire_if_stale(&key, now + IPC_SESSION_LEASE + Duration::from_millis(1));
+            assert!(result.is_err());
+        }
+
+        let domain = first.domain();
+        assert!(sessions.blocked_domains.contains(&domain));
+        assert_eq!(
+            sessions.expired_per_domain[&domain],
+            MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN
+        );
+        assert!(sessions.expired.contains(&first));
+        assert_eq!(sessions.heartbeat(&first, now), IpcHeartbeat::Expired);
+        let (late_tx, _) = async_channel::bounded(1);
+        assert_eq!(
+            sessions.reserve(first.clone(), 2, late_tx, 2, now),
+            Err(IpcSessionError::Expired)
+        );
+
+        let other_origin = IpcSessionKey {
+            source_origin: "https://other-grant.example".into(),
+            ..remote("ffffffffffffffffffffffffffffffff".into())
+        };
+        let (other_tx, _) = async_channel::bounded(1);
+        assert!(sessions.reserve(other_origin, 3, other_tx, 3, now).is_ok());
     }
 
     #[test]

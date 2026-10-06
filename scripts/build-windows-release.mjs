@@ -258,7 +258,7 @@ function buildWindowsRelease() {
     console.log(`Windows runtime: ${runtimeBytes.length} bytes (limit < ${MAX_RUNTIME_BYTES})`);
     console.log(`Windows packaged executable: ${artifact.sizeBytes} bytes SHA256 ${artifact.sha256}`);
 
-    const gitVersion = runChecked("git", ["describe", "--tags", "--always"]).trim();
+    const gitVersion = runChecked("git", ["describe", "--tags", "--always", "--dirty"]).trim();
     const archivePath = path.join(outputDir, windowsArchiveName(gitVersion));
     runChecked(
       "powershell.exe",

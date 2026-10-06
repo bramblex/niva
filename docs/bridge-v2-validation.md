@@ -79,3 +79,15 @@
 | Rust workspace gates | 冻结后 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`ulimit -n 4096; cargo test --workspace -- --test-threads=1` 均通过；测试 niva 230 passed/2 ignored、niva_packager 27、validation integration 2、win_packager 21，共 280 passed/2 ignored。日志 `/tmp/niva-cleanup-fmt.log`、`-check.log`、`-clippy.log`、`-test.log`。 | macOS 主机结果；Clippy 有 warnings。 |
 | Windows 条件编译 | 冻结后 `niva` 与 `win_packager` 定向 Windows target checks 通过；资源身份策略 4 tests、`win_packager` 21 tests。 | 完整 `cargo check --workspace --target x86_64-pc-windows-msvc` 因本机缺 MSVC C 标准库头文件失败：`bzip2-sys`/`lzma-sys` 找不到 `stdlib.h`。日志 `/tmp/niva-cleanup-windows-workspace-check.log`。Windows 真机与 release 体积仍未验收。 |
 | macOS release runtime | ARM64 `target/release/niva`：3,073,952 bytes，SHA-256 `0dadbfed16f89c8c77224452dc0786d7b7ad2979d18cc5e59b202bf35b771377`。构建日志 `/tmp/niva-cleanup-release.log`。 | 通过 macOS 严格小于 3,300,000 bytes 门槛；高于 3,000,000 bytes 参考目标。 |
+
+## 2026-10-06 1.0.0-alpha Review 快照
+
+以下结果绑定本轮候选工作区快照，不构成发布 tag 或正式产物验收。IPC API 的 session budget/ban 按 `(window_id, source_origin)` 隔离，空远端 grant fail-closed；资源 owner 仍按创建时 `(window_id, IPC session)` 确定，WS/IPC 仅承担数据传输。
+
+| 项目 | 当前证据 | 状态与限制 |
+| --- | --- | --- |
+| Runtime | input fingerprint `d59d33576e38e6c37a985475888bdcc69b03cb6f8aa3945b748a050c4b3262ea`；bootstrap 630,009 bytes，SHA-256 `1497fda13b3e07d24a5297bdd4e5709ced7c19c9c260916988e4993e42b870de`；179 tests 通过。API manager session-domain regression 30 项、permissions 4 项通过。 | Runtime/tests 为源码回归证据，不代表完整 origin/iframe 权限矩阵已在目标平台验收。 |
+| macOS WebView | 当前 debug binary 的 WS/IPC bridge-route 两 lane PASS；macOS API smoke 39 method cases PASS（BFCache cached realm 恢复、新 session、stdin identity、reload/forward）；NodeCompat 179 checks/17 cases PASS。 | API smoke 未运行 dialogs、clipboard、shortcuts、`process.open`。NodeCompat HTTPS wrapper 只覆盖 protocol rejection，真实 outbound TLS 仍未验收。日志 `/tmp/niva-alpha-review-bridge-route.log`、`/tmp/niva-alpha-review-macos-api.log`、`/tmp/niva-alpha-review-node.log`。 |
+| macOS ARM64 release | Raw `target/release/niva` 3,073,984 bytes，SHA-256 `cef104d415f773d6c9c4909ec9197a508a45a2e99288bdbfdaa6dfa071431411`；按 `build_MacOS.sh` 对副本执行 `strip -N` 后 3,061,216 bytes，SHA-256 `e84c7ed3b6c09a9b699179bf2c594217173f50dae0ef8b2cd606f1ecfeb32058`。 | stripped artifact 通过 `< 3,300,000` 门槛。 |
+| macOS Intel release | SDK 26.5 构建的 raw `target/x86_64-apple-darwin/release/niva` 为 3,643,400 bytes，SHA `58f0a8f1631e28a647610f91d594b9403136e6ad3cad57f16614cee889f313f4`；`strip -N` 后 3,630,624 bytes，SHA `b10f67c45feb58cbe8bede21bdf7cc0ec68c2ec7255e158d00e0d6e63e769e08`。 | stripped artifact 超过 3,300,000 门槛 330,624 bytes；本轮未改 profile/依赖或实施瘦身，当前候选的 Intel 门禁未通过。日志 `/tmp/niva-alpha-review-release-intel.log`。 |
+| Windows / CI | Niva 与 `win_packager` 定向 Windows target checks 通过。 | 完整 workspace target check 受本机缺失 MSVC `stdlib.h` 阻断；Windows 真机、Windows release size、当前远端 CI 未验收/读取。 |

@@ -45,9 +45,9 @@
 
 ## 已落地的分层与加载
 
-Native 提供文件、进程、系统信息、TCP/UDP/TLS。HTTP/HTTPS客户端通过WS调用Rust ureq的`http.requestStream`；JS只保留Node ClientRequest/IncomingMessage适配，IPC页面继续使用有界`http.requestText`。应用服务器和DNS报文处理仍在JS；`dns.lookup`使用系统resolver，记录查询使用UDP，并在截断时退回TCP。Niva内部资源、同步调用和WS服务独立保留。
+Native 提供文件、进程、系统信息、TCP/UDP/TLS。HTTP/HTTPS API始终通过IPC `api_call`创建请求；JS保留Node ClientRequest/IncomingMessage适配，流式数据优先使用WebSocket优化并可经IPC传输，有界`http.requestText`也通过IPC调用。应用服务器和DNS报文处理仍在JS；`dns.lookup`使用系统resolver，记录查询使用UDP，并在截断时退回TCP。Niva内部资源、同步调用和WS服务独立保留。
 
-可信本地页面使用 WS 传递事件和二进制；同步调用使用鉴权 XHR，由 Rust 校验 token、精确 Origin、Host、请求大小及可同步执行的方法。socket/文件句柄绑定窗口和 WS 连接，断连清理资源。Socket 接收采用 256 KiB credit 窗口；仅订阅 `onChunk` 的调用不保留历史 Blob 分片。WS 断开会拒绝旧连接的 pending calls。
+可信本地页面的 socket、文件句柄和子进程资源按创建时的窗口与 IPC session 归属；WS 可优化流式数据，WS 不可用时由 IPC Channel 承载数据。同步调用使用鉴权 XHR，由 Rust 校验 token、精确 Origin、Host、请求大小及可同步执行的方法。Socket 接收采用 256 KiB credit 窗口；仅订阅 `onChunk` 的调用不保留历史 Blob 分片。WS 断开影响使用该数据通道的传输，不会改变资源 owner，也不会重放已提交操作。
 
 静态 `os` 数据在启动时注入；动态 cwd、CPU、空闲内存、网卡和 uptime 每次查询。真实 `process` 仅注入 main 窗口可信顶层；子框架不继承 process 数据。
 
