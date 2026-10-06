@@ -8,11 +8,11 @@
 
 不将完整 Node 兼容、移除 WebSocket、IPC 零拷贝、完整跨平台验收作为已有能力。IPC 二进制边界仍使用 Base64。CJS 不支持 `require(ESM)`；RWA 的相关失败保留为兼容边界，不修改上游项目掩盖失败。
 
-> 当前状态（2026-10-06）：Bridge v2 已在当前源码实现，最新检查和 macOS 真实 WebView 证据见[Bridge v2 验收记录](bridge-v2-validation.md)。本节及下方原始候选表格保留 2026-09-28 绑定旧 runtime fingerprint 的历史快照，不改写其当时结果，也不以旧指纹证明当前源码。
+> 当前状态（2026-10-06）：Bridge v2 已在当前源码实现，最新检查和 macOS 真实 WebView 证据见[Bridge v2 验收记录](bridge-v2-validation.md)；Windows 条件编译、源码修复和开放的真机项目见[Windows 盲审记录](windows-blind-review-2026-10-06.md)。本节下方候选表格保留各自日期与 runtime fingerprint 的历史快照，不以旧指纹证明当前源码。
 
-## 2026-10 当前 Bridge/runtime 验收增补
+## 2026-10-06 之前的 HTTP/BFCache 验收快照（历史）
 
-本增补记录最新统一 runtime 与 HTTP-fix Native snapshot，不改写下方 2026-09-28 候选执行过程、失败项或冻结产物。Runtime manifest fingerprint 为 `0befa3f4ca6a5d151c54c3532ce226a01fe00c562d3a1abb87ba09f28c06f694`，bootstrap 为 629,975 bytes；Runtime 177/177 与 build/typecheck 通过。`cargo fmt --all -- --check`、workspace check、clippy、workspace tests、Native debug/release build 与 Devtools build 均 exit 0；Rust workspace tests 共 253 passed/2 ignored（niva 219/2 ignored、niva_packager 22、validation integration 2、win_packager 10）；types typecheck、consumer 与 fresh-pack 通过。HTTP 修复后 Node compatibility 连续四轮 179 checks/17 cases PASS，最后一轮绑定最终 debug binary。bootstrap 5 profiles 与 top-level bridge 7 methods 另有同 runtime fingerprint 下的 PASS 报告；其 Native HTTP 内部修复不改变这些调用路径，但不将这些旧 Native 源码构建说成最终 binary 验证。
+下方旧增补记录 runtime fingerprint `0befa3f4ca6a5d151c54c3532ce226a01fe00c562d3a1abb87ba09f28c06f694` 的 HTTP/BFCache 源码快照。它保留当时日志与结果，不代表本轮 runtime 或 Native 源码。
 
 最终 debug binary 的 Native API suite 39 method cases、HTTP 修复后的 Node compatibility 179 checks/17 cases（连续四轮；第四轮绑定最终 debug）、bridge-route WS/严格 CSP IPC 两 lane 与受信 IPC 27/27、远端精确授权 IPC 25/25 均通过；报告为 `/tmp/niva-http-final-node-4.log`、`/tmp/niva-http-final-macos-api.log`、`/tmp/niva-http-final-bridge-route/result.json`、`/tmp/niva-http-final-ipc-trusted/result.json` 与 `/tmp/niva-http-final-ipc-remote/result.json`。bootstrap 5 profiles 和 top-level bridge 7 methods 的独立 PASS 使用同 runtime fingerprint 的构建；Native HTTP 修复未改变其调用路径，但不宣称它们绑定最终 debug SHA。较早的 socket timeout setter `EINVAL` 已由就绪数据/EOF peek recovery 处理：仅 setter 返回 `InvalidInput` 时检查，不消费数据；`WouldBlock` 仍返回原 setter 错误，不重试 API 或转为无界阻塞。修复前失败日志保留为历史诊断，不再表示当前未通过。
 
@@ -24,7 +24,13 @@
 
 本轮实现了单向、鉴权的 IPC `session_close` 生命周期控制：Native 清理完整 session key 并 tombstone，阻止迟到请求复活。仅匹配的 persisted `pagehide`/`pageshow` 会在保留的页面 realm 内生成新的 session ID（密码学随机 nonce）；模块缓存、stdin identity 与监听器保留，`runtimeConfig.nonce` 不变，旧调用取消、普通 Native 句柄失效、旧回调隔离且不重放 API。租约过期不可复活。真实 macOS 默认 Native API suite 39 method cases PASS，包含 cached-back、reload、forward、最终 cached-back 与恢复后 API/stdin 调用；dialogs、clipboard、shortcut、`process.open` 明确未运行。当前源码门禁及平台边界见下方证据表。
 
-仍开放：Windows target check 因交叉 C 构建缺少 MSVC `assert.h`/`stdlib.h` 未完成，且无 Windows 真机验收；远端 CI 未核对，本机 `gh` 未认证，无法读取远端工作流状态。较早的 macOS GUI/HTTP 失败报告保留为历史诊断；最终 HTTP-fix candidate 的当前 BFCache suite 已通过，不再以旧 fresh-document workaround 代替此证据。
+该快照仍开放：当时的 Windows full-workspace target check 受 MSVC 头文件缺失阻断，且没有对应 Windows 真机验收；远端 CI 未核对。较早的 macOS GUI/HTTP 失败报告保留为历史诊断。
+
+## 2026-10-06 Windows 源码盲审增补
+
+当前快照 runtime fingerprint 为 `e966c98485f436ab9adf0b78919dddc66a1374e6542457a4431d66571c9b63ef`，bootstrap 为 630,009 bytes。Rust workspace fmt/check/clippy/test 全部通过；280 passed/2 ignored。Runtime 179 tests、types consumer/fresh-pack、Devtools build 均通过。macOS ARM64 release runtime 为 3,073,952 bytes，SHA-256 `1570fdc6680f3713f0b6a4407f680bd242c5b841e75f41688d46019c0d63dfc1`：通过 3,300,000-byte 硬门禁，高于 3,000,000-byte macOS 参考目标。细节、报告路径和源码修复见[Windows 盲审记录](windows-blind-review-2026-10-06.md)与[Bridge 验收记录](bridge-v2-validation.md)。
+
+Windows MSVC 条件检查中，`niva` 与 `win_packager` 两个包各自通过 target check；full-workspace target check 因本机缺少 MSVC C 头文件而失败（`stdlib.h`、`assert.h`）。没有 Windows 真机，Windows release 主程序体积、WebView2/菜单/stdio 操作及 PE 写入仍未验收。GitHub 远端 CI 本轮返回 403，结果未核对。
 
 ## 执行顺序与责任
 
@@ -42,9 +48,9 @@
 
 - [x] Native、runtime、types、Devtools、packager 与锁文件版本一致；平台元数据格式合法。Mac 数字版本为 `0.10.0`，Windows 固定版本为 `0,10,0,0`，Windows ProductVersion 保留完整候选号；现有与候选映射单测通过。
 - [x] macOS 本机 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace`。Windows 测试失败另列，不外推为跨平台通过。
-- [ ] Windows MSVC target check；单独记录与 Windows 真机验证的区别。
+- [ ] Windows full-workspace MSVC target check 在具备 MSVC C 标准库的环境重跑；本机 `niva` 与 `win_packager` 单包检查已通过。Windows 真机验收独立开放。
 - [x] runtime build/test（157 项）、types 检查及三种消费者配置、fresh-pack 独立安装验证、Devtools build、API 契约测试（4 项）。
-- [ ] 同一候选完整 release 构建、runtime 指纹及 SHA256；各平台主程序严格小于 3,300,000 bytes。macOS 3,000,000 bytes 为参考目标。
+- [ ] 同一候选完整 release 构建、runtime 指纹及 SHA256；当前 macOS ARM64 主程序 3,073,952 bytes，通过 3,300,000-byte 硬门禁但高于 3,000,000-byte 参考目标。Windows 和其他平台仍需产物与体积证据。
 - [ ] 可用 macOS 真实 WebView：bootstrap、stdio/退出清理、可信 IPC 与远端授权矩阵；窗口可见性/锁屏限制如实记录。
 - [ ] 打包核心与本机 kit/业务应用 smoke；三平台完整 kit 需齐备目标产物，不能由单机样本代替。
 - [ ] Windows 当前候选真机：来源/权限、文件 token、菜单/快捷键/owner 与打包启动。
@@ -67,8 +73,10 @@
 | 目标 | bytes | SHA256 | 体积门禁 |
 |---|---:|---|---|
 | macOS ARM64 | 2,994,968 | `59ed77dfe5e4008417a10c9f2a43695940e375f8823f040562821243fb5f5a44` | 通过 |
-| macOS x86_64 | 3,569,184 | `7cb7f8420b07b32230f17b1078ed67edf191b30fd3db1b8864f53fa7874b1f50` | 失败，超过 3,300,000 |
-| Windows x86_64 | 3,403,776 | `fc1d0811c5e6ff18874b9de229082fc136d7b32d949dde5993216426cd1a22d4` | 失败，超过 3,300,000 |
+| macOS x86_64 | 3,569,184 | `7cb7f8420b07b32230f17b1078ed67edf191b30fd3db1b8864f53fa7874b1f50` | 失败，超过 macOS 3,300,000 门禁 |
+| Windows x86_64 | 3,403,776 | `fc1d0811c5e6ff18874b9de229082fc136d7b32d949dde5993216426cd1a22d4` | 按当时统一 3,300,000 门禁记录为失败；按现行 Windows 3,500,000 数值此历史产物低于上限，但它不是当前候选体积验收 |
+
+该 Windows 二进制仍是 2026-09-28 快照的实测值，保留其当时门禁判定；新的 3,500,000-byte Windows 上限不把该旧 fingerprint 转化为当前 release 证据。
 
 产物保存在证据目录的 `frozen-arm64/` 与 `frozen-x86_64/`，各自的 `artifact-record.txt` 另列 packager 体积与 hash。两份主程序均执行项目规定的 `strip -N`。Intel 构建通过不等于 Intel 设备运行验收。
 
@@ -89,7 +97,7 @@
 
 - `cargo +1.98.1 check --workspace` 通过，包含 Niva、packager、win_packager 和 icon_creator；有既有 warnings。
 - `cargo +1.98.1 build --release --workspace` 通过。完整 `niva.exe` 的体积/hash 见上表；`niva-packager.exe` 为 4,936,704 bytes，SHA256 `1fcc7b14928c09da23f78d11693faa38ec70072ae274cf6366cd0b283817fe53`，`--version` 返回 `niva-packager 0.10.0-beta.1`。
-- 统一 `niva-packager build` 使用候选版本及真实 runtime SHA 后，因 `runtime exceeds the strict 3300000 byte size limit` 拒绝打包。该发布阻断是实际调用结果，未改 manifest 大小或绕过检查；后续低层 fixture 的 Native smoke 即使通过，也不能替代统一打包器验收。
+- 统一 `niva-packager build` 在当时 3,300,000-byte 统一上限下，使用候选版本及真实 runtime SHA 后拒绝打包。该发布阻断是旧候选的实际调用结果，未改 manifest 大小或绕过检查；现行平台上限调整不改变旧调用事实，也不能把旧结果当作当前统一打包器验收。
 - `cargo +1.98.1 test --workspace` 失败：Niva 175 passed / 3 failed / 2 ignored；该失败阻止完整 workspace 测试继续，不能认为其余包测试也通过。
 - `node_cp_preserves_file_timestamps_when_requested`：Win32 Access denied。
 - `request_text_rejects_an_untrusted_tls_certificate`：未找到用于生成测试证书的 OpenSSL。

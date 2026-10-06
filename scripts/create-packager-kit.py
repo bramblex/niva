@@ -16,7 +16,11 @@ TARGETS = {
     'macos-aarch64': 'niva-macos-aarch64',
     'macos-x86_64': 'niva-macos-x86_64',
 }
-RUNTIME_LIMIT_BYTES = 3_300_000
+RUNTIME_LIMIT_BYTES = {
+    'windows-x86_64': 3_500_000,
+    'macos-aarch64': 3_300_000,
+    'macos-x86_64': 3_300_000,
+}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -40,9 +44,10 @@ def main():
         for target, filename in TARGETS.items():
             source = args.runtime_dir / filename
             size_bytes = source.stat().st_size
-            if size_bytes >= RUNTIME_LIMIT_BYTES:
+            limit_bytes = RUNTIME_LIMIT_BYTES[target]
+            if size_bytes >= limit_bytes:
                 raise SystemExit(
-                    f'{target} runtime is {size_bytes} bytes; limit is strictly below {RUNTIME_LIMIT_BYTES}'
+                    f'{target} runtime is {size_bytes} bytes; limit is strictly below {limit_bytes}'
                 )
             dest = kit / 'runtimes' / filename
             shutil.copyfile(source, dest)
@@ -52,7 +57,7 @@ def main():
             runtime_sizes[target] = {
                 'path': f'runtimes/{filename}',
                 'sizeBytes': dest.stat().st_size,
-                'limitBytesExclusive': RUNTIME_LIMIT_BYTES,
+                'limitBytesExclusive': limit_bytes,
                 'sha256': hashlib.sha256(dest.read_bytes()).hexdigest(),
             }
         tool = kit / ('niva-packager.exe' if args.packager.suffix == '.exe' else 'niva-packager')

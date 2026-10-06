@@ -155,6 +155,12 @@ impl NivaBuilder {
         if let Some(windows_extra) = &options.windows_extra {
             use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 
+            validate_windows_parent_relationship(
+                windows_extra.parent_window,
+                windows_extra.owner_window,
+                options.menu.is_some(),
+            )?;
+
             if let Some(parent) = &windows_extra.parent_window {
                 let parent = manager.get_window(*parent)?;
                 let parent = parent.hwnd() as _;
@@ -185,49 +191,57 @@ impl NivaBuilder {
         // Attach the window menu (tao no longer owns menus; muda does).
         let menu = Self::build_menu(_id, app, &options.menu);
         if let Some(menu) = &menu {
-            Self::attach_menu(&window, menu);
+            Self::attach_menu(&window, menu)?;
         }
 
         Ok((window, menu))
     }
 
     /// Attach a muda menu to a native window.
-    pub fn attach_menu(window: &Window, menu: &muda::Menu) {
+    pub fn attach_menu(window: &Window, menu: &muda::Menu) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             let _ = window;
             menu.init_for_nsapp();
+            Ok(())
         }
         #[cfg(target_os = "windows")]
         {
             use tao::platform::windows::WindowExtWindows;
             unsafe {
-                log_if_err!(menu.init_for_hwnd(window.hwnd()));
+                menu.init_for_hwnd(window.hwnd())?;
             }
+            Ok(())
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             let _ = (window, menu);
+            Ok(())
         }
     }
 
     /// Detach a muda menu from a native window.
-    pub fn detach_menu(window: &Window, menu: &muda::Menu) {
+    pub fn detach_menu(window: &Window, menu: &muda::Menu) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             let _ = window;
             menu.remove_for_nsapp();
+            Ok(())
         }
         #[cfg(target_os = "windows")]
         {
             use tao::platform::windows::WindowExtWindows;
             unsafe {
-                log_if_err!(menu.remove_for_hwnd(window.hwnd()));
+                match menu.remove_for_hwnd(window.hwnd()) {
+                    Ok(()) | Err(muda::Error::NotInitialized) => Ok(()),
+                    Err(error) => Err(error.into()),
+                }
             }
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             let _ = (window, menu);
+            Ok(())
         }
     }
 
@@ -809,10 +823,48 @@ fn queue_webview_request_event(
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn validate_windows_parent_relationship(
+    parent_window: Option<u8>,
+    owner_window: Option<u8>,
+    has_menu: bool,
+) -> Result<()> {
+    if parent_window.is_some() && owner_window.is_some() {
+        anyhow::bail!("Windows parentWindow and ownerWindow are mutually exclusive");
+    }
+    if parent_window.is_some() && has_menu {
+        anyhow::bail!("Windows child windows do not support menus");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::app::custom_protocol;
     use crate::app::utils::error_page_html;
+
+    #[test]
+    fn windows_parent_and_owner_are_mutually_exclusive() {
+        assert!(
+            super::validate_windows_parent_relationship(Some(1), Some(2), false)
+                .unwrap_err()
+                .to_string()
+                .contains("mutually exclusive")
+        );
+        assert!(super::validate_windows_parent_relationship(Some(1), None, false).is_ok());
+        assert!(super::validate_windows_parent_relationship(None, Some(2), true).is_ok());
+        assert!(super::validate_windows_parent_relationship(None, None, true).is_ok());
+    }
+
+    #[test]
+    fn windows_child_window_rejects_a_menu() {
+        assert!(
+            super::validate_windows_parent_relationship(Some(1), None, true)
+                .unwrap_err()
+                .to_string()
+                .contains("child windows do not support menus")
+        );
+    }
 
     #[test]
     fn packaged_entry_and_origin_use_uuid_bound_custom_protocol_origin() {

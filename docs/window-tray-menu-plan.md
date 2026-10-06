@@ -31,7 +31,8 @@
 ### 2.2 菜单快捷键和图标
 
 - **源码：已实现通用构建路径。** `menu/mod.rs` 调用 muda 的 accelerator 解析，并使用 `IconMenuItem`；源码不再只为 macOS 编译这些构建逻辑。图标加载失败时回退普通菜单项。
-- **平台限制：** Windows 菜单快捷键显示与触发行为尚需真机确认；roadmap 记录的现存风险是 tao 消息循环未处理 `TranslateAcceleratorW`，因此不能仅凭跨平台构建代码宣称 Windows 快捷键会触发。
+- **源码：已接入 Windows 消息钩子。** Tao 默认消息循环没有把菜单 accelerator 交给 `TranslateAcceleratorW`；当前 Windows 消息钩子会按消息窗口定位其原生窗口菜单，并在释放窗口/菜单锁后翻译 accelerator。它针对实际目标窗口处理消息，避免把次级 owner 窗口的按键发给主窗口菜单。
+- **平台验收：待 Windows 真机确认。** 本轮 Windows target check 与源码测试通过，但没有 Windows 设备，尚未实测菜单快捷键触发、菜单替换行为或图标显示。不能据编译结果宣称原生交互通过。
 - **验收：** macOS/Windows 各检查菜单项、快捷键实际响应及图标显示；target check 只能证明编译覆盖。
 
 ### 2.3 托盘与菜单 PNG 缩放
@@ -46,7 +47,7 @@
 
 - **源码实现：** 第 1 节三个 P0 修复以及本文件列出的 P1 源码处理已存在于当前工作树。
 - **macOS：** 有整体桥接行为手工验收记录；本文件所列菜单、托盘、快捷键专项真机操作仍须补充明确结果后，才可关闭对应平台验收。
-- **Windows：** 已有 [真机 smoke 记录](windows-validation-2026-09-23.md)，覆盖 owner 关系、菜单点击及全局快捷键；托盘/图标、菜单 accelerator 和更广组合仍待验收。
+- **Windows：** 已有 [2026-09-23 真机 smoke 记录](windows-validation-2026-09-23.md)，覆盖 owner 关系、菜单点击及全局快捷键；本轮源码新增菜单 accelerator 消息钩子及菜单生命周期修复，但尚无本轮 Windows 设备操作证据。托盘/图标、菜单 accelerator 与更广窗口组合仍待验收。
 - **发布状态：** roadmap 的 window-tray-menu 三个 P0 v1.0 门禁仍开放，直到 macOS/Windows 菜单操作和 Windows owner 行为验收有实际记录。
 
 建议验收时记录设备/OS、配置、操作步骤、观察结果与对应源码/提交。不要用本计划的状态文字替代验收证据，也不要据此推断其他设计文档或 v1.0 发布门禁已全部完成。

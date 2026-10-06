@@ -18,9 +18,11 @@
 
 当前证据覆盖列明的 macOS ARM64/WebView 和检查。HTTP 修复后 Node compatibility 179 checks/17 cases 连续四轮通过，第四轮绑定最终 debug binary；原 HTTP timeout setter `EINVAL` 修复前日志保留为历史诊断。本轮 bootstrap 5 configuration profiles、top-level bridge 7 methods、trusted IPC 27/27、remote IPC 25/25 与 bridge-route WS/IPC 双 lane 通过。最终 BFCache suite 39 method cases、runtime 177/177 与 Rust full gates 均通过；Windows target check 因缺少交叉 C 标准库头失败，Windows 真机与远端 CI 仍开放。详细合约见[Bridge 合约](bridge.md)及[Bridge v2 验收记录](bridge-v2-validation.md)。
 
+同日后续 Windows 盲审快照覆盖并更新上方计数：runtime fingerprint 为 `e966c98485f436ab9adf0b78919dddc66a1374e6542457a4431d66571c9b63ef`，Runtime 179 tests、Rust workspace 280 passed/2 ignored；macOS ARM64 release 为 3,073,952 bytes。Niva 与 win_packager Windows target checks 通过，full-workspace check 仍受本机缺少 MSVC C headers 阻断；Windows 真机、Windows release 体积和远端 CI 未验收。逐项证据与限制见[Windows 盲审记录](windows-blind-review-2026-10-06.md)。
+
 > 本台账后续章节包含带日期的历史快照、当时计划和旧路径，保留这些内容用于追溯，不代表当前源码状态或现行命令。当前 runtime 和类型入口以 [`packages/runtime/README.md`](../packages/runtime/README.md) 与 [`packages/types/README.md`](../packages/types/README.md) 为准；当前 bridge 验收以[Bridge v2 验收记录](bridge-v2-validation.md)为准。当前 Node 兼容目标是 `process.version=v22.14.0`、`versions.node/nodeCompat=22.14.0`，实际 Niva 版本见 `versions.niva`。
 
-完整 runtime 主程序的硬体积门禁为严格小于 3,300,000 bytes；macOS 3,000,000 bytes 是参考目标。候选需按目标平台重新构建并记录文件、SHA256、runtime 指纹和实测体积；旧平台或旧指纹结果不能替代当前候选验收。
+完整 runtime 主程序的硬体积门禁为 macOS 严格小于 3,300,000 bytes、Windows 严格小于 3,500,000 bytes；macOS 3,000,000 bytes 仅为参考目标。候选需按目标平台重新构建并记录文件、SHA256、runtime 指纹和实测体积；旧平台或旧指纹结果不能替代当前候选验收。
 
 ## 历史快照：收尾交接（2026-09-25）
 
@@ -103,7 +105,7 @@
 2. `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace`；受影响Windows代码执行target check，记录真机与交叉检查区别。
 3. runtime/types TS与构建、Devtools `npm run build --workspace=packages/devtools`、有意义的JS/协议/loader/资源测试通过。pre-commit修成真实失败阻断，不能替代直接检查。
 4. 实际macOS原生/WebView验证；Windows可达则真机验证，否则明确未覆盖，不冒称已验收。Windows在线安装器仅在专门测试环境/明确安装操作授权下运行，不能在开发机器静默触发。
-5. 最终runtime包含Native、统一JS、索引/loader，逐平台实测严格<3,300,000 bytes；packager/kit/应用资源大小单独统计，hash绑定产物。
+5. 最终runtime包含Native、统一JS、索引/loader，逐平台实测满足对应门禁（macOS <3,300,000 bytes；Windows <3,500,000 bytes）；packager/kit/应用资源大小单独统计，hash绑定产物。
 6. GUI/CLI输出同一核心；绿色大资源读取、Range/HEAD、签名状态、stdout纯净、EOF/断线清理有可复现证据。
 7. 固定Cypress RWA后端CommonJS在Niva内执行，测试工具可用外部Node但不得代跑后端或缺失模块；业务流程、数据持久化与重启清理对照参考Node。失败真实记录，不能改业务源码或测试来掩盖缺失能力。
 8. types包生成/打包可用，发布/npm/CI远程运行如缺凭据或未授权另列边界，不能用本地结果冒充对外发布。

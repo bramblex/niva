@@ -56,7 +56,7 @@ Windows 目标使用 WebView2，目标机需要可用的 WebView2 Runtime。Wind
 }
 ```
 
-每个运行时版本必须与工具包和 packager 版本相同。Kit 生成与校验脚本逐运行时检查体积严格小于 3,300,000 bytes，并记录实际大小和 SHA256。打包时同时校验 SHA256 与 PE/Mach-O 架构，不能把宿主的 `currentExe()` 当作另一个平台的模板。
+每个运行时版本必须与工具包和 packager 版本相同。Kit 生成与校验脚本逐运行时按目标平台检查体积：macOS 严格小于 3,300,000 bytes，Windows 严格小于 3,500,000 bytes，并记录实际大小和 SHA256。打包时同时校验 SHA256 与 PE/Mach-O 架构，不能把宿主的 `currentExe()` 当作另一个平台的模板。
 
 ## 构建工具包
 

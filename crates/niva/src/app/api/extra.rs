@@ -2,9 +2,12 @@ use crate::app::api_manager::ApiManager;
 
 use crate::app::NivaApp;
 use crate::app::api_manager::ApiRequest;
+#[cfg(target_os = "macos")]
 use crate::app::main_exec::run_on_main;
 use crate::app::window_manager::window::NivaWindow;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+#[cfg(target_os = "macos")]
+use anyhow::anyhow;
 use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
@@ -137,11 +140,16 @@ fn get_active_window_id(
     _app: Arc<NivaApp>,
     _window: Arc<NivaWindow>,
     _request: ApiRequest,
-) -> Result<String> {
+) -> Result<Option<String>> {
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
     let hwnd = unsafe { GetForegroundWindow() };
-    Ok((hwnd.0 as usize).to_string())
+    Ok(window_id_from_handle(hwnd.0 as usize))
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn window_id_from_handle(handle: usize) -> Option<String> {
+    (handle != 0).then(|| handle.to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -155,7 +163,22 @@ fn focus_by_window_id(
 
     let hwnd = HWND(hwnd_str.parse::<isize>()? as _);
     unsafe {
-        SetForegroundWindow(hwnd);
+        let _ = SetForegroundWindow(hwnd);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod windows_handle_tests {
+    use super::window_id_from_handle;
+
+    #[test]
+    fn null_foreground_window_has_no_id() {
+        assert_eq!(window_id_from_handle(0), None);
+    }
+
+    #[test]
+    fn non_null_window_handle_keeps_the_decimal_id_format() {
+        assert_eq!(window_id_from_handle(0x1234), Some("4660".to_string()));
+    }
 }

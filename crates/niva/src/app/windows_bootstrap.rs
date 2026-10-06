@@ -1,13 +1,85 @@
 use anyhow::Result;
 
 #[cfg(any(target_os = "windows", test))]
-// `ipc_windows_frames::install` requires ICoreWebView2_4 and unconditionally
-// casts every frame to ICoreWebView2Frame2. Frame2 was introduced in SDK
-// 1.0.1108.44. Microsoft maps that SDK to Runtime 98 and documents the exact
-// minimum as Runtime 98.0.1108.44; Frame7 is optional and does not raise it.
+use anyhow::Context;
+#[cfg(any(target_os = "windows", test))]
+use std::{
+    fs::{File, OpenOptions},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+#[cfg(any(target_os = "windows", test))]
+// Preserve the conservative current release floor; it is not a claim that
+// 98.0.1108.44 is the minimum required by today's Wry API surface. The removed
+// `ipc_windows_frames` adapter no longer imposes Frame2. Wry's download-started
+// handler requires ICoreWebView2_4, while compatibility with older runtimes has
+// not been verified on Windows.
 const MINIMUM_WEBVIEW2_VERSION: RuntimeVersion = RuntimeVersion([98, 0, 1108, 44]);
 #[cfg(any(target_os = "windows", test))]
 const MINIMUM_WEBVIEW2_VERSION_TEXT: &str = "98.0.1108.44";
+
+#[cfg(any(target_os = "windows", test))]
+const INSTALLER_SCRIPT: &str = include_str!("../../assets/webview2-bootstrap.ps1");
+
+#[cfg(any(target_os = "windows", test))]
+static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(any(target_os = "windows", test))]
+struct TemporaryScript(PathBuf);
+
+#[cfg(any(target_os = "windows", test))]
+impl TemporaryScript {
+    fn create() -> Result<Self> {
+        Self::create_with(&std::env::temp_dir(), |file| {
+            use std::io::Write;
+            file.write_all(INSTALLER_SCRIPT.as_bytes())?;
+            file.flush()
+        })
+    }
+
+    fn create_with(
+        root: &Path,
+        mut write_script: impl FnMut(&mut File) -> std::io::Result<()>,
+    ) -> Result<Self> {
+        for _ in 0..16 {
+            let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = root.join(format!(
+                "niva-webview2-{}-{nonce}-{sequence}.ps1",
+                std::process::id()
+            ));
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(mut file) => {
+                    // Own the path before writing so every failure path removes
+                    // a possibly partial bootstrap script.
+                    let script = Self(path);
+                    let result =
+                        write_script(&mut file).with_context(|| "write WebView2 bootstrap script");
+                    drop(file);
+                    result?;
+                    return Ok(script);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| "create WebView2 bootstrap script");
+                }
+            }
+        }
+        anyhow::bail!("unable to create a unique WebView2 bootstrap script")
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+impl Drop for TemporaryScript {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
 
 #[cfg(any(target_os = "windows", test))]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -40,13 +112,9 @@ pub(crate) fn ensure_runtime() -> Result<()> {
 mod windows {
     use std::{
         ffi::OsStr,
-        fs::OpenOptions,
-        io::Write,
         os::windows::ffi::OsStrExt,
-        path::PathBuf,
+        path::Path,
         process::{Command, Output},
-        sync::atomic::{AtomicU64, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     use anyhow::{Context, Result, bail};
@@ -58,10 +126,9 @@ mod windows {
         core::PCWSTR,
     };
 
-    use super::{MINIMUM_WEBVIEW2_VERSION, MINIMUM_WEBVIEW2_VERSION_TEXT, RuntimeVersion};
-
-    const INSTALLER_SCRIPT: &str = include_str!("../../assets/webview2-bootstrap.ps1");
-    static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+    use super::{
+        MINIMUM_WEBVIEW2_VERSION, MINIMUM_WEBVIEW2_VERSION_TEXT, RuntimeVersion, TemporaryScript,
+    };
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -98,41 +165,6 @@ mod windows {
         status: String,
         exit_code: Option<i64>,
         error: Option<String>,
-    }
-
-    struct TemporaryScript(PathBuf);
-
-    impl TemporaryScript {
-        fn create() -> Result<Self> {
-            let root = std::env::temp_dir();
-            for _ in 0..16 {
-                let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
-                let nonce = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos();
-                let path = root.join(format!(
-                    "niva-webview2-{}-{nonce}-{sequence}.ps1",
-                    std::process::id()
-                ));
-                match OpenOptions::new().write(true).create_new(true).open(&path) {
-                    Ok(mut file) => {
-                        file.write_all(INSTALLER_SCRIPT.as_bytes())?;
-                        file.flush()?;
-                        return Ok(Self(path));
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(error) => return Err(error).context("write WebView2 bootstrap script"),
-                }
-            }
-            bail!("unable to create a unique WebView2 bootstrap script")
-        }
-    }
-
-    impl Drop for TemporaryScript {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
     }
 
     pub(super) fn ensure_runtime() -> Result<()> {
@@ -337,10 +369,34 @@ mod windows {
 
 #[cfg(test)]
 mod tests {
-    use super::{MINIMUM_WEBVIEW2_VERSION, MINIMUM_WEBVIEW2_VERSION_TEXT, RuntimeVersion};
+    use super::{
+        MINIMUM_WEBVIEW2_VERSION, MINIMUM_WEBVIEW2_VERSION_TEXT, RuntimeVersion, TemporaryScript,
+    };
+
+    static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     #[test]
-    fn runtime_floor_matches_the_unconditional_frame2_requirement() {
+    fn removes_partial_temporary_script_after_write_failure() {
+        let root = std::env::temp_dir().join(format!(
+            "niva-webview2-script-test-{}-{}",
+            std::process::id(),
+            NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&root).unwrap();
+
+        let result = TemporaryScript::create_with(&root, |file| {
+            use std::io::Write;
+            file.write_all(b"partial bootstrap script")?;
+            Err(std::io::Error::other("simulated flush failure"))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn runtime_floor_text_matches_the_release_floor() {
         let minimum = RuntimeVersion::parse(MINIMUM_WEBVIEW2_VERSION_TEXT).unwrap();
         assert_eq!(minimum, MINIMUM_WEBVIEW2_VERSION);
         assert!(RuntimeVersion::parse("98.0.1108.43").unwrap() < minimum);

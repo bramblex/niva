@@ -90,7 +90,7 @@ Devtools 通过 Niva 原生 API 完成项目管理和构建操作；普通浏览
   --target macos-x86_64
 ```
 
-`embedded` 是默认资源布局：Windows 输出单个 `.exe`，macOS 输出包含 `.app` 的 ZIP。`external` 为业务资源保留独立目录，适合需要按需读取的大型资源。每个预编译 runtime 都必须通过严格小于 3,300,000 bytes 的体积门禁；这不等于整个业务应用或 build kit 的大小，也不表示所有候选目标已通过。
+`embedded` 是默认资源布局：Windows 输出单个 `.exe`，macOS 输出包含 `.app` 的 ZIP。`external` 为业务资源保留独立目录，适合需要按需读取的大型资源。每个预编译 runtime 都必须通过对应平台的体积门禁：macOS 严格小于 3,300,000 bytes，Windows 严格小于 3,500,000 bytes；这不等于整个业务应用或 build kit 的大小，也不表示所有候选目标已通过。
 
 ## 6. 构建与检查
 

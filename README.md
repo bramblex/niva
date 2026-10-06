@@ -26,7 +26,7 @@ npm run build --workspace=packages/devtools
 
 ## 目标
 
-本节描述产品方向，不替代当前候选范围或平台验收。完整 runtime 主程序体积硬门禁为严格小于 3,300,000 bytes；macOS 的 3,000,000 bytes 是参考目标。该口径不代表整个应用包或 build kit 的大小。
+本节描述产品方向，不替代当前候选范围或平台验收。完整 runtime 主程序体积硬门禁为 macOS 严格小于 3,300,000 bytes、Windows 严格小于 3,500,000 bytes；macOS 的 3,000,000 bytes 仅为参考目标。该口径不代表整个应用包或 build kit 的大小。
 
 - 超轻量
   - Niva 使用系统 WebView，不随应用打包 Chromium 或 Node.js。

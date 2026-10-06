@@ -161,32 +161,36 @@ type IpcRequest = {
     }
   }
 
-  function isSupportedFrame(host: any): boolean {
+  function sameOriginTop(host: any): any | null {
     try {
-      if (host.top === host) return true;
-      const top = host.top;
       const origin = pageSourceOrigin(host);
-      const topOrigin = pageSourceOrigin(top, origin || undefined);
-      return !!origin && origin === topOrigin;
+      if (!origin) return null;
+      const expectedTop = host.top;
+      const visited = new Set<any>();
+      let current = host;
+      while (current && !visited.has(current)) {
+        visited.add(current);
+        if (pageSourceOrigin(current, origin) !== origin) return null;
+        const parent = current.parent;
+        if (!parent || parent === current) return current === expectedTop ? current : null;
+        if (pageSourceOrigin(parent, origin) !== origin) return null;
+        current = parent;
+      }
     } catch (_) {
-      return false;
+      // A cross-origin ancestor makes this frame unsupported.
     }
+    return null;
+  }
+
+  function isSupportedFrame(host: any): boolean {
+    return sameOriginTop(host) !== null;
   }
 
   function ipcHost(host: any): any | null {
-    if (!isSupportedFrame(host)) return null;
+    const top = sameOriginTop(host);
+    if (!top) return null;
     try {
-      const origin = pageSourceOrigin(host);
-      const isFrame = host.top !== host;
-      let current = isFrame ? host.parent : host;
-      while (current) {
-        if (pageSourceOrigin(current, origin || undefined) !== origin) return null;
-        if (current.ipc && typeof current.ipc.postMessage === "function") return current;
-        const parent = current.parent;
-        if (!parent || parent === current) break;
-        if (pageSourceOrigin(parent, origin || undefined) !== origin) break;
-        current = parent;
-      }
+      return top.ipc && typeof top.ipc.postMessage === "function" ? top : null;
     } catch (_) { /* Cross-origin parent access is deliberately unavailable. */ }
     return null;
   }

@@ -12,9 +12,9 @@
 
 以上是当前实现的源码检查结论，不代表每个平台都已端到端验收。[协议定义](../crates/niva/src/app/api_manager/protocol.rs) 固定 wire version/header；[runtime bootstrap](../packages/runtime/src/bootstrap.ts) 创建 IPC API 请求、返回流 ticket 并按 ticket attach 数据 lane；[Native API manager](../crates/niva/src/app/api_manager/mod.rs) 处理 attach 与 WS session；[window builder](../crates/niva/src/app/window_manager/builder.rs) 通过 Wry 脚本执行送达 IPC reply。具体 smoke 的观测边界见 [bridge-route smoke](../examples/bridge-route-smoke/README.md)。
 
-## 当前实现与验证证据
+## 此前 HTTP/BFCache 验收快照（历史）
 
-状态按 2026-10-06 主线程对最新源码快照的实际运行结果整理；运行成功只代表对应命令、fingerprint 和目标环境。
+以下证据绑定 runtime fingerprint `0befa3f4ca6a5d151c54c3532ce226a01fe00c562d3a1abb87ba09f28c06f694`，仅记录此前 HTTP/BFCache 源码快照，不代表 2026-10-06 Windows review 后的当前源码。新快照证据见下节。
 
 | 项目 | 当前证据 | 状态与限制 |
 | --- | --- | --- |
@@ -37,20 +37,34 @@
 | Windows target 与真机 | Windows target check 因 `lzma-sys` 找不到 MSVC C 标准库头 `stdlib.h` 而失败；未有 Windows WebView 真机结果。 | 工具链阻断；Windows 条件编译未覆盖，Windows 真机流程未验收。macOS 编译或交叉检查不能替代真机结果。 |
 | CI | 远端 CI 尚未核对；本机 `gh` 因未认证退出 4。 | 保持开放；本地结果不能替代远端工作流证据。 |
 
+## 2026-10-06 Windows review 后的当前快照
+
+本节记录当前源码快照的实际检查结果；成功只覆盖列出的命令、fingerprint 与运行环境。源码审阅发现的问题与修复清单见[Windows 盲审报告](windows-blind-review-2026-10-06.md)。本轮保持协议边界：异步 API 创建/控制始终走 IPC `t:"api_call"`；Wry IPC/`evaluate_script` 与可选 WebSocket 是两条纯数据路径，WebSocket 只承担数据 attach/data/ack/cancel。runtime/types 没有公开 API 或 wire-contract 变更。
+
+| 项目 | 当前证据 | 状态与限制 |
+| --- | --- | --- |
+| Runtime 与 frame routing | Runtime fingerprint `e966c98485f436ab9adf0b78919dddc66a1374e6542457a4431d66571c9b63ef`；bootstrap 630,009 bytes、182 output artifacts。Runtime build/typecheck/test 通过，179 个测试通过。新增嵌套同源 iframe 用例验证请求上路由到顶层 Native IPC host；跨源中间祖先与缺失顶层 host fail-closed。 | Runtime 单测证明 realm/路由逻辑；本轮真实 macOS fixture 覆盖同源 iframe parent relay，但没有嵌套 iframe 真机专项，也没有 Windows WebView 真机验证。 |
+| TypeScript、types 与 Devtools | Runtime build；types typecheck、三个 consumer configs、fresh-pack 四种消费者；Devtools `tsc --noEmit`/Vite build 均通过。 | Devtools bundle 有既有体积提示：minified JS chunk 907.68 kB，大于 500 kB 提示阈值；构建成功。 |
+| Rust workspace gates | `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo clippy --workspace --all-targets`、`cargo test --workspace` 均 exit 0；测试 niva 234 passed/2 ignored、niva_packager 27、packager validation integration 2、win_packager 17，共 280 passed/2 ignored。第一次完整测试有 1 项 UDP 端口释放检查报 `AddrInUse`；单独复跑该用例通过，随后 workspace 全量复跑通过。 | 测试在 macOS 主机运行；2 个忽略测试要求可用的受信任出站 HTTPS 证书。Clippy 有 warnings。 |
+| Windows 条件编译 | `cargo check -p niva --bin niva --target x86_64-pc-windows-msvc` 与 `cargo check -p win_packager --target x86_64-pc-windows-msvc` 均通过。 | `cargo check --workspace --target x86_64-pc-windows-msvc` 被本机缺失 MSVC C 标准库/头文件阻断：`lzma-sys`/`bzip2-sys` 缺 `stdlib.h`，`ring` 缺 `assert.h`。这不否定上面两个 Rust 包的条件编译检查，但完整 workspace Windows check 未通过。以上都不等于 Windows 真机验证。 |
+| Windows helper 与资源身份策略 | Windows build helper `node --check` 及 Node tests 6/6 通过；资源文件身份策略纯 Rust tests 4 项通过。 | helper 测试和资源 identity policy tests 不替代真实 PE 写入或 NTFS/ReFS/FAT 文件系统验证。 |
+| macOS WebView 回归 | Node compatibility：179 checks/17 cases；Native API：39 method cases；bridge-route WS/IPC 两 lane 均通过，包含 1 MiB 双向传输、Node child/FileHandle 与 parent iframe 路径。三套 GUI smoke 使用 debug binary SHA-256 `26315117ea2db5843fbe59676f44a7fba640909b529db6905a59c0df1563050d`。日志 `/tmp/niva-windows-review-node.log`、`/tmp/niva-windows-review-macos-api.log`、`/tmp/niva-windows-review-bridge-route.log`；bridge-route 结果在 `/tmp/niva-windows-review-bridge-route/result.json`。 | 只覆盖 macOS WebView；Native API 默认 suite 未运行 dialogs、clipboard、shortcuts。不能用 macOS 验证代替 Windows 菜单、WebView2、stdio 或打包真机验收。 |
+| macOS release runtime | ARM64 `target/release/niva` 为 3,073,952 bytes，SHA-256 `1570fdc6680f3713f0b6a4407f680bd242c5b841e75f41688d46019c0d63dfc1`；runtime fingerprint 为上列当前值。 | 按 macOS 严格小于 3,300,000 bytes 门禁通过；超过 3,000,000 bytes 参考目标。Windows release 主程序因 Windows MSVC C toolchain 不可用而未测体积。 |
+| Windows 真机与远端 CI | 本轮没有 Windows 设备；远端 CI 结果未能读取（GitHub API 返回 403）。 | Windows WebView2、原生菜单 accelerator、stdin/子进程取消、PE 打包和目标机文件系统仍开放；target checks、macOS smoke 与旧 2026-09-23 有限 Windows 记录均不能替代当前真机复测。 |
+
 ## 仍开放的验收门禁
 
-- [x] 默认 macOS Native API suite 的 BFCache、reload 与 forward navigation 用例通过（39 method cases）；dialogs/clipboard/shortcut 与 `process.open` 保留未运行标记。
-- [x] 本轮 BFCache 真 GUI、Rust workspace gates 与 stdin reader race 回归通过；跨平台和完整 Native API matrix 仍开放。
+- [x] 当前 macOS Native API suite 的 BFCache、reload 与 forward navigation 用例通过（39 method cases）；dialogs/clipboard/shortcuts 与 `process.open` 保留未运行标记。
+- [x] 当前 runtime、TypeScript/types/Devtools、Rust workspace gates 与 macOS Node/bridge route 回归通过；跨平台和完整 Native API matrix 仍开放。
 - [ ] 获取并记录本提交的远端 CI 结果。
-- [ ] Windows target 编译在具备 MSVC C 标准库的环境重新运行；Windows WebView2 真机关键流程仍需独立验证。
-- [ ] 其他 release target 的完整主程序大小/SHA 与目标平台 evidence 补齐前，不宣称跨平台体积或验收完成。
+- [ ] 在具备 MSVC C 标准库的环境完成 Windows full-workspace target check，并在 Windows 真机验证 WebView2、原生菜单、stdio/进程和打包关键路径。
+- [ ] Windows 与其他 release target 的完整主程序大小/SHA 与目标平台 evidence 补齐前，不宣称跨平台体积或验收完成。
 
 ## 当前产物记录
 
-- Runtime fingerprint：本轮 `0befa3f4ca6a5d151c54c3532ce226a01fe00c562d3a1abb87ba09f28c06f694`。
-- Bootstrap：629,975 bytes。
-- Release target/程序：macOS ARM64，`target/release/niva`，3,073,968 bytes。
-- Release SHA-256：`050f4ef24f48505a48668b9e395c34f26d68a5e742ade8cabda399a9b9a96b02`。
-- Bridge debug binary SHA-256：`0c3775e26df0a06d7af44111d275bf14a1d91f64075ff7800845fddd2f2dd9fc`（最终 debug binary）。
+- Runtime fingerprint：当前 Windows review 快照 `e966c98485f436ab9adf0b78919dddc66a1374e6542457a4431d66571c9b63ef`（此前 HTTP/BFCache snapshot `0befa3f4ca6a5d151c54c3532ce226a01fe00c562d3a1abb87ba09f28c06f694` 仅为历史证据）。
+- Bootstrap：当前 630,009 bytes；历史 fingerprint 对应 629,975 bytes。
+- Release target/程序：当前 macOS ARM64 `target/release/niva` 为 3,073,952 bytes，SHA-256 `1570fdc6680f3713f0b6a4407f680bd242c5b841e75f41688d46019c0d63dfc1`。此前产物 hash 仅代表其各自源码快照。
+- Bridge debug binary SHA-256：本节本轮仅报告 smoke 日志路径，未单独记录当前 debug binary hash；不得沿用历史 `0c3775e26df0a06d7af44111d275bf14a1d91f64075ff7800845fddd2f2dd9fc` 作为当前值。
 - macOS bridge-route：历史快照 `39bda818` PASS，`/tmp/niva-bridge-route-smoke/result.json`。
-- 本轮 runtime 177/177、Devtools build、types typecheck/consumer/fresh-pack、Rust gates、BFCache GUI suite、Node compatibility 179 checks/17 cases、bridge-route WS/IPC 双 lane、top-level bridge、trusted IPC 27/27、remote IPC 25/25、bootstrap configuration smoke 与 macOS ARM64 release size 均通过。远端 CI、Windows target/真机和其他 release target 仍开放，详见上表。
+- 当前快照的 runtime 179/179、Devtools build、types typecheck/consumer/fresh-pack、Rust gates、BFCache GUI suite、Node compatibility 179 checks/17 cases、bridge-route WS/IPC 双 lane 与 macOS ARM64 release size 均通过。远端 CI、Windows 完整 workspace target check/真机、Windows release 体积和其他 release target 仍开放，详见上表。

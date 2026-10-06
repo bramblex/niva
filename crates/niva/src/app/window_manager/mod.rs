@@ -136,8 +136,14 @@ impl WindowManager {
     /// manager guard, so locks are always acquired leaf-first and released
     /// before the next one — no nesting, no inversion.
     pub fn cleanup_window(app: &Arc<NivaApp>, window: &Arc<NivaWindow>) -> Result<()> {
+        #[cfg(target_os = "windows")]
+        let release_menu = || window.release_menu_on_main();
+        #[cfg(not(target_os = "windows"))]
+        let release_menu = || Ok(());
+
         run_cleanup_steps(
             window.id,
+            release_menu,
             || {
                 let mut shortcuts = app.shortcut()?;
                 shortcuts.unregister_all(window.id)
@@ -184,11 +190,15 @@ impl WindowManager {
 
 fn run_cleanup_steps(
     window_id: u8,
+    release_menu: impl FnOnce() -> Result<()>,
     unregister_shortcuts: impl FnOnce() -> Result<()>,
     destroy_trays: impl FnOnce() -> Result<()>,
     cancel_api_calls: impl FnOnce(),
 ) -> Result<()> {
     let mut failures = Vec::new();
+    if let Err(error) = release_menu() {
+        failures.push(format!("menu: {error:#}"));
+    }
     if let Err(error) = unregister_shortcuts() {
         failures.push(format!("shortcuts: {error:#}"));
     }
@@ -220,6 +230,10 @@ mod cleanup_tests {
         let result = run_cleanup_steps(
             7,
             || {
+                completed.lock().unwrap().push("menu");
+                Ok(())
+            },
+            || {
                 completed.lock().unwrap().push("shortcuts");
                 Err(anyhow!("unregister failed"))
             },
@@ -234,7 +248,7 @@ mod cleanup_tests {
         assert!(errors.contains("tray: destroy failed"));
         assert_eq!(
             *completed.lock().unwrap(),
-            ["shortcuts", "tray", "api calls"]
+            ["menu", "shortcuts", "tray", "api calls"]
         );
     }
 }

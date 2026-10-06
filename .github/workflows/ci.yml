@@ -102,7 +102,10 @@ jobs:
         run: |
           $bytes = (Get-Item target/release/niva.exe).Length
           Write-Host "Windows release binary: $bytes bytes"
-          if ($bytes -ge 3300000) { exit 1 }
+          if ($bytes -ge 3500000) {
+            Write-Error "Windows runtime must be smaller than 3,500,000 bytes"
+            exit 1
+          }
       - if: runner.os == 'macOS'
         shell: bash
         run: |

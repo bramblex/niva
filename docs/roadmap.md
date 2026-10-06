@@ -7,7 +7,7 @@
 - 冻结现有 Niva 原生 API、统一 TypeScript runtime、独立可选的 CommonJS/ESM Node 风格模块子集，以及 GUI/CLI 共用的打包核心。
 - 异步调用以 IPC 为稳定通道；符合条件的流式操作可选使用 WebSocket 优化通道。同步 XHR 仅用于同步兼容 API；WebSocket 尚未移除，IPC 二进制帧仍在边界使用 Base64，不宣称零拷贝。
 - Node 风格适配器仅承诺当前实现并选择启用的子集，不表示完整 Node.js 兼容；不得把部分 upstream、真实应用或单平台结果外推为全量兼容或跨平台验收。
-- 完整 runtime 主程序硬体积门禁为严格小于 3,300,000 bytes，统计 Native 代码、内嵌 JS、加载器和索引；macOS 3,000,000 bytes 为参考目标。build kit、打包后的业务应用和仅有 JS/Native 子样本均使用不同口径。
+- 完整 runtime 主程序硬体积门禁为 macOS 严格小于 3,300,000 bytes、Windows 严格小于 3,500,000 bytes，统计 Native 代码、内嵌 JS、加载器和索引；macOS 3,000,000 bytes 仅为参考目标。build kit、打包后的业务应用和仅有 JS/Native 子样本均使用不同口径。
 - 本版候选准备不等于 v1.0 门禁通过。逐平台及远端 CI 的当前证据只在[候选记录](release-0.10.0-beta.1.md)中登记；以下历史记录不能替代本轮验收。
 
 ## v1.0 门禁（盖章前必须清零）
@@ -29,7 +29,7 @@
   旧 session-cookie 草案已由现行 scoped file-token 方案取代，见
   `docs/http-auth-plan.md`。此项门禁保持开放，待验证实现与验收证据；不表示调试
   模式中的普通 HTTP 静态资源均已鉴权。
-- [ ] **window-tray-menu 三个 P0**：Windows 已实测 owner 关系、菜单 set/hide/show 与点击事件、全局快捷键注册及触发；初始化失败分支、macOS 菜单操作和更广的行为矩阵仍待验收（`docs/window-tray-menu-plan.md` §1–3）。
+- [ ] **window-tray-menu 三个 P0**：2026-09-23 Windows 真机已实测 owner 关系、菜单 set/hide/show 与点击事件、全局快捷键注册及触发；本轮为 Windows 原生菜单 accelerator 增加了消息钩子并修复菜单替换生命周期，但本轮没有 Windows 设备复测。初始化失败分支、macOS 菜单操作及更广行为矩阵仍待验收（`docs/window-tray-menu-plan.md` §1–3、`docs/windows-validation-2026-09-23.md`）。
 - [ ] **CI**：`.github/workflows/ci.yml` 已加入双平台检查；待推送后实际运行并处理结果。
 - [ ] **Windows 真机完整验收**：已有 Devtools 构建/启动、stdio、打包页 bridge/HTTP、菜单/快捷键/owner 的有限 smoke；剩余用例见 [验证记录](windows-validation-2026-09-23.md)。
 
@@ -66,7 +66,7 @@
 - [x] **资源目录路径穿越约束**：`FileSystemResource` 解码路径并校验 canonical
   根目录，含符号链接逃逸拒绝；见 `docs/security.md`。此源码能力不代表整个
   HTTP 静态服务都已鉴权，v1.0 对应 HTTP 边界验收仍开放。
-- [ ] **wry 能力验收及 tao 缺口**（1.x）：`evaluate_script`/`load_url`/`reload`/cookie/标题跟随等基础源码已补齐，macOS 已验证部分实际调用；Windows 真机与 `docs/api-coverage.md` §3 的未测方法仍待验收，tao 侧缺口见同文件 §1–2。
+- [ ] **wry 能力验收及 tao 缺口**（1.x）：`evaluate_script`/`load_url`/`reload`/cookie/标题跟随等基础源码已补齐，macOS 已验证部分实际调用；Windows 真机与 `docs/api-coverage.md` §3 的未测方法仍待验收。Windows 菜单 accelerator 已加入应用消息钩子，原生触发仍待设备验证；其他 tao 缺口见同文件 §1–2。
 - [x] **WS Host/Origin 校验**：握手要求 Niva 服务 `Host`、窗口 token 与该窗口被授权的精确页面 `Origin`。打包页为 macOS/Linux `niva-<uuid>://app` / Windows `http://niva-<uuid>.app`；显式 debug 可授权精确 loopback Vite 源。既有 macOS/Windows smoke 记录的是此前固定origin；UUID变体的全平台真机及负向握手矩阵仍待验收。
 - [x] **CSP 默认模板**：新建简单项目带可编辑的严格 CSP meta；默认关闭 NodeCompat。协议页和显式 `debug-resource` 文档导航会补本次 loopback WS/HTTP 到 `connect-src`，并给 Niva 文件 URL 常用的图片、媒体、字体、样式 source 加精确 HTTP origin。启用 NodeCompat 且页面自带 CSP meta 时，Niva 注入块移到 CSP meta 后，仅两条 Niva 注入脚本获每次导航随机 nonce；没有 CSP meta 的旧页面不增加强制策略。此前固定origin的macOS WKWebView已验证debug-resource与打包页正负例；Windows WebView2已有有限CSP真机证据，UUID origin变体及完整矩阵仍待验收。宿主额外的 CSP response header 无法由本功能修改，完整边界见 `docs/security.md`。
 

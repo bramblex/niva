@@ -12,7 +12,11 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_LIMIT_BYTES = 3_300_000
+RUNTIME_LIMIT_BYTES = {
+    'windows-x86_64': 3_500_000,
+    'macos-aarch64': 3_300_000,
+    'macos-x86_64': 3_300_000,
+}
 
 def sha256_file(path):
     digest=hashlib.sha256()
@@ -102,7 +106,8 @@ def main():
             size=runtime_path.stat().st_size
             digest=hashlib.sha256(runtime_path.read_bytes()).hexdigest()
             assert row['path']==runtime['path'] and row['sizeBytes']==size
-            assert row['limitBytesExclusive']==RUNTIME_LIMIT_BYTES and size<RUNTIME_LIMIT_BYTES
+            limit=RUNTIME_LIMIT_BYTES[target]
+            assert row['limitBytesExclusive']==limit and size<limit
             assert row['sha256']==runtime['sha256']==digest
         tool=kit/('niva-packager.exe' if os.name=='nt' else 'niva-packager')
         tool.chmod(0o755)

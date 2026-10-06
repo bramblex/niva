@@ -719,6 +719,216 @@ test("same-origin iframe BFCache restore replaces its frame route and ignores ol
   assert.ok(parent.requests.some((request) => request.t === "session_close" && request.sessionId === oldSessionId));
 });
 
+test("three-level same-origin frames use top-frame IPC and retain nested session routes across BFCache", async () => {
+  let releaseStaleCall;
+  const nativeRequests = [];
+  const middleNativeRequests = [];
+  const grandchildNativeRequests = [];
+  const top = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    ipcReply(request) {
+      nativeRequests.push(request);
+      if (request.t === "api_call" && request.method === "grandchild.stale") {
+        return new Promise((resolve) => {
+          releaseStaleCall = () => resolve({ t: "result", id: request.id, code: 0, data: "late grandchild" });
+        });
+      }
+      if (request.t === "api_call" && request.method === "grandchild.stream") {
+        return { t: "channelOpened", id: request.id, capability: "nested-capability" };
+      }
+      if (request.t === "channelAttach") return { t: "channelAttached", id: request.id, accepted: true };
+      if (request.t === "channelAck") return { t: "channelAckReceived", id: request.id, seq: request.seq, accepted: true };
+      if (request.t === "channelSend") {
+        const frame = Buffer.from(request.frame, "base64");
+        return { t: "channelAck", id: request.id, seq: frame.readUInt32BE(14), accepted: true };
+      }
+      if (request.t === "heartbeat") return { t: "heartbeatAck", sessionId: request.sessionId };
+      return { t: "result", id: request.id, code: 0, data: `top:${request.method}` };
+    },
+  });
+  top.context.frames = [];
+  const middle = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    iframeParent: top,
+    ipcReply(request) {
+      middleNativeRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: `middle:${request.method}` };
+    },
+  });
+  middle.context.frames = [];
+  const grandchild = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    fakeTimers: true,
+    webSocketThrows: 1,
+    iframeParent: middle,
+    ipcReply(request) {
+      grandchildNativeRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: `grandchild:${request.method}` };
+    },
+  });
+  // VM contexts do not expose browser WindowProxy identity through frames;
+  // use the exact frame objects so the route checks model the browser path.
+  top.context.frames = [middle.context];
+  middle.context.frames = [grandchild.context];
+  assert.equal(top.context.__niva_register_frame_session(middle.context.Niva.bridge.sessionId, middle.context, "register"), true);
+  assert.equal(middle.context.__niva_register_frame_session(grandchild.context.Niva.bridge.sessionId, grandchild.context, "register"), true);
+  assert.equal(top.context.__niva_register_frame_session(grandchild.context.Niva.bridge.sessionId, middle.context, "register"), true);
+  const grandchildSession = grandchild.context.Niva.bridge.sessionId;
+
+  const middleCall = middle.context.Niva.bridge.call("middle.lookup", []);
+  const grandchildPromise = grandchild.context.Niva.bridge.call("grandchild.lookup", []);
+  await new Promise((resolve) => setImmediate(resolve));
+  const [middleResult, grandchildResult] = await Promise.all([middleCall, grandchildPromise]);
+  assert.equal(middleResult, "top:middle.lookup");
+  assert.equal(grandchildResult, "top:grandchild.lookup");
+  assert.ok(nativeRequests.some((request) => request.t === "api_call" && request.sessionId === middle.context.Niva.bridge.sessionId));
+  const grandchildCall = top.requests.find((request) => request.t === "api_call" && request.method === "grandchild.lookup");
+  assert.equal(grandchildCall.sessionId, grandchildSession);
+  assert.equal(grandchildCall.replyAccepted, true, "the top reply relays through the intermediate frame to the matching child session");
+  assert.deepEqual(middleNativeRequests, [], "the intermediate frame's injected IPC endpoint is never selected");
+  assert.deepEqual(grandchildNativeRequests, [], "the grandchild's injected IPC endpoint is never selected");
+
+  const stream = grandchild.context.Niva.bridge.stream("grandchild.stream", []);
+  const settled = stream.promise.then((value) => ({ value }), (error) => ({ error }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(top.requests.some((request) => request.t === "api_call" && request.method === "grandchild.stream" && request.sessionId === grandchildSession));
+  assert.ok(top.requests.some((request) => request.t === "channelAttach" && request.sessionId === grandchildSession));
+  assert.equal(middleNativeRequests.length, 0);
+  assert.equal(grandchildNativeRequests.length, 0);
+
+  assert.equal(top.context.__niva_native_frame({
+    sessionId: grandchildSession,
+    id: stream.id,
+    seq: 1,
+    frame: { t: "text", data: JSON.stringify({ t: "event", id: stream.id, seq: 1, name: "chunk", data: { bytes: 3 } }) },
+  }), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(top.requests.some((request) => request.t === "channelAck" && request.sessionId === grandchildSession && request.seq === 1));
+
+  assert.equal(grandchild.context.Niva.bridge.streamSend(stream.id, new Uint8Array([4, 5, 6]), true), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  const dataRequest = top.requests.find((request) => request.t === "channelSend" && request.sessionId === grandchildSession);
+  assert.ok(dataRequest, "outbound channel data uses the top-frame IPC endpoint");
+  assert.deepEqual(Array.from(Buffer.from(dataRequest.frame, "base64").subarray(18)), [4, 5, 6]);
+  assert.equal(middleNativeRequests.length, 0);
+  assert.equal(grandchildNativeRequests.length, 0);
+
+  assert.equal(top.context.__niva_native_frame({
+    sessionId: grandchildSession,
+    id: stream.id,
+    seq: 2,
+    frame: { t: "text", data: JSON.stringify({ t: "result", id: stream.id, code: 0, data: "nested stream done" }) },
+  }), true);
+  assert.equal((await settled).value, "nested stream done");
+  assert.deepEqual(top.requests.filter((request) => request.t === "channelAck" && request.sessionId === grandchildSession).map((request) => request.seq), [1, 2]);
+
+  const oldSessionId = grandchild.context.Niva.bridge.sessionId;
+  const stale = grandchild.context.Niva.bridge.call("grandchild.stale", []).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof releaseStaleCall, "function");
+  for (const page of [top, middle, grandchild]) {
+    for (const listener of page.pageListeners.get("pagehide") || []) listener({ persisted: true });
+  }
+  assert.equal((await stale).error?.code, "ERR_NIVA_SESSION_EXPIRED");
+  for (const page of [top, middle, grandchild]) {
+    for (const listener of page.pageListeners.get("pageshow") || []) listener({ persisted: true });
+  }
+  const restoredSessionId = grandchild.context.Niva.bridge.sessionId;
+  assert.notEqual(restoredSessionId, oldSessionId);
+  assert.equal(top.context.__niva_register_frame_session(middle.context.Niva.bridge.sessionId, middle.context, "register"), true);
+  assert.equal(middle.context.__niva_register_frame_session(restoredSessionId, grandchild.context, "register"), true);
+  assert.equal(top.context.__niva_register_frame_session(restoredSessionId, middle.context, "register"), true);
+
+  releaseStaleCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  const staleRequest = top.requests.find((request) => request.t === "api_call" && request.method === "grandchild.stale");
+  assert.equal(staleRequest.replyAccepted, false, "the retired nested session route cannot accept an old reply");
+  assert.equal(await grandchild.context.Niva.bridge.call("grandchild.afterRestore", []), "top:grandchild.afterRestore");
+  const restoredRequest = top.requests.find((request) => request.t === "api_call" && request.method === "grandchild.afterRestore");
+  assert.equal(restoredRequest.sessionId, restoredSessionId);
+  assert.equal(restoredRequest.replyAccepted, true, "the restored grandchild registers its fresh session through the intermediate frame");
+  assert.deepEqual(middleNativeRequests, []);
+  assert.deepEqual(grandchildNativeRequests, []);
+});
+
+test("nested frames reject IPC when an ancestor is cross-origin or the top frame has no IPC endpoint", async () => {
+  const topRequests = [];
+  const middleRequests = [];
+  const grandchildRequests = [];
+  const top = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    ipcReply(request) {
+      topRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: "top" };
+    },
+  });
+  top.context.frames = [];
+  const middle = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    iframeParent: top,
+    origin: "https://middle.test",
+    ipcReply(request) {
+      middleRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: "middle" };
+    },
+  });
+  middle.context.frames = [];
+  const crossOriginGrandchild = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    iframeParent: middle,
+    origin: "https://niva.test",
+    ipcReply(request) {
+      grandchildRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: "grandchild" };
+    },
+  });
+  await assert.rejects(crossOriginGrandchild.context.Niva.bridge.call("should.reject", []), { code: "ERR_NIVA_IPC_UNAVAILABLE" });
+  assert.deepEqual(topRequests, [], "a same-origin top does not authorize a child across an intervening origin");
+  assert.deepEqual(middleRequests, []);
+  assert.deepEqual(grandchildRequests, []);
+
+  const noIpcTop = bootPage({ injectCommonJs: false, injectEsm: false });
+  noIpcTop.context.frames = [];
+  const ipcMiddleRequests = [];
+  const ipcGrandchildRequests = [];
+  const ipcMiddle = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    iframeParent: noIpcTop,
+    ipcReply(request) {
+      ipcMiddleRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: "must not fallback to middle" };
+    },
+  });
+  ipcMiddle.context.frames = [];
+  const ipcGrandchild = bootPage({
+    injectCommonJs: false,
+    injectEsm: false,
+    iframeParent: ipcMiddle,
+    ipcReply(request) {
+      ipcGrandchildRequests.push(request);
+      return { t: "result", id: request.id, code: 0, data: "must not fallback to grandchild" };
+    },
+  });
+  await assert.rejects(ipcGrandchild.context.Niva.bridge.call("should.reject", []), { code: "ERR_NIVA_IPC_UNAVAILABLE" });
+  assert.deepEqual(noIpcTop.requests, []);
+  assert.deepEqual(ipcMiddleRequests, [], "the runtime does not choose an iframe IPC endpoint when top IPC is absent");
+  assert.deepEqual(ipcGrandchildRequests, []);
+});
+
 test("retired stream API tickets cannot start an attachment after BFCache restore", async () => {
   let releaseTicket;
   const { context, requests, pageListeners } = bootPage({

@@ -1,6 +1,6 @@
 # Niva Bridge 合约
 
-> 当前状态（2026-10）：API 控制面/纯数据面分离与 Wire v2 已进入当前源码。真实 macOS WebView 的 custom-protocol WS 与 CSP 限制 IPC 两 lane smoke 均通过，包含 CommonJS globals、流 attach、双向数据、同源 iframe session 和 parent 后续 unary；完整证据及未覆盖平台见[Bridge v2 验收记录](bridge-v2-validation.md)。后文标明的历史快照保留当时行为，不定义当前协议。
+> 当前状态（2026-10）：API 控制面/纯数据面分离与 Wire v2 已进入当前源码。异步 API 创建和控制统一走 IPC `t:"api_call"`，稳定数据路径走 Wry IPC/`evaluate_script`；WebSocket 只优化纯数据传输。真实 macOS WebView 已通过 custom-protocol WS 与 CSP 限制 IPC 两 lane smoke，包含 CommonJS globals、流 attach、双向数据、同源 iframe session 和 parent 后续 unary。当前 runtime 还为嵌套同源 iframe 将 IPC host 路由到顶层 Native host，见[Bridge v2 验收记录](bridge-v2-validation.md)；嵌套 iframe 的新增覆盖是 runtime 测试，Windows 真机仍未验收。后文标明的历史快照保留当时行为，不定义当前协议。
 
 ## 当前协议
 
@@ -13,7 +13,7 @@
 - **资源 owner**：Native 资源固定归属创建它的 IPC session；数据 transport 独立选择，可用 WS 或稳定 IPC，不因 attach、断线或数据通道选择而改变 owner。关闭 session 时清理其资源与流。
 - **页面 session 生命周期**：`session_close` 是经 IPC 发送的单向生命周期控制消息，不属于 API。持久化页面恢复时的匹配条件、旧请求取消、资源处置和新 session 行为见[BFCache 与页面生命周期](#bfcache-与页面生命周期)。
 - **流与切换**：保留严格 seq、ACK、背压、有界队列、cancel、session lease 和资源归属。WS 建立失败时可用稳定 IPC 数据路径；已开始流断线后的切换不得承诺无损，也不得重放可能已提交的 API 副作用。若实现切换，必须能区分仅数据传输恢复与 API 重试，并对不确定状态明确失败。
-- **授权与 frame 边界**：Rust 侧使用来源 URL/origin、token、窗口、session、call 与流凭证鉴权；切换数据通道不能扩权。Wry 不提供可供本协议依赖的真实 Native child-frame ID；同源 iframe 通过父页 relay 和 JS session 映射路由 reply，Native 仍校验来源 URL/origin、token、session 与 ticket。顶层本地文档与同源 iframe 可通过统一 Wry IPC/eval 路径使用 bridge。远端顶层页面仍受精确 origin grant 与 unary 权限边界约束，不因本地传输可用而获得流或二进制权限。跨源 iframe 一律 fail-closed，即使它自身配置了 origin grant 也拒绝 API bridge：Wry `evaluate_script`只定向主文档，无法安全定向跨源子 frame，且不得让 parent 观察 child 的秘密；不为此增加平台专用适配。
+- **授权与 frame 边界**：Rust 侧使用来源 URL/origin、token、窗口、session、call 与流凭证鉴权；切换数据通道不能扩权。Wry 不提供可供本协议依赖的真实 Native child-frame ID；同源 iframe 沿父页 relay 和 JS session 映射向上路由，直到顶层 Native IPC host，Native 仍校验来源 URL/origin、token、session 与 ticket。中间跨源或无法访问的祖先会 fail-closed，不回退到仅由 iframe 注入的 `window.ipc`。远端顶层页面仍受精确 origin grant 与 unary 权限边界约束，不因本地传输可用而获得流或二进制权限。跨源 iframe 一律 fail-closed，即使它自身配置了 origin grant 也拒绝 API bridge：Wry `evaluate_script`只定向主文档，无法安全定向跨源子 frame，且不得让 parent 观察 child 的秘密；不为此增加平台专用适配。
 - **平台抽象**：统一使用 Wry IPC 与 `evaluate_script` 的稳定机制；现有 WKWebView reply handler 与 WebView2 专用 IPC/reply 通道已移除，不保留也不新增平台专用 reply 协议。
 
 流创建后，IPC 与 WS attach 是二选一的 route，不是连续步骤。`api_call`参数、`rid`分配和内部 ticket 的其余字段由实现定义，但不能改变控制面/数据面边界：

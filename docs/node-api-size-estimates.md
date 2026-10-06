@@ -102,11 +102,11 @@
 
 精确的包版本、入口源码、构建参数、压缩参数、lockfile 快照、当前文件哈希、逐模块 Native 假设和预算依据保存在 [node-api-size-evidence.json](node-api-size-evidence.json)；模块预算同时写入 [node-api-inventory.json](node-api-inventory.json) 的 `sizeEstimate`。库样本数据可按其中的 entryTexts 和命令重新构建。
 
-真正补齐后，再对固定平台/工具链做同一配置的前后 release 构建，分别比较 Native 文件及最终资源/应用包。当前数字用于选范围，不能据此宣布 3.3 MB 发布门禁通过；尤其网络生命周期及最终链接差分尚未实测。fork 已移出目标及预算。
+真正补齐后，再对固定平台/工具链做同一配置的前后 release 构建，分别比较 Native 文件及最终资源/应用包。当前数字用于选范围，不能据此宣布 macOS 3.3 MB 或 Windows 3.5 MB 发布门禁通过；尤其网络生命周期及最终链接差分尚未实测。fork 已移出目标及预算。
 
 ## 6. 全部目标 Native + JS 内嵌后的体积条件
 
-用户接受的上限为 **3.3 MB（3,300,000 bytes）**；现有 CI 与构建脚本按严格小于该值验收。统计对象是 **22 个模块、179 项目标 API 全部完成后的 Native 实现 + NodeCompat JS/第三方库 + 内嵌加载/索引/对齐**组成的完整 release 主程序。达标后直接采用内嵌方案，默认提供 Node 风格开发入口。
+当前完整 release runtime 体积门禁按平台执行：macOS 严格小于 **3,300,000 bytes**，Windows 严格小于 **3,500,000 bytes**。本节的统一 3.3 MB 预算只用于估算 macOS 目标；统计对象是 **22 个模块、179 项目标 API 全部完成后的 Native 实现 + NodeCompat JS/第三方库 + 内嵌加载/索引/对齐**组成的完整 release 主程序。预算达标不替代各目标 release 实测。
 
 ### 全范围预算合算
 
@@ -120,12 +120,12 @@
 | 公共 JS 加载/注册成本 | 1,024–4,096 | 1–4 KiB，仅计一次 |
 | **已量化预算项的合计** | **2,515,474–3,183,122** | **约 2.52–3.18 MB（十进制）** |
 
-这是预算项的算术合计，不是完整实现测量或保证上界。按新的 socket 基座 + JS 协议层，上端距 3,300,000 bytes 约 **116,878 bytes（114.1 KiB）**。相比旧方案减少了重复的 Native HTTP/HTTPS 增量预算，并增加 JS parser/codec/生命周期包装预算；没有提前抵扣删除 ureq 可能节省的空间。
+这是预算项的算术合计，不是完整实现测量或保证上界。按新的 socket 基座 + JS 协议层，估算上端距 macOS 3,300,000-byte 门禁约 **116,878 bytes（114.1 KiB）**。相比旧方案减少了重复的 Native HTTP/HTTPS 增量预算，并增加 JS parser/codec/生命周期包装预算；没有提前抵扣删除 ureq 可能节省的空间。Windows 额外的 200,000-byte 门禁余量不构成 Windows 完整产物已达标的证据。
 
-因此新分层在预算上更有机会满足 3.3 MB，但仍须完成全部目标后逐平台实测。Native socket/系统DNS接线、JS HTTP严格解析与对象生命周期、最终内嵌/链接/对齐会影响结果；macOS arm64 的预算不能直接当作 Windows 或 x86_64 的测量。[分层依据和小库实测](node-layering-plan.md)。
+因此新分层在预算上更有机会满足 macOS 3.3 MB 门禁，但仍须完成全部目标后逐平台实测。Native socket/系统DNS接线、JS HTTP严格解析与对象生命周期、最终内嵌/链接/对齐会影响结果；macOS arm64 的预算不能直接当作 Windows 或 x86_64 的测量。[分层依据和小库实测](node-layering-plan.md)。
 
 ### 约 2.40 MB 仅是局部样本
 
 先前的 **2,398,147 bytes** = 当前 Native 2,288,336 + “现有资源追加所选库”的压缩模型 107,621 + 原索引 2,190。它没有包含全部目标 Native/API 封装，**不能用于回答完整 179 项功能是否低于上限**。此数字只保留为库资源成本参考。
 
-最终按完整目标候选进行逐平台 release 构建并计量，满足 3.3 MB 门禁后直接内置 NodeCompat。不能通过遗漏目标功能、只量裸 Native、把必需兼容层外置排除统计来宣布达标。应用自行选择的业务页面/npm 依赖另按应用资源计算；这里不引入 Node 运行时，fork 已放弃。
+最终按完整目标候选进行逐平台 release 构建并计量，分别满足 macOS 3.3 MB、Windows 3.5 MB 门禁后直接内置 NodeCompat。不能通过遗漏目标功能、只量裸 Native、把必需兼容层外置排除统计来宣布达标。应用自行选择的业务页面/npm 依赖另按应用资源计算；这里不引入 Node 运行时，fork 已放弃。

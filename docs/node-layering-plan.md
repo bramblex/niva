@@ -2,7 +2,9 @@
 
 > 2026-09-25 后续决定：本文早期的 JS-first HTTP 分层已被 AR-024 取代。Rust已有能力优先复用；JS保留Node契约适配，需要流/背压/取消时先扩展Native接口。本文后续章节作为旧方案比较记录，现状以[实施台账](architecture-implementation-plan.md)和源码为准。
 
-> 2026-09-24 · 22 个模块 / 179 项 API 的分层重评。此文是目标方案及隔离测量，不代表接口已经完成。总体积仍以全部目标完成后的 3.3 MB release 门禁验收。
+> 2026-09-24 · 22 个模块 / 179 项 API 的分层重评。此文是目标方案及隔离测量，不代表接口已经完成。当时总体积按严格小于 3.3 MB 的统一 release 门禁估算。
+
+> 2026-10-06 当前门禁更新：完整目标按平台测量，macOS 严格小于 3.3 MB，Windows 严格小于 3.5 MB；上方日期快照及隔离预算仍是当时记录，不是新平台的产物实测。
 
 ## 1. 结论
 
@@ -82,13 +84,13 @@ AR-024 已将 Rust `http.requestStream` 接入统一runtime的 Node `http.reques
 
 **Niva 内部的 Rust HTTP/WS 服务保留。** 它服务启动资源、鉴权文件路由和Native API WebSocket；它与应用开发者创建的Node http.Server是两个职责，后者在JS上依赖Native net.listen/accept即可。[内部服务](../crates/niva/src/app/http_server/mod.rs#L22)。
 
-重新计费后，Native net/tls/dgram各计一次；http/https不再增加独立Native协议后端，增加JS parser与对象封装预算。当前所有已量化项合算约 **2.52–3.18 MB**，尚未抵扣删除ureq的可能收益。比旧分层更有机会满足3.3 MB，但依然是预算，不是完整179项功能已构建达标。[逐模块预算](node-api-size-estimates.md)。
+重新计费后，Native net/tls/dgram各计一次；http/https不再增加独立Native协议后端，增加JS parser与对象封装预算。当前所有已量化项合算约 **2.52–3.18 MB**，尚未抵扣删除ureq的可能收益。比旧分层更有机会满足 macOS 3.3 MB 门禁，但依然是预算，不是完整179项功能已构建达标，也不替代 Windows 3.5 MB 门禁下的实际构建。[逐模块预算](node-api-size-estimates.md)。
 
 ## 7. 落地顺序和验收
 
 1. 完成Native socket/TLS基础契约和JS stream适配，验证关闭、取消、背压、证书和窗口归属。
 2. 完成JS DNS客户端和HTTP/HTTPS客户端/服务器，测试真实UDP/TCP回退、服务端请求响应及严格报文边界。
 3. 将现有NodeCompat/Devtools调用迁入统一路径，再删除旧Native HTTP客户端与不再使用的依赖。
-4. 对完整目标逐平台构建release并测量包含内嵌JS的主程序；低于3,300,000 bytes才宣布内嵌门禁通过。
+4. 对完整目标逐平台构建release并测量包含内嵌JS的主程序；macOS 严格小于 3,300,000 bytes、Windows 严格小于 3,500,000 bytes 才宣布对应平台的内嵌门禁通过。
 
 本轮仅更新评估。Rust DNS测试、JS DNS/HTTP合成测试、精确版本/入口和Native源码审计保存在 [node-network-layer-evidence.json](node-network-layer-evidence.json)；没有改动应用源码、依赖清单或实际运行时路径。

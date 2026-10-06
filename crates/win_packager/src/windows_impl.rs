@@ -42,15 +42,10 @@ pub(crate) fn apply(req: &PackRequest, data: &PreparedData) -> Result<()> {
 
     // SAFETY: handle still owns the staged resource updates.
     if let Err(commit_error) = unsafe { EndUpdateResourceW(handle, false) } {
-        // A failed commit can leave the update handle open. Try to discard its
-        // pending changes so a failed pack never commits a partial resource set.
-        // SAFETY: the first EndUpdateResourceW returned an error.
-        return match unsafe { EndUpdateResourceW(handle, true) } {
-            Ok(()) => Err(commit_error).context("commit PE resource updates"),
-            Err(rollback_error) => Err(anyhow!(
-                "commit PE resource updates failed: {commit_error}; rollback also failed: {rollback_error}"
-            )),
-        };
+        // EndUpdateResourceW closes the update handle even when committing
+        // fails, so it cannot be reused for a second discard call. The caller
+        // removes this incomplete output copy after the error.
+        return Err(commit_error).context("commit PE resource updates");
     }
     Ok(())
 }
@@ -207,7 +202,13 @@ fn resource_id(id: u16) -> PCWSTR {
 
 fn to_wide_path(path: &Path) -> Result<Vec<u16>> {
     use std::os::windows::ffi::OsStrExt;
-    Ok(path.as_os_str().encode_wide().chain(Some(0)).collect())
+    crate::validate_windows_path_no_nul(path)?;
+    let mut path = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    if path.contains(&0) {
+        return Err(anyhow!("Windows path contains NUL"));
+    }
+    path.push(0);
+    Ok(path)
 }
 
 fn to_wide_string(value: &str) -> Result<Vec<u16>> {

@@ -11,6 +11,8 @@ mod app;
 use anyhow::Result;
 use app::{NivaApp, NivaEvent, logging};
 use tao::event_loop::EventLoopBuilder;
+#[cfg(target_os = "windows")]
+use tao::platform::windows::EventLoopBuilderExtWindows;
 
 fn main() {
     init_bootstrap_logger();
@@ -29,7 +31,10 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut event_loop = EventLoopBuilder::<NivaEvent>::with_user_event().build();
+    let mut event_loop_builder = EventLoopBuilder::<NivaEvent>::with_user_event();
+    #[cfg(target_os = "windows")]
+    event_loop_builder.with_msg_hook(app::translate_menu_accelerator);
+    let mut event_loop = event_loop_builder.build();
     let app = NivaApp::new(&mut event_loop)?;
     app.run(event_loop)
 }

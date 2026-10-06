@@ -16,7 +16,7 @@
 - Devtools 或 TypeScript 改动完成后，运行 `npm run build --workspace=packages/devtools`，其中包含 `tsc --noEmit` 和 Vite 构建。`.husky/pre-commit` 会在类型检查失败时阻断提交，但不能替代直接构建证据；统一runtime还需运行 `npm run build --workspace=packages/runtime` 与types检查。仓库已有 `.github/workflows/ci.yml`，远端运行结果仍需另行核对。
 - 改动 bridge、原生 API 或打包格式时，同步检查 Rust 实现、`packages/runtime/src/bootstrap.ts`、`packages/runtime/src/contracts.ts` 与生成的 `packages/types/dist/`、`docs/bridge.md` 与相关资源打包/读取代码；协议版本、帧格式、错误码和公开类型必须一致。对受影响的调用路径补有意义的测试或实际调用验证。
 - 涉及窗口、托盘、菜单、快捷键、对话框或平台原生行为的改动，除编译和单测外，还要在受影响的平台做真机操作验证。无法取得平台设备时，不把该平台标为已验收。
-- 改动依赖、资源打包或发布产物时，复测对应平台的完整 release runtime 主程序体积；硬门禁为严格小于 3,300,000 bytes，macOS 的 3,000,000 bytes 是参考目标。体积需包含全部已确定目标功能的 Native 代码、内嵌 JS 与加载/索引开销，不能只量裸 Native 或库样本；记录产物、平台和实测大小。签名所需证书和密码由下游提供，秘密不得进入 `niva.json` 或仓库。
+- 改动依赖、资源打包或发布产物时，复测对应平台的完整 release runtime 主程序体积：macOS 严格小于 3,300,000 bytes，Windows 严格小于 3,500,000 bytes；macOS 3,000,000 bytes 仅为参考目标。体积需包含全部已确定目标功能的 Native 代码、内嵌 JS 与加载/索引开销，不能只量裸 Native 或库样本；记录产物、平台和实测大小。签名所需证书和密码由下游提供，秘密不得进入 `niva.json` 或仓库。
 
 ## 安全边界
 

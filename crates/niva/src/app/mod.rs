@@ -21,6 +21,8 @@ pub(crate) mod windows_bootstrap;
 use anyhow::{Result, anyhow, bail};
 use directories::BaseDirs;
 use serde_json::Value;
+#[cfg(target_os = "windows")]
+use std::{cell::RefCell, collections::HashMap};
 use std::{
     fmt::{Debug, Formatter},
     ops::Deref,
@@ -48,6 +50,73 @@ use self::{
 
 pub type NivaEventLoop = EventLoop<NivaEvent>;
 pub type NivaWindowTarget = EventLoopWindowTarget<NivaEvent>;
+
+#[cfg(target_os = "windows")]
+thread_local! {
+    /// Menu accelerator tables are UI-thread-owned by Muda. Keep only their
+    /// raw handles here so the Tao message hook never has to lock the window
+    /// manager or a menu while TranslateAcceleratorW synchronously dispatches.
+    static WINDOW_MENU_ACCELERATORS: RefCell<HashMap<isize, isize>> = RefCell::new(HashMap::new());
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn set_window_menu_accelerator(hwnd: isize, haccel: Option<isize>) {
+    WINDOW_MENU_ACCELERATORS.with(|accelerators| {
+        let mut accelerators = accelerators.borrow_mut();
+        match haccel.filter(|haccel| *haccel != 0) {
+            Some(haccel) => {
+                accelerators.insert(hwnd, haccel);
+            }
+            None => {
+                accelerators.remove(&hwnd);
+            }
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn remove_window_menu_accelerator(hwnd: isize) {
+    set_window_menu_accelerator(hwnd, None);
+}
+
+/// Translate a Windows menu accelerator before Tao dispatches the message.
+/// The hook copies the HACCEL out of thread-local state before calling the
+/// Win32 API because TranslateAcceleratorW synchronously invokes the target
+/// window procedure, which can re-enter Niva's event handling.
+#[cfg(target_os = "windows")]
+pub(crate) fn translate_menu_accelerator(message: *const std::ffi::c_void) -> bool {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, HACCEL, MSG, TranslateAcceleratorW},
+    };
+
+    if message.is_null() {
+        return false;
+    }
+
+    // Tao supplies a pointer to the MSG currently being dispatched.
+    let message = unsafe { &*message.cast::<MSG>() };
+    if message.hwnd.0.is_null() {
+        return false;
+    }
+
+    // Keyboard messages can target the focused WebView child HWND. Muda's
+    // accelerator table belongs to the top-level window, so resolve its root.
+    let target = unsafe { GetAncestor(message.hwnd, GA_ROOT) };
+    if target.0.is_null() {
+        return false;
+    }
+    let target_id = target.0 as isize;
+    let haccel = WINDOW_MENU_ACCELERATORS
+        .with(|accelerators| accelerators.borrow().get(&target_id).copied());
+    let Some(haccel) = haccel else {
+        return false;
+    };
+
+    // The copied HACCEL remains valid while its Muda menu is retained by the
+    // NivaWindow; menu attach/detach and this callback all run on the UI thread.
+    unsafe { TranslateAcceleratorW(HWND(target.0), HACCEL(haccel as _), message) != 0 }
+}
 
 pub type NivaCallback = Pin<Box<dyn Fn(&NivaWindowTarget, &mut ControlFlow) -> Result<()> + Send>>;
 pub struct NivaEvent(NivaCallback);

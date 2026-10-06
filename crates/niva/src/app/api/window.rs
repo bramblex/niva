@@ -248,8 +248,7 @@ async fn set_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReques
             .args()
             .optional::<(Option<WindowMenuOptions>, Option<u8>)>(2)?;
         match_window!(app2, window, id);
-        window.set_menu(&options);
-        Ok(())
+        window.set_menu(&options)
     })
     .await
 }
@@ -259,8 +258,7 @@ async fn hide_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReque
     run_on_main(&app, move |_target, _control_flow| {
         let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
         match_window!(app2, window, id);
-        window.hide_menu();
-        Ok(())
+        window.hide_menu()
     })
     .await
 }
@@ -270,8 +268,7 @@ async fn show_menu(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReque
     run_on_main(&app, move |_target, _control_flow| {
         let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
         match_window!(app2, window, id);
-        window.show_menu();
-        Ok(())
+        window.show_menu()
     })
     .await
 }

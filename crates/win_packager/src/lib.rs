@@ -12,8 +12,12 @@
 //! 平台说明：备料（打包/转图标）跨平台可跑，真正写 PE 资源只能在 Windows 上。
 //! 非 Windows 下 [`pack`] 走完备料和拷贝后返回明确错误，见函数文档。
 
-use anyhow::{Context, Result, anyhow};
-use std::path::PathBuf;
+use anyhow::{Context, Result, anyhow, bail};
+use std::{
+    fs::OpenOptions,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 pub mod bundle;
 pub mod icon;
@@ -26,6 +30,159 @@ mod windows_impl;
 pub const DEFAULT_LANG: u16 = 1033;
 /// 默认图标组 ID：与现有脚本的 `ICONGROUP,1` 保持一致。
 pub const DEFAULT_ICON_GROUP_ID: u16 = 1;
+
+pub(crate) fn validate_windows_path_no_nul(path: &std::path::Path) -> anyhow::Result<()> {
+    if path.as_os_str().to_string_lossy().contains('\0') {
+        return Err(anyhow!("Windows path contains NUL"));
+    }
+    Ok(())
+}
+
+/// Return whether two paths can name the same file, including existing hard
+/// links and output paths whose final parent components have not been created.
+pub fn paths_refer_to_same_file(input: &Path, output: &Path) -> Result<bool> {
+    let input_abs = std::fs::canonicalize(input)
+        .with_context(|| format!("resolve input file {}", input.display()))?;
+    let output_abs = resolve_path_with_missing_suffix(output)?;
+    if paths_have_same_name(&input_abs, &output_abs) {
+        return Ok(true);
+    }
+    if output.exists() {
+        return same_file(input, output);
+    }
+    Ok(false)
+}
+
+fn resolve_path_with_missing_suffix(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut resolved = PathBuf::new();
+    let mut missing = Vec::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => resolved.push(prefix.as_os_str()),
+            std::path::Component::RootDir => resolved.push(component.as_os_str()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if missing.pop().is_none() {
+                    resolved.pop();
+                }
+            }
+            std::path::Component::Normal(part) => {
+                if missing.is_empty() {
+                    let candidate = resolved.join(part);
+                    match std::fs::canonicalize(&candidate) {
+                        Ok(canonical) => resolved = canonical,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                            missing.push(part.to_os_string());
+                        }
+                        Err(error) => {
+                            return Err(error).with_context(|| {
+                                format!("resolve output path component {}", candidate.display())
+                            });
+                        }
+                    }
+                } else {
+                    missing.push(part.to_os_string());
+                }
+            }
+        }
+    }
+    for component in missing {
+        resolved.push(component);
+    }
+    Ok(resolved)
+}
+
+fn paths_have_same_name(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn same_file(left: &Path, right: &Path) -> Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let left_meta =
+            std::fs::metadata(left).with_context(|| format!("inspect file {}", left.display()))?;
+        let right_meta = std::fs::metadata(right)
+            .with_context(|| format!("inspect file {}", right.display()))?;
+        if left_meta.ino() == 0 || right_meta.ino() == 0 {
+            bail!("cannot safely determine input/output file identity");
+        }
+        Ok(left_meta.dev() == right_meta.dev() && left_meta.ino() == right_meta.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::{fs::File, os::windows::io::AsRawHandle};
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Storage::FileSystem::{
+                BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandle,
+                GetFileInformationByHandleEx,
+            },
+        };
+
+        fn file_id_128(file: &File) -> Result<(u64, [u8; 16])> {
+            let mut info = FILE_ID_INFO::default();
+            unsafe {
+                GetFileInformationByHandleEx(
+                    HANDLE(file.as_raw_handle() as *mut _),
+                    FileIdInfo,
+                    (&mut info as *mut FILE_ID_INFO).cast(),
+                    std::mem::size_of::<FILE_ID_INFO>() as u32,
+                )
+            }
+            .context("read 128-bit Windows file identity")?;
+            Ok((info.VolumeSerialNumber, info.FileId.Identifier))
+        }
+
+        fn legacy_file_id(file: &File) -> Result<(u32, u64)> {
+            let mut info = BY_HANDLE_FILE_INFORMATION::default();
+            unsafe {
+                GetFileInformationByHandle(HANDLE(file.as_raw_handle() as *mut _), &mut info)
+            }
+            .context("read legacy Windows file identity")?;
+            let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+            if info.dwVolumeSerialNumber == 0 || index == 0 || index == u64::MAX {
+                bail!("legacy Windows file identity is invalid");
+            }
+            Ok((info.dwVolumeSerialNumber, index))
+        }
+
+        let left_file =
+            File::open(left).with_context(|| format!("open file {}", left.display()))?;
+        let right_file =
+            File::open(right).with_context(|| format!("open file {}", right.display()))?;
+        if let (Ok(left_id), Ok(right_id)) = (file_id_128(&left_file), file_id_128(&right_file)) {
+            let valid = |(volume, id): &(u64, [u8; 16])| *volume != 0 && *id != [0; 16];
+            if valid(&left_id) && valid(&right_id) {
+                return Ok(left_id == right_id);
+            }
+        }
+
+        // Some filesystems do not implement FileIdInfo. Use the older pair
+        // only when both results contain non-sentinel identifiers.
+        let left_id = legacy_file_id(&left_file).context("cannot determine input file identity")?;
+        let right_id =
+            legacy_file_id(&right_file).context("cannot determine output file identity")?;
+        Ok(left_id == right_id)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (left, right);
+        bail!("cannot safely determine input/output file identity on this platform")
+    }
+}
 
 /// Compare an already-opened file handle with a path that was re-resolved
 /// after opening. On Windows this uses the stable file ID API rather than
@@ -138,6 +295,8 @@ impl Default for PackRequest {
 
 impl PackRequest {
     pub fn validate(&self) -> Result<()> {
+        validate_windows_path_no_nul(&self.template_exe)?;
+        validate_windows_path_no_nul(&self.output_exe)?;
         let has_bundle = self.resource_dir.is_some() || self.config_file.is_some();
         if !has_bundle
             && self.rcdata.is_empty()
@@ -192,6 +351,9 @@ impl PackRequest {
         }
         if self.template_exe == self.output_exe {
             return Err(anyhow!("template_exe and output_exe must differ"));
+        }
+        if self.output_exe.file_name().is_none() {
+            return Err(anyhow!("output_exe path must include a filename"));
         }
         Ok(())
     }
@@ -248,46 +410,120 @@ fn prepare(req: &PackRequest) -> Result<PreparedData> {
     })
 }
 
-/// 执行一次打包：校验 -> 备料 -> 拷贝模板 -> 写资源。
+/// 执行一次打包：校验 -> 备料 -> 同目录暂存模板 -> 写资源 -> 原子发布。
 ///
-/// 非 Windows 下：备料和拷贝照常执行（方便 CI smoke test 和 mac 上调通备料），
-/// 写资源阶段返回 `only supported on Windows` 错误。
+/// 非 Windows 下：备料和暂存拷贝照常执行（方便 CI smoke test 和 mac 上调通备料），
+/// 随后返回明确错误并清理暂存文件，不发布或删除已有输出。
 /// Windows 下把 [`PreparedData`] 委托给 `windows_impl::apply` 写入。
 pub fn pack(req: &PackRequest) -> Result<()> {
     req.validate()?;
     let prepared = prepare(req)?;
+    #[cfg(target_os = "windows")]
+    {
+        pack_with_apply(req, &prepared, windows_impl::apply)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        pack_with_apply(req, &prepared, |_, _| {
+            Err(anyhow!(
+                "win_packager::pack only supported on Windows (resource-write stage)"
+            ))
+        })
+    }
+}
+
+fn pack_with_apply(
+    req: &PackRequest,
+    prepared: &PreparedData,
+    apply: impl FnOnce(&PackRequest, &PreparedData) -> Result<()>,
+) -> Result<()> {
     if !req.template_exe.is_file() {
         return Err(anyhow!(
             "template exe not found: {}",
             req.template_exe.display()
         ));
     }
-    if let Some(parent) = req.output_exe.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
+    if paths_refer_to_same_file(&req.template_exe, &req.output_exe)? {
+        return Err(anyhow!("template_exe and output_exe must differ"));
     }
-    std::fs::copy(&req.template_exe, &req.output_exe)?;
 
-    #[cfg(target_os = "windows")]
-    {
-        match windows_impl::apply(req, &prepared) {
-            Ok(()) => Ok(()),
-            Err(error) => match std::fs::remove_file(&req.output_exe) {
-                Ok(()) => Err(error),
-                Err(cleanup_error) => Err(anyhow!(
-                    "{error:#}; could not remove incomplete output {}: {cleanup_error}",
-                    req.output_exe.display()
-                )),
-            },
+    let parent = req
+        .output_exe
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("create output directory {}", parent.display()))?;
+
+    let staged = StagedOutput::create(parent)?;
+    std::fs::copy(&req.template_exe, staged.path()).with_context(|| {
+        format!(
+            "copy template {} to staging file {}",
+            req.template_exe.display(),
+            staged.path().display()
+        )
+    })?;
+    let mut staged_request = req.clone();
+    staged_request.output_exe = staged.path().to_path_buf();
+    apply(&staged_request, prepared)?;
+    staged.publish(&req.output_exe)
+}
+
+static NEXT_STAGED_OUTPUT: AtomicU64 = AtomicU64::new(0);
+
+struct StagedOutput {
+    path: PathBuf,
+    published: bool,
+}
+
+impl StagedOutput {
+    fn create(parent: &Path) -> Result<Self> {
+        for _ in 0..64 {
+            let sequence = NEXT_STAGED_OUTPUT.fetch_add(1, Ordering::Relaxed);
+            let path = parent.join(format!(
+                ".niva-packager-{}-{sequence}.tmp",
+                std::process::id()
+            ));
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => {
+                    drop(file);
+                    return Ok(Self {
+                        path,
+                        published: false,
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("create staging output {}", path.display()));
+                }
+            }
         }
+        bail!("could not allocate a unique staged output file")
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (req, prepared);
-        Err(anyhow!(
-            "win_packager::pack only supported on Windows (resource-write stage)"
-        ))
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn publish(mut self, output: &Path) -> Result<()> {
+        std::fs::rename(&self.path, output).with_context(|| {
+            format!(
+                "publish staged output {} to {}",
+                self.path.display(),
+                output.display()
+            )
+        })?;
+        self.published = true;
+        Ok(())
+    }
+}
+
+impl Drop for StagedOutput {
+    fn drop(&mut self) {
+        if !self.published {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -340,6 +576,162 @@ mod tests {
         });
         r.icon_png = Some(PathBuf::from("x.png"));
         assert!(r.validate().is_err());
+    }
+
+    #[test]
+    fn windows_path_validation_rejects_embedded_nul() {
+        let path = PathBuf::from(std::ffi::OsString::from("runtime\0:stream.exe"));
+        let error = validate_windows_path_no_nul(&path).unwrap_err();
+        assert!(error.to_string().contains("NUL"));
+    }
+
+    #[test]
+    fn rejects_hard_link_aliases_between_template_and_output() {
+        let base = test_dir("hard-link-alias");
+        std::fs::create_dir_all(&base).unwrap();
+        let input = base.join("template.exe");
+        let output = base.join("output.exe");
+        std::fs::write(&input, b"template").unwrap();
+        std::fs::hard_link(&input, &output).unwrap();
+
+        assert!(paths_refer_to_same_file(&input, &output).unwrap());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn missing_parent_and_parent_component_still_detect_runtime_alias() {
+        let base = test_dir("missing-parent-alias");
+        std::fs::create_dir_all(&base).unwrap();
+        let input = base.join("template.exe");
+        let output = base.join("missing").join("..").join("template.exe");
+        std::fs::write(&input, b"template").unwrap();
+
+        assert!(!output.parent().unwrap().exists());
+        assert!(paths_refer_to_same_file(&input, &output).unwrap());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_alias_check_preserves_symlink_parent_semantics() {
+        use std::os::unix::fs::symlink;
+
+        let base = test_dir("symlink-parent-alias");
+        std::fs::create_dir_all(base.join("real/subdir")).unwrap();
+        let outside = base.join("template.exe");
+        let inside = base.join("real/template.exe");
+        let link = base.join("link");
+        std::fs::write(&outside, b"outside").unwrap();
+        std::fs::write(&inside, b"inside").unwrap();
+        symlink(base.join("real/subdir"), &link).unwrap();
+        let output = link.join("..").join("template.exe");
+
+        assert!(!paths_refer_to_same_file(&outside, &output).unwrap());
+        assert!(paths_refer_to_same_file(&inside, &output).unwrap());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_alias_check_ignores_ascii_case() {
+        assert!(paths_have_same_name(
+            Path::new(r"C:\Niva\runtime.exe"),
+            Path::new(r"c:\niva\RUNTIME.EXE")
+        ));
+    }
+
+    #[test]
+    fn failed_staged_apply_preserves_existing_output_and_cleans_temporary_file() {
+        let base = test_dir("staged-failure");
+        std::fs::create_dir_all(&base).unwrap();
+        let template = base.join("template.exe");
+        let output = base.join("output.exe");
+        std::fs::write(&template, b"template bytes").unwrap();
+        std::fs::write(&output, b"previous output").unwrap();
+        let request = PackRequest {
+            template_exe: template,
+            output_exe: output.clone(),
+            ..Default::default()
+        };
+
+        let result = pack_with_apply(&request, &PreparedData::default(), |staged, _| {
+            assert_ne!(staged.output_exe, request.output_exe);
+            std::fs::write(&staged.output_exe, b"partial resource update").unwrap();
+            Err(anyhow!("simulated PE update failure"))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), b"previous output");
+        assert_no_staged_output(&base);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn successful_staged_apply_atomically_replaces_existing_output() {
+        let base = test_dir("staged-success");
+        std::fs::create_dir_all(&base).unwrap();
+        let template = base.join("template.exe");
+        let output = base.join("output.exe");
+        std::fs::write(&template, b"template bytes").unwrap();
+        std::fs::write(&output, b"previous output").unwrap();
+        let request = PackRequest {
+            template_exe: template,
+            output_exe: output.clone(),
+            ..Default::default()
+        };
+
+        pack_with_apply(&request, &PreparedData::default(), |staged, _| {
+            assert_eq!(
+                std::fs::read(&staged.output_exe).unwrap(),
+                b"template bytes"
+            );
+            std::fs::write(&staged.output_exe, b"complete packaged output")?;
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"complete packaged output");
+        assert_no_staged_output(&base);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn template_output_alias_is_rejected_before_apply() {
+        let base = test_dir("staged-alias");
+        std::fs::create_dir_all(&base).unwrap();
+        let template = base.join("template.exe");
+        let output = base.join("output.exe");
+        std::fs::write(&template, b"template bytes").unwrap();
+        std::fs::hard_link(&template, &output).unwrap();
+        let request = PackRequest {
+            template_exe: template.clone(),
+            output_exe: output.clone(),
+            ..Default::default()
+        };
+
+        let result = pack_with_apply(&request, &PreparedData::default(), |_, _| {
+            panic!("resource update must not start when output aliases template")
+        });
+
+        assert!(result.unwrap_err().to_string().contains("must differ"));
+        assert_eq!(std::fs::read(&template).unwrap(), b"template bytes");
+        assert_eq!(std::fs::read(&output).unwrap(), b"template bytes");
+        assert_no_staged_output(&base);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    fn assert_no_staged_output(parent: &Path) {
+        assert!(std::fs::read_dir(parent).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".niva-packager-")
+        }));
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("win_packager-{name}-{}", std::process::id()))
     }
 
     #[test]

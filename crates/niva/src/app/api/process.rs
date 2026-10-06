@@ -146,6 +146,8 @@ fn build_exec_command(
 
 const MAX_TEXT_EXEC_OUTPUT_BYTES: usize = 64 * 1024;
 const DEFAULT_TEXT_EXEC_TIMEOUT_MS: u64 = 10_000;
+#[cfg(any(windows, test))]
+const MAX_STDIN_READ_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -353,7 +355,7 @@ fn spawn_output_capture<R: std::io::Read + Send + 'static>(
 }
 
 fn run_text_command(
-    mut command: std::process::Command,
+    command: std::process::Command,
     owner: ProcessCallOwner,
     timeout: std::time::Duration,
     max_output_bytes: usize,
@@ -361,9 +363,7 @@ fn run_text_command(
 ) -> Result<Value> {
     use std::sync::atomic::{AtomicBool, Ordering};
     anyhow::ensure!(!is_cancelled(), "ECANCELED: process call was cancelled");
-    let raw_child = command.spawn()?;
-    let pid = raw_child.id();
-    let mut child = SpawnSyncChild::new(raw_child, pid, cfg!(unix))?;
+    let mut child = SpawnSyncChild::spawn(command, cfg!(unix))?;
     let _registration = register_child(owner, child.control.clone())?;
     if is_cancelled() {
         child.terminate_and_wait()?;
@@ -476,15 +476,13 @@ async fn exec_stream(ctx: CallContext, request: ApiRequest) -> Result<()> {
 
     let (program, args, options): (String, Option<Vec<String>>, Option<ExecOptions>) =
         request.args().optional(3)?;
-    let (mut cmd, detached) = build_exec_command(program, args, options);
+    let (cmd, detached) = build_exec_command(program, args, options);
     anyhow::ensure!(
         !detached,
         "ENOTSUP: detached child processes are disabled; use an owned process stream"
     );
     anyhow::ensure!(!ctx.is_cancelled(), "ECANCELED: process call was cancelled");
-    let raw_child = cmd.spawn()?;
-    let pid = raw_child.id();
-    let mut child = SpawnSyncChild::new(raw_child, pid, cfg!(unix))?;
+    let mut child = SpawnSyncChild::spawn(cmd, cfg!(unix))?;
     let owner = ProcessCallOwner::BridgeSession {
         window_id: ctx.window.id,
         owner_id: ctx.connection_id,
@@ -680,6 +678,7 @@ fn write_stdio(_app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest)
 async fn read_stdin(ctx: CallContext, _request: ApiRequest) -> Result<()> {
     anyhow::ensure!(ctx.window.id == 0, "process stdio is main-window-only");
     let owner = (ctx.window.id, ctx.connection_id, ctx.id);
+    #[cfg(unix)]
     let cancel_rx = ctx.cancel_rx.clone();
     #[cfg(unix)]
     {
@@ -738,12 +737,16 @@ struct StdinReaderState {
     active: Option<StdinReaderEntry>,
     waiters: std::collections::HashSet<StdinReaderKey>,
     cancelled_waiters: std::collections::HashSet<StdinReaderKey>,
+    #[cfg(any(windows, test))]
+    pending_input: Option<Vec<u8>>,
 }
 
 struct StdinReaderEntry {
     owner: StdinReaderKey,
     cancel_rx: async_channel::Receiver<()>,
     cancelled: bool,
+    #[cfg(windows)]
+    reader_thread: Option<Arc<OwnedWindowsHandle>>,
 }
 
 #[derive(Default)]
@@ -801,6 +804,8 @@ impl StdinReaderRegistry {
                         owner,
                         cancel_rx,
                         cancelled: false,
+                        #[cfg(windows)]
+                        reader_thread: None,
                     });
                     return Ok(StdinReaderRegistration {
                         registry: Arc::clone(self),
@@ -863,6 +868,16 @@ impl StdinReaderRegistry {
             self.changed.notify_all();
             return;
         };
+        #[cfg(windows)]
+        let reader_thread = state.active.as_mut().and_then(|active| {
+            if active.owner == owner {
+                active.cancelled = true;
+                active.reader_thread.clone()
+            } else {
+                None
+            }
+        });
+        #[cfg(not(windows))]
         if let Some(active) = state.active.as_mut()
             && active.owner == owner
         {
@@ -872,6 +887,10 @@ impl StdinReaderRegistry {
             state.cancelled_waiters.insert(owner);
         }
         drop(state);
+        #[cfg(windows)]
+        if let Some(reader_thread) = reader_thread {
+            reader_thread.cancel_synchronous_io();
+        }
         self.changed.notify_all();
     }
 
@@ -880,6 +899,16 @@ impl StdinReaderRegistry {
             self.changed.notify_all();
             return;
         };
+        #[cfg(windows)]
+        let reader_thread = state.active.as_mut().and_then(|active| {
+            if active.owner.0 == window_id && active.owner.1 == owner_id {
+                active.cancelled = true;
+                active.reader_thread.clone()
+            } else {
+                None
+            }
+        });
+        #[cfg(not(windows))]
         if let Some(active) = state.active.as_mut()
             && active.owner.0 == window_id
             && active.owner.1 == owner_id
@@ -894,6 +923,10 @@ impl StdinReaderRegistry {
             .collect::<Vec<_>>();
         state.cancelled_waiters.extend(cancelled);
         drop(state);
+        #[cfg(windows)]
+        if let Some(reader_thread) = reader_thread {
+            reader_thread.cancel_synchronous_io();
+        }
         self.changed.notify_all();
     }
 
@@ -902,6 +935,16 @@ impl StdinReaderRegistry {
             self.changed.notify_all();
             return;
         };
+        #[cfg(windows)]
+        let reader_thread = state.active.as_mut().and_then(|active| {
+            if active.owner.0 == window_id {
+                active.cancelled = true;
+                active.reader_thread.clone()
+            } else {
+                None
+            }
+        });
+        #[cfg(not(windows))]
         if let Some(active) = state.active.as_mut()
             && active.owner.0 == window_id
         {
@@ -915,8 +958,150 @@ impl StdinReaderRegistry {
             .collect::<Vec<_>>();
         state.cancelled_waiters.extend(cancelled);
         drop(state);
+        #[cfg(windows)]
+        if let Some(reader_thread) = reader_thread {
+            reader_thread.cancel_synchronous_io();
+        }
         self.changed.notify_all();
     }
+
+    #[cfg(any(windows, test))]
+    fn can_read(&self, owner: StdinReaderKey, cancel_rx: &async_channel::Receiver<()>) -> bool {
+        let std::result::Result::Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        let pending_input = state.pending_input.is_some();
+        let Some(active) = state.active.as_mut().filter(|active| active.owner == owner) else {
+            return false;
+        };
+        if active.cancel_rx.is_closed() || cancel_rx.is_closed() {
+            active.cancelled = true;
+        }
+        !active.cancelled && !pending_input
+    }
+
+    /// Commit bytes to the owning call while serialized with cancellation. If
+    /// cancellation won the lock after the OS read, retain the one completed
+    /// read so the next owner can deliver it before reading from stdin again.
+    #[cfg(any(windows, test))]
+    fn commit_read(
+        &self,
+        owner: StdinReaderKey,
+        cancel_rx: &async_channel::Receiver<()>,
+        bytes: &[u8],
+        deliver: impl FnOnce(&[u8]),
+    ) -> std::io::Result<StdinReadCommit> {
+        if bytes.len() > MAX_STDIN_READ_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "stdin read exceeded the bounded 64 KiB buffer",
+            ));
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| std::io::Error::other("stdin reader registry poisoned"))?;
+        let cancelled = {
+            let Some(active) = state.active.as_mut().filter(|active| active.owner == owner) else {
+                return std::result::Result::Ok(StdinReadCommit::Stale);
+            };
+            if active.cancel_rx.is_closed() || cancel_rx.is_closed() {
+                active.cancelled = true;
+            }
+            active.cancelled
+        };
+        if cancelled {
+            if bytes.is_empty() {
+                return std::result::Result::Ok(StdinReadCommit::Cancelled);
+            }
+            if state.pending_input.is_some() {
+                return Err(std::io::Error::other(
+                    "stdin reader completed a second read before pending input was delivered",
+                ));
+            }
+            state.pending_input = Some(bytes.to_vec());
+            return std::result::Result::Ok(StdinReadCommit::Retained);
+        }
+        // This decision is the commit point. Once made, a later cancellation
+        // may cause CallContext to drop the send, but must not replay these
+        // bytes to another call. Drop the registry lock before the potentially
+        // back-pressured channel send so cancellation can always proceed.
+        drop(state);
+        deliver(bytes);
+        std::result::Result::Ok(StdinReadCommit::Delivered)
+    }
+
+    /// Commit retained input exactly once under the cancellation lock, then
+    /// deliver it outside the lock. A cancelled owner leaves it queued.
+    #[cfg(any(windows, test))]
+    fn deliver_pending(
+        &self,
+        owner: StdinReaderKey,
+        cancel_rx: &async_channel::Receiver<()>,
+        deliver: impl FnOnce(&[u8]),
+    ) -> std::io::Result<bool> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| std::io::Error::other("stdin reader registry poisoned"))?;
+        let live = {
+            let Some(active) = state.active.as_mut().filter(|active| active.owner == owner) else {
+                return std::result::Result::Ok(false);
+            };
+            if active.cancel_rx.is_closed() || cancel_rx.is_closed() {
+                active.cancelled = true;
+            }
+            !active.cancelled
+        };
+        if !live {
+            return std::result::Result::Ok(false);
+        }
+        let Some(bytes) = state.pending_input.take() else {
+            return std::result::Result::Ok(false);
+        };
+        // Taking the pending chunk is its exactly-once commit point. Delivery
+        // can block on the stream channel, so it must happen outside the lock.
+        drop(state);
+        deliver(&bytes);
+        std::result::Result::Ok(true)
+    }
+
+    #[cfg(windows)]
+    fn install_reader_thread(
+        &self,
+        owner: StdinReaderKey,
+        reader_thread: Arc<OwnedWindowsHandle>,
+    ) -> std::io::Result<()> {
+        let cancelled = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| std::io::Error::other("stdin reader registry poisoned"))?;
+            let Some(active) = state.active.as_mut().filter(|active| active.owner == owner) else {
+                return Err(std::io::Error::other(
+                    "stdin reader registration was replaced",
+                ));
+            };
+            if active.cancel_rx.is_closed() {
+                active.cancelled = true;
+            }
+            active.reader_thread = Some(Arc::clone(&reader_thread));
+            active.cancelled
+        };
+        if cancelled {
+            reader_thread.cancel_synchronous_io();
+        }
+        std::result::Result::Ok(())
+    }
+}
+
+#[cfg(any(windows, test))]
+#[derive(Debug, PartialEq, Eq)]
+enum StdinReadCommit {
+    Delivered,
+    Retained,
+    Cancelled,
+    Stale,
 }
 
 struct StdinReaderRegistration {
@@ -946,60 +1131,96 @@ pub(crate) fn cancel_stdin_call(window_id: u8, owner_id: u64, call_id: u64) {
 #[cfg(windows)]
 fn read_stdin_windows(ctx: CallContext, owner: StdinReaderKey) -> Result<()> {
     use std::io::Read;
-    use windows::Win32::{
-        Foundation::CloseHandle,
-        System::{
-            IO::CancelSynchronousIo,
-            Threading::{GetCurrentThreadId, OpenThread, THREAD_TERMINATE},
-        },
-    };
+    use windows::Win32::System::Threading::{GetCurrentThreadId, OpenThread, THREAD_TERMINATE};
 
     let cancel_rx = ctx.cancel_rx.clone();
     let registry = stdin_reader_registry();
     let _owner = registry.acquire(owner, cancel_rx)?;
+    registry.deliver_pending(owner, &ctx.cancel_rx, |bytes| ctx.chunk(bytes, false))?;
+    if !registry.can_read(owner, &ctx.cancel_rx) {
+        anyhow::bail!("ECANCELED: process.stdin call was cancelled");
+    }
+
     let (thread_id_tx, thread_id_rx) = async_channel::bounded(1);
+    let (start_tx, start_rx) = async_channel::bounded(1);
     let reader_ctx = ctx.clone();
+    let reader_registry = Arc::clone(&registry);
     let reader = std::thread::Builder::new()
         .name("niva-stdin-reader".into())
         .spawn(move || -> Result<()> {
-            // Report the OS thread id before acquiring/reading stdin. Cancellation
-            // is retried by the owner thread until this worker has fully exited.
-            let _ = thread_id_tx.send_blocking(unsafe { GetCurrentThreadId() });
+            // Hold the worker before its first blocking read until the owning
+            // thread has opened a stable handle for CancelSynchronousIo.
+            if thread_id_tx
+                .send_blocking(unsafe { GetCurrentThreadId() })
+                .is_err()
+                || start_rx.recv_blocking().is_err()
+            {
+                return Ok(());
+            }
             let mut stdin = std::io::stdin().lock();
-            let mut buffer = [0u8; 65536];
+            let mut buffer = [0u8; MAX_STDIN_READ_BYTES];
             loop {
-                if reader_ctx.is_cancelled() {
+                if !reader_registry.can_read(owner, &reader_ctx.cancel_rx) {
                     break;
                 }
                 let size = match stdin.read(&mut buffer) {
                     std::result::Result::Ok(size) => size,
-                    Err(_) if reader_ctx.is_cancelled() => break,
+                    Err(_) if !reader_registry.can_read(owner, &reader_ctx.cancel_rx) => break,
                     Err(error) => return Err(error.into()),
                 };
-                if reader_ctx.is_cancelled() {
+
+                let commit = reader_registry.commit_read(
+                    owner,
+                    &reader_ctx.cancel_rx,
+                    &buffer[..size],
+                    |bytes| {
+                        if bytes.is_empty() {
+                            reader_ctx.chunk(&[], true);
+                            reader_ctx.respond(Ok(Value::Null));
+                        } else {
+                            reader_ctx.chunk(bytes, false);
+                        }
+                    },
+                )?;
+                if size == 0 || commit != StdinReadCommit::Delivered {
                     break;
                 }
-                if size == 0 {
-                    reader_ctx.chunk(&[], true);
-                    reader_ctx.respond(Ok(Value::Null));
-                    break;
-                }
-                reader_ctx.chunk(&buffer[..size], false);
             }
             Ok(())
         })?;
-    let thread_id = thread_id_rx
-        .recv_blocking()
-        .map_err(|_| anyhow::anyhow!("stdin reader failed before publishing its thread id"))?;
+
+    let thread_id = match thread_id_rx.recv_blocking() {
+        std::result::Result::Ok(thread_id) => thread_id,
+        Err(_) => {
+            let _ = reader.join();
+            anyhow::bail!("EIO: stdin reader failed before publishing its thread id");
+        }
+    };
+    let reader_thread = match unsafe { OpenThread(THREAD_TERMINATE, false, thread_id) } {
+        std::result::Result::Ok(handle) => Arc::new(OwnedWindowsHandle(handle)),
+        Err(error) => {
+            // The worker is still gated and cannot be blocked in stdin.read.
+            drop(start_tx);
+            let _ = reader.join();
+            return Err(std::io::Error::other(error.to_string()).into());
+        }
+    };
+    if let Err(error) = registry.install_reader_thread(owner, Arc::clone(&reader_thread)) {
+        drop(start_tx);
+        let _ = reader.join();
+        return Err(error.into());
+    }
+    if start_tx.send_blocking(()).is_err() {
+        let _ = reader.join();
+        anyhow::bail!("EIO: stdin reader exited before starting");
+    }
+
     while !reader.is_finished() {
-        if ctx.is_cancelled()
-            && let std::result::Result::Ok(thread) =
-                unsafe { OpenThread(THREAD_TERMINATE, false, thread_id) }
-        {
-            // ERROR_NOT_FOUND means no synchronous read is pending yet; retry
-            // until the worker exits to cover the check/read race.
-            let _ = unsafe { CancelSynchronousIo(thread) };
-            let _ = unsafe { CloseHandle(thread) };
+        if !registry.can_read(owner, &ctx.cancel_rx) {
+            // Cancellation can land after the worker's pre-read check but
+            // before the synchronous read starts. Repeat until it exits to
+            // cover that check/read race without holding the registry mutex.
+            reader_thread.cancel_synchronous_io();
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
@@ -1089,9 +1310,8 @@ fn spawn_sync_command_owned(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let child = command.spawn()?;
+    let mut child = SpawnSyncChild::spawn(command, cfg!(unix))?;
     let pid = child.id();
-    let mut child = SpawnSyncChild::new(child, pid, cfg!(unix))?;
     let _registration = register_child(owner, child.control.clone())?;
     if is_cancelled() {
         child.terminate_and_wait()?;
@@ -1205,27 +1425,85 @@ struct SpawnSyncChild {
 }
 
 impl SpawnSyncChild {
-    fn new(child: std::process::Child, pid: u32, process_group: bool) -> std::io::Result<Self> {
+    fn spawn(command: std::process::Command, process_group: bool) -> std::io::Result<Self> {
         #[cfg(windows)]
-        let mut child = child;
+        {
+            let _ = process_group;
+            Self::spawn_windows(command)
+        }
         #[cfg(not(windows))]
-        let child = child;
-        #[cfg(windows)]
-        let control = match ChildJob::assign(&child) {
-            std::result::Result::Ok(job) => Arc::new(ChildControl { pid, job }),
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error);
-            }
-        };
+        {
+            let mut command = command;
+            let child = command.spawn()?;
+            let pid = child.id();
+            Self::from_spawned_child(child, pid, process_group)
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn from_spawned_child(
+        child: std::process::Child,
+        pid: u32,
+        process_group: bool,
+    ) -> std::io::Result<Self> {
         #[cfg(unix)]
         let control = Arc::new(ChildControl { pid, process_group });
         #[cfg(not(unix))]
-        let _ = process_group;
+        let control = {
+            let _ = process_group;
+            Arc::new(ChildControl { pid })
+        };
         std::result::Result::Ok(Self {
             child,
             control,
+            reaped: false,
+        })
+    }
+
+    #[cfg(windows)]
+    fn spawn_windows(mut command: std::process::Command) -> std::io::Result<Self> {
+        use std::os::windows::process::CommandExt;
+        use windows::Win32::System::Threading::CREATE_SUSPENDED;
+
+        // Commands are constructed inside this module and currently set no
+        // other Win32 creation flags. CREATE_SUSPENDED ensures no child code
+        // can create descendants before the kill-on-close job owns the child.
+        command.creation_flags(CREATE_SUSPENDED.0);
+        let job = ChildJob::create()?;
+        let child = command.spawn()?;
+        let pid = child.id();
+
+        if let Err(error) = job.assign(&child) {
+            return Err(fail_windows_child_start(child, job, error));
+        }
+
+        let thread_id = match primary_thread_id(pid) {
+            std::result::Result::Ok(thread_id) => thread_id,
+            Err(error) => return Err(fail_windows_child_start(child, job, error)),
+        };
+        let primary_thread = match open_primary_thread(thread_id) {
+            std::result::Result::Ok(thread) => thread,
+            Err(error) => return Err(fail_windows_child_start(child, job, error)),
+        };
+        let previous_suspend_count =
+            unsafe { windows::Win32::System::Threading::ResumeThread(primary_thread.0) };
+        if previous_suspend_count == u32::MAX {
+            let error = std::io::Error::last_os_error();
+            return Err(fail_windows_child_start(child, job, error));
+        }
+        if previous_suspend_count != 1 {
+            return Err(fail_windows_child_start(
+                child,
+                job,
+                std::io::Error::other(format!(
+                    "primary child thread had unexpected suspend count {previous_suspend_count}"
+                )),
+            ));
+        }
+
+        std::result::Result::Ok(Self {
+            child,
+            control: Arc::new(ChildControl { pid, job }),
             reaped: false,
         })
     }
@@ -1283,63 +1561,192 @@ impl Drop for SpawnSyncChild {
 }
 
 #[cfg(windows)]
-struct ChildJob(windows::Win32::Foundation::HANDLE);
+fn fail_windows_child_start(
+    mut child: std::process::Child,
+    job: ChildJob,
+    error: std::io::Error,
+) -> std::io::Error {
+    // If assignment succeeded, terminating or closing the job also kills any
+    // process descendants. If assignment failed, the suspended direct child
+    // has not executed and is killed/reaped explicitly here.
+    let _ = job.terminate();
+    if let Err(kill_error) = child.kill() {
+        // A failed termination must not lead to an unbounded wait for a
+        // child whose primary thread is still suspended. A process that has
+        // already exited can still be reaped by this nonblocking check.
+        return match child.try_wait() {
+            std::result::Result::Ok(Some(_)) => error,
+            std::result::Result::Ok(None) => std::io::Error::other(format!(
+                "{error}; failed to terminate suspended child: {kill_error}"
+            )),
+            Err(wait_error) => std::io::Error::other(format!(
+                "{error}; failed to terminate suspended child: {kill_error}; failed to check child exit: {wait_error}"
+            )),
+        };
+    }
+    match child.wait() {
+        std::result::Result::Ok(_) => error,
+        Err(wait_error) => std::io::Error::other(format!(
+            "{error}; failed to reap suspended child: {wait_error}"
+        )),
+    }
+}
+
+#[cfg(windows)]
+struct OwnedWindowsHandle(windows::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl OwnedWindowsHandle {
+    fn cancel_synchronous_io(&self) {
+        unsafe {
+            let _ = windows::Win32::System::IO::CancelSynchronousIo(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for OwnedWindowsHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = windows::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+unsafe impl Send for OwnedWindowsHandle {}
+#[cfg(windows)]
+unsafe impl Sync for OwnedWindowsHandle {}
+
+#[cfg(windows)]
+struct ChildJob(OwnedWindowsHandle);
 
 #[cfg(windows)]
 impl ChildJob {
-    fn assign(child: &std::process::Child) -> std::io::Result<Self> {
-        use std::{mem::size_of, os::windows::io::AsRawHandle};
+    fn create() -> std::io::Result<Self> {
+        use std::mem::size_of;
         use windows::{
-            Win32::{
-                Foundation::{CloseHandle, HANDLE},
-                System::JobObjects::{
-                    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-                    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-                    SetInformationJobObject,
-                },
+            Win32::System::JobObjects::{
+                CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+                SetInformationJobObject,
             },
             core::PCWSTR,
         };
 
         let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }
             .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let job = Self(OwnedWindowsHandle(job));
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         let configured = unsafe {
             SetInformationJobObject(
-                job,
+                job.0.0,
                 JobObjectExtendedLimitInformation,
                 (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
                 size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
             )
         };
         if let Err(error) = configured {
-            let _ = unsafe { CloseHandle(job) };
             return Err(std::io::Error::other(error.to_string()));
         }
+        std::result::Result::Ok(job)
+    }
+
+    fn assign(&self, child: &std::process::Child) -> std::io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{Foundation::HANDLE, System::JobObjects::AssignProcessToJobObject};
+
         let process = HANDLE(child.as_raw_handle() as _);
-        if let Err(error) = unsafe { AssignProcessToJobObject(job, process) } {
-            let _ = unsafe { CloseHandle(job) };
-            return Err(std::io::Error::other(format!(
-                "assign child process to kill-on-close job: {error}"
-            )));
-        }
-        std::result::Result::Ok(Self(job))
+        unsafe { AssignProcessToJobObject(self.0.0, process) }.map_err(|error| {
+            std::io::Error::other(format!(
+                "assign suspended child to kill-on-close job: {error}"
+            ))
+        })
+    }
+
+    fn terminate(&self) -> std::io::Result<()> {
+        unsafe { windows::Win32::System::JobObjects::TerminateJobObject(self.0.0, 1) }
+            .map_err(|error| std::io::Error::other(error.to_string()))
     }
 }
 
 #[cfg(windows)]
 impl Drop for ChildJob {
     fn drop(&mut self) {
-        use windows::Win32::{Foundation::CloseHandle, System::JobObjects::TerminateJobObject};
         // Closing a kill-on-close job is the normal cancellation path. Try
         // termination first so descendants are also stopped if the handle's
         // close policy is changed unexpectedly.
-        unsafe {
-            let _ = TerminateJobObject(self.0, 1);
-            let _ = CloseHandle(self.0);
+        let _ = self.terminate();
+    }
+}
+
+#[cfg(windows)]
+fn primary_thread_id(process_id: u32) -> std::io::Result<u32> {
+    use std::mem::size_of;
+    use windows::{
+        Win32::{
+            Foundation::ERROR_NO_MORE_FILES,
+            System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First,
+                Thread32Next,
+            },
+        },
+        core::HRESULT,
+    };
+
+    let snapshot = OwnedWindowsHandle(
+        unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+            .map_err(|error| std::io::Error::other(error.to_string()))?,
+    );
+    let mut entry = THREADENTRY32 {
+        dwSize: size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    unsafe { Thread32First(snapshot.0, &mut entry) }
+        .map_err(|error| std::io::Error::other(format!("enumerate process threads: {error}")))?;
+
+    let mut primary = None;
+    loop {
+        if entry.th32OwnerProcessID == process_id {
+            if primary.replace(entry.th32ThreadID).is_some() {
+                return Err(std::io::Error::other(
+                    "suspended child had more than one thread before primary-thread resume",
+                ));
+            }
+        }
+        entry.dwSize = size_of::<THREADENTRY32>() as u32;
+        match unsafe { Thread32Next(snapshot.0, &mut entry) } {
+            std::result::Result::Ok(()) => {}
+            Err(error) if error.code() == HRESULT::from_win32(ERROR_NO_MORE_FILES.0) => {
+                break;
+            }
+            Err(error) => {
+                return Err(std::io::Error::other(format!(
+                    "continue process thread enumeration: {error}"
+                )));
+            }
         }
     }
+
+    primary.ok_or_else(|| {
+        std::io::Error::other("suspended child primary thread was not found in the snapshot")
+    })
+}
+
+#[cfg(windows)]
+fn open_primary_thread(thread_id: u32) -> std::io::Result<OwnedWindowsHandle> {
+    let handle = unsafe {
+        windows::Win32::System::Threading::OpenThread(
+            windows::Win32::System::Threading::THREAD_SUSPEND_RESUME,
+            false,
+            thread_id,
+        )
+    }
+    .map_err(|error| {
+        std::io::Error::other(format!("open suspended child primary thread: {error}"))
+    })?;
+    std::result::Result::Ok(OwnedWindowsHandle(handle))
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -1384,7 +1791,7 @@ impl ChildControl {
         #[cfg(windows)]
         unsafe {
             use windows::Win32::System::JobObjects::TerminateJobObject;
-            let _ = TerminateJobObject(self.job.0, 1);
+            let _ = TerminateJobObject(self.job.0.0, 1);
         }
     }
 }
@@ -1756,6 +2163,105 @@ mod tests {
         drop(old);
     }
 
+    #[test]
+    fn cancelled_stdin_read_is_retained_once_with_a_bounded_reacquisition() {
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let old_owner = (254, 102, 401);
+        let new_owner = (254, 102, 402);
+        let (_old_cancel, old_rx) = cancellation_channel();
+        let old = registry.acquire(old_owner, old_rx.clone()).unwrap();
+        let completed_read = vec![0x5a; MAX_STDIN_READ_BYTES];
+        registry.cancel_call(old_owner);
+
+        let mut old_delivery = Vec::new();
+        assert_eq!(
+            registry
+                .commit_read(old_owner, &old_rx, &completed_read, |bytes| {
+                    old_delivery.extend_from_slice(bytes);
+                })
+                .unwrap(),
+            StdinReadCommit::Retained
+        );
+        assert!(old_delivery.is_empty());
+        assert_eq!(
+            registry.state.lock().unwrap().pending_input.as_deref(),
+            Some(completed_read.as_slice())
+        );
+        assert!(!registry.can_read(old_owner, &old_rx));
+
+        // A second read cannot be started while the retained chunk occupies
+        // the single bounded slot; an invariant violation cannot append or
+        // replace bytes already captured for the next owner.
+        assert!(
+            registry
+                .commit_read(old_owner, &old_rx, b"later", |_| {})
+                .is_err()
+        );
+        assert_eq!(
+            registry.state.lock().unwrap().pending_input.as_deref(),
+            Some(completed_read.as_slice())
+        );
+        drop(old);
+
+        let (_new_cancel, new_rx) = cancellation_channel();
+        let new_reader = registry.acquire(new_owner, new_rx.clone()).unwrap();
+        let mut new_delivery = Vec::new();
+        assert!(
+            registry
+                .deliver_pending(new_owner, &new_rx, |bytes| {
+                    assert!(registry.state.try_lock().is_ok());
+                    new_delivery.extend_from_slice(bytes);
+                })
+                .unwrap()
+        );
+        assert_eq!(new_delivery, completed_read);
+        assert!(
+            !registry
+                .deliver_pending(new_owner, &new_rx, |_| panic!(
+                    "pending bytes delivered twice"
+                ))
+                .unwrap()
+        );
+        assert!(registry.can_read(new_owner, &new_rx));
+
+        let mut live_delivery = Vec::new();
+        assert_eq!(
+            registry
+                .commit_read(new_owner, &new_rx, b"next", |bytes| {
+                    live_delivery.extend_from_slice(bytes);
+                })
+                .unwrap(),
+            StdinReadCommit::Delivered
+        );
+        assert_eq!(live_delivery, b"next");
+        assert!(registry.state.lock().unwrap().pending_input.is_none());
+        drop(new_reader);
+    }
+
+    #[test]
+    fn stdin_delivery_callback_can_cancel_without_holding_registry_lock() {
+        let registry = Arc::new(StdinReaderRegistry::default());
+        let owner = (254, 102, 403);
+        let (_cancel, cancel_rx) = cancellation_channel();
+        let _reader = registry.acquire(owner, cancel_rx.clone()).unwrap();
+        let mut delivered = Vec::new();
+
+        assert_eq!(
+            registry
+                .commit_read(owner, &cancel_rx, b"committed", |bytes| {
+                    let guard = registry.state.try_lock().unwrap();
+                    drop(guard);
+                    registry.cancel_call(owner);
+                    delivered.extend_from_slice(bytes);
+                })
+                .unwrap(),
+            StdinReadCommit::Delivered
+        );
+        assert_eq!(delivered, b"committed");
+        assert!(registry.state.lock().unwrap().pending_input.is_none());
+        assert!(!registry.can_read(owner, &cancel_rx));
+    }
+
     #[cfg(unix)]
     fn unix_pipe() -> (std::fs::File, std::fs::File) {
         use std::os::fd::FromRawFd;
@@ -1926,9 +2432,7 @@ mod tests {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        let child = command.spawn().unwrap();
-        let pid = child.id();
-        let child = SpawnSyncChild::new(child, pid, cfg!(unix)).unwrap();
+        let child = SpawnSyncChild::spawn(command, cfg!(unix)).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let (wait_tx, wait_rx) = async_channel::bounded(1);
@@ -2131,9 +2635,7 @@ mod node_process_tests {
             .stderr(std::process::Stdio::null());
         use std::os::unix::process::CommandExt;
         command.process_group(0);
-        let raw_child = command.spawn().unwrap();
-        let pid = raw_child.id();
-        let mut child = SpawnSyncChild::new(raw_child, pid, true).unwrap();
+        let mut child = SpawnSyncChild::spawn(command, true).unwrap();
         let owner = ProcessCallOwner::Synchronous {
             window_id: 254,
             session_id: "test-sync-owner".into(),
@@ -2233,10 +2735,10 @@ mod node_process_tests {
             .stderr(std::process::Stdio::null());
         use std::os::unix::process::CommandExt;
         command.process_group(0);
-        let child = command.spawn().unwrap();
-        let pid = child.id();
         let start = Instant::now();
-        drop(SpawnSyncChild::new(child, pid, true));
+        let child = SpawnSyncChild::spawn(command, true).unwrap();
+        let pid = child.id();
+        drop(child);
         assert!(start.elapsed() < Duration::from_secs(2));
         // SAFETY: signal zero only checks whether the just-reaped pid exists.
         assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);

@@ -227,9 +227,13 @@ async fn reset_dead_keys(
     request: ApiRequest,
 ) -> Result<()> {
     let (id,) = request.args().optional::<(Option<u8>,)>(1)?;
-    match_window!(app, window, id);
-    window.reset_dead_keys();
-    Ok(())
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.reset_dead_keys();
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "windows")]
@@ -241,9 +245,13 @@ async fn begin_resize_drag(
     let (edge, button, x, y, id) = request
         .args()
         .optional::<(isize, u32, i32, i32, Option<u8>)>(5)?;
-    match_window!(app, window, id);
-    window.begin_resize_drag(edge, button, x, y);
-    Ok(())
+    let app2 = app.clone();
+    run_on_main(&app, move |_target, _control_flow| {
+        match_window!(app2, window, id);
+        window.begin_resize_drag(edge, button, x, y);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(target_os = "windows")]

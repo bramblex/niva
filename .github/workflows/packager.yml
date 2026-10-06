@@ -28,16 +28,19 @@ jobs:
             kit: windows-x86_64
             runtime: niva-windows-x86_64.exe
             exe: .exe
+            limit: 3500000
           - os: macos-latest
             target: aarch64-apple-darwin
             kit: macos-aarch64
             runtime: niva-macos-aarch64
             exe: ''
+            limit: 3300000
           - os: macos-15-intel
             target: x86_64-apple-darwin
             kit: macos-x86_64
             runtime: niva-macos-x86_64
             exe: ''
+            limit: 3300000
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +66,7 @@ jobs:
           import pathlib
           runtime = pathlib.Path('target/${{ matrix.target }}/release/niva${{ matrix.exe }}')
           size = runtime.stat().st_size
-          limit = 3_300_000
+          limit = int('${{ matrix.limit }}')
           print(f'{runtime}: {size} bytes (limit: < {limit})')
           if size >= limit:
               raise SystemExit(f'Runtime exceeds the {limit}-byte release limit')

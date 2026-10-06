@@ -7,7 +7,7 @@ python3 examples/resource-layout-smoke/run.py \
   --output /tmp/niva-resource-layout-check
 ```
 
-必须使用新的输出目录。驱动只生成当前 Mac 架构的隔离测试 kit，校验完整 runtime 小于 3,300,000 bytes，并传递 Rust/JS 许可材料。它不是可发布的三平台 build kit。
+必须使用新的输出目录。驱动只生成当前 Mac 架构的隔离测试 kit，按 macOS 严格小于 3,300,000 bytes 的门禁校验完整 runtime，并传递 Rust/JS 许可材料。它不是可发布的三平台 build kit。
 
 同一项目分别通过统一打包器生成 embedded 和 external `.app` ZIP，解包后执行 `codesign --verify --deep --strict`，再启动其中的真实程序。页面检查 33 MiB 以上资源的 HEAD、后缀 Range、416、完整读取超限、许可资源，以及打包后的 CommonJS 相邻文件读取与 ESM 接口身份。
 

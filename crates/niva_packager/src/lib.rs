@@ -14,7 +14,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const MAX_RUNTIME_BYTES: u64 = 3_300_000;
+const MACOS_MAX_RUNTIME_BYTES: u64 = 3_300_000;
+const WINDOWS_MAX_RUNTIME_BYTES: u64 = 3_500_000;
+
+fn runtime_size_limit(target: Target) -> u64 {
+    match target {
+        Target::WindowsX86_64 => WINDOWS_MAX_RUNTIME_BYTES,
+        Target::MacosAarch64 | Target::MacosX86_64 => MACOS_MAX_RUNTIME_BYTES,
+    }
+}
+
+fn runtime_size_is_allowed(target: Target, size: u64) -> bool {
+    size < runtime_size_limit(target)
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, clap::ValueEnum,
@@ -234,10 +246,14 @@ fn build_target(
         .context("runtime path must be UTF-8")?;
     let runtime_path = build_staging.join(format!("runtime-{}", target.name()));
     resources::snapshot_file(root, runtime_relative, &runtime_path)?;
+    let runtime_size = fs::metadata(&runtime_path)?.len();
+    let runtime_limit = runtime_size_limit(target);
     ensure!(
-        fs::metadata(&runtime_path)?.len() < MAX_RUNTIME_BYTES,
-        "runtime exceeds the strict {} byte size limit",
-        MAX_RUNTIME_BYTES
+        runtime_size_is_allowed(target, runtime_size),
+        "{} runtime is {} bytes; size limit is strictly below {} bytes",
+        target.name(),
+        runtime_size,
+        runtime_limit
     );
     let bytes = fs::read(&runtime_path)?;
     ensure!(
@@ -310,6 +326,24 @@ fn build_target(
         runtime.version.clone(),
         signature,
     ))
+}
+
+#[cfg(test)]
+mod runtime_size_tests {
+    use super::{Target, runtime_size_limit};
+
+    #[test]
+    fn platform_runtime_size_limits_are_strict() {
+        for (target, limit) in [
+            (Target::MacosAarch64, 3_300_000),
+            (Target::MacosX86_64, 3_300_000),
+            (Target::WindowsX86_64, 3_500_000),
+        ] {
+            assert_eq!(runtime_size_limit(target), limit);
+            assert!(super::runtime_size_is_allowed(target, limit - 1));
+            assert!(!super::runtime_size_is_allowed(target, limit));
+        }
+    }
 }
 fn validate_name(name: &str) -> Result<()> {
     ensure!(

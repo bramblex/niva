@@ -132,31 +132,9 @@ pub fn assemble(
 }
 
 fn ensure_distinct_paths(runtime: &Path, output: &Path) -> Result<()> {
-    let runtime_abs = fs::canonicalize(runtime)
-        .with_context(|| format!("resolve runtime PE {}", runtime.display()))?;
-    let output_abs = if output.exists() {
-        fs::canonicalize(output)
-            .with_context(|| format!("resolve output PE {}", output.display()))?
-    } else {
-        let parent = output
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        if parent.exists() {
-            let parent = fs::canonicalize(parent)
-                .with_context(|| format!("resolve output directory {}", parent.display()))?;
-            parent.join(
-                output
-                    .file_name()
-                    .ok_or_else(|| anyhow!("output path has no filename"))?,
-            )
-        } else {
-            // A missing output path cannot alias the existing runtime. Its
-            // parent can be created once the PE has passed validation.
-            return Ok(());
-        }
-    };
-    if runtime_abs == output_abs {
+    // This resolves existing components before processing `..`, which keeps
+    // symlink semantics intact even when the output parent is missing.
+    if win_packager::paths_refer_to_same_file(runtime, output)? {
         bail!("runtime and output PE paths must differ");
     }
     Ok(())
@@ -813,6 +791,71 @@ mod tests {
     fn version_info_rejects_components_above_windows_limit() {
         let error = version_info_rc(&json!({"version": "1.2.65536"})).unwrap_err();
         assert!(error.to_string().contains("exceeds 65535"), "{error:#}");
+    }
+
+    #[test]
+    fn rejects_output_that_resolves_through_missing_parent_to_runtime() {
+        let base = test_dir("missing-parent-runtime-alias");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let runtime = base.join("runtime.exe");
+        fs::write(&runtime, b"runtime").unwrap();
+        let output = base.join("missing").join("..").join("runtime.exe");
+
+        assert!(!output.parent().unwrap().exists());
+        assert!(ensure_distinct_paths(&runtime, &output).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn allows_distinct_output_below_new_parent() {
+        let base = test_dir("new-output-parent");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let runtime = base.join("runtime.exe");
+        let output = base.join("missing").join("nested").join("app.exe");
+        fs::write(&runtime, b"runtime").unwrap();
+
+        ensure_distinct_paths(&runtime, &output).unwrap();
+        assert!(!output.parent().unwrap().exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn rejects_existing_hard_link_to_runtime() {
+        let base = test_dir("hard-link-runtime-alias");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let runtime = base.join("runtime.exe");
+        let output = base.join("output.exe");
+        fs::write(&runtime, b"runtime").unwrap();
+        fs::hard_link(&runtime, &output).unwrap();
+
+        assert!(ensure_distinct_paths(&runtime, &output).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_resolution_preserves_symlink_parent_semantics() {
+        use std::os::unix::fs::symlink;
+
+        let base = test_dir("symlink-parent-semantics");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("real/subdir")).unwrap();
+        let runtime_outside = base.join("runtime.exe");
+        let runtime_inside = base.join("real/runtime.exe");
+        let link = base.join("link");
+        fs::write(&runtime_outside, b"outside runtime").unwrap();
+        fs::write(&runtime_inside, b"inside runtime").unwrap();
+        symlink(base.join("real/subdir"), &link).unwrap();
+
+        // `link/..` resolves to `real/`, rather than being erased before the
+        // symlink is followed. The first output is distinct; the second aliases.
+        let distinct = link.join("..").join("runtime.exe");
+        ensure_distinct_paths(&runtime_outside, &distinct).unwrap();
+        assert!(ensure_distinct_paths(&runtime_inside, &distinct).is_err());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

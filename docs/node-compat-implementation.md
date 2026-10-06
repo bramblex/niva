@@ -86,7 +86,7 @@ fixture 使用临时 CA 和文件，以及仅作用于子进程的 HOME/TMPDIR�
 ff5c9ffe219c1fb21813a5f07d2b2eb658515872f3d2b5d7ae97c237111191a3
 ```
 
-产物为 `target/release/niva`，包含 Native、内嵌 classic/ESM/vendor JS 及加载索引。实测平台 macOS 26.6.2 / arm64，Rust 1.98.1；不是业务资源包、安装包或签名后的分发产物。macOS/Windows 构建脚本及 CI 的主程序上限统一为 3,300,000 bytes。
+产物为 `target/release/niva`，包含 Native、内嵌 classic/ESM/vendor JS 及加载索引。实测平台 macOS 26.6.2 / arm64，Rust 1.98.1；不是业务资源包、安装包或签名后的分发产物。当前构建脚本及 CI 按平台检查主程序：macOS 严格小于 3,300,000 bytes，Windows 严格小于 3,500,000 bytes；本段历史 macOS 测量不证明 Windows 产物达标。
 
 ## 明确限制与后续门禁
 
