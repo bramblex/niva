@@ -78,13 +78,18 @@ impl NivaHttpServer {
 }
 
 async fn accept_loop(state: Arc<ServerState>, listener: TcpListener) {
+    let admission = super::admission::Admission::default();
     loop {
         let (stream, _) = match listener.accept().await {
             Ok(pair) => pair,
             Err(_) => continue,
         };
+        let Some(permit) = admission.acquire(128) else {
+            continue;
+        };
         let state = state.clone();
         smol::spawn(async move {
+            let _permit = permit;
             if let Err(err) = handle_conn(&state, stream).await {
                 log_err!(format!("http conn failed: {err}"));
             }
@@ -344,7 +349,11 @@ async fn handle_sync(
 }
 
 async fn handle_conn(state: &Arc<ServerState>, mut stream: smol::net::TcpStream) -> Result<()> {
-    let (head, raw_head) = read_head(&mut stream).await?;
+    let (head, raw_head) = smol::future::or(read_head(&mut stream), async {
+        smol::Timer::after(Duration::from_secs(5)).await;
+        Err(anyhow!("HTTP request head timeout"))
+    })
+    .await?;
 
     let expected_host = format!("127.0.0.1:{}", state.port);
     if head

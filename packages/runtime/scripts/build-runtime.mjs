@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, transform } from "esbuild";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 const packageRoot = path.resolve(scriptDir, "..");
 const workspaceRoot = path.resolve(packageRoot, "../..");
 const typesRoot = path.join(workspaceRoot, "packages/types");
@@ -127,9 +130,19 @@ const assetsManifestPath = path.join(dist, "runtime-assets.json");
 await writeFile(assetsManifestPath, `${JSON.stringify(assetsManifest, null, 2)}\n`);
 
 if (!skipTypes) {
-  const { spawnSync } = await import("node:child_process");
-  const result = spawnSync(path.join(workspaceRoot, "node_modules/.bin/tsc"), ["-p", path.join(packageRoot, "tsconfig.types.json")], { cwd: workspaceRoot, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`Declaration build failed:\n${result.stdout || ""}${result.stderr || ""}`);
+  const tscCli = require.resolve("typescript/lib/tsc.js");
+  const result = spawnSync(process.execPath, [tscCli, "-p", path.join(packageRoot, "tsconfig.types.json")], { cwd: workspaceRoot, encoding: "utf8" });
+  if (result.error || result.status !== 0) {
+    const outcome = result.error
+      ? `spawn error ${result.error.code || "unknown"}: ${result.error.message}`
+      : result.signal
+        ? `terminated by signal ${result.signal}`
+        : result.status === null
+          ? "ended without an exit status"
+          : `exited with status ${result.status}`;
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trimEnd();
+    throw new Error(`Declaration build failed (${outcome})${output ? `:\n${output}` : ""}`);
+  }
 
   const declarationRoot = path.join(distTypes, "source");
   await mkdir(path.join(distTypes, "modules"), { recursive: true });

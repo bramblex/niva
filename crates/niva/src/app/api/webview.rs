@@ -50,7 +50,7 @@ async fn evaluate_script(
     let (script,) = request.args().get::<(String,)>()?;
     validate_script_size(&script)?;
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.evaluate_script(&script)?;
+        window.webview()?.evaluate_script(&script)?;
         Ok(())
     })
     .await
@@ -60,7 +60,7 @@ async fn load_url(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReques
     let (raw_url,) = request.args().get::<(String,)>()?;
     let url = parse_load_url(&raw_url)?;
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.load_url(&url)?;
+        window.webview()?.load_url(&url)?;
         Ok(())
     })
     .await
@@ -80,7 +80,7 @@ fn parse_load_url(raw_url: &str) -> Result<String> {
 async fn load_html(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequest) -> Result<()> {
     let (html,) = request.args().get::<(String,)>()?;
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.load_html(&html)?;
+        window.webview()?.load_html(&html)?;
         Ok(())
     })
     .await
@@ -88,7 +88,7 @@ async fn load_html(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiReque
 
 async fn reload(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.reload()?;
+        window.webview()?.reload()?;
         Ok(())
     })
     .await
@@ -96,14 +96,14 @@ async fn reload(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest
 
 async fn url(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest) -> Result<String> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window.webview.url()?)
+        Ok(window.webview()?.url()?)
     })
     .await
 }
 
 async fn print(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.print()?;
+        window.webview()?.print()?;
         Ok(())
     })
     .await
@@ -111,7 +111,7 @@ async fn print(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest)
 
 async fn go_back(app: Arc<NivaApp>, window: Arc<NivaWindow>, _request: ApiRequest) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.go_back()?;
+        window.webview()?.go_back()?;
         Ok(())
     })
     .await
@@ -123,7 +123,7 @@ async fn go_forward(
     _request: ApiRequest,
 ) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.go_forward()?;
+        window.webview()?.go_forward()?;
         Ok(())
     })
     .await
@@ -135,7 +135,7 @@ async fn can_go_back(
     _request: ApiRequest,
 ) -> Result<bool> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window.webview.can_go_back()?)
+        Ok(window.webview()?.can_go_back()?)
     })
     .await
 }
@@ -146,7 +146,7 @@ async fn can_go_forward(
     _request: ApiRequest,
 ) -> Result<bool> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window.webview.can_go_forward()?)
+        Ok(window.webview()?.can_go_forward()?)
     })
     .await
 }
@@ -157,7 +157,7 @@ async fn cookies(
     _request: ApiRequest,
 ) -> Result<Vec<String>> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(cookies_to_strings(window.webview.cookies()?))
+        Ok(cookies_to_strings(window.webview()?.cookies()?))
     })
     .await
 }
@@ -169,7 +169,7 @@ async fn cookies_for_url(
 ) -> Result<Vec<String>> {
     let (url,) = request.args().get::<(String,)>()?;
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(cookies_to_strings(window.webview.cookies_for_url(&url)?))
+        Ok(cookies_to_strings(window.webview()?.cookies_for_url(&url)?))
     })
     .await
 }
@@ -192,7 +192,7 @@ async fn set_cookie(app: Arc<NivaApp>, window: Arc<NivaWindow>, request: ApiRequ
     {
         let cookie = parse_cookie(raw_cookie)?;
         run_on_main(&app, move |_target, _control_flow| {
-            window.webview.set_cookie(&cookie)?;
+            window.webview()?.set_cookie(&cookie)?;
             Ok(())
         })
         .await
@@ -216,7 +216,7 @@ async fn delete_cookie(
     {
         let cookie = parse_cookie(raw_cookie)?;
         run_on_main(&app, move |_target, _control_flow| {
-            window.webview.delete_cookie(&cookie)?;
+            window.webview()?.delete_cookie(&cookie)?;
             Ok(())
         })
         .await
@@ -235,7 +235,7 @@ async fn clear_all_browsing_data(
     _request: ApiRequest,
 ) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.clear_all_browsing_data()?;
+        window.webview()?.clear_all_browsing_data()?;
         Ok(())
     })
     .await
@@ -247,7 +247,7 @@ async fn is_devtools_open(
     _request: ApiRequest,
 ) -> Result<bool> {
     run_on_main(&app, move |_target, _control_flow| {
-        Ok(window.webview.is_devtools_open())
+        Ok(window.webview()?.is_devtools_open())
     })
     .await
 }
@@ -258,7 +258,7 @@ async fn open_devtools(
     _request: ApiRequest,
 ) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.open_devtools();
+        window.webview()?.open_devtools();
         Ok(())
     })
     .await
@@ -270,7 +270,7 @@ async fn close_devtools(
     _request: ApiRequest,
 ) -> Result<()> {
     run_on_main(&app, move |_target, _control_flow| {
-        window.webview.close_devtools();
+        window.webview()?.close_devtools();
         Ok(())
     })
     .await

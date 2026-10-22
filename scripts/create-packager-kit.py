@@ -73,7 +73,7 @@ def main():
         tool = kit / ('niva-packager.exe' if args.packager.suffix == '.exe' else 'niva-packager')
         shutil.copyfile(args.packager, tool)
         tool.chmod(0o755)
-        (kit / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'version': version, 'runtimes': runtimes}, indent=2)+'\n')
+        (kit / 'manifest.json').write_text(json.dumps({'schemaVersion': 2, 'version': version, 'runtimes': runtimes}, indent=2)+'\n')
         (kit / 'runtime-sizes.json').write_text(json.dumps({
             'schemaVersion': 1,
             'method': 'exact precompiled runtime file sizes copied into this kit',

@@ -48,7 +48,7 @@ jobs:
       - run: npm ci
       - run: npm run build --workspace=packages/runtime
       - run: npm run typecheck --workspace=packages/types
-      - run: npm run typecheck:consumer --workspace=packages/types
+      - run: npm run typecheck:consumers --workspace=packages/types
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets
@@ -83,6 +83,24 @@ jobs:
             /tmp/niva-stdio-evidence
             /tmp/niva-exit-evidence
             /tmp/niva-tsc-evidence
+          if-no-files-found: warn
+      - if: runner.os == 'Windows'
+        name: Real Windows WebView bridge and process lifecycle
+        shell: pwsh
+        run: |
+          python examples/bridge-route-smoke/run.py --binary target/release/niva.exe --trusted-debug --output .ci-evidence/bridge
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python examples/windows-smoke/run_lifecycle.py --binary target/release/niva.exe --output .ci-evidence/lifecycle
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python examples/stdio-host/verify.py --binary target/release/niva.exe --output .ci-evidence/stdio
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python examples/stdio-host/verify_exit.py --binary target/release/niva.exe --output .ci-evidence/exit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-webview-smoke-windows
+          path: .ci-evidence
           if-no-files-found: warn
       - if: runner.os == 'macOS'
         uses: actions/setup-node@v4

@@ -1,6 +1,7 @@
 pub(crate) mod builder;
 pub mod options;
 pub mod permissions;
+mod ui;
 pub mod window;
 
 use anyhow::{Result, anyhow};
@@ -141,7 +142,7 @@ impl WindowManager {
         #[cfg(not(target_os = "windows"))]
         let release_menu = || Ok(());
 
-        run_cleanup_steps(
+        let cleanup = run_cleanup_steps(
             window.id,
             release_menu,
             || {
@@ -153,7 +154,9 @@ impl WindowManager {
                 tray.destroy_all(window.id)
             },
             || app.api().cancel_window(window.id),
-        )
+        );
+        let released = window.release_ui_on_main();
+        cleanup.and(released)
     }
 
     /// Remove and clean a window even if one of its cleanup steps fails.

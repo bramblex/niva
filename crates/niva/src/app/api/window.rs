@@ -1316,7 +1316,7 @@ fn update_macos_webview_cursor(
           style.textContent = '* {{ cursor: ' + (state.visible ? state.icon : 'none') + ' !important; }}';
         }})();"#
     );
-    window.webview.evaluate_script(&script)?;
+    window.webview()?.evaluate_script(&script)?;
     Ok(())
 }
 

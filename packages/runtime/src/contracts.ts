@@ -399,9 +399,9 @@ export type NivaSignOptions = {
 };
 /** API 调度器选项 */
 export type NivaApiOptions = {
-    /** 单个请求超时毫秒数（默认 30000；流式长任务可设更大） */
+    /** 普通请求超时毫秒数（1–86400000，默认 30000；用户交互对话框不设期限） */
     timeoutMs?: number;
-    /** 调度队列上限，超限立即拒绝（默认 64） */
+    /** 调度容量（1–4096，默认 64），超限立即拒绝 */
     maxQueue?: number;
 };
 /** 尺寸 */
@@ -730,6 +730,8 @@ export interface NivaDialog {
     saveFile(filters?: string[], startDir?: string): Promise<string | null>;
 }
 export interface NivaExtra {
+    /** 使用与启动和打包相同的规则校验各平台有效配置。仅可信本地页面可用。 */
+    validateConfig(config: NivaOptions): Promise<void>;
     /**
      * 隐藏应用程序，仅适用于 macOS。
      * @returns 一个 Promise，在应用程序成功隐藏时解析该 Promise，如果发生错误则拒绝该 Promise。

@@ -29,3 +29,8 @@ The generated executables, staging files, and stderr logs stay under ignored
 permission or CSP matrix, signing, or every native API. Methods requiring a
 dialog, printer, or system UI change are listed separately in
 [INTERACTIVE.md](INTERACTIVE.md) with restoration steps.
+
+To verify an already frozen release binary without rebuilding or changing its Cargo feature set, use `& .\examples\windows-smoke\build.ps1 -SkipBuild` (add `-Interactive` for menu/shortcut input). This requires `target/release/niva.exe` and `win_packager.exe` to exist. Record the runtime SHA before and after the run.
+
+
+生命周期回归：`python examples/windows-smoke/run_lifecycle.py --binary target/release/niva.exe --output .release-evidence/lifecycle`。需要交互 Windows 桌面：验证 500 ms IPC 截止时间、关闭仍在运行 Native 调用的子窗口、以及等待 40 秒的原生消息对话框。runner 仅向自己启动进程中名称完全匹配的测试对话框操作实际的唯一确认按钮；不操作其他窗口。

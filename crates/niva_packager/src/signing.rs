@@ -360,7 +360,16 @@ fn find_signtool() -> Option<PathBuf> {
 }
 
 fn run_command(program: &Path, args: &[OsString], stage: &str) -> Result<()> {
-    let output = Command::new(program)
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        // Keep the packager CLI interactive while hiding captured helper tools.
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command
         .args(args)
         .output()
         .with_context(|| format!("unable to start {stage}"))?;
@@ -416,5 +425,47 @@ mod tests {
             windows_options(&serde_json::json!({})).unwrap().is_none(),
             true
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn signing_helper_runs_console_probe_without_a_console_window() {
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("console-probe.ps1");
+        let evidence_path = temp.path().join("console-handle.txt");
+        std::fs::write(
+            &script,
+            r#"
+param([Parameter(Mandatory = $true)][string]$OutputPath)
+$native = @'
+using System;
+using System.Runtime.InteropServices;
+public static class NivaSigningConsoleProbe {
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    public static extern IntPtr GetConsoleWindow();
+}
+'@
+Add-Type -TypeDefinition $native
+$console = [NivaSigningConsoleProbe]::GetConsoleWindow()
+[System.IO.File]::WriteAllText($OutputPath, ('0x{0:x}' -f $console.ToInt64()))
+"#,
+        )
+        .unwrap();
+        let args = [
+            OsString::from("-NoLogo"),
+            OsString::from("-NoProfile"),
+            OsString::from("-NonInteractive"),
+            OsString::from("-ExecutionPolicy"),
+            OsString::from("Bypass"),
+            OsString::from("-File"),
+            script.into_os_string(),
+            evidence_path.clone().into_os_string(),
+        ];
+
+        run_command(Path::new("powershell.exe"), &args, "console probe").unwrap();
+
+        let evidence = std::fs::read_to_string(evidence_path).unwrap();
+        assert_eq!(evidence, "0x0");
+        println!("SIGNING_TOOL_CHILD_EVIDENCE GetConsoleWindow={evidence}");
     }
 }

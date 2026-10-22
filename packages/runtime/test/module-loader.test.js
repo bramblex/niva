@@ -15,7 +15,7 @@ const fixtureFiles = new Map([
   ["/app/throw.cjs", "throw new Error('source path fixture');"],
 ]);
 
-function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, ipcAttachReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", href, sourceOrigin, serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply, syncBlock, failPagehideOnce = false, captureBootstrapError = false } = {}) {
+function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 0, ipcReply, ipcAttachReply, windowsIpc, fetchImpl, fakeTimers = false, local = true, userImportMap = false, iframeParent, origin = "https://niva.test", href, locationOrigin, sourceOrigin, serverOrigin = "https://niva.test", ErrorConstructor, platform = "linux", consoleImpl = console, syncReply, syncBlock, failPagehideOnce = false, captureBootstrapError = false } = {}) {
   const requests = [];
   const importMaps = [];
   const sockets = [];
@@ -115,7 +115,7 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
     console: consoleImpl,
     ...(ErrorConstructor ? { Error: ErrorConstructor } : {}),
     document,
-    location: { pathname: pageUrl.pathname, href: pageHref, origin: pageUrl.origin },
+    location: { pathname: pageUrl.pathname, href: pageHref, origin: locationOrigin ?? pageUrl.origin },
     ...(sourceOrigin ? { __niva_source_origin: sourceOrigin } : {}),
     __niva_server_origin: iframeParent ? undefined : serverOrigin,
     __niva_window_id: iframeParent ? undefined : 4,
@@ -187,6 +187,10 @@ function bootPage({ injectCommonJs = true, injectEsm = false, webSocketThrows = 
     bootstrapError = error;
   }
   return { context, requests, importMaps, sockets, fakeTimerHandles, initialMap, originalCaptureStackTrace, pageListeners, bootstrapError };
+}
+
+function reenterBootstrap(context) {
+  return vm.runInContext('globalThis[Symbol.for("niva.runtime.bootstrap")](globalThis)', context);
 }
 
 const bootCommonJsPage = () => bootPage({ injectCommonJs: true, injectEsm: false });
@@ -1106,7 +1110,100 @@ test("same-origin iframe inherits only transport credentials, flags, nonce, and 
   assert.notEqual(child.context.Niva.bridge.sessionId, parent.context.Niva.bridge.sessionId);
 });
 
-test("cross-origin iframe receives no parent bridge credentials or process metadata", () => {
+test("about:blank subframes defer Niva until parser-time same-origin reentry", async () => {
+  const nativeRequests = [];
+  const parent = bootPage({
+    injectCommonJs: true,
+    injectEsm: true,
+    ipcReply(request) {
+      nativeRequests.push(request);
+      return { method: request.method };
+    },
+  });
+  const child = bootPage({ iframeParent: parent, href: "about:blank" });
+  assert.equal(child.context.Niva, undefined, "an uncommitted blank frame gets no partial bridge");
+  assert.equal(child.context.__niva_token, undefined);
+  assert.equal(nativeRequests.length, 0);
+
+  child.context.document = { ...child.context.document };
+  child.context.location = {
+    pathname: "/iframe.html",
+    href: "https://niva.test/iframe.html",
+    origin: "https://niva.test",
+  };
+  child.context.__niva_server_origin = parent.context.__niva_server_origin;
+  child.context.__niva_runtime_config = { injectCommonJs: true, injectEsm: true };
+  reenterBootstrap(child.context);
+
+  assert.equal(child.context.Niva.bridge.isTrustedLocal(), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(child.context.Niva.runtimeConfig)), {
+    injectCommonJs: true,
+    injectEsm: true,
+    trustedLocal: true,
+    nonce: "test-nonce",
+  });
+  assert.equal(child.context.Niva.bootstrap.process, undefined);
+  assert.equal(child.context.__niva_token, parent.context.__niva_token);
+  assert.equal(
+    parent.context.__niva_register_frame_session(
+      child.context.Niva.bridge.sessionId,
+      child.context,
+      "register",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await child.context.Niva.window.current())),
+    { method: "window.current" },
+  );
+  const niva = child.context.Niva;
+  const sessionId = niva.bridge.sessionId;
+  reenterBootstrap(child.context);
+  assert.equal(child.context.Niva, niva, "same-document parser reentry is idempotent");
+  assert.equal(child.context.Niva.bridge.sessionId, sessionId);
+  assert.equal(nativeRequests.filter((request) => request.t === "api_call").length, 1);
+});
+
+test("same-document reentry preserves a BFCache-suspended frame session", () => {
+  const parent = bootPage({ injectCommonJs: true, injectEsm: true, fakeTimers: true });
+  const child = bootPage({ iframeParent: parent, fakeTimers: true });
+  const niva = child.context.Niva;
+  const sessionId = niva.bridge.sessionId;
+  const pagehide = child.pageListeners.get("pagehide")[0];
+  pagehide({ persisted: true });
+  reenterBootstrap(child.context);
+  assert.equal(child.context.Niva, niva);
+  assert.equal(child.context.Niva.bridge.sessionId, sessionId);
+  assert.equal(child.context.__niva_token, parent.context.__niva_token);
+});
+
+test("opaque sandboxed local resources do not inherit same-origin bridge credentials", async () => {
+  const nativeRequests = [];
+  const parent = bootPage({
+    fakeTimers: true,
+    ipcReply(request) {
+      nativeRequests.push(request);
+      return { method: request.method };
+    },
+  });
+  const child = bootPage({
+    iframeParent: parent,
+    href: "https://niva.test/sandboxed.html",
+    locationOrigin: "null",
+    fakeTimers: true,
+  });
+
+  assert.equal(child.context.Niva.bridge.isTrustedLocal(), false);
+  assert.equal(child.context.Niva.runtimeConfig.trustedLocal, false);
+  assert.equal(child.context.__niva_token, undefined);
+  await assert.rejects(child.context.Niva.window.current(), { code: "ERR_NIVA_IPC_UNAVAILABLE" });
+  reenterBootstrap(child.context);
+  assert.equal(child.context.Niva.bridge.isTrustedLocal(), false);
+  assert.equal(child.context.__niva_token, undefined);
+  assert.deepEqual(nativeRequests, []);
+});
+
+test("cross-origin iframe receives no parent bridge credentials or process metadata", async () => {
   const child = bootPage({ iframeParent: "cross-origin", local: false, fakeTimers: true, origin: "https://remote.test" });
   assert.equal(child.context.__niva_ws_url, undefined);
   assert.equal(child.context.__niva_token, undefined);
@@ -1115,6 +1212,8 @@ test("cross-origin iframe receives no parent bridge credentials or process metad
   assert.equal(child.context.process, undefined);
   assert.equal(child.context.Niva.bootstrap.process, undefined);
   assert.equal(child.context.Niva.bridge.isTrustedLocal(), false);
+  assert.equal(child.context.Niva.runtimeConfig.trustedLocal, false);
+  await assert.rejects(child.context.Niva.window.current(), { code: "ERR_NIVA_IPC_UNAVAILABLE" });
 });
 
 test("API calls stay on IPC while an available WebSocket only attaches stream tickets", async () => {
@@ -2032,4 +2131,29 @@ test("CJS loader parses JSON through the same module cache", () => {
   assert.equal(context.require("./data.json"), first);
   assert.ok(requests.some((request) => request.method === "module.load" && request.args[0] === "./data.json"));
   fixtureFiles.delete("/app/data.json");
+});
+
+
+test("Windows CommonJS page bootstrap uses URL paths without a synchronous cwd call", () => {
+  const { context, requests } = bootPage({
+    platform: "win32", href: "https://niva.test/", injectCommonJs: true,
+    syncBlock() { throw new Error("CSP denies all synchronous requests"); },
+  });
+  assert.equal(context.Niva.runtimeConfig.injectCommonJs, true);
+  assert.equal(typeof context.require("node:child_process").spawn, "function");
+  assert.deepEqual(Array.from(context.module.paths), ["/node_modules"]);
+  assert.equal(requests.some(request => request.async === false), false);
+});
+
+
+test("externally served same-origin frames initialize lazily after about:blank", { timeout: 3000 }, async () => {
+  const parent = bootPage({ ipcReply: () => "frame title", fakeTimers: true });
+  const child = bootPage({ iframeParent: parent, href: "about:blank", fakeTimers: true });
+  assert.equal(child.context.Niva, undefined);
+  child.context.location = { href: "https://niva.test/frame.html", origin: "https://niva.test", pathname: "/frame.html" };
+  assert.equal(typeof child.context.__niva_ipc_reply, "function");
+  assert.equal(child.context.Niva.bridge.isTrustedLocal(), true);
+  assert.notEqual(child.context.Niva.bridge.sessionId, parent.context.Niva.bridge.sessionId);
+  parent.context.__niva_register_frame_session(child.context.Niva.bridge.sessionId, child.context, "register");
+  assert.equal(await child.context.Niva.window.title(), "frame title");
 });

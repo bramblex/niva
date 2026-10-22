@@ -1,12 +1,11 @@
 use anyhow::{Context, Result, ensure};
-use flate2::{Compression, write::DeflateEncoder};
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
     path::{Component, Path, PathBuf},
 };
+use win_packager::resource_archive;
 
 #[derive(Debug)]
 pub struct Package {
@@ -167,9 +166,12 @@ pub fn prepare(
         });
     }
 
-    let mut indexes = BTreeMap::new();
-    indexes.insert("niva.json".to_owned(), (0usize, config_bytes.len()));
-    let mut raw = config_bytes.to_vec();
+    let mut indexes = resource_archive::Index::new();
+    let mut data = Vec::new();
+    indexes.insert(
+        "niva.json".to_owned(),
+        resource_archive::append(&mut data, config_bytes)?,
+    );
     for (key, path) in files {
         let source_root = source_roots
             .get(&key)
@@ -178,14 +180,11 @@ pub fn prepare(
             .get(&key)
             .context("resource source path missing")?;
         let bytes = read_checked_resource(source_root, source_relative, &path)?;
-        indexes.insert(key, (raw.len(), bytes.len()));
-        raw.extend(bytes);
+        indexes.insert(key, resource_archive::append(&mut data, &bytes)?);
     }
-    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&raw)?;
     Ok(Package {
-        indexes: serde_json::to_vec(&indexes)?,
-        data: encoder.finish()?,
+        indexes: resource_archive::encode_index(&indexes)?,
+        data,
         external_root: None,
     })
 }
@@ -338,7 +337,6 @@ fn ensure_source_unchanged(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
     #[test]
     fn explicit_config_wins_and_resources_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
@@ -354,15 +352,11 @@ mod tests {
             None,
         )
         .unwrap();
-        let indexes: BTreeMap<String, (usize, usize)> =
-            serde_json::from_slice(&pkg.indexes).unwrap();
-        let mut raw = Vec::new();
-        flate2::read::DeflateDecoder::new(pkg.data.as_slice())
-            .read_to_end(&mut raw)
-            .unwrap();
-        assert_eq!(&raw[..2], b"{}");
-        let (offset, len) = indexes["page.html"];
-        assert_eq!(&raw[offset..offset + len], b"hello");
+        let indexes = resource_archive::decode_index(&pkg.indexes, pkg.data.len()).unwrap();
+        assert_eq!(
+            resource_archive::read_range(&pkg.data, &indexes["page.html"], 0, 5).unwrap(),
+            b"hello"
+        );
     }
     #[test]
     fn traversal_rejected() {
@@ -391,8 +385,8 @@ mod tests {
                 None,
             )
             .unwrap();
-            let indexes: BTreeMap<String, (usize, usize)> =
-                serde_json::from_slice(&package.indexes).unwrap();
+            let indexes =
+                resource_archive::decode_index(&package.indexes, package.data.len()).unwrap();
             assert!(indexes.contains_key("niva.json"));
             assert!(indexes.contains_key("index.html"));
             assert!(
@@ -401,12 +395,16 @@ mod tests {
                     .any(|path| path.starts_with("__niva_runtime/")),
                 "JavaScript runtime assets are provided by the embedded runtime"
             );
-            let (offset, length) = indexes["niva.json"];
-            let mut raw = Vec::new();
-            flate2::read::DeflateDecoder::new(package.data.as_slice())
-                .read_to_end(&mut raw)
-                .unwrap();
-            assert_eq!(&raw[offset..offset + length], config_bytes);
+            assert_eq!(
+                resource_archive::read_range(
+                    &package.data,
+                    &indexes["niva.json"],
+                    0,
+                    config_bytes.len()
+                )
+                .unwrap(),
+                config_bytes
+            );
         }
     }
     #[cfg(unix)]

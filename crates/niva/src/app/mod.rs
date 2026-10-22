@@ -1,3 +1,4 @@
+mod admission;
 mod api;
 mod api_manager;
 pub(crate) mod custom_protocol;
@@ -44,7 +45,7 @@ use self::{
     resource_manager::{AppResourceManager, FileSystemResource, ResourceManager},
     shortcut_manager::NivaShortcutManager,
     tray_manager::NivaTrayManager,
-    utils::{ArcMut, arc_mut, merge_values},
+    utils::{ArcMut, arc_mut},
     window_manager::{WindowManager, options::NivaWindowOptions},
 };
 
@@ -154,6 +155,7 @@ pub struct NivaApp {
     _custom_protocol: custom_protocol::CustomProtocolDispatcher,
 
     event_loop_proxy: EventLoopProxy<NivaEvent>, // Event loop proxy.
+    ipc_admission: admission::Admission,
 }
 
 impl NivaApp {
@@ -217,6 +219,7 @@ impl NivaApp {
             _custom_protocol: custom_protocol,
 
             event_loop_proxy: event_loop.create_proxy(),
+            ipc_admission: admission::Admission::default(),
         });
 
         // bind app to window manager
@@ -410,14 +413,7 @@ impl NivaLaunchInfo {
 
             let base_options: Value = serde_json::from_slice(&base_content)?;
 
-            let platform = std::env::consts::OS;
-            let platform_options = base_options.get(platform).cloned();
-
-            let options = if let Some(platform_options) = platform_options {
-                merge_values(base_options, platform_options)
-            } else {
-                base_options
-            };
+            let options = niva_config::for_platform(&base_options, std::env::consts::OS)?;
             serde_json::from_value::<NivaOptions>(options)?
         };
 
@@ -446,21 +442,7 @@ impl NivaLaunchInfo {
     }
 }
 
-fn canonical_uuid(uuid: &str) -> Result<String> {
-    let bytes = uuid.as_bytes();
-    anyhow::ensure!(bytes.len() == 36, "niva.json uuid must be a canonical UUID");
-    for (index, byte) in bytes.iter().enumerate() {
-        if matches!(index, 8 | 13 | 18 | 23) {
-            anyhow::ensure!(*byte == b'-', "niva.json uuid must be a canonical UUID");
-        } else {
-            anyhow::ensure!(
-                byte.is_ascii_hexdigit(),
-                "niva.json uuid must be a canonical UUID"
-            );
-        }
-    }
-    Ok(uuid.to_ascii_lowercase())
-}
+use niva_config::canonical_uuid;
 
 #[cfg(test)]
 mod startup_tests {

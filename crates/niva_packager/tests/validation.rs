@@ -15,7 +15,7 @@ fn fixture(root: &Path) {
     .unwrap();
     fs::write(
         root.join("niva.json"),
-        r#"{"name":"Smoke","uuid":"test","version":"1.0.0"}"#,
+        r#"{"name":"Smoke","uuid":"a51c1728-d174-42d4-8f57-7d296c966b51","version":"1.0.0"}"#,
     )
     .unwrap();
 }
@@ -29,7 +29,7 @@ fn bad_hash_and_missing_target_are_reported_independently_without_publishing() {
         [0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 1],
     )
     .unwrap();
-    fs::write(root.join("manifest.json"),json!({"schemaVersion":1,"version":env!("CARGO_PKG_VERSION"),"runtimes":{"macos-aarch64":{"path":"runtime","version":env!("CARGO_PKG_VERSION"),"sha256":"0".repeat(64)}}}).to_string()).unwrap();
+    fs::write(root.join("manifest.json"),json!({"schemaVersion":2,"version":env!("CARGO_PKG_VERSION"),"runtimes":{"macos-aarch64":{"path":"runtime","version":env!("CARGO_PKG_VERSION"),"sha256":"0".repeat(64)}}}).to_string()).unwrap();
     let report = build(
         &root.join("manifest.json"),
         &root.join("niva.json"),
@@ -63,7 +63,7 @@ fn existing_artifact_is_never_overwritten() {
     fixture(root);
     let runtime = [0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 1];
     fs::write(root.join("runtime"), runtime).unwrap();
-    fs::write(root.join("manifest.json"),json!({"schemaVersion":1,"version":env!("CARGO_PKG_VERSION"),"runtimes":{"macos-aarch64":{"path":"runtime","version":env!("CARGO_PKG_VERSION"),"sha256":sha256(&runtime)}}}).to_string()).unwrap();
+    fs::write(root.join("manifest.json"),json!({"schemaVersion":2,"version":env!("CARGO_PKG_VERSION"),"runtimes":{"macos-aarch64":{"path":"runtime","version":env!("CARGO_PKG_VERSION"),"sha256":sha256(&runtime)}}}).to_string()).unwrap();
     fs::create_dir(root.join("output")).unwrap();
     let destination = root.join("output/Smoke-macos-aarch64.zip");
     fs::write(&destination, b"existing-user-output").unwrap();

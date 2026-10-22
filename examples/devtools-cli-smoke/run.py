@@ -211,8 +211,8 @@ def run_success_case(
 ) -> dict:
     kit_manifest_path = kit_directory / "manifest.json"
     manifest = json.loads(kit_manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schemaVersion") != 1 or not isinstance(manifest.get("runtimes"), dict):
-        raise ValueError("Kit manifest must use schemaVersion 1 and declare runtimes")
+    if manifest.get("schemaVersion") != 2 or not isinstance(manifest.get("runtimes"), dict):
+        raise ValueError("Kit manifest must use schemaVersion 2 and declare runtimes")
     expected_target = native_build_target()
     if expected_target not in manifest["runtimes"]:
         raise ValueError(f"The kit does not contain the host build runtime {expected_target}")

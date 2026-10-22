@@ -14,7 +14,7 @@ sidebar_position: 1
 | `meta` | 可选的公司名、描述、版权信息；不从 `meta.version` 读取版本。 |
 | `window` | 主窗口配置；字段见[窗口选项](/docs/options/window)，包括外源页面的 `permissions`。 |
 | `tray`、`shortcuts` | 可选托盘和全局快捷键配置，见[托盘选项](/docs/options/tray)与[快捷键选项](/docs/options/shortcut)。 |
-| `api` | API 调度配置：`timeoutMs` 默认 30000 毫秒，`maxQueue` 默认 64。旧的固定线程池 `workers` 已移除。 |
+| `api` | API 调度配置：`timeoutMs` 范围 1–86400000，默认 30000 毫秒；用户交互对话框不设操作期限。`maxQueue` 范围 1–4096，默认 64。旧的固定线程池 `workers` 已移除。 |
 | `injectCommonJs`、`injectEsm` | 独立控制CommonJS环境与ESM import map，默认均false；基础Niva API始终提供。见[Node模块环境](/docs/api/node-compat)。 |
 | `debug` | 开发资源目录 `resource` 与开发入口 `entry`。远端/Vite 入口仅在显式调试启动中生效。 |
 | `build` | Devtools 打包时读取的静态资源目录 `resource`。 |

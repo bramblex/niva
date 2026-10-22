@@ -802,6 +802,7 @@ mod tests {
         fs::write(&runtime, b"runtime").unwrap();
         let output = base.join("missing").join("..").join("runtime.exe");
 
+        #[cfg(unix)]
         assert!(!output.parent().unwrap().exists());
         assert!(ensure_distinct_paths(&runtime, &output).is_err());
         fs::remove_dir_all(base).unwrap();

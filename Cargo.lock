@@ -3603,6 +3603,7 @@ dependencies = [
  "mime_guess",
  "muda",
  "native-tls",
+ "niva-config",
  "notify",
  "objc2",
  "objc2-app-kit",
@@ -3633,6 +3634,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "niva-config"
+version = "0.10.0-beta.1"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "niva-packager"
 version = "0.10.0-beta.1"
 dependencies = [
@@ -3643,6 +3653,7 @@ dependencies = [
  "flate2",
  "icns",
  "image",
+ "niva-config",
  "plist",
  "serde",
  "serde_json",

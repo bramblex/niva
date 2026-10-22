@@ -136,7 +136,7 @@ async fn set_traffic_light_inset(
         // Wry owns the replacement parent view. Its setter updates the
         // controls now and remembers the inset for later redraws.
         window
-            .webview
+            .webview()?
             .set_traffic_light_inset(wry::dpi::LogicalPosition::new(position.x, position.y))?;
         Ok(())
     })

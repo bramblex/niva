@@ -1,4 +1,4 @@
-param([switch]$Interactive)
+param([switch]$Interactive, [switch]$SkipBuild)
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
@@ -9,12 +9,20 @@ $streamStage = Join-Path $repo 'dist\windows-stream-stage'
 $output = Join-Path $repo 'dist\NivaWindowsSmoke.exe'
 Set-Location -LiteralPath $repo
 
-& npm run build --workspace=packages/devtools
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& cargo build --release -p win_packager
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& cargo build --release -p niva
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($SkipBuild) {
+    foreach ($binary in @('niva.exe', 'win_packager.exe')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $repo "target\release\$binary") -PathType Leaf)) {
+            throw "Missing prebuilt release executable: $binary"
+        }
+    }
+} else {
+    & npm run build --workspace=packages/devtools
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & cargo build --release -p win_packager
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & cargo build --release -p niva
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 foreach ($name in @('niva.json', 'niva-csp.json', 'index.html', 'iframe.html', 'cross.html', 'child.html', 'csp.html', 'csp.js', 'fixture-protocol.js', 'probe.txt')) {

@@ -1463,12 +1463,12 @@ impl SpawnSyncChild {
     #[cfg(windows)]
     fn spawn_windows(mut command: std::process::Command) -> std::io::Result<Self> {
         use std::os::windows::process::CommandExt;
-        use windows::Win32::System::Threading::CREATE_SUSPENDED;
+        use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
-        // Commands are constructed inside this module and currently set no
-        // other Win32 creation flags. CREATE_SUSPENDED ensures no child code
-        // can create descendants before the kill-on-close job owns the child.
-        command.creation_flags(CREATE_SUSPENDED.0);
+        // Console binaries run without opening a console window. Keep them
+        // suspended until the kill-on-close job owns the child so it cannot
+        // create descendants before cancellation can terminate the whole tree.
+        command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
         let job = ChildJob::create()?;
         let child = command.spawn()?;
         let pid = child.id();
@@ -2416,6 +2416,83 @@ mod tests {
             // exits naturally, so a missing kill would make the assertion fail.
             std::thread::sleep(Duration::from_secs(5));
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_spawned_child_has_no_console_and_keeps_piped_stdio() {
+        use std::io::{Read, Write};
+
+        let temp = TestDir::new();
+        let script = temp.path().join("console-probe.ps1");
+        std::fs::write(
+            &script,
+            r#"
+$native = @'
+using System;
+using System.Runtime.InteropServices;
+public static class NivaConsoleProbe {
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    public static extern IntPtr GetConsoleWindow();
+}
+'@
+Add-Type -TypeDefinition $native
+$console = [NivaConsoleProbe]::GetConsoleWindow()
+$payload = [Console]::In.ReadToEnd()
+$handle = '0x{0:x}' -f $console.ToInt64()
+[Console]::Out.WriteLine("NIVA_CONSOLE_PROBE console=$handle input=$payload")
+"#,
+        )
+        .unwrap();
+
+        let mut command = std::process::Command::new("powershell.exe");
+        command
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        let mut child = SpawnSyncChild::spawn(command, false).unwrap();
+        let mut stdin = child.child_mut().stdin.take().unwrap();
+        stdin.write_all(b"pipe-sentinel").unwrap();
+        drop(stdin);
+
+        let mut stdout_pipe = child.child_mut().stdout.take().unwrap();
+        let mut stderr_pipe = child.child_mut().stderr.take().unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        stdout_pipe.read_to_end(&mut stdout).unwrap();
+        stderr_pipe.read_to_end(&mut stderr).unwrap();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+
+        let stdout = String::from_utf8(stdout).unwrap();
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(
+            status.success(),
+            "child failed: stdout={stdout:?}, stderr={stderr:?}"
+        );
+        assert!(
+            stdout.contains("NIVA_CONSOLE_PROBE console=0x0 input=pipe-sentinel"),
+            "child did not prove a null console handle and working stdin/stdout pipes: {stdout:?}"
+        );
+        let evidence = stdout
+            .lines()
+            .find(|line| line.contains("NIVA_CONSOLE_PROBE"))
+            .expect("console probe output was asserted above");
+        println!("WINDOWS_CHILD_EVIDENCE {evidence}");
     }
 
     #[test]

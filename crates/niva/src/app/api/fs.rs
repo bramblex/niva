@@ -2600,7 +2600,9 @@ mod tests {
         let destination = temp.path().join("destination.txt");
         fs::write(&source, "timestamped").unwrap();
         let expected = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-        fs::File::open(&source)
+        OpenOptions::new()
+            .write(true)
+            .open(&source)
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(expected))
             .unwrap();

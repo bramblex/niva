@@ -11,6 +11,13 @@ use anyhow::anyhow;
 use std::sync::Arc;
 
 pub fn register_api_instances(api_manager: &mut ApiManager) {
+    api_manager.register_api(
+        "extra.validateConfig",
+        |_app, _window, request| async move {
+            let (config,): (serde_json::Value,) = request.args().get()?;
+            niva_config::validate_all(&config)
+        },
+    );
     api_manager.register_blocking_api("extra.getActiveWindowId", get_active_window_id);
     #[cfg(target_os = "macos")]
     api_manager.register_api("extra.focusByWindowId", focus_by_window_id);

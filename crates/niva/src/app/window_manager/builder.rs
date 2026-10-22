@@ -335,6 +335,7 @@ impl NivaBuilder {
         let runtime_config = serde_json::to_string(&json!({
             "injectCommonJs": app.launch_info.options.inject_common_js,
             "injectEsm": app.launch_info.options.inject_esm,
+            "apiTimeoutMs": app.launch_info.options.api.as_ref().and_then(|api| api.timeout_ms).unwrap_or(30_000),
         }))?
         .replace('<', "\\u003c");
         let bootstrap_script = NodeCompat::bootstrap_script()?;
@@ -385,7 +386,10 @@ impl NivaBuilder {
         let ipc_app = app.clone();
         let custom_ipc_origin = use_custom_protocol;
         let ipc_app_scheme = app_scheme.clone();
+        let ipc_admission = app.ipc_admission.clone();
         builder = builder.with_ipc_handler(move |request| {
+            if request.body().len() > 256 * 1024 { return; }
+            let Some(permit) = ipc_admission.acquire(128) else { return; };
             let source_url = request.uri().to_string();
             let body = request.into_body();
             let app = ipc_app.clone();
@@ -393,6 +397,7 @@ impl NivaBuilder {
             let app_for_reply = app.clone();
             let app_scheme = ipc_app_scheme.clone();
             smol::spawn(async move {
+                let _permit = permit;
                 // The standard Wry callback supplies the sending frame's URI.
                 // Capture the current top-level URL separately so a cross-origin
                 // iframe can never claim a grant by reporting its own origin.
@@ -400,7 +405,7 @@ impl NivaBuilder {
                     &app,
                     move |_, _| {
                         let window = app_for_top.window()?.get_window(id)?;
-                        Ok(window.webview.url()?)
+                        Ok(window.webview()?.url()?)
                     },
                 )
                 .await
@@ -467,12 +472,12 @@ impl NivaBuilder {
                     &app,
                     move |_, _| {
                         let window = app_for_reply.window()?.get_window(id)?;
-                        let current = window.webview.url()?;
+                        let current = window.webview()?.url()?;
                         if page_origin(&current, custom_ipc_origin, &app_scheme)
                             .as_deref()
                             == Some(source_origin.as_str())
                         {
-                            window.webview.evaluate_script(&script)?;
+                            window.webview()?.evaluate_script(&script)?;
                         }
                         Ok(())
                     },
@@ -807,7 +812,7 @@ fn queue_webview_request_event(
         app.event_loop_proxy
             .send_event(NivaEvent::new(move |_target, _control_flow| {
                 let window = event_app.window()?.get_window(id)?;
-                let page_url = window.webview.url().ok();
+                let page_url = window.webview()?.url().ok();
                 let mut payload = payload.clone();
                 if let Some(payload) = payload.as_object_mut() {
                     payload.insert("pageUrl".into(), json!(page_url));

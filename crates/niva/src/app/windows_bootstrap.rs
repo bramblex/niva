@@ -290,7 +290,11 @@ mod windows {
     }
 
     fn run_script(script: &std::path::Path, action: &str, elevated: bool) -> Result<Output> {
+        use std::os::windows::process::CommandExt;
+        use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
         let mut command = Command::new("powershell.exe");
+        command.creation_flags(CREATE_NO_WINDOW.0);
         command.args([
             "-NoLogo",
             "-NoProfile",
@@ -364,6 +368,48 @@ mod windows {
 
     fn wide(value: &str) -> Vec<u16> {
         OsStr::new(value).encode_wide().chain(Some(0)).collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::io::Write;
+
+        #[test]
+        fn fake_bootstrap_runs_without_console_and_returns_captured_json() {
+            let script =
+                super::super::TemporaryScript::create_with(&std::env::temp_dir(), |file| {
+                    file.write_all(
+                        br#"
+param([string]$Action)
+$native = @'
+using System;
+using System.Runtime.InteropServices;
+public static class NivaWebViewConsoleProbe {
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    public static extern IntPtr GetConsoleWindow();
+}
+'@
+Add-Type -TypeDefinition $native
+$console = [NivaWebViewConsoleProbe]::GetConsoleWindow()
+$state = @{
+    action = $Action
+    consoleHandle = ('0x{0:x}' -f $console.ToInt64())
+}
+[Console]::Out.WriteLine(($state | ConvertTo-Json -Compress))
+"#,
+                    )
+                })
+                .unwrap();
+
+            let output = run_script(&script.0, "check", false).unwrap();
+            let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result["action"], "check");
+            assert_eq!(result["consoleHandle"], "0x0");
+            println!("WEBVIEW_BOOTSTRAP_CHILD_EVIDENCE stdout={result}");
+
+            drop(script);
+        }
     }
 }
 

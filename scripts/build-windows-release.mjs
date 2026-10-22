@@ -25,7 +25,7 @@ export function createRuntimeManifest(version, bytes) {
   }
   if (!version) throw new Error("runtime version is required");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version,
     runtimes: {
       [TARGET]: {
@@ -94,6 +94,13 @@ export function validateBuildReport(report, { appName, version, outputDir }) {
   ) {
     throw new Error("packaged output is not a Windows x86_64 executable");
   }
+  // A Windows GUI subsystem prevents the packaged app from opening a console.
+  const optionalHeader = peOffset + 24;
+  if (optionalHeader + 70 > bytes.length
+    || bytes.readUInt16LE(optionalHeader) !== 0x20b
+    || bytes.readUInt16LE(optionalHeader + 68) !== 2) {
+    throw new Error("packaged output must use the Windows GUI subsystem (no console window)");
+  }
   return { path: expected, sizeBytes: bytes.length, sha256: result.sha256 };
 }
 
@@ -158,7 +165,7 @@ function cargoPackage(metadata, name) {
   return matches[0];
 }
 
-function writeLicenseMaterials(kitRoot, metadata) {
+export function writeLicenseMaterials(kitRoot, metadata) {
   const selected = selectedDependencyPackageIds(metadata.resolve, [
     cargoPackage(metadata, "niva").id,
     cargoPackage(metadata, "niva-packager").id,
@@ -166,6 +173,7 @@ function writeLicenseMaterials(kitRoot, metadata) {
 
   mkdirSync(path.join(kitRoot, "licenses"), { recursive: true });
   const notices = [];
+  const missing = [];
   for (const item of metadata.packages) {
     if (!selected.has(item.id)) continue;
     const source = item.source
@@ -178,7 +186,10 @@ function writeLicenseMaterials(kitRoot, metadata) {
     const licenseNames = readdirSync(packageDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /^(LICENSE|COPYING|NOTICE)/i.test(entry.name))
       .map((entry) => entry.name);
-    if (licenseNames.length === 0) continue;
+    if (licenseNames.length === 0) {
+      if (item.source) missing.push({ name: item.name, version: item.version, license: item.license, source });
+      continue;
+    }
     const destination = path.join(kitRoot, "licenses", `${item.name}-${item.version}`);
     mkdirSync(destination, { recursive: true });
     for (const name of licenseNames) {
@@ -196,6 +207,10 @@ function writeLicenseMaterials(kitRoot, metadata) {
   notices.push("Niva runtime JavaScript dependencies\nSee licenses/runtime/THIRD_PARTY_NOTICES.txt\n");
   copyFileSync(path.join(REPO_ROOT, "LICENSE"), path.join(kitRoot, "LICENSE"));
   writeFileSync(path.join(kitRoot, "THIRD_PARTY.txt"), notices.join("\n"), "utf8");
+  writeFileSync(path.join(kitRoot, "license-audit.json"), JSON.stringify({ missing }, null, 2) + "\n");
+  if (missing.length) {
+    throw new Error(`Release license materials are incomplete for ${missing.length} dependencies; see ${path.join(kitRoot, "license-audit.json")}`);
+  }
 }
 
 function buildWindowsRelease() {

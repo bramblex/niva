@@ -214,6 +214,8 @@
     record("stream-complete", { route: mode, bytes: result.stdout.length, hex: toHex(result.stdout),
       nivaApiBytes: publicResult.stdout.length, nivaApiHex: toHex(publicResult.stdout) });
 
+    // Flush receive observers in the current WebSocket dispatch before snapshotting.
+    await new Promise(resolve => setTimeout(resolve, 0));
     const events = window.__bridgeRouteEvents.slice();
     const instrumentationErrors = events.filter(event => event.kind === "instrumentation-error");
     assert(instrumentationErrors.length === 0, `route instrumentation failed: ${JSON.stringify(instrumentationErrors)}`);

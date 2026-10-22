@@ -1357,83 +1357,60 @@ mod tests {
     use std::{
         io::{BufRead, BufReader, Read, Write},
         net::{Shutdown, TcpListener, TcpStream},
-        process::Command,
-        sync::atomic::AtomicUsize,
         sync::mpsc,
-        time::{SystemTime, UNIX_EPOCH},
     };
 
-    static NEXT_TEST_CERT_DIR: AtomicUsize = AtomicUsize::new(0);
+    fn untrusted_tls_server() -> (String, std::thread::JoinHandle<()>, mpsc::Receiver<()>) {
+        const IDENTITY: &[u8] = include_bytes!("testdata/http-untrusted-server.pfx");
+        const IDENTITY_PASSWORD: &str = "niva-http-test-fixture";
 
-    struct TestTlsMaterial(std::path::PathBuf);
-
-    impl Drop for TestTlsMaterial {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
+        let identity = native_tls::Identity::from_pkcs12(IDENTITY, IDENTITY_PASSWORD)
+            .expect("checked-in test-only TLS identity should be valid");
+        let acceptor = native_tls::TlsAcceptor::new(identity)
+            .expect("checked-in test-only TLS identity should create an acceptor");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind local TLS test server");
+        listener
+            .set_nonblocking(true)
+            .expect("set local TLS test listener nonblocking");
+        let address = listener
+            .local_addr()
+            .expect("read local TLS test server address");
+        let (accepted_tx, accepted_rx) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let started = Instant::now();
+            let (stream, _) = loop {
+                match listener.accept() {
+                    Ok(accepted) => break accepted,
+                    Err(error)
+                        if error.kind() == io::ErrorKind::WouldBlock
+                            && started.elapsed() < Duration::from_secs(3) =>
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept local TLS test connection: {error}"),
+                }
+            };
+            let _ = accepted_tx.send(());
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .expect("set local TLS server handshake timeout");
+            let result = acceptor.accept(stream);
+            assert!(result.is_err());
+        });
+        (
+            format!("https://127.0.0.1:{}/resource", address.port()),
+            server,
+            accepted_rx,
+        )
     }
 
-    fn untrusted_tls_server() -> Option<(String, std::thread::JoinHandle<()>, TestTlsMaterial)> {
-        if Command::new("openssl").arg("version").output().is_err() {
-            return None;
-        }
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()?
-            .as_nanos();
-        let sequence = NEXT_TEST_CERT_DIR.fetch_add(1, Ordering::Relaxed);
-        let material = TestTlsMaterial(std::env::temp_dir().join(format!(
-            "niva-http-test-tls-{}-{nonce}-{sequence}",
-            std::process::id(),
-        )));
-        std::fs::create_dir(&material.0).ok()?;
-        let generated = Command::new("openssl")
-            .args([
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-keyout",
-                "key.pem",
-                "-out",
-                "cert.pem",
-                "-days",
-                "2",
-                "-subj",
-                "/CN=localhost",
-                "-addext",
-                "subjectAltName=DNS:localhost",
-            ])
-            .current_dir(&material.0)
-            .output()
-            .ok()?;
-        if !generated.status.success() {
-            return None;
-        }
-        let converted = Command::new("openssl")
-            .args(["pkey", "-in", "key.pem", "-out", "key-pkcs8.pem"])
-            .current_dir(&material.0)
-            .output()
-            .ok()?;
-        if !converted.status.success() {
-            return None;
-        }
-        let certificate = std::fs::read(material.0.join("cert.pem")).ok()?;
-        let key = std::fs::read(material.0.join("key-pkcs8.pem")).ok()?;
-        let identity = native_tls::Identity::from_pkcs8(&certificate, &key).ok()?;
-        let acceptor = native_tls::TlsAcceptor::new(identity).ok()?;
-        let listener = TcpListener::bind(("127.0.0.1", 0)).ok()?;
-        let address = listener.local_addr().ok()?;
-        let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            assert!(acceptor.accept(stream).is_err());
-        });
-        Some((
-            format!("https://localhost:{}/resource", address.port()),
-            server,
-            material,
-        ))
+    fn assert_platform_rejected_untrusted_certificate(error: &anyhow::Error) {
+        let message = error.to_string().to_ascii_lowercase();
+        let windows_untrusted_root = cfg!(windows) && message.contains("-2146762487");
+        assert!(
+            windows_untrusted_root || message.contains("certificate") || message.contains("trust"),
+            "expected an untrusted certificate rejection, got {error:#}"
+        );
     }
 
     fn stalled_tls_server() -> Option<(
@@ -1784,9 +1761,7 @@ mod tests {
 
     #[test]
     fn request_stream_rejects_an_untrusted_tls_certificate() {
-        let Some((url, server, _material)) = untrusted_tls_server() else {
-            return;
-        };
+        let (url, server, accepted) = untrusted_tls_server();
         let (inbound_tx, inbound_rx) = async_channel::bounded(2);
         inbound_tx
             .send_blocking(InboundChunk {
@@ -1812,7 +1787,11 @@ mod tests {
             Duration::from_secs(5),
             socket,
         );
-        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_platform_rejected_untrusted_certificate(&error);
+        accepted
+            .recv_timeout(Duration::from_secs(1))
+            .expect("HTTP stream request should reach the local TLS peer");
         server.join().unwrap();
     }
 
@@ -1925,15 +1904,31 @@ mod tests {
     fn request_text_cancellation_closes_an_active_socket() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let address = listener.local_addr().unwrap();
+        let (request_received_tx, request_received_rx) = mpsc::channel();
+        let (peer_eof_tx, peer_eof_rx) = mpsc::channel();
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0u8; 4096];
-            let _ = stream.read(&mut request);
-            std::thread::sleep(Duration::from_secs(2));
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            assert!(request_line.starts_with("GET /slow HTTP/1.1"));
+            loop {
+                let mut header = String::new();
+                assert_ne!(reader.read_line(&mut header).unwrap(), 0);
+                if header == "\r\n" {
+                    break;
+                }
+            }
+            request_received_tx.send(()).unwrap();
+            let mut extra = [0u8; 1];
+            let result = reader.read(&mut extra);
+            let _ = peer_eof_tx.send((result, extra[0]));
         });
         let socket = Arc::new(SocketControl::default());
         let worker_socket = socket.clone();
-        let started = Instant::now();
         let worker = std::thread::spawn(move || {
             execute_request(
                 &format!("http://{address}/slow"),
@@ -1945,20 +1940,33 @@ mod tests {
                 worker_socket,
             )
         });
-        std::thread::sleep(Duration::from_millis(100));
+        request_received_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("server should receive the active HTTP request before cancellation");
+        let started = Instant::now();
         socket.cancel();
         let result = worker.join().unwrap();
         let elapsed = started.elapsed();
+        let (peer_read, extra_byte) = peer_eof_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("peer should observe the client socket closing");
         let _ = server.join();
         assert!(result.is_err());
         assert!(elapsed < Duration::from_secs(1));
+        assert_eq!(
+            peer_read.unwrap(),
+            0,
+            "peer should observe EOF after cancellation"
+        );
+        assert_eq!(
+            extra_byte, 0,
+            "client should not send bytes after the request headers"
+        );
     }
 
     #[test]
     fn request_text_rejects_an_untrusted_tls_certificate() {
-        let Some((url, server, _material)) = untrusted_tls_server() else {
-            panic!("OpenSSL is required to create the local test certificate");
-        };
+        let (url, server, accepted) = untrusted_tls_server();
         let error = execute_request(
             &url,
             Method::GET,
@@ -1969,12 +1977,11 @@ mod tests {
             Arc::new(SocketControl::default()),
         )
         .unwrap_err();
+        accepted
+            .recv_timeout(Duration::from_secs(1))
+            .expect("HTTP request should reach the local TLS peer");
         server.join().unwrap();
-        let message = error.to_string().to_ascii_lowercase();
-        assert!(
-            message.contains("certificate") || message.contains("trust"),
-            "{message}"
-        );
+        assert_platform_rejected_untrusted_certificate(&error);
     }
 
     #[test]

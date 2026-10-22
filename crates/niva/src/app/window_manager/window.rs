@@ -3,6 +3,7 @@ use crate::lock_force;
 use anyhow::Result;
 use std::{
     ops::Deref,
+    rc::Rc,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -15,13 +16,10 @@ use tao::platform::windows::WindowExtWindows;
 use tao::window::{Window, WindowId};
 use wry::WebView;
 
-use crate::{
-    app::{
-        NivaApp, NivaEvent, NivaWindowTarget,
-        api_manager::protocol::ServerMsg,
-        utils::{ArcMut, arc, arc_mut},
-    },
-    unsafe_impl_sync_send,
+use crate::app::{
+    NivaApp, NivaEvent, NivaWindowTarget,
+    api_manager::protocol::ServerMsg,
+    utils::{ArcMut, arc, arc_mut},
 };
 
 use super::{
@@ -41,8 +39,8 @@ pub struct NivaWindow {
     pub window_id: WindowId,
     /// Owned native window (wry no longer gives access to it via WebView).
     /// Declared after `webview` so it drops after the webview.
-    pub webview: WebView,
-    pub window: Window,
+    pub window: Arc<Window>,
+    ui: super::ui::UiHandle<WindowUi>,
     pub menu_options: ArcMut<Option<WindowMenuOptions>>,
     pub token: String,
     /// Exact browser origin permitted to use this window's WebSocket token.
@@ -52,7 +50,7 @@ pub struct NivaWindow {
 
     /// Attached muda menu handle. Must be kept alive while attached:
     /// dropping it removes the native menu.
-    menu_handle: Mutex<Option<muda::Menu>>,
+
     #[cfg(target_os = "windows")]
     has_parent_window: bool,
 
@@ -68,10 +66,14 @@ pub enum WsOut {
     Binary(Vec<u8>),
 }
 
-// NivaWindow is accessed from the webview IPC/drag-drop handlers and the
-// event loop. muda menu handles are thread-bound (Rc-based); all menu
-// operations happen on the main thread, same as before with tao menus.
-unsafe_impl_sync_send!(NivaWindow);
+// Tao's Window is Send/Sync by its own contract. Wry and Muda stay in the
+// owner-thread registry, outside every background Arc<NivaWindow>.
+struct WindowUi {
+    webview: Rc<WebView>,
+    menu_handle: Mutex<Option<muda::Menu>>,
+    _window: Arc<Window>,
+}
+
 impl Deref for NivaWindow {
     type Target = Window;
     fn deref(&self) -> &Self::Target {
@@ -80,6 +82,13 @@ impl Deref for NivaWindow {
 }
 
 impl NivaWindow {
+    pub fn webview(&self) -> Result<Rc<WebView>> {
+        Ok(self.ui.get()?.webview.clone())
+    }
+    pub(crate) fn release_ui_on_main(&self) -> Result<()> {
+        self.ui.close()
+    }
+
     pub fn new(
         app: Arc<NivaApp>,
         manager: &mut WindowManager,
@@ -107,17 +116,22 @@ impl NivaWindow {
             &token,
         )?;
 
+        let window = Arc::new(window);
+        let ui = super::ui::UiHandle::new(WindowUi {
+            webview: Rc::new(webview),
+            menu_handle: Mutex::new(menu),
+            _window: window.clone(),
+        });
         let niva_window = arc(Self {
             app: app.clone(),
             id,
             window_id,
-            webview,
+            ui,
             window,
             menu_options: arc_mut(options.menu.clone()),
             token,
             trusted_ws_origin,
             permissions,
-            menu_handle: Mutex::new(menu),
             #[cfg(target_os = "windows")]
             has_parent_window: options
                 .windows_extra
@@ -138,13 +152,18 @@ impl NivaWindow {
 
     #[cfg(not(target_os = "windows"))]
     fn attach_built_menu(&self, menu: &muda::Menu) -> Result<()> {
+        let ui = self.ui.get()?;
         NivaBuilder::attach_menu(&self.window, menu)?;
-        *lock_force!(self.menu_handle) = Some(menu.clone());
+        *lock_force!(ui.menu_handle) = Some(menu.clone());
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
     pub fn switch_menu(self: &Arc<Self>) {
+        let ui = self
+            .ui
+            .get()
+            .expect("menu access must run on the UI owner thread");
         if !lock_force!(self.state).is_menu_visible {
             return;
         }
@@ -213,6 +232,8 @@ impl NivaWindow {
     }
 
     pub fn hide_menu(self: &Arc<Self>) -> Result<()> {
+        #[cfg(not(target_os = "windows"))]
+        let ui = self.ui.get()?;
         #[cfg(target_os = "windows")]
         {
             return self.replace_windows_menu(None, false);
@@ -221,7 +242,7 @@ impl NivaWindow {
         #[cfg(not(target_os = "windows"))]
         {
             lock_force!(self.state).is_menu_visible = false;
-            let handle = lock_force!(self.menu_handle).take();
+            let handle = lock_force!(ui.menu_handle).take();
             if let Some(menu) = handle {
                 NivaBuilder::detach_menu(&self.window, &menu)?;
             }
@@ -235,8 +256,9 @@ impl NivaWindow {
         next: Option<muda::Menu>,
         requested_visible: bool,
     ) -> Result<()> {
+        let ui = self.ui.get()?;
         let mut current = {
-            let mut handle = lock_force!(self.menu_handle);
+            let mut handle = lock_force!(ui.menu_handle);
             std::mem::take(&mut *handle)
         };
         let mut visible = lock_force!(self.state).is_menu_visible;
@@ -248,7 +270,7 @@ impl NivaWindow {
             |menu| NivaBuilder::detach_menu(&self.window, menu),
             |menu| NivaBuilder::attach_menu(&self.window, menu),
         );
-        *lock_force!(self.menu_handle) = current;
+        *lock_force!(ui.menu_handle) = current;
         lock_force!(self.state).is_menu_visible = visible;
         self.refresh_menu_accelerator();
         result
@@ -256,11 +278,11 @@ impl NivaWindow {
 
     #[cfg(target_os = "windows")]
     fn refresh_menu_accelerator(&self) {
-        let haccel = {
-            lock_force!(self.menu_handle)
-                .as_ref()
-                .map(muda::Menu::haccel)
-        };
+        let ui = self
+            .ui
+            .get()
+            .expect("menu access must run on the UI owner thread");
+        let haccel = { lock_force!(ui.menu_handle).as_ref().map(muda::Menu::haccel) };
         crate::app::set_window_menu_accelerator(self.window.hwnd(), haccel);
     }
 
@@ -269,10 +291,11 @@ impl NivaWindow {
     /// thread-bound Muda handle cannot be left for `NivaWindow::drop`.
     #[cfg(target_os = "windows")]
     pub(crate) fn release_menu_on_main(&self) -> Result<()> {
+        let ui = self.ui.get()?;
         use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::IsWindow};
 
         let hwnd = self.window.hwnd();
-        let Some(menu) = lock_force!(self.menu_handle).take() else {
+        let Some(menu) = lock_force!(ui.menu_handle).take() else {
             crate::app::remove_window_menu_accelerator(hwnd);
             lock_force!(self.state).is_menu_visible = false;
             return Ok(());
@@ -283,7 +306,7 @@ impl NivaWindow {
         let native_window_alive = unsafe { IsWindow(Some(HWND(hwnd as _))).as_bool() };
         if native_window_alive && let Err(error) = NivaBuilder::detach_menu(&self.window, &menu) {
             let haccel = menu.haccel();
-            *lock_force!(self.menu_handle) = Some(menu);
+            *lock_force!(ui.menu_handle) = Some(menu);
             crate::app::set_window_menu_accelerator(hwnd, Some(haccel));
             return Err(error);
         }
@@ -377,7 +400,7 @@ impl NivaWindow {
         let scheme = super::super::custom_protocol::scheme_for_uuid(&app.launch_info.uuid);
         let event = NivaEvent::new(move |_, _| {
             let window = app.window()?.get_window(window_id)?;
-            let Ok(current_url) = window.webview.url() else {
+            let Ok(current_url) = window.webview()?.url() else {
                 return Ok(());
             };
             let Ok(current_url) = url::Url::parse(&current_url) else {
@@ -387,7 +410,7 @@ impl NivaWindow {
                 super::super::custom_protocol::origin_from_page_url(&current_url, &scheme)
                     .unwrap_or_else(|| current_url.origin().ascii_serialization());
             if current_origin == expected_origin {
-                window.webview.evaluate_script(&script)?;
+                window.webview()?.evaluate_script(&script)?;
             }
             Ok(())
         });

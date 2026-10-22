@@ -57,7 +57,7 @@ export async function validatePackagerKit(directory: string): Promise<void> {
   if (!(await fileExists(executablePath))) throw new Error("The kit has no host niva-packager executable.");
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) ||
-      manifest.schemaVersion !== 1 || !manifest.runtimes || typeof manifest.runtimes !== "object") {
+      manifest.schemaVersion !== 2 || !manifest.runtimes || typeof manifest.runtimes !== "object") {
     throw new Error("The packaging manifest is invalid.");
   }
 }

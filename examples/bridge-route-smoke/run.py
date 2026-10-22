@@ -7,10 +7,8 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -25,6 +23,75 @@ EXPECTED_FILEHANDLE_CHECKSUM = "aaf01dc5"
 
 class SmokeError(RuntimeError):
     pass
+
+
+def request_windows_close(pid: int) -> bool:
+    """Post WM_CLOSE to visible top-level windows owned by this exact process."""
+    if sys.platform != "win32":
+        return False
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    enum_windows = user32.EnumWindows
+    enum_windows.argtypes = [callback_type, wintypes.LPARAM]
+    enum_windows.restype = wintypes.BOOL
+    get_process_id = user32.GetWindowThreadProcessId
+    get_process_id.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    get_process_id.restype = wintypes.DWORD
+    is_visible = user32.IsWindowVisible
+    is_visible.argtypes = [wintypes.HWND]
+    is_visible.restype = wintypes.BOOL
+    post_message = user32.PostMessageW
+    post_message.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    post_message.restype = wintypes.BOOL
+
+    sent = False
+
+    def close_owned_window(hwnd, _lparam):
+        nonlocal sent
+        owner = wintypes.DWORD()
+        get_process_id(hwnd, ctypes.byref(owner))
+        if owner.value == pid and is_visible(hwnd):
+            # WM_CLOSE asks the test application's own window to close. It does
+            # not target WebView helpers or any other process in the VM.
+            sent = bool(post_message(hwnd, 0x0010, 0, 0)) or sent
+        return True
+
+    callback = callback_type(close_owned_window)
+    try:
+        enum_windows(callback, 0)
+    except OSError:
+        return False
+    return sent
+
+
+def stop_process(process: subprocess.Popen, platform: str | None = None, close_windows=None) -> None:
+    """Stop one runner-owned process, requesting a GUI close first on Windows."""
+    platform = sys.platform if platform is None else platform
+    if process.poll() is not None:
+        return
+
+    if platform == "win32":
+        try:
+            (close_windows or request_windows_close)(process.pid)
+        except Exception:
+            # Keep cleanup moving if user32 is unavailable in a headless host.
+            pass
+        try:
+            process.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def message(event: dict, field: str = "message") -> dict:
@@ -162,11 +229,14 @@ def validate_report(report: dict, mode: str) -> list[str]:
         ack_events = [event for event in events if event.get("kind") == "ws-send-text" and message(event).get("t") == "ack"]
         if not ack_events:
             errors.append("WS mode did not send a data acknowledgement")
+        # Runtime listeners precede this observer on an existing WebSocket.
+        # A synchronous ACK can therefore be recorded before our receive listener.
+        # Match actual downlink id/sequence; observer order is not wire order.
         for ack_event in ack_events:
             ack = message(ack_event)
             matching = [frame for frame in received_frames if frame[0] == ack.get("id") and frame[1] == ack.get("seq")]
-            if not ack.get("hasSessionId") or not matching or max(frame[2] for frame in matching) >= ack_event.get("order", 0):
-                errors.append(f"WS ACK id={ack.get('id')} seq={ack.get('seq')} did not match a prior Native downlink frame")
+            if not ack.get("hasSessionId") or not matching :
+                errors.append(f"WS ACK id={ack.get('id')} seq={ack.get('seq')} did not match an observed Native downlink frame")
         if not any(frame[3] > 0 and frame[0] in attach_ids and frame[2] > min(
             event.get("order", 0) for event in attaches if message(event).get("id") == frame[0]
         ) for frame in received_frames):
@@ -293,67 +363,68 @@ class Case:
     def run(self) -> dict:
         self.output.mkdir(parents=True, exist_ok=True)
         self.start_server()
-        query = f"mode={self.mode}&report={self.report_origin}/report"
-        resource = self.output / "resources"
-        resource.mkdir(exist_ok=True)
-        for name in ("instrument.js", "smoke.js", "frame.html", "frame.js"):
-            shutil.copy2(HERE / name, resource / name)
-        (resource / "fixture.js").write_text(
-            "window.__bridgeRouteFixture = " + json.dumps({"python": sys.executable, "filePath": self.file_path}) + ";\n",
-            encoding="utf-8",
-        )
-        page = (HERE / "index.html").read_text(encoding="utf-8")
-        page = page.replace("__REPORT_ORIGIN__", self.report_origin)
-        (resource / "index.html").write_text(page, encoding="utf-8")
+        try:
+            query = f"mode={self.mode}&report={self.report_origin}/report"
+            resource = self.output / "resources"
+            resource.mkdir(exist_ok=True)
+            for name in ("instrument.js", "smoke.js", "frame.html", "frame.js"):
+                shutil.copy2(HERE / name, resource / name)
+            (resource / "fixture.js").write_text(
+                "window.__bridgeRouteFixture = " + json.dumps({"python": sys.executable, "filePath": self.file_path}) + ";\n",
+                encoding="utf-8",
+            )
+            page = (HERE / "index.html").read_text(encoding="utf-8")
+            page = page.replace("__REPORT_ORIGIN__", self.report_origin)
+            (resource / "index.html").write_text(page, encoding="utf-8")
 
-        config = self.output / "niva.json"
-        config.write_text(json.dumps({
-            "name": f"Niva bridge route smoke ({self.mode})",
-            "uuid": str(uuid.uuid4()),
-            "injectCommonJs": True,
-            "injectEsm": False,
-            "window": {
-                "entry": f"index.html?{query}" if self.mode == "ws" else f"/?{query}",
-                **({"permissions": {}} if self.mode == "ipc" and self.trusted_debug else {}),
-                "visible": True,
-                "size": {"width": 760, "height": 520},
-            },
-        }, indent=2) + "\n", encoding="utf-8")
+            config = self.output / "niva.json"
+            config.write_text(json.dumps({
+                "name": f"Niva bridge route smoke ({self.mode})",
+                "uuid": str(uuid.uuid4()),
+                "injectCommonJs": True,
+                "injectEsm": False,
+                "window": {
+                    "entry": f"index.html?{query}" if self.mode == "ws" else f"/?{query}",
+                    **({"permissions": {}} if self.mode == "ipc" and self.trusted_debug else {}),
+                    "visible": True,
+                    "size": {"width": 760, "height": 520},
+                },
+            }, indent=2) + "\n", encoding="utf-8")
 
-        command = [str(self.binary), f"--config={config}", f"--resource={resource}"]
-        if self.mode == "ipc":
-            command.append(f"--debug-entry={self.report_origin}/")
-        with self.log_path.open("wb") as log:
-            self.process = subprocess.Popen(command, cwd=HERE.parents[1], stdout=log, stderr=subprocess.STDOUT)
-            try:
+            command = [str(self.binary), f"--config={config}", f"--resource={resource}"]
+            if self.mode == "ipc":
+                command.append(f"--debug-entry={self.report_origin}/")
+            with self.log_path.open("wb") as log:
+                self.process = subprocess.Popen(command, cwd=HERE.parents[1], stdout=log, stderr=subprocess.STDOUT)
                 if not self.report_ready.wait(self.timeout):
                     status = self.process.poll()
                     raise SmokeError(f"{self.mode} mode produced no fixture JSON report within {self.timeout}s (native exit={status}); see {self.log_path}")
                 return self.report or {"ok": False, "error": "empty fixture report"}
-            finally:
-                self.stop()
+        finally:
+            self.stop()
 
     def stop(self) -> None:
-        if self.process and self.process.poll() is None:
-            self.process.terminate()
+        try:
+            if self.process:
+                stop_process(self.process)
+        finally:
             try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=5)
-        if self.http:
-            self.http.shutdown()
-            self.http.server_close()
-        for path in (Path(self.file_path), Path(self.file_path + ".large")):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
+                if self.http:
+                    try:
+                        self.http.shutdown()
+                    finally:
+                        self.http.server_close()
+            finally:
+                for path in (Path(self.file_path), Path(self.file_path + ".large")):
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", required=True, help="built Niva native executable (macOS only)")
+    parser.add_argument("--binary", required=True, help="built Niva native executable for this host platform")
     parser.add_argument("--output", required=True, help="directory for per-lane logs and result.json")
     parser.add_argument("--mode", choices=("both", "ws", "ipc"), default="both",
                         help="both lanes; WS lane uses the default custom protocol, IPC lane uses explicit debug HTTP + CSP")
@@ -372,8 +443,8 @@ def main() -> int:
     }
     failures: list[str] = []
     try:
-        if sys.platform != "darwin":
-            raise SmokeError("this smoke requires a real macOS WebView; cross-compilation is not a substitute")
+        if sys.platform not in ("darwin", "win32"):
+            raise SmokeError("this smoke requires a real macOS or Windows WebView; cross-compilation is not a substitute")
         if not binary.is_file():
             raise SmokeError(f"Niva executable not found: {binary}; build a Native debug binary first")
         output.mkdir(parents=True, exist_ok=True)

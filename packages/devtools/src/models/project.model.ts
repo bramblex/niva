@@ -93,7 +93,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       });
     }
 
-    const validateResult = ProjectModel.validateConfig(loadResult.value);
+    const validateResult = await ProjectModel.validateConfig(loadResult.value);
 
     if (validateResult.isErr()) {
       return validateResult;
@@ -202,7 +202,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       return Ok(void 0);
     }
 
-    const validateResult = ProjectModel.validateConfig(content);
+    const validateResult = await ProjectModel.validateConfig(content);
     if (validateResult.isErr()) {
       return Err(ErrorCode.SAVE_CONFIG_VALIDATE_FAILED, { content });
     }
@@ -286,7 +286,7 @@ export class ProjectModel extends StateModel<ProjectModelState> {
     return fromThrowableAsync(() => openExternal(this.state.path));
   }
 
-  private static validateConfig(rawConfig: any): AppResult<any> {
+  private static async validateConfig(rawConfig: any): Promise<AppResult<any>> {
     let config = rawConfig;
     if (typeof config === "string") {
       const configResult = fromThrowable(() => JSON.parse(config));
@@ -296,9 +296,8 @@ export class ProjectModel extends StateModel<ProjectModelState> {
       config = configResult.value;
     }
 
-    if (config && config.name && config.uuid) {
-      return Ok(config);
-    }
-    return Err(ErrorCode.PROJECT_CONFIG_VALIDATE_FAILED);
+    const validation = await fromThrowableAsync(() => Niva.bridge.call("extra.validateConfig", [config]));
+    if (validation.isErr()) return Err(ErrorCode.PROJECT_CONFIG_VALIDATE_FAILED, { reason: validation.error });
+    return Ok(config);
   }
 }

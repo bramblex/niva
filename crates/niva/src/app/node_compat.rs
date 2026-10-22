@@ -5,6 +5,7 @@ use serde_json::{Map, Value, json};
 
 const PREFIX: &str = "__niva_runtime/";
 const BOOTSTRAP_ENTRY: &str = "__bootstrap__/bootstrap.js";
+const BOOTSTRAP_MARKER: &str = "<!-- niva-runtime-bootstrap -->";
 const MARKER: &str = "<!-- niva-runtime-importmap -->";
 
 include!(concat!(env!("OUT_DIR"), "/node_compat_assets.rs"));
@@ -101,30 +102,38 @@ impl NodeCompat {
     }
 
     pub fn rewrite_html(&self, original: &[u8]) -> Result<Vec<u8>> {
-        if !self.inject_esm {
-            return Ok(original.to_vec());
-        }
         let mut html = String::from_utf8(original.to_vec())
-            .map_err(|_| anyhow!("Niva ESM runtime requires UTF-8 HTML"))?;
-        if html.contains(MARKER) {
+            .map_err(|_| anyhow!("Niva runtime injection requires UTF-8 HTML"))?;
+        let mut injection = String::new();
+        if !html.contains(BOOTSTRAP_MARKER) {
+            let nonce = Self::csp_nonce()?;
+            injection.push_str(&format!(
+                "{BOOTSTRAP_MARKER}<script nonce=\"{nonce}\">(()=>{{const initialize=window[Symbol.for(\"niva.runtime.bootstrap\")];if(typeof initialize!==\"function\")throw new Error(\"Niva document-start initializer is unavailable\");initialize(window);}})();</script>"
+            ));
+        }
+        if self.inject_esm && !html.contains(MARKER) {
+            let existing_map = remove_existing_importmap(&mut html)?;
+            let mut map = existing_map.unwrap_or_else(|| json!({}));
+            let object = map
+                .as_object_mut()
+                .ok_or_else(|| anyhow!("importmap must be an object"))?;
+            let imports = object
+                .entry("imports")
+                .or_insert_with(|| Value::Object(Map::new()));
+            let imports = imports
+                .as_object_mut()
+                .ok_or_else(|| anyhow!("importmap imports must be an object"))?;
+            for (name, url) in self.imports() {
+                imports.entry(name).or_insert(Value::String(url));
+            }
+            let serialized = serde_json::to_string(&map)?.replace('<', "\\u003c");
+            injection.push_str(&format!(
+                "{MARKER}<script type=\"importmap\">{serialized}</script>"
+            ));
+        }
+        if injection.is_empty() {
             return Ok(html.into_bytes());
         }
-        let existing_map = remove_existing_importmap(&mut html)?;
-        let mut map = existing_map.unwrap_or_else(|| json!({}));
-        let object = map
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("importmap must be an object"))?;
-        let imports = object
-            .entry("imports")
-            .or_insert_with(|| Value::Object(Map::new()));
-        let imports = imports
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("importmap imports must be an object"))?;
-        for (name, url) in self.imports() {
-            imports.entry(name).or_insert(Value::String(url));
-        }
-        let serialized = serde_json::to_string(&map)?.replace('<', "\\u003c");
-        let injection = format!("{MARKER}<script type=\"importmap\">{serialized}</script>");
         let lower = html.to_ascii_lowercase();
         if let Some(start) = lower.find("<head") {
             if let Some(end) = lower[start..].find('>') {
@@ -296,11 +305,19 @@ mod tests {
     fn inject_esm_is_opt_in_and_preserves_user_importmap_entries() {
         let off = NodeCompat::new(false);
         let source = b"<html><head></head><body>x</body></html>";
-        assert_eq!(off.rewrite_html(source).unwrap(), source);
+        let off_once = off.rewrite_html(source).unwrap();
+        let off_text = String::from_utf8(off_once.clone()).unwrap();
+        assert!(off_text.contains(BOOTSTRAP_MARKER));
+        assert!(off_text.contains("Symbol.for(\"niva.runtime.bootstrap\")"));
+        assert!(off_text.find(BOOTSTRAP_MARKER).unwrap() < off_text.find("<body>").unwrap());
+        assert!(off_text.contains("nonce=\""));
+        assert!(!off_text.contains("type=\"importmap\""));
+        assert_eq!(off.rewrite_html(&off_once).unwrap(), off_once);
         let compat = NodeCompat::new(true);
         let source = br#"<html><head><script type="module" src="/app.mjs"></script><script type="importmap">{"imports":{"path":"/mine.mjs"}}</script></head></html>"#;
         let once = compat.rewrite_html(source).unwrap();
         let text = String::from_utf8(once.clone()).unwrap();
+        assert!(text.find(BOOTSTRAP_MARKER).unwrap() < text.find("type=\"importmap\"").unwrap());
         assert!(text.find("type=\"importmap\"").unwrap() < text.find("type=\"module\"").unwrap());
         assert!(text.contains("/mine.mjs"));
         assert!(text.contains("/__niva_runtime/esm/path.mjs"));

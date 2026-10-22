@@ -1,0 +1,10 @@
+[package]
+name = "niva-config"
+version = "0.10.0-beta.1"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.104"
+serde_json = "1.0.151"
+url = "2.5.8"

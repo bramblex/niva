@@ -18,6 +18,8 @@ mod file_identity;
 #[cfg(test)]
 mod file_identity_tests;
 pub mod icon;
+#[path = "../../shared/resource_archive.rs"]
+pub mod resource_archive;
 pub mod version_info;
 
 #[cfg(target_os = "windows")]
@@ -546,6 +548,7 @@ mod tests {
         let output = base.join("missing").join("..").join("template.exe");
         std::fs::write(&input, b"template").unwrap();
 
+        #[cfg(unix)]
         assert!(!output.parent().unwrap().exists());
         assert!(paths_refer_to_same_file(&input, &output).unwrap());
         std::fs::remove_dir_all(base).unwrap();
@@ -681,7 +684,6 @@ mod tests {
 
     #[test]
     fn bundle_round_trip() {
-        use std::io::Read;
         let base = std::env::temp_dir().join(format!("win_packager_bundle_{}", std::process::id()));
         let res = base.join("res");
         std::fs::create_dir_all(res.join("sub")).unwrap();
@@ -692,21 +694,19 @@ mod tests {
         std::fs::write(res.join("sub").join("b.bin"), [0u8, 1, 2, 3]).unwrap();
 
         let pkg = bundle::bundle_resource_package(&res, &base.join("niva.json")).unwrap();
-        let idx: std::collections::BTreeMap<String, (usize, usize)> =
-            serde_json::from_slice(&pkg.indexes_json).unwrap();
-        assert_eq!(idx["niva.json"], (0, cfg.len()));
-        // key 的 `\` 已统一为 `/`
-        assert!(idx.contains_key("a.txt"));
-        assert!(idx.contains_key("sub/b.bin"));
-
-        let mut dec = flate2::read::DeflateDecoder::new(&pkg.data_deflated[..]);
-        let mut raw = Vec::new();
-        dec.read_to_end(&mut raw).unwrap();
-        assert_eq!(&raw[..cfg.len()], cfg);
-        let (off, len) = idx["sub/b.bin"];
-        assert_eq!(&raw[off..off + len], &[0u8, 1, 2, 3]);
-        let (off, len) = idx["a.txt"];
-        assert_eq!(&raw[off..off + len], b"hello");
+        let idx =
+            resource_archive::decode_index(&pkg.indexes_json, pkg.data_deflated.len()).unwrap();
+        for (name, bytes) in [
+            ("niva.json", cfg.as_slice()),
+            ("a.txt", b"hello".as_slice()),
+            ("sub/b.bin", &[0u8, 1, 2, 3]),
+        ] {
+            assert_eq!(
+                resource_archive::read_range(&pkg.data_deflated, &idx[name], 0, idx[name].0)
+                    .unwrap(),
+                bytes
+            );
+        }
 
         std::fs::remove_dir_all(&base).ok();
     }

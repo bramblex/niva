@@ -128,7 +128,7 @@ pub fn build(
         serde_json::from_slice(&fs::read(manifest_path).context("read runtime manifest")?)
             .context("parse runtime manifest")?;
     ensure!(
-        manifest.schema_version == 1,
+        manifest.schema_version == 2,
         "unsupported runtime manifest schema"
     );
     ensure!(
@@ -140,6 +140,7 @@ pub fn build(
     let config_bytes = fs::read(config_path).context("read niva.json")?;
     let config: serde_json::Value =
         serde_json::from_slice(&config_bytes).context("parse niva.json")?;
+    niva_config::validate_all(&config).context("validate niva.json")?;
     let name = config
         .get("name")
         .and_then(|v| v.as_str())
@@ -171,17 +172,29 @@ pub fn build(
         &protected_files,
         Some(kit_root),
     )?;
-    let icon = config
-        .get("icon")
-        .and_then(|v| v.as_str())
-        .map(|name| {
-            let snapshot = build_staging.path().join("icon.png");
-            resources::snapshot_file(resource_dir, name, &snapshot)?;
-            Ok::<PathBuf, anyhow::Error>(snapshot)
-        })
-        .transpose()?;
     let mut results = Vec::new();
     for &target in targets {
+        let effective = niva_config::for_platform(
+            &config,
+            if target == Target::WindowsX86_64 {
+                "windows"
+            } else {
+                "macos"
+            },
+        )?;
+        let name = effective["name"].as_str().context("target name")?;
+        validate_name(name)?;
+        let icon = effective
+            .get("icon")
+            .and_then(|value| value.as_str())
+            .map(|name| {
+                let snapshot = build_staging
+                    .path()
+                    .join(format!("icon-{}.png", target.name()));
+                resources::snapshot_file(resource_dir, name, &snapshot)?;
+                Ok::<PathBuf, anyhow::Error>(snapshot)
+            })
+            .transpose()?;
         let mut result = BuildResult {
             target,
             resource_layout,
@@ -198,7 +211,7 @@ pub fn build(
             project_root,
             target,
             name,
-            &config,
+            &effective,
             &resources,
             icon.as_deref(),
             output_dir,

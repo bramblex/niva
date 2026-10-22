@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import uuid
+import zipfile
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -19,15 +20,15 @@ SIZE = 33 * 1024 * 1024 + 19
 
 def kit_for_host(binary, packager, root):
     """This is an isolated host fixture, not a distributable three-platform kit."""
-    target = 'macos-aarch64' if platform.machine() == 'arm64' else 'macos-x86_64'
+    target = 'windows-x86_64' if sys.platform == 'win32' else ('macos-aarch64' if platform.machine() == 'arm64' else 'macos-x86_64')
     version = subprocess.check_output([str(packager), '--version'], text=True).strip().split()[-1]
-    if binary.stat().st_size >= 3300000:
+    if binary.stat().st_size >= (3500000 if sys.platform == 'win32' else 3300000):
         raise ValueError('Use a complete release runtime below the size gate')
     root.mkdir(parents=True)
     runtime = root / 'runtimes' / target
     runtime.parent.mkdir()
     shutil.copy2(binary, runtime)
-    (root / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'version': version,
+    (root / 'manifest.json').write_text(json.dumps({'schemaVersion': 2, 'version': version,
         'runtimes': {target: {'path': f'runtimes/{target}', 'version': version,
                              'sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}}}))
     shutil.copy2(REPO / 'LICENSE', root / 'LICENSE')
@@ -105,19 +106,26 @@ def run_layout(binary, packager, output, kit, target, layout):
         result['archiveBytes'] = artifact.stat().st_size
         result['archiveSha256'] = hashlib.sha256(artifact.read_bytes()).hexdigest()
         unpacked = root / 'unpacked'
-        subprocess.run(['ditto', '-x', '-k', str(artifact), str(unpacked)], check=True)
-        app = next(unpacked.glob('*.app'))
-        subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
-        executable = next((app / 'Contents/MacOS').iterdir())
+        if sys.platform == 'win32':
+            if layout == 'embedded': executable = artifact
+            else:
+                with zipfile.ZipFile(artifact) as archive: archive.extractall(unpacked)
+                executable = next(unpacked.glob('*.exe'))
+        else:
+            subprocess.run(['ditto', '-x', '-k', str(artifact), str(unpacked)], check=True)
+            app = next(unpacked.glob('*.app'))
+            subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+            executable = next((app / 'Contents/MacOS').iterdir())
         started = time.monotonic()
         with (root / 'stdio.log').open('wb') as log:
             process = subprocess.Popen([str(executable)], stdout=log, stderr=subprocess.STDOUT)
             peak = 0
             while not done.wait(.1) and time.monotonic() - started < 45:
                 if process.poll() is not None: break
-                rss = subprocess.run(['ps', '-o', 'rss=', '-p', str(process.pid)], capture_output=True, text=True)
-                if rss.stdout.strip(): peak = max(peak, int(rss.stdout.strip()) * 1024)
-            result['nativePeakRssSampledBytes'] = peak
+                if sys.platform == 'darwin':
+                    rss = subprocess.run(['ps', '-o', 'rss=', '-p', str(process.pid)], capture_output=True, text=True)
+                    if rss.stdout.strip(): peak = max(peak, int(rss.stdout.strip()) * 1024)
+            result['nativePeakRssSampledBytes'] = peak if sys.platform == 'darwin' else None
             result['launchToReportMs'] = round((time.monotonic() - started) * 1000)
             if not done.is_set(): raise RuntimeError('No browser result within deadline')
     except Exception as error:
@@ -139,7 +147,7 @@ def main():
     parser.add_argument('--packager', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
-    if sys.platform != 'darwin': raise SystemExit('This driver currently covers macOS app packaging')
+    if sys.platform not in ('darwin', 'win32'): raise SystemExit('This driver covers macOS and Windows packaging')
     binary, packager, output = map(lambda value: Path(value).resolve(), (args.binary, args.packager, args.output))
     output.mkdir(parents=True, exist_ok=True)
     kit = output / 'single-host-test-kit'

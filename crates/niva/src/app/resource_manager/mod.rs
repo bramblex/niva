@@ -1,3 +1,5 @@
+#[path = "../../../../shared/resource_archive.rs"]
+mod archive;
 #[cfg(target_os = "windows")]
 mod win_utils;
 
@@ -160,7 +162,7 @@ fn path_matches_open_file(file: &std::fs::File, path: &Path) -> Result<bool> {
 
 #[cfg(test)]
 mod file_system_resource_tests {
-    use super::{AppResourceManager, FileSystemResource, ResourceManager};
+    use super::{AppResourceManager, FileSystemResource, ResourceManager, archive};
     use std::{fs, path::PathBuf, time::SystemTime};
 
     struct TempDir(PathBuf);
@@ -238,7 +240,7 @@ mod file_system_resource_tests {
     #[test]
     fn rejects_invalid_packed_index_without_panicking() {
         let resources = AppResourceManager {
-            indexes: std::collections::HashMap::from([("bad".into(), (2, 10))]),
+            indexes: archive::Index::from([("bad".into(), (10, vec![(2, 10)]))]),
             compressed_data: vec![1, 2],
             icon_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
@@ -248,22 +250,24 @@ mod file_system_resource_tests {
 
     #[test]
     fn embedded_resources_materialize_through_streaming_indexed_ranges() {
-        use std::io::Write;
-
         let temp = TempDir::new();
         let output = temp.0.join("resources");
         fs::create_dir(&output).unwrap();
-        let raw = b"{}index html bytesvideo bytes";
-        let mut encoder =
-            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(raw).unwrap();
+        let mut compressed_data = Vec::new();
+        let mut indexes = archive::Index::new();
+        for (name, bytes) in [
+            ("niva.json", b"{}".as_slice()),
+            ("index.html", b"index html bytes".as_slice()),
+            ("media/video.bin", b"video bytes".as_slice()),
+        ] {
+            indexes.insert(
+                name.into(),
+                archive::append(&mut compressed_data, bytes).unwrap(),
+            );
+        }
         let resources = AppResourceManager {
-            indexes: std::collections::HashMap::from([
-                ("niva.json".into(), (0, 2)),
-                ("index.html".into(), (2, 16)),
-                ("media/video.bin".into(), (18, 11)),
-            ]),
-            compressed_data: encoder.finish().unwrap(),
+            indexes,
+            compressed_data,
             icon_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
 
@@ -285,7 +289,7 @@ mod file_system_resource_tests {
         let output = temp.0.join("resources");
         fs::create_dir(&output).unwrap();
         let resources = AppResourceManager {
-            indexes: std::collections::HashMap::from([("%2e%2e/outside".into(), (0, 1))]),
+            indexes: archive::Index::from([("%2e%2e/outside".into(), (1, vec![(0, 2)]))]),
             compressed_data: vec![1, 2],
             icon_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
@@ -449,7 +453,7 @@ fn ensure_unchanged(before: &std::fs::Metadata, after: &std::fs::Metadata) -> Re
 }
 
 pub struct AppResourceManager {
-    indexes: HashMap<String, (usize, usize)>,
+    indexes: archive::Index,
     compressed_data: Vec<u8>,
     icon_cache: Mutex<IconCache>,
 }
@@ -479,8 +483,8 @@ impl AppResourceManager {
             None => {}
         }
         let indexes_data = std::fs::read(resources_dir.join("RESOURCE_INDEXES"))?;
-        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
         let compressed_data = std::fs::read(resources_dir.join("RESOURCE_DATA"))?;
+        let indexes = archive::decode_index(&indexes_data, compressed_data.len())?;
         Ok(arc(AppResourceManager {
             indexes,
             compressed_data,
@@ -504,8 +508,8 @@ impl AppResourceManager {
             None => {}
         }
         let indexes_data = load_resource("RESOURCE_INDEXES")?;
-        let indexes = serde_json::from_slice::<HashMap<String, (usize, usize)>>(&indexes_data)?;
         let compressed_data = load_resource("RESOURCE_DATA")?;
+        let indexes = archive::decode_index(&indexes_data, compressed_data.len())?;
         Ok(arc(AppResourceManager {
             indexes,
             compressed_data,
@@ -529,55 +533,45 @@ impl ResourceManager for AppResourceManager {
     }
 
     fn load(&self, path: &str) -> Result<Vec<u8>> {
-        let (archive_offset, length) = self.index(path)?;
-        self.read_uncompressed_range(archive_offset, length)
+        let entry = self.index(path)?;
+        archive::read_range(&self.compressed_data, entry, 0, entry.0)
     }
-
     fn resource_size(&self, path: &str) -> Result<Option<u64>> {
-        self.indexes
-            .get(path)
-            .map(|(_, length)| Ok(*length as u64))
-            .transpose()
+        Ok(self.indexes.get(path).map(|entry| entry.0 as u64))
     }
-
     fn read_range(&self, path: &str, offset: u64, length: usize) -> Result<ResourceRead> {
-        if length > 32 * 1024 * 1024 {
-            return Err(anyhow::anyhow!("Resource range exceeds limit."));
-        }
-        let (archive_offset, resource_length) = self.index(path)?;
-        if offset > resource_length {
-            return Err(anyhow::anyhow!("Invalid resource range."));
-        }
-        let length = u64::try_from(length)?.min(resource_length - offset);
-        let start = archive_offset
-            .checked_add(offset)
-            .ok_or(anyhow::anyhow!("Invalid resource index."))?;
+        ensure!(length <= 32 * 1024 * 1024, "Resource range exceeds limit.");
+        let entry = self.index(path)?;
         Ok(ResourceRead {
-            total_len: resource_length,
-            bytes: self.read_uncompressed_range(start, length)?,
+            total_len: entry.0 as u64,
+            bytes: archive::read_range(
+                &self.compressed_data,
+                entry,
+                usize::try_from(offset)?,
+                length,
+            )?,
         })
     }
-
     fn load_capped(&self, path: &str, max_bytes: usize) -> Result<Option<Vec<u8>>> {
-        let (_, length) = self.index(path)?;
-        if length > max_bytes as u64 {
+        if self.index(path)?.0 > max_bytes {
             return Ok(None);
         }
         self.load(path).map(Some)
     }
-
     fn extract(&self, from: &str, to: &Path) -> Result<()> {
-        let (offset, length) = self.index(from)?;
+        let entry = self.index(from)?;
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(to)?;
-        copy_uncompressed_range(
-            &mut flate2::read::DeflateDecoder::new(&self.compressed_data[..]),
-            offset,
-            length,
-            &mut file,
-        )?;
+        for offset in (0..entry.0).step_by(archive::BLOCK_BYTES) {
+            file.write_all(&archive::read_range(
+                &self.compressed_data,
+                entry,
+                offset,
+                archive::BLOCK_BYTES,
+            )?)?;
+        }
         Ok(())
     }
 
@@ -599,52 +593,28 @@ impl ResourceManager for AppResourceManager {
             Err(error) => return Err(error.into()),
         }
         let root = to.canonicalize()?;
-        let mut entries = self
+        // Validate every name before creating any files.
+        let entries = self
             .indexes
-            .iter()
-            .map(|(path, (offset, length))| {
-                let relative = safe_embedded_path(path)?;
-                let offset = u64::try_from(*offset)?;
-                let length = u64::try_from(*length)?;
-                let end = offset
-                    .checked_add(length)
-                    .ok_or(anyhow::anyhow!("Invalid resource index."))?;
-                Ok((offset, end, relative))
-            })
+            .keys()
+            .map(|name| Ok((name, safe_embedded_path(name)?)))
             .collect::<Result<Vec<_>>>()?;
-        entries.sort_by_key(|(offset, _, _)| *offset);
-
-        let mut decoder = flate2::read::DeflateDecoder::new(&self.compressed_data[..]);
-        let mut cursor = 0u64;
-        for (offset, end, relative) in entries {
-            ensure!(offset >= cursor, "Overlapping resource index entries.");
-            skip_uncompressed(&mut decoder, offset - cursor)?;
-            let target = root.join(&relative);
-            let parent = relative.parent().unwrap_or(Path::new(""));
-            let parent = create_safe_parent(&root, parent)?;
-            let filename = relative
-                .file_name()
-                .ok_or(anyhow::anyhow!("Invalid resource index path."))?;
-            let destination = parent.join(filename);
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&destination)?;
-            if let Err(error) = copy_uncompressed_range(&mut decoder, 0, end - offset, &mut file) {
+        for (name, relative) in entries {
+            let parent = create_safe_parent(&root, relative.parent().unwrap_or(Path::new("")))?;
+            let destination = parent.join(
+                relative
+                    .file_name()
+                    .ok_or(anyhow::anyhow!("Invalid resource path"))?,
+            );
+            ensure!(
+                destination == root.join(&relative),
+                "Resource extraction escaped its root."
+            );
+            if let Err(error) = self.extract(name, &destination) {
                 let _ = std::fs::remove_file(&destination);
                 return Err(error);
             }
-            cursor = end;
-            ensure!(
-                destination.starts_with(&root) && target == destination,
-                "Resource extraction escaped its root."
-            );
         }
-        let mut trailing = [0u8; 1];
-        ensure!(
-            decoder.read(&mut trailing)? == 0,
-            "Embedded resource data has unindexed trailing bytes."
-        );
         Ok(())
     }
 
@@ -665,46 +635,11 @@ impl ResourceManager for AppResourceManager {
 }
 
 impl AppResourceManager {
-    fn index(&self, path: &str) -> Result<(u64, u64)> {
-        let (offset, length) = *self
-            .indexes
+    fn index(&self, path: &str) -> Result<&archive::Entry> {
+        self.indexes
             .get(path)
-            .ok_or(anyhow::anyhow!("File not found."))?;
-        let offset = u64::try_from(offset)?;
-        let length = u64::try_from(length)?;
-        offset
-            .checked_add(length)
-            .ok_or(anyhow::anyhow!("Invalid resource index."))?;
-        Ok((offset, length))
+            .ok_or(anyhow::anyhow!("File not found."))
     }
-
-    fn read_uncompressed_range(&self, offset: u64, length: u64) -> Result<Vec<u8>> {
-        let mut decoder = flate2::read::DeflateDecoder::new(&self.compressed_data[..]);
-        let length = usize::try_from(length)?;
-        let mut bytes = Vec::with_capacity(length);
-        copy_uncompressed_range(&mut decoder, offset, length as u64, &mut bytes)?;
-        Ok(bytes)
-    }
-}
-
-fn copy_uncompressed_range(
-    reader: &mut impl Read,
-    offset: u64,
-    length: u64,
-    output: &mut impl Write,
-) -> Result<()> {
-    skip_uncompressed(reader, offset)?;
-    let mut limited = reader.take(length);
-    let copied = std::io::copy(&mut limited, output)?;
-    ensure!(copied == length, "Embedded resource data is truncated.");
-    Ok(())
-}
-
-fn skip_uncompressed(reader: &mut impl Read, length: u64) -> Result<()> {
-    let mut limited = reader.take(length);
-    let skipped = std::io::copy(&mut limited, &mut std::io::sink())?;
-    ensure!(skipped == length, "Embedded resource data is truncated.");
-    Ok(())
 }
 
 fn safe_embedded_path(path: &str) -> Result<PathBuf> {

@@ -6,3 +6,6 @@ yarn.lock
 .DS_Store
 __pycache__/
 *.pyc
+
+# Local release verification logs and temporary diagnostic fixtures.
+/.release-evidence/

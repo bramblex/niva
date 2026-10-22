@@ -221,14 +221,15 @@ test("path glob syntax, dynamic cwd and file URL platform options match Node", (
 
   const originalNiva = globalThis.Niva;
   const originalRuntimeCallSync = runtime.callSync;
-  let cwd = "/first";
+  let cwd = nodePath.resolve("/first");
   globalThis.Niva = { bridge: { callSync(method, args) { assert.equal(method, "process.currentDir"); assert.deepEqual(args, []); return cwd; } } };
   runtime.callSync = (niva, method, args) => niva.bridge.callSync(method, args);
   try {
     const dynamicPath = runtime.createPathModule();
-    assert.equal(dynamicPath.resolve("item"), nodePath.posix.resolve("/first", "item"));
-    cwd = "/second";
-    assert.equal(dynamicPath.resolve("item"), nodePath.posix.resolve("/second", "item"));
+    assert.equal(dynamicPath.resolve("item"), nodePath.resolve(cwd, "item"));
+    assert.equal(dynamicPath.resolve("/rooted"), nodePath.resolve(cwd, "/rooted"));
+    cwd = nodePath.resolve("/second");
+    assert.equal(dynamicPath.resolve("item"), nodePath.resolve(cwd, "item"));
   } finally {
     runtime.callSync = originalRuntimeCallSync;
     if (originalNiva === undefined) delete globalThis.Niva;

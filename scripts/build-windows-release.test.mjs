@@ -14,12 +14,13 @@ import {
   selectedDependencyPackageIds,
   validateBuildReport,
   windowsArchiveName,
+  writeLicenseMaterials,
 } from "./build-windows-release.mjs";
 
 test("runtime manifest uses measured SHA and a strict Windows size limit", () => {
   const bytes = Buffer.from("MZ runtime bytes");
   const manifest = createRuntimeManifest("0.10.0-beta.1", bytes);
-  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.version, "0.10.0-beta.1");
   assert.deepEqual(manifest.runtimes["windows-x86_64"], {
     path: "runtimes/niva-windows-x86_64.exe",
@@ -63,11 +64,13 @@ test("validates the reported executable path, PE architecture, and report hash",
     const outputDir = path.join(root, "dist");
     mkdirSync(outputDir);
     const artifactPath = path.join(outputDir, "devtools-windows-x86_64.exe");
-    const bytes = Buffer.alloc(0x86);
+    const bytes = Buffer.alloc(0x100);
     bytes.write("MZ", 0, "ascii");
     bytes.writeUInt32LE(0x80, 0x3c);
     bytes.write("PE\0\0", 0x80, "binary");
     bytes.writeUInt16LE(0x8664, 0x84);
+    bytes.writeUInt16LE(0x20b, 0x98);
+    bytes.writeUInt16LE(2, 0xdc);
     writeFileSync(artifactPath, bytes);
     const hash = createHash("sha256").update(bytes).digest("hex");
     const report = {
@@ -91,6 +94,15 @@ test("validates the reported executable path, PE architecture, and report hash",
       }),
       { path: artifactPath, sizeBytes: bytes.length, sha256: hash },
     );
+    const consoleBytes = Buffer.from(bytes);
+    consoleBytes.writeUInt16LE(3, 0xdc);
+    writeFileSync(artifactPath, consoleBytes);
+    const consoleReport = { results: [{ ...report.results[0], sha256: createHash("sha256").update(consoleBytes).digest("hex") }] };
+    assert.throws(
+      () => validateBuildReport(consoleReport, { appName: "devtools", version: "0.10.0-beta.1", outputDir }),
+      /Windows GUI subsystem/,
+    );
+    writeFileSync(artifactPath, bytes);
     assert.throws(
       () => validateBuildReport({ ...report, results: [{ ...report.results[0], sha256: "0".repeat(64) }] }, {
         appName: "devtools",
@@ -118,7 +130,7 @@ test("Windows batch entry builds runtime and packager before invoking the curren
     "call npm ci",
     "call npm run build --workspace=packages/runtime",
     "call npm run build --workspace=packages/devtools",
-    "cargo build --release -p niva -p niva-packager",
+    "cargo build --locked --release -p niva -p niva-packager",
     'node "scripts\\build-windows-release.mjs"',
     "Compress-Archive",
   ]) {
@@ -131,7 +143,26 @@ test("Windows batch entry builds runtime and packager before invoking the curren
     assert.ok(!batch.includes(obsolete), `Windows build still uses ${obsolete}`);
   }
   const runtimeBuild = batch.indexOf("call npm run build --workspace=packages/runtime");
-  const cargoBuild = batch.indexOf("cargo build --release -p niva -p niva-packager");
+  const cargoBuild = batch.indexOf("cargo build --locked --release -p niva -p niva-packager");
   const packageBuild = batch.indexOf('node "scripts\\build-windows-release.mjs"');
   assert.ok(runtimeBuild >= 0 && runtimeBuild < cargoBuild && cargoBuild < packageBuild);
+});
+
+
+test("release refuses to silently omit a registry dependency license", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "niva-license-gate-"));
+  try {
+    const kit = path.join(root, "kit");
+    const repository = repositoryRootForScript(fileURLToPath(new URL("./build-windows-release.mjs", import.meta.url)));
+    const packages = ["niva", "niva-packager"].map((name, index) => ({
+      id: name, name, version: "test", source: null, license: "MIT",
+      manifest_path: path.join(repository, "crates", index ? "niva_packager" : "niva", "Cargo.toml"),
+    }));
+    packages.push({ id: "missing", name: "missing", version: "1", source: "registry+fixture", license: "MIT", manifest_path: path.join(root, "Cargo.toml") });
+    const metadata = { packages, resolve: { nodes: [
+      { id: "niva", dependencies: ["missing"] }, { id: "niva-packager", dependencies: [] }, { id: "missing", dependencies: [] },
+    ] } };
+    assert.throws(() => writeLicenseMaterials(kit, metadata), /license materials are incomplete/);
+    assert.equal(JSON.parse(readFileSync(path.join(kit, "license-audit.json"))).missing[0].name, "missing");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -8,35 +8,42 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from ctypes import wintypes
 from pathlib import Path
 
 
 def check_native_owner(pid, expected_host):
     user32 = ctypes.WinDLL("user32", use_last_error=True)
-    user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ssize_t), ctypes.c_ssize_t]
-    user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
     user32.GetWindowTextLengthW.restype = ctypes.c_int
-    user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
-    user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
-    user32.GetWindow.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-    user32.GetWindow.restype = ctypes.c_void_p
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindow.argtypes = [wintypes.HWND, ctypes.c_uint]
+    user32.GetWindow.restype = wintypes.HWND
     found = {}
     candidates = []
 
     def visit(hwnd, _):
-        window_pid = ctypes.c_ulong()
+        window_pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
         length = user32.GetWindowTextLengthW(hwnd)
         title = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, title, length + 1)
         if window_pid.value == pid:
             candidates.append((title.value, window_pid.value, hwnd))
-        if window_pid.value == pid and title.value in (f"{expected_host}/index.html", f"{expected_host}/child.html"):
+        if window_pid.value == pid and title.value in (f"{expected_host}/index.html", "Niva Windows owned child"):
             found[title.value] = hwnd
-        return True
+        return 1
 
-    enum_result = user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ssize_t)(visit), 0)
-    main_title, child_title = f"{expected_host}/index.html", f"{expected_host}/child.html"
+    ctypes.set_last_error(0)
+    enum_result = user32.EnumWindows(callback_type(visit), 0)
+    if not enum_result:
+        error = ctypes.get_last_error()
+        raise ctypes.WinError(error) if error else RuntimeError("EnumWindows failed without a Win32 error")
+    main_title, child_title = f"{expected_host}/index.html", "Niva Windows owned child"
     assert set(found) == {main_title, child_title}, (pid, found, candidates, enum_result, ctypes.get_last_error())
     owner = user32.GetWindow(found[child_title], 4)
     assert owner == found[main_title], (found, owner)

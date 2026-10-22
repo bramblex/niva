@@ -64,15 +64,18 @@ type Pending = {
 type IpcRequest = {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | undefined;
   sessionId: string;
   epoch: number;
   sourceOrigin: string;
 };
 
-(function initializeNivaPage(root: any) {
+function initializeNivaPage(root: any) {
   "use strict";
-  if (root.Niva && root.Niva.bridgeVersion === 1 && root.Niva.__runtimeBootstrap === true) return;
+  if (root !== root.top && root.location?.href === "about:blank") return;
+  const currentDocument = root.document;
+  if (root.Niva && root.Niva.bridgeVersion === 1 && root.Niva.__runtimeBootstrap === true
+    && root.Niva.__runtimeBootstrapDocument === currentDocument) return;
 
   inheritSameOriginRuntime(root);
 
@@ -421,7 +424,7 @@ type IpcRequest = {
     } catch (_) { return false; }
   }
 
-  function sendIpcRequest(payload: any, timeoutMs = 60000): Promise<any> {
+  function sendIpcRequest(payload: any, timeoutMs: number | null = 60000): Promise<any> {
     if (!canIpc) return Promise.reject(nivaError("Niva IPC transport is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
     const expectedOrigin = pageSourceOrigin(root);
     if (!expectedOrigin) return Promise.reject(nivaError("Niva IPC source origin is unavailable", "ERR_NIVA_IPC_UNAVAILABLE"));
@@ -434,7 +437,7 @@ type IpcRequest = {
       return Promise.reject(nivaError("Niva IPC request exceeds 256 KiB", "ERR_NIVA_IPC_TOO_LARGE"));
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = timeoutMs === null ? undefined : setTimeout(() => {
         ipcRequests.delete(ridKey);
         reject(nivaError("Niva IPC reply timed out", "ETIMEDOUT"));
       }, timeoutMs);
@@ -785,7 +788,10 @@ type IpcRequest = {
     const callSessionId = sessionId;
     const callEpoch = sessionEpoch;
     beginIpcCall(id);
-    return sendIpcRequest({ t: "api_call", id, method, args, sessionId: callSessionId, ...(local ? { token: root.__niva_token } : {}) })
+    // Native owns operation deadlines; this extra grace detects a lost reply.
+    // User-interactive dialogs have no operation deadline and retain the session lease.
+    const replyTimeout = method.startsWith("dialog.") ? null : (config.apiTimeoutMs ?? 30000) + 10000;
+    return sendIpcRequest({ t: "api_call", id, method, args, sessionId: callSessionId, ...(local ? { token: root.__niva_token } : {}) }, replyTimeout)
       .then((message) => {
         if (sessionId !== callSessionId || sessionEpoch !== callEpoch || sessionExpired) {
           throw nivaError("Niva page session is no longer active", "ERR_NIVA_SESSION_EXPIRED");
@@ -1299,8 +1305,8 @@ type IpcRequest = {
     const globalFilename = root.location?.pathname || "";
     const globalModule: any = new Niva.module(globalFilename || ".", null);
     globalModule.filename = globalFilename;
-    globalModule.path = globalFilename ? Niva.path.dirname(globalFilename) : "/";
-    globalModule.paths = modulePaths(globalModule.path);
+    globalModule.path = globalFilename ? Niva.path.posix.dirname(globalFilename) : "/";
+    globalModule.paths = modulePaths(globalModule.path, Niva.path.posix);
     globalModule.loaded = true;
     const require = makeRequire(Niva, modules, "", globalModule);
     globalModule.require = require;
@@ -1453,6 +1459,10 @@ type IpcRequest = {
   root.addEventListener?.("pagehide", handlePageHide);
   root.addEventListener?.("pageshow", handlePageShow);
   if (local) connectSocket();
+  Object.defineProperty(Niva, "__runtimeBootstrapDocument", {
+    configurable: true,
+    value: currentDocument,
+  });
   Niva.__runtimeBootstrap = true;
 
   function inheritSameOriginRuntime(host: any) {
@@ -1475,7 +1485,7 @@ type IpcRequest = {
 
       const parentConfig = parent.__niva_runtime_config || {};
       const childConfig = { ...(host.__niva_runtime_config || {}) };
-      for (const key of ["injectCommonJs", "injectEsm", "nonce"]) {
+      for (const key of ["injectCommonJs", "injectEsm", "nonce", "apiTimeoutMs"]) {
         if (childConfig[key] === undefined && parentConfig[key] !== undefined) childConfig[key] = parentConfig[key];
       }
       host.__niva_runtime_config = childConfig;
@@ -1501,7 +1511,7 @@ type IpcRequest = {
       this.parent = parent || null;
       this.children = [];
       this.exports = {};
-      this.paths = modulePaths(niva.path.dirname(id));
+      this.paths = [];
     };
     Module.builtinModules = builtinModules;
     Module.Module = Module;
@@ -1521,8 +1531,7 @@ type IpcRequest = {
     return builtinModulesFor(available).flatMap((name) => [name, "node:" + name]);
   }
 
-  function modulePaths(directory: string): string[] {
-    const path = Niva.path;
+  function modulePaths(directory: string, path = Niva.path): string[] {
     const start = directory || (root.location?.pathname ? path.dirname(root.location.pathname) : "/");
     const result: string[] = [];
     let current = path.resolve(start || "/");
@@ -1631,4 +1640,22 @@ type IpcRequest = {
     }
   }
 
-})(globalThis as any);
+}
+
+const runtimeGlobal: any = globalThis;
+runtimeGlobal[Symbol.for("niva.runtime.bootstrap")] = initializeNivaPage;
+// Wry may inject child frames while their URL is about:blank. Custom-protocol
+// HTML invokes the initializer; externally served HTML needs lazy entry points.
+if (runtimeGlobal !== runtimeGlobal.top && runtimeGlobal.location?.href === "about:blank") {
+  const names = ["Niva", "require", "module", "process", "Buffer", "__niva_ipc_reply", "__niva_native_event", "__niva_native_frame"];
+  for (const name of names) Object.defineProperty(runtimeGlobal, name, {
+    configurable: true,
+    get() {
+      if (runtimeGlobal.location?.href === "about:blank") return undefined;
+      for (const key of names) delete runtimeGlobal[key];
+      initializeNivaPage(runtimeGlobal);
+      return runtimeGlobal[name];
+    },
+    set(value) { Object.defineProperty(runtimeGlobal, name, { configurable: true, writable: true, value }); },
+  });
+} else initializeNivaPage(runtimeGlobal);

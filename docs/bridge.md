@@ -2,6 +2,12 @@
 
 > 当前状态（2026-10）：API 控制面/纯数据面分离与 Wire v2 已进入当前源码。异步 API 创建和控制统一走 IPC `t:"api_call"`，稳定数据路径走 Wry IPC/`evaluate_script`；WebSocket 只优化纯数据传输。真实 macOS WebView 已通过 custom-protocol WS 与 CSP 限制 IPC 两 lane smoke，包含 CommonJS globals、流 attach、双向数据、同源 iframe session 和 parent 后续 unary。当前 runtime 还为嵌套同源 iframe 将 IPC host 路由到顶层 Native host，见[Bridge v2 验收记录](bridge-v2-validation.md)；嵌套 iframe 的新增覆盖是 runtime 测试，Windows 真机仍未验收。后文标明的历史快照保留当时行为，不定义当前协议。
 
+## Windows 子页面初始化
+
+Windows WebView2 可能在子 frame 的地址仍为 `about:blank` 时执行 document-start 脚本。此时 runtime 只注册初始化入口，不创建 Niva API、模块或计时器。本地资源 HTML 在作者脚本之前通过带 runtime nonce 的同步入口完成初始化；CSP meta 在该入口之前生效。已经完成初始化的同一 document 保持原 session，BFCache 的恢复仍由既有 pagehide/pageshow 流程处理。
+
+该 HTML 入口只覆盖 Niva 本地资源页；独立 `about:blank`、`srcdoc` 与 `document.open` 内容不因此获得初始化支持。该入口继续使用实际页面 origin、完整同源祖先链和 Rust 鉴权；不会为 opaque 或跨源 iframe 赋权。Wire 版本、帧格式、错误码和公开 API 类型不变。Windows 实测范围见 [2026-10-21 验证记录](windows-validation-2026-10-21.md)。
+
 ## 当前协议
 
 当前源码按 API 控制面与纯数据面分工；内部 ticket 和 IPC envelope 细节以 Native/runtime 实现为准。保留现有 Native API 语义与安全边界：
@@ -160,3 +166,14 @@ WS按连接断开清理。原生窗口销毁/可观测导航及时清理；macOS
 基础`Niva` API始终存在；`injectCommonJs`和`injectEsm`独立、默认关闭，分别控制Node全局/模块环境和浏览器import map。Node内置CJS/ESM接口引用同一Niva实现；用户覆盖自行负责。CommonJS文件通过同步`module.resolve/load`由Native解析读取；浏览器执行并管理缓存/循环。不支持.node，也不自建ESM引擎。
 
 `Niva.os.info`是启动静态数据，动态系统信息按相应接口查询。真实`Niva.process`及其stdio仅供可信主窗口。旧路由中child_process流式stdio优先用WS，WS不可用时走IPC Channel（IPC二进制帧用Base64）；当前资源owner固定为创建时IPC session，数据transport独立。shell/Python宿主直接使用普通管道，协议由应用自己定义。Niva不再提供`api.host`、`--stdio`或内置NDJSON，框架日志写独立文件。stdin EOF只结束输入流，不自动退出UI。见[stdio宿主说明](stdio-host-design.md)。
+
+
+## 2026-10-21 调度与主线程所有权修复
+
+普通 unary IPC 使用注册项的 timeout override，否则使用 `api.timeoutMs`（默认 30,000 ms）。对话框注册为无操作期限，通过异步 rfd 等待用户，继续受 session/window 生命周期约束；不再套用固定 35 秒。前端普通调用使用配置期限加 10 秒的回包容差，流创建/控制消息仍有独立传输等待上限，对话框由会话租约检测断连。
+
+HTTP 接入最多保留 128 个连接，请求头须在 5 秒内到齐。Wry IPC 在生成任务及排入主线程前检查 256 KiB 消息上限和全应用 128 个待处理请求预算。API 内部的调用/通道限制继续生效。
+
+`NivaWindow` 不再对 Wry/Muda 对象使用 blanket `unsafe Send/Sync`。WebView 和菜单由主线程 registry 持有；后台只持实例唯一的 handle，非 owner 线程无法取出 UI 对象。关闭窗口先取消 owner 资源，然后在主线程移除 UI 对象，后台迟到访问返回已关闭错误。Tao Window 保留其库自身的 Send/Sync 契约。
+
+Windows CommonJS 页面启动的虚拟模块使用 URL 的 POSIX 路径，不在启动阶段查询 Native cwd。真实文件模块仍按本机路径解析。外部 HTTP 同源 iframe 在 `about:blank` 注入时延迟到第一次运行时访问初始化；凭据仍经过同源继承检查，不授予跨源 frame 权限。

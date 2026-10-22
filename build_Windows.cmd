@@ -24,7 +24,7 @@ if exist "packages\devtools\build" (
 call npm run build --workspace=packages/devtools
 if errorlevel 1 goto :failed
 
-cargo build --release -p niva -p niva-packager
+cargo build --locked --release -p niva -p niva-packager
 if errorlevel 1 goto :failed
 if not exist "target\release\niva.exe" (
 	echo Missing Windows Niva runtime: target\release\niva.exe

@@ -699,16 +699,22 @@ fn error_response(status: StatusCode, message: &str) -> Response<Vec<u8>> {
     )
 }
 
+const NODE_BOOTSTRAP_MARKER: &str = "<!-- niva-runtime-bootstrap -->";
 const NODE_COMPAT_MARKER: &str = "<!-- niva-runtime-importmap -->";
 const RUNTIME_ASSET_PREFIX: &str = "__niva_runtime/";
 
-/// Add the active loopback sources to existing CSP meta policies. When
-/// Runtime injected an import map, give only that tag the runtime nonce and
-/// place them after the policy so the nonce is actually enforced.
+/// Add the active loopback sources to existing CSP meta policies. Place the
+/// bootstrap re-entry and optional import map after policy meta tags and give
+/// each generated inline script the runtime nonce.
 pub(crate) fn patch_document_csp(html: &mut String, server_port: u16) -> Result<()> {
+    let node_bootstrap_block = node_bootstrap_block_range(html)?;
     let node_compat_block = node_compat_block_range(html)?;
     if !csp_meta_ranges(html).is_empty() {
         let nonce = NodeCompat::csp_nonce()?;
+        if node_bootstrap_block.is_some() {
+            move_node_bootstrap_block_after_csp(html)?;
+            add_node_bootstrap_nonce(html, nonce)?;
+        }
         if node_compat_block.is_some() {
             move_node_compat_block_after_csp(html)?;
             add_node_compat_nonce(html, nonce)?;
@@ -725,6 +731,28 @@ pub(crate) fn patch_document_csp(html: &mut String, server_port: u16) -> Result<
         patch_csp_resource_source(html, directive, &filesystem_origin);
     }
     Ok(())
+}
+
+fn node_bootstrap_block_range(html: &str) -> Result<Option<(usize, usize)>> {
+    let Some(start) = html.find(NODE_BOOTSTRAP_MARKER) else {
+        return Ok(None);
+    };
+    let tag_start = start + NODE_BOOTSTRAP_MARKER.len();
+    let tag_end = html[tag_start..]
+        .find('>')
+        .map(|end| tag_start + end + 1)
+        .ok_or_else(|| anyhow::anyhow!("Runtime bootstrap tag is unterminated"))?;
+    let tag = &html[tag_start..tag_end];
+    if !tag.starts_with("<script") || tag_attribute_range(tag, "src").is_some() {
+        return Err(anyhow::anyhow!(
+            "Runtime bootstrap marker must precede an inline script"
+        ));
+    }
+    let close_end = html[tag_end..]
+        .find("</script>")
+        .map(|end| tag_end + end + "</script>".len())
+        .ok_or_else(|| anyhow::anyhow!("Runtime bootstrap script is unterminated"))?;
+    Ok(Some((start, close_end)))
 }
 
 fn node_compat_block_range(html: &str) -> Result<Option<(usize, usize)>> {
@@ -751,7 +779,18 @@ fn node_compat_block_range(html: &str) -> Result<Option<(usize, usize)>> {
 }
 
 fn move_node_compat_block_after_csp(html: &mut String) -> Result<()> {
-    let Some((block_start, block_end)) = node_compat_block_range(html)? else {
+    move_marked_block_after_csp(html, node_compat_block_range(html)?)
+}
+
+fn move_node_bootstrap_block_after_csp(html: &mut String) -> Result<()> {
+    move_marked_block_after_csp(html, node_bootstrap_block_range(html)?)
+}
+
+fn move_marked_block_after_csp(
+    html: &mut String,
+    block_range: Option<(usize, usize)>,
+) -> Result<()> {
+    let Some((block_start, block_end)) = block_range else {
         return Ok(());
     };
     let meta_ranges = csp_meta_ranges(html);
@@ -817,11 +856,27 @@ fn add_node_compat_nonce(html: &mut String, nonce: &str) -> Result<()> {
     let Some((start, _)) = node_compat_block_range(html)? else {
         return Ok(());
     };
-    let tag_start = start + NODE_COMPAT_MARKER.len();
+    add_nonce_to_marked_script(html, start, NODE_COMPAT_MARKER, nonce)
+}
+
+fn add_node_bootstrap_nonce(html: &mut String, nonce: &str) -> Result<()> {
+    let Some((start, _)) = node_bootstrap_block_range(html)? else {
+        return Ok(());
+    };
+    add_nonce_to_marked_script(html, start, NODE_BOOTSTRAP_MARKER, nonce)
+}
+
+fn add_nonce_to_marked_script(
+    html: &mut String,
+    start: usize,
+    marker: &str,
+    nonce: &str,
+) -> Result<()> {
+    let tag_start = start + marker.len();
     let tag_end = html[tag_start..]
         .find('>')
         .map(|end| tag_start + end)
-        .ok_or_else(|| anyhow::anyhow!("Runtime importmap tag is unterminated"))?;
+        .ok_or_else(|| anyhow::anyhow!("Runtime script tag is unterminated"))?;
     if let Some((a, b)) = tag_attribute_range(&html[tag_start..=tag_end], "nonce") {
         html.replace_range(tag_start + a..tag_start + b, nonce);
     } else {
@@ -1626,8 +1681,21 @@ mod tests {
         assert!(policy.contains(&format!("'nonce-{nonce}'")));
 
         assert_eq!(nonce, NodeCompat::csp_nonce().unwrap());
+        let bootstrap_start = html.find(NODE_BOOTSTRAP_MARKER).unwrap();
+        assert!(html.find("Content-Security-Policy").unwrap() < bootstrap_start);
+        let bootstrap_tag_start = bootstrap_start + NODE_BOOTSTRAP_MARKER.len();
+        let bootstrap_tag_end =
+            html[bootstrap_tag_start..].find('>').unwrap() + bootstrap_tag_start + 1;
+        let bootstrap_tag = &html[bootstrap_tag_start..bootstrap_tag_end];
+        let (bootstrap_nonce_start, bootstrap_nonce_end) =
+            tag_attribute_range(bootstrap_tag, "nonce").unwrap();
+        let bootstrap_nonce = &bootstrap_tag[bootstrap_nonce_start..bootstrap_nonce_end];
+        assert_eq!(bootstrap_nonce, nonce);
+        assert!(policy.contains(&format!("'nonce-{bootstrap_nonce}'")));
+        assert!(html[bootstrap_tag_end..].contains("Symbol.for(\"niva.runtime.bootstrap\")"));
         assert!(!html.contains("bootstrap.js"));
         assert!(html.find("Content-Security-Policy").unwrap() < map_start);
+        assert!(map_start < bootstrap_start);
         assert!(map_start < html.find("src=\"./index.js\"").unwrap());
         let once = html.clone();
         patch_document_csp(&mut html, 43123).unwrap();
@@ -1672,6 +1740,14 @@ mod tests {
             "<!-- niva-runtime-importmap -->",
             "<!-- niva-runtime-importmap --><script type=\"importmap\">{}",
             "<!-- niva-runtime-importmap --><script src=\"/other.js\"></script>",
+        ] {
+            let mut html = format!("<html><head>{csp}{injected}</head></html>");
+            assert!(patch_document_csp(&mut html, 43123).is_err(), "{injected}");
+        }
+        for injected in [
+            "<!-- niva-runtime-bootstrap -->",
+            "<!-- niva-runtime-bootstrap --><script nonce=\"abc\">",
+            "<!-- niva-runtime-bootstrap --><script src=\"/remote.js\"></script>",
         ] {
             let mut html = format!("<html><head>{csp}{injected}</head></html>");
             assert!(patch_document_csp(&mut html, 43123).is_err(), "{injected}");

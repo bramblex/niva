@@ -658,7 +658,6 @@ const IPC_SESSION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_EXPIRED_IPC_SESSIONS_PER_DOMAIN: usize = 4096;
 const MAX_IPC_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_IPC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-const MAX_IPC_CALL_DURATION: Duration = Duration::from_secs(35);
 const MAX_SYNC_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 
 /// Explicit public IPC surface. Add methods here only after checking their
@@ -1063,6 +1062,7 @@ async fn monitor_ipc_call(
     key: IpcSessionKey,
     call_id: u64,
     cancel_rx: async_channel::Receiver<()>,
+    timeout: Option<Duration>,
 ) -> IpcRunOutcome {
     let started = Instant::now();
     loop {
@@ -1081,7 +1081,7 @@ async fn monitor_ipc_call(
             return IpcRunOutcome::Cancelled;
         }
 
-        if started.elapsed() >= MAX_IPC_CALL_DURATION {
+        if timeout.is_some_and(|duration| started.elapsed() >= duration) {
             crate::app::api::cancel_ipc_process_call(
                 key.window_id,
                 &key.source_origin,
@@ -2543,6 +2543,10 @@ impl ApiManager {
             key.clone(),
             id,
             cancel_rx,
+            self.handlers
+                .get(&request.1)
+                .and_then(|entry| entry.timeout)
+                .unwrap_or(Some(self.default_timeout)),
         );
         let outcome =
             smol::future::or(async move { IpcRunOutcome::Finished(work.await) }, monitor).await;
@@ -4518,6 +4522,51 @@ fn sync_method_allowed(method: &str) -> bool {
 mod lifecycle_tests {
     use super::*;
 
+    #[test]
+    fn ipc_monitor_obeys_deadlines_and_unlimited_calls_remain_cancellable() {
+        smol::block_on(async {
+            for timeout in [Some(Duration::from_millis(1)), None] {
+                let sessions = Arc::new(Mutex::new(IpcSessions::default()));
+                let key = IpcSessionKey {
+                    window_id: 1,
+                    source_origin: "https://example.test".into(),
+                    session_id: "a".repeat(32),
+                    frame_id: 0,
+                    generation: 0,
+                    is_main_frame: true,
+                };
+                let (tx, rx) = async_channel::bounded(1);
+                sessions
+                    .lock()
+                    .unwrap()
+                    .reserve(key.clone(), 1, tx.clone(), 1, Instant::now())
+                    .unwrap();
+                let monitor = monitor_ipc_call(
+                    sessions,
+                    Arc::new(Mutex::new(HashMap::new())),
+                    key,
+                    1,
+                    rx,
+                    timeout,
+                );
+                let outcome = if timeout.is_none() {
+                    smol::future::or(monitor, async {
+                        smol::Timer::after(Duration::from_millis(20)).await;
+                        tx.close();
+                        std::future::pending().await
+                    })
+                    .await
+                } else {
+                    monitor.await
+                };
+                assert!(matches!(
+                    (timeout, outcome),
+                    (Some(_), IpcRunOutcome::TimedOut) | (None, IpcRunOutcome::Cancelled)
+                ));
+            }
+        });
+    }
+
     fn take_text(rx: &mpsc::Receiver<WsOut>) -> String {
         match rx.try_recv().unwrap() {
             WsOut::Text(text) => text,
@@ -4952,7 +5001,9 @@ mod ipc_tests {
         };
         assert_eq!(
             same_origin_ipc_source(&local).unwrap(),
-            "niva-a51c1728d17442d48f577d296c966b51://app"
+            super::super::custom_protocol::origin_for_scheme(
+                "niva-a51c1728d17442d48f577d296c966b51"
+            )
         );
         let cross_origin = IpcFrameSource {
             source_url: "https://remote.example/frame".into(),

@@ -1,8 +1,6 @@
-// remove console window in windows system
-#![cfg_attr(
-    all(not(debug_assertions), target_os = "windows"),
-    windows_subsystem = "windows"
-)]
+// Both development and release applications are GUI programs on Windows.
+// Redirected process streams remain available without creating a console.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 // Deadlock discipline:std Mutex guards must never cross an `.await`.
 // api_manager reads (handler map) are lock-free after init.
 #![deny(clippy::await_holding_lock)]

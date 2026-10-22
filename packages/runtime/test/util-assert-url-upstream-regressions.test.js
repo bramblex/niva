@@ -1,6 +1,7 @@
 import "./setup-runtime.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import nodeUrl from "node:url";
 import util from "../dist/source/util.js";
 import compatAssert from "../dist/source/assert.js";
 import url from "../dist/source/url.js";
@@ -61,5 +62,8 @@ test("URL file conversion validates inputs and preserves escaped path characters
   assert.throws(() => url.fileURLToPath(null), { code: "ERR_INVALID_ARG_TYPE", name: "TypeError" });
   assert.throws(() => url.pathToFileURL({ toString: () => "/tmp/file" }), { code: "ERR_INVALID_ARG_TYPE", name: "TypeError" });
   assert.equal(url.pathToFileURL("/tmp/folder/").href.endsWith("/"), true);
-  assert.equal(url.pathToFileURL("/tmp/back\\slash").href.endsWith("/back%5Cslash"), true);
+  const posixPathWithBackslash = "/tmp/back\\slash";
+  const expected = nodeUrl.pathToFileURL(posixPathWithBackslash, { windows: false }).href;
+  assert.equal(expected.endsWith("/back%5Cslash"), true);
+  assert.equal(url.pathToFileURL(posixPathWithBackslash, { windows: false }).href, expected);
 });

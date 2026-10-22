@@ -1,6 +1,7 @@
 import "./setup-runtime.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import nodePath from "node:path";
 import {
   assert as esmAssert,
   buffer as esmBuffer,
@@ -195,7 +196,10 @@ test('fs.cp delegates the tree copy to Native with Node options', async () => {
 
 test('fs.cp evaluates async filters in JS and delegates each accepted entry to Native', async () => {
   const calls = [], filtered = [];
-  const directories = new Set(['/src','/src/empty','/src/sub']);
+  const source = '/src', destination = '/dst';
+  const fromSource = (...parts) => nodePath.join(source, ...parts);
+  const fromDestination = (...parts) => nodePath.join(destination, ...parts);
+  const directories = new Set([source,fromSource('empty'),fromSource('sub')]);
   const fs = runtime.createFsModule({bridge:{call(method,args){
     assert.equal(method,'fs.node');
     const [operation,options]=args;
@@ -203,29 +207,29 @@ test('fs.cp evaluates async filters in JS and delegates each accepted entry to N
     if(operation==='lstat'||operation==='stat')return Promise.resolve({
       isDir:directories.has(options.path), isFile:!directories.has(options.path), isSymlink:false,
     });
-    if(operation==='readdir')return Promise.resolve((options.path==='/src'
-      ? ['keep.txt','skip.txt','empty','sub'] : options.path==='/src/sub' ? ['leaf.txt'] : []).map(name=>({name})));
+    if(operation==='readdir')return Promise.resolve((options.path===source
+      ? ['keep.txt','skip.txt','empty','sub'] : options.path===fromSource('sub') ? ['leaf.txt'] : []).map(name=>({name})));
     if(operation==='cp')return Promise.resolve(options.directoryOnly===true&&options.directoryFinalize!==true);
     throw new Error(`Unexpected fs operation ${operation}`);
   }}});
-  await new Promise((resolve,reject)=>fs.cp('/src','/dst',{recursive:true,filter:async(source,destination)=>{
-    filtered.push([source,destination]);
-    return source!=='/src/skip.txt';
+  await new Promise((resolve,reject)=>fs.cp(source,destination,{recursive:true,filter:async(sourceEntry,destinationEntry)=>{
+    filtered.push([sourceEntry,destinationEntry]);
+    return sourceEntry!==fromSource('skip.txt');
   }},error=>error?reject(error):resolve()));
   assert.deepEqual(filtered,[
-    ['/src','/dst'], ['/src/keep.txt','/dst/keep.txt'],
-    ['/src/skip.txt','/dst/skip.txt'], ['/src/empty','/dst/empty'],
-    ['/src/sub','/dst/sub'], ['/src/sub/leaf.txt','/dst/sub/leaf.txt'],
+    [source,destination], [fromSource('keep.txt'),fromDestination('keep.txt')],
+    [fromSource('skip.txt'),fromDestination('skip.txt')], [fromSource('empty'),fromDestination('empty')],
+    [fromSource('sub'),fromDestination('sub')], [fromSource('sub','leaf.txt'),fromDestination('sub','leaf.txt')],
   ]);
   assert.deepEqual(calls.filter(([operation])=>operation==='cp'),[
-    ['cp',{path:'/src',destination:'/dst',recursive:true,directoryOnly:true}],
-    ['cp',{path:'/src/keep.txt',destination:'/dst/keep.txt',recursive:true}],
-    ['cp',{path:'/src/empty',destination:'/dst/empty',recursive:true,directoryOnly:true}],
-    ['cp',{path:'/src/empty',destination:'/dst/empty',recursive:true,directoryOnly:true,directoryFinalize:true}],
-    ['cp',{path:'/src/sub',destination:'/dst/sub',recursive:true,directoryOnly:true}],
-    ['cp',{path:'/src/sub/leaf.txt',destination:'/dst/sub/leaf.txt',recursive:true}],
-    ['cp',{path:'/src/sub',destination:'/dst/sub',recursive:true,directoryOnly:true,directoryFinalize:true}],
-    ['cp',{path:'/src',destination:'/dst',recursive:true,directoryOnly:true,directoryFinalize:true}],
+    ['cp',{path:source,destination,recursive:true,directoryOnly:true}],
+    ['cp',{path:fromSource('keep.txt'),destination:fromDestination('keep.txt'),recursive:true}],
+    ['cp',{path:fromSource('empty'),destination:fromDestination('empty'),recursive:true,directoryOnly:true}],
+    ['cp',{path:fromSource('empty'),destination:fromDestination('empty'),recursive:true,directoryOnly:true,directoryFinalize:true}],
+    ['cp',{path:fromSource('sub'),destination:fromDestination('sub'),recursive:true,directoryOnly:true}],
+    ['cp',{path:fromSource('sub','leaf.txt'),destination:fromDestination('sub','leaf.txt'),recursive:true}],
+    ['cp',{path:fromSource('sub'),destination:fromDestination('sub'),recursive:true,directoryOnly:true,directoryFinalize:true}],
+    ['cp',{path:source,destination,recursive:true,directoryOnly:true,directoryFinalize:true}],
   ]);
   assert.equal(calls.some(([operation])=>operation==='copyFile'||operation==='mkdir'),false);
 });

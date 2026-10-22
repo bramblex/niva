@@ -46,7 +46,7 @@ Windows 目标使用 WebView2，目标机需要可用的 WebView2 Runtime。Wind
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "version": "0.10.0-beta.1",
   "runtimes": {
     "windows-x86_64": {
@@ -82,3 +82,14 @@ python scripts/create-packager-kit.py \
 ## 验收范围
 
 实现与真机验收分开记录，参见 `cross-platform-packager-plan.md`。目标机启动、bridge、文件访问和窗口行为需要真实目标系统验证，编译和资源读回不代替这些测试。
+
+
+## 资源格式 v2（2026-10-21）
+
+当前 kit manifest 使用 `schemaVersion: 2`，runtime 和两个资源打包入口共用 `crates/shared/resource_archive.rs`。旧 schema 的 kit 不再接受，旧业务资源包必须重新打包；不增加旧格式读取分支。
+
+`RESOURCE_INDEXES` 为 `[2, {"path": [rawLength, [[compressedOffset, compressedLength], ...]]}]`。每个文件按 65,536 bytes 分块，分别使用 raw Deflate，`RESOURCE_DATA` 拼接各压缩块。空文件没有块。索引检查块数、边界、重叠和数据覆盖；每块解压受原始长度上限约束。Range 只解压相交块，不再解压包内前缀。外置资源布局保持目录读取。
+
+配置预检共用 `niva-config`：启动验证本机有效配置；打包和 Devtools 验证各平台覆盖后的配置，Devtools 经可信本地 `extra.validateConfig` 调用同一个 Rust 实现。打包元数据的名称和图标也使用目标平台有效配置。该预检不代替依赖本机 OS 的窗口创建检查。
+
+Windows 发布 helper 现在将缺少许可原文的 registry 依赖写入 kit 的 `license-audit.json` 并失败，不能再静默跳过后继续生成发布包。隔离 smoke kit 不代表许可证材料已经齐备的发行 kit。

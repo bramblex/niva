@@ -26,12 +26,16 @@ def run(binary,packaged=False,trace=False):
             executable=root/'Smoke.app/Contents/MacOS/niva';executable.parent.mkdir(parents=True)
             resources=executable.parent.parent/'Resources';resources.mkdir()
             shutil.copy2(binary,executable)
-            data=b'';indexes={}
+            data=bytearray();indexes={}
             for name in ['niva.json','index.html','fixture-protocol.js']:
-                content=(root/name).read_bytes();indexes[name]=[len(data),len(content)];data+=content
-            compressor=zlib.compressobj(wbits=-15)
-            (resources/'RESOURCE_INDEXES').write_text(json.dumps(indexes))
-            (resources/'RESOURCE_DATA').write_bytes(compressor.compress(data)+compressor.flush())
+                content=(root/name).read_bytes();blocks=[]
+                for offset in range(0,len(content),65536):
+                    compressor=zlib.compressobj(wbits=-15)
+                    block=compressor.compress(content[offset:offset+65536])+compressor.flush()
+                    blocks.append([len(data),len(block)]);data.extend(block)
+                indexes[name]=[len(content),blocks]
+            (resources/'RESOURCE_INDEXES').write_text(json.dumps([2,indexes]))
+            (resources/'RESOURCE_DATA').write_bytes(data)
             command=[str(executable)]
         child_env=os.environ.copy()
         for name,relative in [('HOME','home'),('TMPDIR','tmp')]:

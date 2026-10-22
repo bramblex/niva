@@ -12,3 +12,6 @@ python3 examples/resource-layout-smoke/run.py \
 同一项目分别通过统一打包器生成 embedded 和 external `.app` ZIP，解包后执行 `codesign --verify --deep --strict`，再启动其中的真实程序。页面检查 33 MiB 以上资源的 HEAD、后缀 Range、416、完整读取超限、许可资源，以及打包后的 CommonJS 相邻文件读取与 ESM 接口身份。
 
 报告记录产物 hash/体积、启动到完成检查的时间和采样到的 Native 进程 RSS。RSS 不包括 WebContent，也不是操作系统精确峰值。大文件是可复现的周期性测试字节，不是真实视频，压缩率不能用于媒体预算，也不能据此宣称视频播放或 OPT-01 优化已验收。
+
+
+Windows 也可运行同一 driver：`python examples/resource-layout-smoke/run.py --binary target/release/niva.exe --packager target/release/niva-packager.exe --output .release-evidence/resource-layout`。Windows embedded 为 EXE、external 为 ZIP；Windows 不记录 RSS。当前 kit schema/resource archive 均为 v2。测试 kit 仅用于实际启动、Range、CJS/ESM 与资源验证，不证明第三方许可证闭包完整。

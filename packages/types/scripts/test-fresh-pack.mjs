@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +12,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDir, "..");
 const workspaceRoot = path.resolve(packageRoot, "../..");
 const fixtureRoot = path.join(packageRoot, "test/fresh-pack");
+const npmCli = process.env.npm_execpath;
 const requestedDist = process.argv[2];
 if (process.argv.length > 3) throw new Error("Usage: test-fresh-pack.mjs [dist-directory]");
 const distRoot = requestedDist ? path.resolve(process.cwd(), requestedDist) : path.join(packageRoot, "dist");
@@ -45,17 +46,39 @@ for (const required of [
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "niva-types-packed-consumers-"));
 let succeeded = false;
 
-function run(command, args, cwd) {
+function run(command, args, cwd, displayCommand = command) {
   const result = spawnSync(command, args, { cwd, encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed in ${cwd}:\n${result.stdout || ""}${result.stderr || ""}`);
+  if (result.error || result.status !== 0) {
+    const outcome = result.error
+      ? `spawn error ${result.error.code || "unknown"}: ${result.error.message}`
+      : result.signal
+        ? `terminated by signal ${result.signal}`
+        : result.status === null
+          ? "ended without an exit status"
+          : `exited with status ${result.status}`;
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trimEnd();
+    throw new Error(`${displayCommand} failed in ${cwd} (${outcome})${output ? `:\n${output}` : ""}`);
   }
   return result.stdout || "";
 }
 
+function runNpm(args, cwd) {
+  const fallbackNpmCli = process.platform === "win32"
+    ? path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")
+    : path.resolve(path.dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js");
+  const cli = npmCli || fallbackNpmCli;
+  if (!fs.existsSync(cli)) {
+    throw new Error(
+      `npm CLI was not found at ${cli}; run this check with ` +
+      "`npm run test:fresh-pack --workspace=packages/types` or provide npm_execpath.",
+    );
+  }
+  return run(process.execPath, [cli, ...args], cwd, `npm ${args.join(" ")}`);
+}
+
 function installPackedTypes(consumerRoot, tarball, includeNodeTypes) {
   fs.writeFileSync(path.join(consumerRoot, "package.json"), '{"private":true}\n');
-  run("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", "--package-lock=false", tarball], consumerRoot);
+  runNpm(["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--no-save", "--package-lock=false", tarball], consumerRoot);
   const typesDirectory = path.join(consumerRoot, "node_modules/@niva/types");
   assert.ok(fs.existsSync(typesDirectory), "npm did not install the freshly packed @niva/types archive");
   const installedManifest = JSON.parse(fs.readFileSync(path.join(typesDirectory, "package.json"), "utf8"));
@@ -100,10 +123,7 @@ try {
   for (const fileName of ["package.json", "README.md", "LICENSE"]) {
     fs.copyFileSync(path.join(packageRoot, fileName), path.join(packageStaging, fileName));
   }
-  const packedJson = execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", packDirectory], {
-    cwd: packageStaging,
-    encoding: "utf8",
-  });
+  const packedJson = runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", packDirectory], packageStaging);
   const packed = JSON.parse(packedJson);
   assert.equal(packed.length, 1, "npm pack should create exactly one package archive");
   const tarball = path.join(packDirectory, packed[0].filename);

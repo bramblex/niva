@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/niva_config",
 	"crates/niva",
 	"crates/icon_creator",
 	"crates/win_packager",
